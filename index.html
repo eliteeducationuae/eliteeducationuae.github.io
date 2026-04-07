@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite Education UAE | Expert Maths Tutoring</title>
+    <meta name="description" content="Elite Education UAE — Expert IB, IGCSE & A-Level Maths tutoring in the UAE. Personalised, results-driven tuition from experienced educators.">
+    <style>
+        :root {
+            --primary: #1a365d;
+            --accent: #2b6cb0;
+            --light: #ebf4ff;
+            --gold: #d69e2e;
+            --white: #ffffff;
+            --text: #2d3748;
+            --muted: #718096;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.6;
+        }
+        header {
+            background: var(--primary);
+            color: var(--white);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .logo { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+        .logo span { color: var(--gold); }
+        nav a { color: var(--white); text-decoration: none; margin-left: 2rem; font-weight: 500; opacity: 0.9; transition: opacity 0.2s; }
+        nav a:hover { opacity: 1; }
+        .hero {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: var(--white);
+            padding: 6rem 2rem;
+            text-align: center;
+        }
+        .hero h1 { font-size: 3rem; font-weight: 800; margin-bottom: 1rem; letter-spacing: -1px; }
+        .hero p { font-size: 1.25rem; opacity: 0.9; max-width: 600px; margin: 0 auto 2rem; }
+        .btn {
+            display: inline-block;
+            padding: 0.875rem 2rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .btn-primary { background: var(--gold); color: var(--primary); }
+        .btn-outline { border: 2px solid var(--white); color: var(--white); margin-left: 1rem; }
+        .section { padding: 5rem 2rem; max-width: 1100px; margin: 0 auto; }
+        .section-title { text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--primary); }
+        .section-subtitle { text-align: center; color: var(--muted); margin-bottom: 3rem; font-size: 1.1rem; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; }
+        .card {
+            background: var(--white);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            transition: box-shadow 0.3s, transform 0.3s;
+        }
+        .card:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.08); transform: translateY(-4px); }
+        .card-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+        .card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; color: var(--primary); }
+        .card p { color: var(--muted); font-size: 0.95rem; }
+        .why { background: var(--light); }
+        .why .section { padding: 5rem 2rem; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 2rem; }
+        .feature { text-align: center; padding: 1.5rem; }
+        .feature-number {
+            display: inline-block; width: 48px; height: 48px; line-height: 48px;
+            border-radius: 50%; background: var(--accent); color: var(--white);
+            font-weight: 700; font-size: 1.25rem; margin-bottom: 1rem;
+        }
+        .feature h3 { margin-bottom: 0.5rem; color: var(--primary); }
+        .feature p { color: var(--muted); font-size: 0.95rem; }
+        .contact { background: var(--primary); color: var(--white); text-align: center; padding: 5rem 2rem; }
+        .contact h2 { font-size: 2rem; margin-bottom: 1rem; }
+        .contact p { opacity: 0.9; margin-bottom: 2rem; font-size: 1.1rem; }
+        .contact-info { display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap; margin-bottom: 2rem; }
+        .contact-item { font-size: 1.1rem; }
+        .contact-item a { color: var(--gold); text-decoration: none; }
+        footer { background: #0f2440; color: var(--muted); text-align: center; padding: 1.5rem; font-size: 0.875rem; }
+        @media (max-width: 768px) {
+            header { flex-direction: column; gap: 1rem; }
+            nav a { margin: 0 0.75rem; }
+            .hero h1 { font-size: 2rem; }
+            .hero p { font-size: 1rem; }
+            .btn-outline { margin-left: 0; margin-top: 0.5rem; }
+            .contact-info { flex-direction: column; gap: 1rem; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo">Elite <span>Education</span></div>
+    <nav>
+        <a href="#subjects">Subjects</a>
+        <a href="#why">Why Us</a>
+        <a href="#contact">Contact</a>
+    </nav>
+</header>
+<section class="hero">
+    <h1>Expert Maths Tutoring in the UAE</h1>
+    <p>Personalised, results-driven tuition for IB, IGCSE, and A-Level students. Build confidence, master concepts, achieve top grades.</p>
+    <a href="#contact" class="btn btn-primary">Get Started</a>
+    <a href="#subjects" class="btn btn-outline">Our Subjects</a>
+</section>
+<section class="section" id="subjects">
+    <h2 class="section-title">What We Teach</h2>
+    <p class="section-subtitle">Specialist maths tuition across the major international curricula</p>
+    <div class="cards">
+        <div class="card">
+            <div class="card-icon">&#x1F4D0;</div>
+            <h3>IB Mathematics</h3>
+            <p>Analysis &amp; Approaches and Applications &amp; Interpretation at both SL and HL. Full IA support included.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4CA;</div>
+            <h3>IGCSE Mathematics</h3>
+            <p>Edexcel (4MA1) and Cambridge (0580/0606) — comprehensive coverage of the full Higher Tier syllabus.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">&#x1F4C8;</div>
+            <h3>A-Level Mathematics</h3>
+            <p>Pure, Statistics, and Mechanics modules. Structured revision plans and past paper practice for exam readiness.</p>
+        </div>
+    </div>
+</section>
+<div class="why" id="why">
+    <div class="section">
+        <h2 class="section-title">Why Elite Education?</h2>
+        <p class="section-subtitle">What sets us apart from the rest</p>
+        <div class="features">
+            <div class="feature">
+                <div class="feature-number">1</div>
+                <h3>Experienced Educators</h3>
+                <p>Qualified teachers with deep subject expertise and a track record of top results.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-number">2</div>
+                <h3>Personalised Approach</h3>
+                <p>Every student gets a tailored learning plan based on their strengths, gaps, and goals.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-number">3</div>
+                <h3>Proven Results</h3>
+                <p>Students consistently achieve grade improvements of 2+ levels within a single term.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-number">4</div>
+                <h3>Flexible Scheduling</h3>
+                <p>Online and in-person sessions available to fit around your school timetable.</p>
+            </div>
+        </div>
+    </div>
+</div>
+<section class="contact" id="contact">
+    <h2>Ready to Start?</h2>
+    <p>Get in touch to book a free consultation and find out how we can help.</p>
+    <div class="contact-info">
+        <div class="contact-item">&#x1F4E7; <a href="mailto:craig@craigobrieneducation.com">craig@craigobrieneducation.com</a></div>
+        <div class="contact-item">&#x1F310; <a href="https://eliteeducation.me" target="_blank">eliteeducation.me</a></div>
+    </div>
+    <a href="mailto:craig@craigobrieneducation.com" class="btn btn-primary">Book a Consultation</a>
+</section>
+<footer>&copy; 2026 Elite Education UAE. All rights reserved.</footer>
+</body>
+</html>
