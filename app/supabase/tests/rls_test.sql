@@ -1,7 +1,5 @@
 -- Row-level security and RPC tests. Run with: npm run test:db (needs a local Postgres 15+).
 \set ON_ERROR_STOP on
-grant usage on schema public to authenticated;
-grant select, insert, update, delete on all tables in schema public to authenticated;
 
 -- Fixture data (as superuser).
 insert into auth.users (id, email) values

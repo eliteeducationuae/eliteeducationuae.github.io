@@ -304,6 +304,14 @@ create policy "see payments" on public.payments for select to authenticated
   using (public.is_admin() or exists (select 1 from public.invoices i where i.id = invoice_id and i.family_id = public.my_family_id()));
 create policy "admin payments" on public.payments for insert to authenticated with check (public.is_admin());
 
+-- Explicit grants, so the app works whether or not "Automatically expose new tables" is enabled.
+-- Signed-in users get table access (row-level security above decides which rows); anonymous visitors get none.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke all on all tables in schema public from anon;
+grant execute on function public.me(), public.is_admin(), public.my_tutor_id(), public.my_family_id(),
+  public.visible_student_ids(), public.can_see_lesson(public.lessons) to authenticated;
+
 -- ---------------------------------------------------------------------------
 -- Billing helpers
 -- ---------------------------------------------------------------------------
@@ -532,3 +540,4 @@ grant execute on function public.set_homework_done(uuid, boolean) to authenticat
 grant execute on function public.invoice_unbilled(uuid) to authenticated;
 grant execute on function public.sell_package(uuid, text, uuid, int, numeric, date) to authenticated;
 grant execute on function public.set_push_token(text) to authenticated;
+grant execute on function public.invoice_total(public.invoices) to authenticated;
