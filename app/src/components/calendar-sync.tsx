@@ -8,16 +8,16 @@ import { useMe } from '@/data/session';
 import { addDays } from '@/domain/dates';
 import { lessonsToICS } from '@/domain/ics';
 import { notify } from '@/lib/confirm';
+import { SUPABASE_URL } from '@/config';
 
 import { Button, Card, Txt } from './ui';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
 /** Add lessons to Apple / Google Calendar. Production uses a live subscription feed; the demo exports a file. */
 export function CalendarSyncCard() {
   const me = useMe();
   const lookup = useLookup();
-  const feedUrl = SUPABASE_URL && me.icsToken ? `${SUPABASE_URL}/functions/v1/ics?token=${me.icsToken}` : null;
+  const feedUrl = source.kind === 'supabase' && me.icsToken ? `${SUPABASE_URL}/functions/v1/ics?token=${me.icsToken}` : null;
 
   async function exportFile() {
     const now = new Date();

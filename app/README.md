@@ -14,15 +14,15 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | Packages | Add-on | Prepaid lesson bundles: credits are used automatically, with low-credit alerts on the dashboard |
 | Calendar | | Day, week and per-tutor timeline views, clash detection when scheduling or moving lessons, and a live Apple/Google Calendar feed |
 
-## Try it now (demo mode)
-
-With no backend configured, the app runs on realistic built-in demo data. Pick a role on the sign-in screen.
+## Run it
 
 ```bash
 cd app
 npm install
 npx expo start         # scan the QR code with Expo Go on your iPhone, or press w for web
 ```
+
+The app connects to the live Supabase project (settings in `src/config.ts`). To explore with realistic sample data instead, start it with `EXPO_PUBLIC_DEMO=1 npx expo start` and pick a role on the sign-in screen.
 
 Demo data is stored on the device. Use **Account → Reset demo data** to start again.
 
@@ -45,7 +45,7 @@ app/
 1. **Supabase** (free tier is fine). Create a project at [supabase.com](https://supabase.com).
    - Run `supabase/migrations/20261002000000_init.sql` in the SQL editor, or use `npx supabase db push`.
    - Create your login under Authentication → Users, then run `supabase/bootstrap.sql` (edit the email first).
-   - Copy `.env.example` to `.env` and fill in the project URL and **anon** key.
+   - The project URL and publishable key are in `src/config.ts`.
 2. **Stripe** (UAE account, for card payments in AED).
    - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://…`
    - `npx supabase functions deploy create-checkout stripe-webhook ics send-reminders`

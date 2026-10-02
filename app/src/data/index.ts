@@ -1,12 +1,8 @@
+import { DEMO_MODE, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '@/config';
+
 import { createDemoSource } from './demo';
 import type { DataSource } from './source';
 import { createSupabaseSource } from './supabase';
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-/**
- * The app talks to Supabase when it is configured (see .env.example), otherwise it runs
- * on the built-in demo data so it can be tried straight away.
- */
-export const source: DataSource = url && anonKey ? createSupabaseSource(url, anonKey) : createDemoSource();
+/** The live Supabase project, or the built-in demo data when EXPO_PUBLIC_DEMO=1. */
+export const source: DataSource = DEMO_MODE ? createDemoSource() : createSupabaseSource(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
