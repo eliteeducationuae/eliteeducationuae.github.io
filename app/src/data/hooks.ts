@@ -86,3 +86,37 @@ export function useLookup(): Lookup {
     };
   }, [tutors.data, students.data, families.data, services.data]);
 }
+
+// Engagement: enquiries, booking, calendar tools, messaging
+
+export const useEnquiries = () => useQuery({ queryKey: ['enquiries'], queryFn: () => source.listEnquiries() });
+export const useAvailability = () => useQuery({ queryKey: ['availability'], queryFn: () => source.listAvailability() });
+export const useClosures = () => useQuery({ queryKey: ['closures'], queryFn: () => source.listClosures() });
+export const useAbsences = () => useQuery({ queryKey: ['absences'], queryFn: () => source.listAbsences() });
+export const useRequests = () => useQuery({ queryKey: ['requests'], queryFn: () => source.listRequests() });
+export const useAnnouncements = () => useQuery({ queryKey: ['announcements'], queryFn: () => source.listAnnouncements() });
+
+/** Conversations refresh every 15 seconds while on screen. */
+export const useThreads = () =>
+  useQuery({ queryKey: ['threads'], queryFn: () => source.listThreads(), refetchInterval: 15_000 });
+
+export const useMessages = (familyId: string | undefined) =>
+  useQuery({
+    queryKey: ['messages', familyId],
+    queryFn: () => source.listMessages(familyId!),
+    enabled: !!familyId,
+    refetchInterval: 10_000,
+  });
+
+export const useOpenSlots = (input: { tutorId?: string; from: string; days: number; durationMin?: number; ignoreLessonId?: string }) =>
+  useQuery({
+    queryKey: ['open-slots', input],
+    queryFn: () => source.openSlots({ ...input, tutorId: input.tutorId!, durationMin: input.durationMin! }),
+    enabled: !!input.tutorId && !!input.durationMin,
+  });
+
+/** Total unread messages, for tab and header badges. */
+export function useUnreadCount(): number {
+  const threads = useThreads();
+  return (threads.data ?? []).reduce((n, t) => n + t.unread, 0);
+}

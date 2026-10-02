@@ -1,7 +1,7 @@
 import { getSyllabus, topicName } from '@/data/curriculum';
 import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
-import type { Invoice, Lesson, Profile, Settings, TopicRating } from '@/domain/types';
+import type { Invoice, Lesson, Message, Profile, Settings, TopicRating } from '@/domain/types';
 
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
 
@@ -46,6 +46,10 @@ export function createSeed(now: Date = new Date()): DemoDB {
     invoiceDueDays: 7,
     nextInvoiceNumber: 1001,
     bankDetails: 'Elite Education — IBAN AE00 0000 0000 0000 0000 000 (demo)',
+    emailLessonNotes: true,
+    emailInvoices: true,
+    emailMessages: true,
+    bookingNoticeHours: 24,
   };
 
   const db: DemoDB = {
@@ -84,6 +88,14 @@ export function createSeed(now: Date = new Date()): DemoDB {
     packages: [],
     charges: [],
     invoices: [],
+    availability: [],
+    closures: [],
+    absences: [],
+    enquiries: [],
+    requests: [],
+    messages: [],
+    reads: {},
+    announcements: [],
   };
 
   const profiles: Profile[] = [
@@ -247,5 +259,69 @@ export function createSeed(now: Date = new Date()): DemoDB {
   });
   db.settings.nextInvoiceNumber += 1;
 
+  seedEngagement(db, now);
   return db;
+}
+
+/** Availability, holidays, enquiries, a pending request, messages and an announcement. */
+function seedEngagement(db: DemoDB, now: Date) {
+  const iso = (d: Date) => d.toISOString();
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+
+  // Weekday afternoons/evenings, Saturday mornings.
+  const blocks: [string, number[], string, string][] = [
+    ['t-craig', [0, 1, 2, 3, 4], '15:00', '20:00'],
+    ['t-sarah', [0, 1, 3, 4], '14:00', '19:00'],
+    ['t-sarah', [5], '09:00', '13:00'],
+    ['t-james', [0, 2, 3, 4], '15:00', '19:00'],
+  ];
+  for (const [tutorId, days, start, end] of blocks) {
+    for (const weekday of days) db.availability.push({ id: `av-${tutorId}-${weekday}-${start}`, tutorId, weekday, start, end });
+  }
+
+  // A long weekend about three weeks out, and the winter break.
+  const holiday = addDays(startOfWeek(now), 21 + 3);
+  db.closures.push(
+    { id: 'clo-1', name: 'National Day long weekend', startDate: toDateKey(holiday), endDate: toDateKey(addDays(holiday, 3)) },
+    { id: 'clo-2', name: 'Winter break', startDate: `${now.getFullYear()}-12-20`, endDate: `${now.getFullYear() + 1}-01-04` },
+  );
+  db.absences.push({ id: 'abs-1', tutorId: 't-james', startDate: toDateKey(addDays(now, 7)), endDate: toDateKey(addDays(now, 8)), reason: 'Conference' });
+
+  // A prospect who signed up in the app, plus enquiries at different stages.
+  db.families.push({ id: 'f-rahman', name: 'Rahman', parentName: 'Rita Rahman', email: 'rita@example.com', phone: '+971 50 000 0005', status: 'prospect', createdAt: iso(hoursAgo(5)) });
+  db.enquiries.push(
+    { id: 'enq-1', createdAt: iso(hoursAgo(5)), status: 'new', source: 'app', parentName: 'Rita Rahman', email: 'rita@example.com', phone: '+971 50 000 0005', studentName: 'Zara', curriculum: 'IGCSE', yearGroup: 'Year 10', message: 'Zara is predicted a 6 and wants an 8. Struggling with algebra and graphs.', preferredTimes: 'Weekday evenings', familyId: 'f-rahman' },
+    { id: 'enq-2', createdAt: iso(hoursAgo(30)), status: 'new', source: 'website', parentName: 'Daniel Okafor', email: 'daniel@example.com', studentName: 'Ada', curriculum: 'IB', yearGroup: 'Year 13', message: 'IA help for Maths AA HL, due in November.', preferredTimes: 'Weekends' },
+    { id: 'enq-3', createdAt: iso(hoursAgo(72)), status: 'contacted', source: 'referral', parentName: 'Sophie Laurent', phone: '+971 55 000 0007', studentName: 'Hugo', curriculum: 'A-Level', yearGroup: 'Year 12', message: 'Referred by the Sharmas.', nextActionAt: toDateKey(addDays(now, 1)), notes: 'Called — wants Tuesday evenings. Send trial options.' },
+    { id: 'enq-4', createdAt: iso(hoursAgo(24 * 9)), status: 'enrolled', source: 'website', parentName: 'Rami Haddad', email: 'rami@example.com', studentName: 'Yasmin & Karim', curriculum: 'IGCSE', familyId: 'f-haddad' },
+    { id: 'enq-5', createdAt: iso(hoursAgo(24 * 14)), status: 'lost', source: 'phone', parentName: 'Mark Evans', phone: '+971 50 000 0009', studentName: 'Lily', curriculum: 'IGCSE', lostReason: 'Went with a school-based tutor' },
+  );
+
+  // Fatima wants an extra lesson for Omar before his mocks.
+  const omarNext = db.lessons.find((l) => l.studentIds.includes('s-omar') && l.status === 'scheduled' && new Date(l.start) > addDays(now, 2));
+  if (omarNext) {
+    const start = new Date(omarNext.start);
+    start.setDate(start.getDate() + 1);
+    start.setHours(17, 0, 0, 0);
+    db.requests.push({
+      id: 'req-1', createdAt: iso(hoursAgo(3)), familyId: 'f-mansoori', studentId: 's-omar', kind: 'new-lesson', tutorId: 't-craig',
+      serviceId: 'svc-ib', start: iso(start), end: iso(new Date(start.getTime() + 3_600_000)), note: 'Extra session before his mocks please', status: 'pending',
+    });
+  }
+
+  // A family conversation and an announcement.
+  const msgs: [number, string, string, Message['senderRole'], string][] = [
+    [50, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Hi Craig, Omar has his mock exams in three weeks. Could we focus on calculus until then?'],
+    [49, 'u-admin', "Craig O'Brien", 'admin', 'Absolutely. I’ll plan the next few sessions around differentiation and integration, with timed past-paper questions.'],
+    [2, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Thank you! I’ve also requested an extra lesson, if there’s space.'],
+  ];
+  for (const [h, senderId, senderName, senderRole, body] of msgs) {
+    db.messages.push({ id: `msg-${h}`, familyId: 'f-mansoori', senderId, senderName, senderRole, body, createdAt: iso(hoursAgo(h)) });
+  }
+  db.reads['u-parent'] = { 'f-mansoori': iso(hoursAgo(2)) };
+  db.messages.push({ id: 'msg-h1', familyId: 'f-haddad', senderId: 'u-tutor', senderName: 'Sarah Khan', senderRole: 'tutor', body: 'Great group session today. Yasmin and Karim both nailed simultaneous equations.', createdAt: iso(hoursAgo(20)) });
+  db.announcements.push({
+    id: 'ann-1', createdAt: iso(hoursAgo(26)), authorName: "Craig O'Brien", audience: 'everyone',
+    title: 'Mock exam season', body: 'Mocks start soon for most schools. Ask your tutor for a personalised revision plan, and request extra sessions in the app.',
+  });
 }

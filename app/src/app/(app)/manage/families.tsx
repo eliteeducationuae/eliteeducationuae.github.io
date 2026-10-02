@@ -17,14 +17,14 @@ export default function Families() {
         <Loading />
       ) : (
         <View style={{ gap: Spacing.two }}>
-          {(families.data ?? []).map((f) => {
+          {[...(families.data ?? [])].sort((a, b) => Number(a.status === 'archived') - Number(b.status === 'archived') || a.name.localeCompare(b.name)).map((f) => {
             const kids = (students.data ?? []).filter((s) => s.familyId === f.id).map((s) => s.fullName.split(' ')[0]);
             const credits = (packages.data ?? []).filter((p) => p.familyId === f.id).reduce((n, p) => n + packageRemaining(p), 0);
             return (
               <ListItem
                 key={f.id}
                 title={`${f.name} family`}
-                subtitle={`${f.parentName} · ${kids.join(', ') || 'no students yet'}${credits ? ` · ${credits} lesson credits` : ''}`}
+                subtitle={`${f.status === 'prospect' ? 'Prospect · ' : f.status === 'archived' ? 'Archived · ' : ''}${f.parentName} · ${kids.join(', ') || 'no students yet'}${credits ? ` · ${credits} lesson credits` : ''}`}
                 left={<Avatar name={f.parentName} />}
                 right={<Badge label={logins.has(f.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />}
                 onPress={() => router.push({ pathname: '/manage/family-edit', params: { id: f.id } })}

@@ -53,7 +53,15 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
       <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
       <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <LoginHint email={email} who="tutor" />
+      <LoginHint email={email} who="tutor" name={fullName} />
+      {existing ? (
+        <Button
+          title="Availability & time off"
+          icon="clock"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}
+        />
+      ) : null}
       <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
       <Section title="Teaches">
         <Row gap={Spacing.one} wrap>

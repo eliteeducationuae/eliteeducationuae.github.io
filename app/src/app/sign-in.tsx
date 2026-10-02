@@ -1,4 +1,4 @@
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 
@@ -17,36 +17,35 @@ const ROLE_INFO: Record<Role, { label: string; icon: IconName; blurb: string }> 
   student: { label: 'Student', icon: 'book', blurb: 'Your lessons, homework and progress' },
 };
 
+type Mode = 'sign-in' | 'sign-up' | 'verify' | 'reset';
+
 export default function SignIn() {
   const theme = useTheme();
-  const { status, signIn, signUp } = useSession();
-  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>('sign-in');
+  const { status, signIn, signUp, confirmSignUp } = useSession();
+  const [mode, setMode] = useState<Mode>('sign-in');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   if (status === 'signed-in') return <Redirect href="/" />;
 
-  async function go(e = email, p = password) {
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setError(null);
+    setMessage(null);
+  };
+
+  async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      if (mode === 'sign-up') {
-        if (p.length < 8) throw new Error('Choose a password of at least 8 characters.');
-        if ((await signUp(e, p)) === 'confirm-email') {
-          setMessage(`We’ve emailed a confirmation link to ${e.trim()}. Tap it, then come back and sign in.`);
-          setMode('sign-in');
-        }
-      } else if (mode === 'reset') {
-        await source.resetPassword?.(e);
-        setMessage(`If ${e.trim()} has an account, a password reset link is on its way.`);
-        setMode('sign-in');
-      } else {
-        await signIn(e, p);
-      }
+      await action();
     } catch (err) {
       setError(err);
     } finally {
@@ -54,11 +53,42 @@ export default function SignIn() {
     }
   }
 
+  const submit = () =>
+    run(async () => {
+      if (mode === 'sign-in') return signIn(email, password);
+      if (mode === 'reset') {
+        await source.resetPassword?.(email);
+        setMessage(`If ${email.trim()} has an account, a password reset link is on its way.`);
+        setMode('sign-in');
+        return;
+      }
+      if (mode === 'verify') return confirmSignUp(email, code);
+      // sign-up
+      if (!fullName.trim()) throw new Error('Please enter your name.');
+      if (password.length < 8) throw new Error('Choose a password of at least 8 characters.');
+      if ((await signUp(email, password, { fullName, phone })) === 'confirm-email') setMode('verify');
+    });
+
   const demo = source.demoAccounts?.();
-  const switchMode = (m: typeof mode) => {
-    setMode(m);
-    setError(null);
-    setMessage(null);
+  const ready =
+    mode === 'sign-in'
+      ? email && password
+      : mode === 'sign-up'
+        ? fullName && email && password
+        : mode === 'verify'
+          ? /^\d{6}$/.test(code.trim())
+          : email;
+  const titles: Record<Mode, string> = {
+    'sign-in': 'Sign in',
+    'sign-up': 'Create your account',
+    verify: 'Check your email',
+    reset: 'Reset password',
+  };
+  const actions: Record<Mode, string> = {
+    'sign-in': 'Sign in',
+    'sign-up': 'Create account',
+    verify: 'Confirm and continue',
+    reset: 'Send reset link',
   };
 
   return (
@@ -71,7 +101,7 @@ export default function SignIn() {
           <Txt style={{ color: '#ffffffcc' }}>Expert IB, IGCSE &amp; A-Level maths tutoring in the UAE</Txt>
         </View>
 
-        {demo ? (
+        {demo && mode === 'sign-in' ? (
           <View style={{ gap: Spacing.two }}>
             <Banner icon="sparkle">
               Demo mode: explore with realistic sample data. Pick a role to sign in, and nothing you do here is sent anywhere.
@@ -82,55 +112,103 @@ export default function SignIn() {
                 title={`${ROLE_INFO[p.role].label} · ${p.fullName}`}
                 subtitle={ROLE_INFO[p.role].blurb}
                 left={<Icon name={ROLE_INFO[p.role].icon} size={22} color={theme.accent} />}
-                onPress={() => go(p.email, '')}
+                onPress={() => run(() => signIn(p.email, ''))}
               />
             ))}
+            <Button title="Try signing up as a new parent" variant="ghost" onPress={() => switchMode('sign-up')} />
             <ErrorNote error={error} />
           </View>
         ) : (
           <Card style={{ gap: Spacing.three }}>
-            <Txt variant="h2">{mode === 'sign-up' ? 'Create your account' : mode === 'reset' ? 'Reset password' : 'Sign in'}</Txt>
+            <Txt variant="h2">{titles[mode]}</Txt>
             {mode === 'sign-up' ? (
-              <Txt variant="muted">Use the email address you gave Elite Education, so we can link you to your family or tutor profile.</Txt>
+              <Txt variant="muted">
+                New to Elite Education? Create an account to book a free consultation, message us and follow your child’s
+                progress. Existing families and tutors: use the email address Elite Education has for you.
+              </Txt>
             ) : null}
-            {message ? <Banner tone="success" icon="check">{message}</Banner> : null}
-            <Field
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-            />
-            {mode !== 'reset' ? (
+            {mode === 'verify' ? (
+              <Txt variant="muted">We’ve sent a 6-digit code to {email.trim()}. Enter it below (or tap the link in the email).</Txt>
+            ) : null}
+            {message ? (
+              <Banner tone="success" icon="check">
+                {message}
+              </Banner>
+            ) : null}
+
+            {mode === 'sign-up' ? (
+              <>
+                <Field label="Your name" value={fullName} onChangeText={setFullName} autoCapitalize="words" autoComplete="name" textContentType="name" />
+                <Field label="Mobile / WhatsApp (optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" />
+              </>
+            ) : null}
+            {mode !== 'verify' ? (
               <Field
-                label="Password"
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoComplete="email"
+                keyboardType="email-address"
+                textContentType="emailAddress"
+              />
+            ) : (
+              <Field
+                label="6-digit code"
+                value={code}
+                onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                onSubmitEditing={submit}
+              />
+            )}
+            {mode === 'sign-in' || mode === 'sign-up' ? (
+              <Field
+                label={mode === 'sign-up' ? 'Choose a password (8+ characters)' : 'Password'}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
                 autoComplete={mode === 'sign-up' ? 'new-password' : 'password'}
                 textContentType={mode === 'sign-up' ? 'newPassword' : 'password'}
-                onSubmitEditing={() => go()}
+                onSubmitEditing={submit}
               />
             ) : null}
+
             <ErrorNote error={error} />
-            <Button
-              title={mode === 'sign-up' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}
-              onPress={() => go()}
-              loading={busy}
-              disabled={!email || (mode !== 'reset' && !password)}
-            />
+            <Button title={actions[mode]} variant={mode === 'sign-up' ? 'gold' : 'primary'} onPress={submit} loading={busy} disabled={!ready} />
+
             {mode === 'sign-in' ? (
               <>
                 <Button title="New here? Create an account" variant="ghost" onPress={() => switchMode('sign-up')} />
                 <Button title="Forgot password?" variant="ghost" size="sm" onPress={() => switchMode('reset')} />
+              </>
+            ) : mode === 'verify' ? (
+              <>
+                <Button
+                  title="Send the code again"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() =>
+                    run(async () => {
+                      await source.resendSignUpCode?.(email);
+                      setMessage('A new code is on its way.');
+                    })
+                  }
+                />
+                <Button title="Already confirmed? Sign in" variant="ghost" size="sm" onPress={() => switchMode('sign-in')} />
               </>
             ) : (
               <Button title="Back to sign in" variant="ghost" onPress={() => switchMode('sign-in')} />
             )}
           </Card>
         )}
+
+        <Card style={{ gap: Spacing.two }}>
+          <Txt variant="h3">Just want to ask a question?</Txt>
+          <Txt variant="muted">Send us an enquiry and we’ll get back to you within one working day. No account needed.</Txt>
+          <Button title="Send an enquiry" icon="doc" variant="secondary" onPress={() => router.push('/enquire')} />
+        </Card>
       </Screen>
     </KeyboardAvoidingView>
   );

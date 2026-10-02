@@ -3,12 +3,15 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { useLessons, useLookup, useTutors } from '@/data/hooks';
-import { addDays, formatDay, formatMonth, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
-import { byStart } from '@/domain/scheduling';
+import { source } from '@/data';
+import { useAction, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
+import { addDays, formatDay, formatMonth, formatTime, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
+import { byStart, findClashes, isClosed } from '@/domain/scheduling';
+import type { Lesson } from '@/domain/types';
+import { confirm } from '@/lib/confirm';
 
 import { DayTimeline, LessonCard, WeekStrip } from './lessons';
-import { Button, Chip, EmptyState, Loading, Row, Screen, Segmented, Txt } from './ui';
+import { Banner, Button, Chip, EmptyState, ErrorNote, Loading, Row, Screen, Segmented, Txt } from './ui';
 
 /**
  * Week strip + day agenda / tutor timeline / week list. Used by admins (all tutors, can schedule)
@@ -22,6 +25,22 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const [tutorFilter, setTutorFilter] = useState<string | null>(null);
   const weekStart = startOfWeek(selected);
   const lessons = useLessons(weekStart, addDays(weekStart, 7));
+  const closures = useClosures();
+  const move = useAction(source.rescheduleLesson);
+  const closed = (closures.data ?? []).find((c) => isClosed(selected, [c]));
+
+  /** Drag-to-reschedule on the tutor timeline (admins only). */
+  function moveLesson(lesson: Lesson, deltaMin: number) {
+    const start = new Date(new Date(lesson.start).getTime() + deltaMin * 60_000);
+    const end = new Date(new Date(lesson.end).getTime() + deltaMin * 60_000);
+    const clashes = findClashes({ start, end, tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id }, lessons.data ?? []);
+    confirm(
+      `Move ${lookup.studentNames(lesson.studentIds)}’s lesson?`,
+      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\n⚠ This clashes with another lesson.' : ''}`,
+      () => move.mutate([lesson.id, start.toISOString(), end.toISOString()]),
+      'Move',
+    );
+  }
 
   const all = (lessons.data ?? []).filter((l) => !tutorFilter || l.tutorId === tutorFilter).sort(byStart);
   const counts = new Map<string, number>();
@@ -80,10 +99,19 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
         </Row>
       ) : null}
 
+      {closed ? (
+        <Banner icon="sun">
+          {closed.name}: no new lessons are scheduled on these dates.
+        </Banner>
+      ) : null}
+      <ErrorNote error={move.error} />
       {lessons.isLoading || !lookup.ready ? (
         <Loading />
       ) : view === 'timeline' ? (
-        <DayTimeline day={selected} lessons={dayLessons} lookup={lookup} tutorIds={tutorIds} />
+        <View style={{ gap: Spacing.two }}>
+          {canSchedule ? <Txt variant="small">Tip: press and hold a lesson, then drag to move it.</Txt> : null}
+          <DayTimeline day={selected} lessons={dayLessons} lookup={lookup} tutorIds={tutorIds} onMove={canSchedule ? moveLesson : undefined} />
+        </View>
       ) : view === 'day' ? (
         <View style={{ gap: Spacing.two }}>
           <Txt variant="label">{formatDay(selected)}</Txt>

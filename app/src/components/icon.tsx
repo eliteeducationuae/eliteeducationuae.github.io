@@ -35,6 +35,13 @@ const ICONS = {
   sparkle: { ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' },
   tag: { ios: 'tag.fill', android: 'sell', web: 'sell' },
   repeat: { ios: 'repeat', android: 'repeat', web: 'repeat' },
+  chat: { ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' },
+  megaphone: { ios: 'megaphone.fill', android: 'campaign', web: 'campaign' },
+  inbox: { ios: 'tray.full.fill', android: 'inbox', web: 'inbox' },
+  sun: { ios: 'sun.max.fill', android: 'beach_access', web: 'beach_access' },
+  phone: { ios: 'phone.fill', android: 'call', web: 'call' },
+  mail: { ios: 'envelope.fill', android: 'mail', web: 'mail' },
+  drag: { ios: 'arrow.up.and.down', android: 'drag_indicator', web: 'drag_indicator' },
 } satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

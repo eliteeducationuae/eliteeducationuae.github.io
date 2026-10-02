@@ -5,10 +5,10 @@ import { View } from 'react-native';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
+import { useAction, useClosures, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey } from '@/domain/dates';
-import { expandWeekly, findClashes } from '@/domain/scheduling';
+import { expandWeeklySkipping, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
 import { uuid } from '@/lib/id';
 
@@ -37,7 +37,11 @@ export default function NewLesson() {
   const service = serviceId ? lookup.service(serviceId) : undefined;
   const start = fromDateAndTime(date, time);
   const n = repeat === 'once' ? 1 : Math.max(1, Math.min(52, parseInt(count, 10) || 1));
-  const slots = start && service ? expandWeekly({ start, durationMin: service.durationMin, intervalWeeks: repeat === 'fortnightly' ? 2 : 1, count: n }) : [];
+  const closures = useClosures();
+  const { slots, skipped } =
+    start && service
+      ? expandWeeklySkipping({ start, durationMin: service.durationMin, intervalWeeks: repeat === 'fortnightly' ? 2 : 1, count: n }, closures.data ?? [])
+      : { slots: [], skipped: [] };
   // Keep query keys stable between renders (no `new Date()` that changes every millisecond).
   const rangeStart = slots.length ? startOfDay(slots[0].start) : startOfDay(initial);
   const rangeEnd = addDays(slots.length ? startOfDay(slots[slots.length - 1].end) : rangeStart, 1);
@@ -152,6 +156,11 @@ export default function NewLesson() {
 
       {slots.length > 0 ? (
         <Section title={`Preview · ${slots.length} lesson${slots.length === 1 ? '' : 's'}`}>
+          {skipped.length ? (
+            <Banner icon="sun">
+              Skipping {skipped.map((d) => formatDay(d)).join(', ')} (holiday{skipped.length === 1 ? '' : 's'}).
+            </Banner>
+          ) : null}
           {clashes.length ? (
             <Banner tone="warning" icon="alert">
               {clashes.length} clash{clashes.length === 1 ? '' : 'es'} found. Check the dates below before scheduling.

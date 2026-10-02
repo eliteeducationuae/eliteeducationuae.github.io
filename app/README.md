@@ -12,7 +12,11 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | Parents | Invoices and a portal | Upcoming lessons, lesson notes, child progress, PDF progress reports and invoices paid by card in AED |
 | Cancellations | Manual | Your 24-hour policy is applied automatically. Parents see the fee before confirming; tutor cancellations never charge families; admins can waive fees. |
 | Packages | Add-on | Prepaid lesson bundles: credits are used automatically, with low-credit alerts on the dashboard |
-| Calendar | | Day, week and per-tutor timeline views, clash detection when scheduling or moving lessons, and a live Apple/Google Calendar feed |
+| Calendar | | Day, week and per-tutor timeline views, drag-to-reschedule, clash detection, holidays that recurring lessons skip, tutor time off with cover suggestions, and a live Apple/Google Calendar feed |
+| Sign-up | Admin creates every account | Parents sign up themselves (6-digit email code), add their children and request a free consultation; existing families and tutors are linked automatically by email |
+| Enquiries | Separate CRM | Built-in pipeline (new → contacted → trial booked → enrolled / lost) fed by the website form, the app and logged phone calls |
+| Booking | Admin books everything | Parents pick a real open slot from the tutor's availability to request an extra lesson or a move; one-tap approval creates or moves the lesson |
+| Messaging | Email only | A conversation per family with you and their tutors, announcements, and automatic emails + push for notes, invoices, messages and booking decisions |
 
 ## Run it
 
@@ -48,7 +52,7 @@ app/
    - The project URL and publishable key are in `src/config.ts`.
 2. **Stripe** (UAE account, for card payments in AED).
    - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://…`
-   - `npx supabase functions deploy create-checkout stripe-webhook ics send-reminders`
+   - `npx supabase functions deploy create-checkout stripe-webhook ics send-reminders send-notifications`
    - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for `checkout.session.completed`.
    - Schedule `send-reminders` to run hourly (Supabase → Edge Functions → Schedules).
 3. **App Store.** This needs an Apple Developer account ($99/yr). No Mac is required.
@@ -59,6 +63,31 @@ app/
    ```
 
 Secrets never go in the app or this repo. The anon key is safe to ship because row-level security decides what each person can see.
+
+## Turning on the newer features
+
+Run these once in the Supabase SQL editor, in order, if you haven't already:
+`supabase/migrations/20261003000000_auto_link_logins.sql`, then `supabase/migrations/20261004000000_engagement.sql`.
+
+**Sign-up codes.** In Supabase → Authentication → Emails → *Confirm signup*, add the code to the email so parents can type it into the app:
+
+```html
+<h2>Welcome to Elite Education</h2>
+<p>Your code is <strong style="font-size:22px;letter-spacing:4px">{{ .Token }}</strong></p>
+<p>Or <a href="{{ .ConfirmationURL }}">confirm your email here</a>.</p>
+```
+
+**Emails and push notifications.** Messages, lesson notes, invoices, enquiries and booking decisions are queued in the database and delivered by the `send-notifications` Edge Function:
+
+1. Create a free [Resend](https://resend.com) account and verify the `eliteeducation.me` domain.
+2. `npx supabase secrets set RESEND_API_KEY=re_… EMAIL_FROM="Elite Education <hello@eliteeducation.me>" APP_URL=https://eliteeducation.me`
+3. `npx supabase functions deploy send-notifications`, then schedule it every minute (Supabase → Edge Functions → Schedules).
+
+Until this is set up, everything still works in the app; the emails simply wait in the queue.
+
+**Website enquiries.** The "Book a free consultation" form on eliteeducation.me posts straight into the enquiry pipeline.
+
+**Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
 ## Checks
 

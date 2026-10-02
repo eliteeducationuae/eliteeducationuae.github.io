@@ -1,6 +1,16 @@
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Announcement,
+  Audience,
+  Availability,
   AttendanceMark,
+  Closure,
+  Enquiry,
+  FamilyStatus,
+  LessonRequest,
+  Message,
+  Thread,
+  TutorAbsence,
   Charge,
   Family,
   Homework,
@@ -56,8 +66,12 @@ export interface DataSource {
   demoAccounts?(): Profile[];
   /** Demo only: wipe and reseed. */
   resetDemo?(): Promise<void>;
-  /** Create a login. Returns 'confirm-email' if the person must click the link in their inbox first. */
-  signUp?(email: string, password: string): Promise<'signed-in' | 'confirm-email'>;
+  /** Create a parent login. Returns 'confirm-email' if they must confirm with the emailed code first. */
+  signUp?(email: string, password: string, details: SignUpDetails): Promise<'signed-in' | 'confirm-email'>;
+  /** Confirm a sign-up with the 6-digit code from the email. */
+  verifySignUpCode?(email: string, code: string): Promise<void>;
+  /** Email the sign-up code again. */
+  resendSignUpCode?(email: string): Promise<void>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */
@@ -103,4 +117,71 @@ export interface DataSource {
   setInvoiceStatus(id: string, status: InvoiceStatus): Promise<void>;
   recordPayment(invoiceId: string, amount: number, method: PaymentMethod, reference?: string): Promise<void>;
   startCardPayment(invoiceId: string): Promise<CardPaymentResult>;
+
+  // Families: self-service and pipeline
+  addMyChild(child: NewChild): Promise<void>;
+  setFamilyStatus(familyId: string, status: FamilyStatus): Promise<void>;
+  submitEnquiry(enquiry: NewEnquiry): Promise<void>;
+  listEnquiries(): Promise<Enquiry[]>;
+  updateEnquiry(id: string, patch: Partial<Omit<Enquiry, 'id' | 'createdAt'>>): Promise<void>;
+
+  // Availability, closures, absences, booking
+  listAvailability(): Promise<Availability[]>;
+  /** Replace all of a tutor's weekly availability. */
+  setAvailability(tutorId: string, blocks: Omit<Availability, 'id' | 'tutorId'>[]): Promise<void>;
+  listClosures(): Promise<Closure[]>;
+  saveClosure(closure: Omit<Closure, 'id'> & { id?: string }): Promise<void>;
+  deleteClosure(id: string): Promise<void>;
+  listAbsences(): Promise<TutorAbsence[]>;
+  saveAbsence(absence: Omit<TutorAbsence, 'id'> & { id?: string }): Promise<void>;
+  deleteAbsence(id: string): Promise<void>;
+  openSlots(input: { tutorId: string; from: string; days: number; durationMin: number; ignoreLessonId?: string }): Promise<{ start: string; end: string }[]>;
+  listRequests(): Promise<LessonRequest[]>;
+  requestLesson(input: NewLessonRequest): Promise<void>;
+  decideRequest(id: string, approve: boolean, response?: string): Promise<void>;
+  withdrawRequest(id: string): Promise<void>;
+  reassignLesson(lessonId: string, tutorId: string): Promise<void>;
+
+  // Messaging
+  listThreads(): Promise<Thread[]>;
+  listMessages(familyId: string): Promise<Message[]>;
+  sendMessage(familyId: string, body: string): Promise<void>;
+  markThreadRead(familyId: string): Promise<void>;
+  listAnnouncements(): Promise<Announcement[]>;
+  postAnnouncement(a: { title: string; body: string; audience: Audience }): Promise<void>;
+}
+
+export interface SignUpDetails {
+  fullName: string;
+  phone?: string;
+}
+
+export interface NewChild {
+  fullName: string;
+  curriculum: Student['curriculum'];
+  syllabusId: string;
+  school?: string;
+  yearGroup?: string;
+}
+
+export interface NewEnquiry {
+  parentName: string;
+  email?: string;
+  phone?: string;
+  studentName?: string;
+  curriculum?: string;
+  yearGroup?: string;
+  message?: string;
+  preferredTimes?: string;
+  source?: Enquiry['source'];
+}
+
+export interface NewLessonRequest {
+  studentId: string;
+  kind: LessonRequest['kind'];
+  lessonId?: string;
+  tutorId: string;
+  serviceId: string;
+  start: string;
+  note?: string;
 }

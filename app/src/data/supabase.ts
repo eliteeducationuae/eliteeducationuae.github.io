@@ -6,7 +6,15 @@ import { Platform } from 'react-native';
 
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Announcement,
+  Availability,
   Charge,
+  Closure,
+  Enquiry,
+  LessonRequest,
+  Message,
+  Thread,
+  TutorAbsence,
   Family,
   Homework,
   Invoice,
@@ -55,6 +63,11 @@ const toSettings = (r: Row): Settings => ({
   invoiceDueDays: r.invoice_due_days,
   nextInvoiceNumber: r.next_invoice_number,
   bankDetails: r.bank_details ?? undefined,
+  notifyEmail: r.notify_email ?? undefined,
+  emailLessonNotes: r.email_lesson_notes ?? true,
+  emailInvoices: r.email_invoices ?? true,
+  emailMessages: r.email_messages ?? true,
+  bookingNoticeHours: r.booking_notice_hours ?? 24,
 });
 
 const fromSettings = (s: Partial<Settings>): Row =>
@@ -67,6 +80,11 @@ const fromSettings = (s: Partial<Settings>): Row =>
     pay_tutor_for_late_cancel: s.payTutorForLateCancel,
     invoice_due_days: s.invoiceDueDays,
     bank_details: s.bankDetails,
+    notify_email: s.notifyEmail,
+    email_lesson_notes: s.emailLessonNotes,
+    email_invoices: s.emailInvoices,
+    email_messages: s.emailMessages,
+    booking_notice_hours: s.bookingNoticeHours,
   });
 
 const toTutor = (r: Row): Tutor => ({
@@ -85,7 +103,49 @@ const toFamily = (r: Row): Family => ({
   parentName: r.parent_name,
   email: r.email,
   phone: r.phone ?? undefined,
+  status: r.status ?? 'active',
+  createdAt: r.created_at ?? undefined,
 });
+
+const toEnquiry = (r: Row): Enquiry => ({
+  id: r.id,
+  createdAt: r.created_at,
+  status: r.status,
+  source: r.source,
+  parentName: r.parent_name,
+  email: r.email ?? undefined,
+  phone: r.phone ?? undefined,
+  studentName: r.student_name ?? undefined,
+  curriculum: r.curriculum ?? undefined,
+  yearGroup: r.year_group ?? undefined,
+  message: r.message ?? undefined,
+  preferredTimes: r.preferred_times ?? undefined,
+  familyId: r.family_id ?? undefined,
+  studentId: r.student_id ?? undefined,
+  trialLessonId: r.trial_lesson_id ?? undefined,
+  nextActionAt: r.next_action_at ?? undefined,
+  notes: r.notes ?? undefined,
+  lostReason: r.lost_reason ?? undefined,
+});
+
+const toRequest = (r: Row): LessonRequest => ({
+  id: r.id,
+  createdAt: r.created_at,
+  familyId: r.family_id,
+  studentId: r.student_id,
+  kind: r.kind,
+  lessonId: r.lesson_id ?? undefined,
+  tutorId: r.tutor_id,
+  serviceId: r.service_id,
+  start: new Date(r.start_at).toISOString(),
+  end: new Date(r.end_at).toISOString(),
+  note: r.note ?? undefined,
+  status: r.status,
+  response: r.response ?? undefined,
+  decidedAt: r.decided_at ?? undefined,
+});
+
+const hhmm = (t: string) => t.slice(0, 5);
 
 const toStudent = (r: Row): Student => ({
   id: r.id,
@@ -230,9 +290,21 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       await client.rpc('set_push_token', { p_token: null }).then(undefined, () => undefined);
       await client.auth.signOut();
     },
-    async signUp(email, password) {
-      const data = check(await client.auth.signUp({ email: email.trim(), password }));
+    async signUp(email, password, details) {
+      const data = check(
+        await client.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { signup: 'parent', full_name: details.fullName.trim(), phone: details.phone?.trim() } },
+        }),
+      );
       return data.session ? 'signed-in' : 'confirm-email';
+    },
+    async verifySignUpCode(email, code) {
+      check(await client.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'signup' }));
+    },
+    async resendSignUpCode(email) {
+      check(await client.auth.resend({ type: 'signup', email: email.trim() }));
     },
     async resetPassword(email) {
       check(await client.auth.resetPasswordForEmail(email.trim()));
@@ -313,7 +385,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return toTutor(check(await client.from('tutors').upsert(row).select().single()));
     },
     async saveFamily(f) {
-      const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone });
+      const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone, status: f.status });
       return toFamily(check(await client.from('families').upsert(row).select().single()));
     },
     async saveStudent(s) {
@@ -404,6 +476,184 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async recordPayment(invoiceId, amount, method, reference) {
       check(await client.from('payments').insert(strip({ invoice_id: invoiceId, amount, method, reference })));
+    },
+    async addMyChild(c) {
+      check(
+        await client.rpc('add_my_child', {
+          p_full_name: c.fullName,
+          p_curriculum: c.curriculum,
+          p_syllabus_id: c.syllabusId,
+          p_school: c.school ?? null,
+          p_year_group: c.yearGroup ?? null,
+        }),
+      );
+    },
+    async setFamilyStatus(familyId, status) {
+      check(await client.from('families').update({ status }).eq('id', familyId));
+    },
+    async submitEnquiry(e) {
+      check(
+        await client.rpc('submit_enquiry', {
+          p_parent_name: e.parentName,
+          p_email: e.email ?? null,
+          p_phone: e.phone ?? null,
+          p_student_name: e.studentName ?? null,
+          p_curriculum: e.curriculum ?? null,
+          p_year_group: e.yearGroup ?? null,
+          p_message: e.message ?? null,
+          p_preferred_times: e.preferredTimes ?? null,
+          p_source: e.source ?? 'app',
+        }),
+      );
+    },
+    async listEnquiries() {
+      return check(await client.from('enquiries').select('*').order('created_at', { ascending: false })).map(toEnquiry);
+    },
+    async updateEnquiry(id, p) {
+      const row = strip({
+        status: p.status,
+        source: p.source,
+        parent_name: p.parentName,
+        email: p.email,
+        phone: p.phone,
+        student_name: p.studentName,
+        curriculum: p.curriculum,
+        year_group: p.yearGroup,
+        message: p.message,
+        preferred_times: p.preferredTimes,
+        family_id: p.familyId,
+        student_id: p.studentId,
+        trial_lesson_id: p.trialLessonId,
+        next_action_at: p.nextActionAt,
+        notes: p.notes,
+        lost_reason: p.lostReason,
+      });
+      check(await client.from('enquiries').update(row).eq('id', id));
+    },
+
+    async listAvailability() {
+      const rows = check(await client.from('availability').select('*').order('weekday').order('start_time'));
+      return rows.map((r: Row): Availability => ({ id: r.id, tutorId: r.tutor_id, weekday: r.weekday, start: hhmm(r.start_time), end: hhmm(r.end_time) }));
+    },
+    async setAvailability(tutorId, blocks) {
+      check(await client.from('availability').delete().eq('tutor_id', tutorId));
+      if (blocks.length) {
+        check(
+          await client
+            .from('availability')
+            .insert(blocks.map((b) => ({ tutor_id: tutorId, weekday: b.weekday, start_time: b.start, end_time: b.end }))),
+        );
+      }
+    },
+    async listClosures() {
+      const rows = check(await client.from('closures').select('*').order('start_date'));
+      return rows.map((r: Row): Closure => ({ id: r.id, name: r.name, startDate: r.start_date, endDate: r.end_date }));
+    },
+    async saveClosure(c) {
+      check(await client.from('closures').upsert(strip({ id: c.id, name: c.name, start_date: c.startDate, end_date: c.endDate })));
+    },
+    async deleteClosure(id) {
+      check(await client.from('closures').delete().eq('id', id));
+    },
+    async listAbsences() {
+      const rows = check(await client.from('tutor_absences').select('*').order('start_date'));
+      return rows.map(
+        (r: Row): TutorAbsence => ({ id: r.id, tutorId: r.tutor_id, startDate: r.start_date, endDate: r.end_date, reason: r.reason ?? undefined }),
+      );
+    },
+    async saveAbsence(a) {
+      check(
+        await client
+          .from('tutor_absences')
+          .upsert(strip({ id: a.id, tutor_id: a.tutorId, start_date: a.startDate, end_date: a.endDate, reason: a.reason })),
+      );
+    },
+    async deleteAbsence(id) {
+      check(await client.from('tutor_absences').delete().eq('id', id));
+    },
+    async openSlots(i) {
+      // The database works in Dubai local dates.
+      const from = new Date(i.from).toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+      const rows = check(
+        await client.rpc('open_slots', {
+          p_tutor_id: i.tutorId,
+          p_from: from,
+          p_days: i.days,
+          p_duration_min: i.durationMin,
+          p_ignore_lesson: i.ignoreLessonId ?? null,
+        }),
+      );
+      return rows.map((r: Row) => ({ start: new Date(r.start_at).toISOString(), end: new Date(r.end_at).toISOString() }));
+    },
+    async listRequests() {
+      return check(await client.from('lesson_requests').select('*').order('created_at', { ascending: false })).map(toRequest);
+    },
+    async requestLesson(r) {
+      check(
+        await client.rpc('request_lesson', {
+          p_student_id: r.studentId,
+          p_kind: r.kind,
+          p_lesson_id: r.lessonId ?? null,
+          p_tutor_id: r.tutorId,
+          p_service_id: r.serviceId,
+          p_start: r.start,
+          p_note: r.note ?? null,
+        }),
+      );
+    },
+    async decideRequest(id, approve, response) {
+      check(await client.rpc('decide_request', { p_id: id, p_approve: approve, p_response: response ?? null }));
+    },
+    async withdrawRequest(id) {
+      check(await client.rpc('withdraw_request', { p_id: id }));
+    },
+    async reassignLesson(lessonId, tutorId) {
+      check(await client.rpc('reassign_lesson', { p_lesson_id: lessonId, p_tutor_id: tutorId }));
+    },
+
+    async listThreads() {
+      const rows = check(await client.rpc('my_threads'));
+      return rows.map(
+        (r: Row): Thread => ({
+          familyId: r.family_id,
+          familyName: r.family_name,
+          parentName: r.parent_name,
+          lastBody: r.last_body ?? undefined,
+          lastSender: r.last_sender ?? undefined,
+          lastAt: r.last_at ?? undefined,
+          unread: r.unread ?? 0,
+        }),
+      );
+    },
+    async listMessages(familyId) {
+      const rows = check(await client.from('messages').select('*').eq('family_id', familyId).order('created_at').limit(500));
+      return rows.map(
+        (r: Row): Message => ({
+          id: r.id,
+          familyId: r.family_id,
+          senderId: r.sender_id ?? undefined,
+          senderName: r.sender_name,
+          senderRole: r.sender_role,
+          body: r.body,
+          createdAt: r.created_at,
+        }),
+      );
+    },
+    async sendMessage(familyId, body) {
+      check(await client.rpc('send_message', { p_family_id: familyId, p_body: body }));
+    },
+    async markThreadRead(familyId) {
+      check(await client.rpc('mark_thread_read', { p_family_id: familyId }));
+    },
+    async listAnnouncements() {
+      const rows = check(await client.from('announcements').select('*').order('created_at', { ascending: false }).limit(50));
+      return rows.map(
+        (r: Row): Announcement => ({ id: r.id, createdAt: r.created_at, authorName: r.author_name, title: r.title, body: r.body, audience: r.audience }),
+      );
+    },
+    async postAnnouncement(a) {
+      const me = await loadProfile();
+      check(await client.from('announcements').insert({ author_name: me?.fullName ?? 'Elite Education', title: a.title.trim(), body: a.body.trim(), audience: a.audience }));
     },
     async startCardPayment(invoiceId) {
       const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };

@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import type { Lookup } from '@/data/hooks';
@@ -149,16 +150,91 @@ export function WeekStrip({
 const HOUR_HEIGHT = 56;
 
 /** Day timeline with one column per tutor — the at-a-glance view of who is teaching when. */
+/** Snap a vertical drag distance to 15-minute steps. */
+export function dragToMinutes(dy: number): number {
+  return Math.round(((dy / HOUR_HEIGHT) * 60) / 15) * 15;
+}
+
+/**
+ * A lesson on the timeline. Tap to open; when `onMove` is given, press and hold, then drag up or
+ * down to move it in 15-minute steps.
+ */
+function TimelineBlock({
+  lesson: l,
+  lookup,
+  top,
+  height,
+  onMove,
+}: {
+  lesson: Lesson;
+  lookup: Lookup;
+  top: number;
+  height: number;
+  onMove?: (lesson: Lesson, deltaMin: number) => void;
+}) {
+  const theme = useTheme();
+  const [armed, setArmed] = useState(false);
+  const [dy, setDy] = useState(0);
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponderCapture: () => armed,
+        onMoveShouldSetPanResponderCapture: () => armed,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (_, g) => setDy(g.dy),
+        onPanResponderRelease: (_, g) => {
+          const minutes = dragToMinutes(g.dy);
+          setDy(0);
+          setArmed(false);
+          if (minutes !== 0) onMove?.(l, minutes);
+        },
+        onPanResponderTerminate: () => {
+          setDy(0);
+          setArmed(false);
+        },
+      }),
+    [armed, l, onMove],
+  );
+  const color = lookup.tutor(l.tutorId)?.color ?? theme.accent;
+  const inactive = l.status === 'cancelled' || l.status === 'late-cancel';
+  const preview = dragToMinutes(dy);
+  const shownStart = new Date(new Date(l.start).getTime() + preview * 60_000);
+  const shownEnd = new Date(new Date(l.end).getTime() + preview * 60_000);
+  return (
+    <View
+      {...(onMove ? responder.panHandlers : {})}
+      style={[styles.block, { top: top + dy, height, zIndex: armed ? 10 : 1, backgroundColor: color + (inactive ? '33' : 'dd'), borderColor: color }, armed && styles.lifted]}>
+      <Pressable
+        style={{ flex: 1 }}
+        onPress={() => (armed ? setArmed(false) : router.push({ pathname: '/lesson/[id]', params: { id: l.id } }))}
+        onLongPress={onMove ? () => setArmed(true) : undefined}
+        delayLongPress={300}
+        accessibilityLabel={`${lookup.studentNames(l.studentIds)} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
+        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.text : '#fff', fontWeight: '700' }}>
+          {lookup.studentNames(l.studentIds)}
+        </Txt>
+        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : '#ffffffcc' }}>
+          {formatTime(shownStart)}–{formatTime(shownEnd)}
+          {armed && !dy ? '  · drag to move' : ''}
+        </Txt>
+      </Pressable>
+    </View>
+  );
+}
+
 export function DayTimeline({
   day,
   lessons,
   lookup,
   tutorIds,
+  onMove,
 }: {
   day: Date;
   lessons: Lesson[];
   lookup: Lookup;
   tutorIds: string[];
+  /** Enables drag-to-reschedule. */
+  onMove?: (lesson: Lesson, deltaMin: number) => void;
 }) {
   const theme = useTheme();
   const dayStart = startOfDay(day);
@@ -198,24 +274,9 @@ export function DayTimeline({
               .map((l) => {
                 const top = (minutesBetween(dayStart, new Date(l.start)) / 60 - first) * HOUR_HEIGHT;
                 const height = Math.max(28, (minutesBetween(new Date(l.start), new Date(l.end)) / 60) * HOUR_HEIGHT - 2);
-                const color = lookup.tutor(l.tutorId)?.color ?? theme.accent;
-                const inactive = l.status === 'cancelled' || l.status === 'late-cancel';
+                const movable = !!onMove && l.status === 'scheduled' && new Date(l.start) > new Date();
                 return (
-                  <Pressable
-                    key={l.id}
-                    onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: l.id } })}
-                    accessibilityLabel={`${lookup.studentNames(l.studentIds)} at ${formatTime(l.start)}`}
-                    style={[
-                      styles.block,
-                      { top, height, backgroundColor: color + (inactive ? '33' : 'dd'), borderColor: color },
-                    ]}>
-                    <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.text : '#fff', fontWeight: '700' }}>
-                      {lookup.studentNames(l.studentIds)}
-                    </Txt>
-                    <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : '#ffffffcc' }}>
-                      {formatTime(l.start)}–{formatTime(l.end)}
-                    </Txt>
-                  </Pressable>
+                  <TimelineBlock key={l.id} lesson={l} lookup={lookup} top={top} height={height} onMove={movable ? onMove : undefined} />
                 );
               })}
           </View>
@@ -238,5 +299,6 @@ const styles = StyleSheet.create({
   },
   dot: { width: 5, height: 5, borderRadius: 3 },
   timeline: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
-  block: { position: 'absolute', left: 3, right: 3, borderRadius: 6, borderLeftWidth: 3, padding: 4, overflow: 'hidden' },
+  block: { position: 'absolute', left: 3, right: 3, borderRadius: 6, borderLeftWidth: 3, padding: 4, overflow: 'hidden', userSelect: 'none' },
+  lifted: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6, transform: [{ scale: 1.03 }] },
 });

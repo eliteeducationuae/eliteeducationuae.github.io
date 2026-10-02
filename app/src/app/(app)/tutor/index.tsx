@@ -33,7 +33,7 @@ export default function TutorToday() {
       </View>
       <StatGrid>
         <Stat label="Today" value={String(todays.filter((l) => l.status !== 'cancelled').length)} hint={todays.length === 1 ? 'lesson' : 'lessons'} />
-        <Stat label="This week" value={`${weekHours.toFixed(1)}h`} hint={plural(week.length, 'lesson')} onPress={() => router.navigate('/tutor/earnings')} />
+        <Stat label="This week" value={`${weekHours.toFixed(1)}h`} hint={plural(week.length, 'lesson')} onPress={() => router.push('/pay')} />
       </StatGrid>
       {toRecord.length ? (
         <Section title={`To record (${toRecord.length})`}>

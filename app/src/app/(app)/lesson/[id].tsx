@@ -9,11 +9,11 @@ import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, List
 import { Spacing } from '@/constants/theme';
 import { topicName } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAction, useLesson, useLessons, useLookup, useNotes, useSettings } from '@/data/hooks';
+import { useAbsences, useAction, useAvailability, useLesson, useLessons, useLookup, useNotes, useSettings, useTutors } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
-import { cancellationOutcome, findClashes } from '@/domain/scheduling';
+import { cancellationOutcome, coverOptions, findClashes, isAbsent } from '@/domain/scheduling';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -24,7 +24,7 @@ export default function LessonDetail() {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const notes = useNotes({ lessonId: id });
-  const [mode, setMode] = useState<'view' | 'cancel' | 'move'>('view');
+  const [mode, setMode] = useState<'view' | 'cancel' | 'move' | 'cover'>('view');
 
   if (lesson.isLoading || !lookup.ready) return <Loading />;
   const l = lesson.data;
@@ -110,17 +110,67 @@ export default function LessonDetail() {
       ) : null}
 
       {mode === 'view' && scheduled ? (
-        <Row gap={Spacing.two}>
+        <Row gap={Spacing.two} wrap>
           {me.role === 'admin' && !started ? (
             <Button title="Reschedule" icon="calendar" variant="secondary" style={{ flex: 1 }} onPress={() => setMode('move')} />
+          ) : null}
+          {me.role === 'admin' && !started ? (
+            <Button title="Change tutor" icon="people" variant="secondary" style={{ flex: 1 }} onPress={() => setMode('cover')} />
+          ) : null}
+          {me.role === 'parent' && !started ? (
+            <Button title="Ask to move" icon="calendar" variant="secondary" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/book', params: { lessonId: l.id } })} />
           ) : null}
           {canCancel ? <Button title="Cancel lesson" icon="close" variant="danger" style={{ flex: 1 }} onPress={() => setMode('cancel')} /> : null}
         </Row>
       ) : null}
+      {mode === 'cover' ? <CoverPanel lesson={l} onDone={() => setMode('view')} /> : null}
 
       {mode === 'cancel' ? <CancelPanel lessonId={l.id} start={l.start} serviceRate={service?.rate ?? 0} studentCount={l.studentIds.filter((sid) => lookup.student(sid)).length} onDone={() => setMode('view')} /> : null}
       {mode === 'move' ? <ReschedulePanel lesson={l} onDone={() => setMode('view')} /> : null}
     </Screen>
+  );
+}
+
+/** Reassign a lesson to another tutor — e.g. cover while the usual tutor is away. */
+function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof useLesson>['data']>; onDone: () => void }) {
+  const tutors = useTutors();
+  const availability = useAvailability();
+  const absences = useAbsences();
+  const day = startOfDay(new Date(lesson.start));
+  const sameDay = useLessons(day, addDays(day, 1));
+  const reassign = useAction(source.reassignLesson);
+  if (!tutors.data || !sameDay.data) return <Loading />;
+  const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
+  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? []);
+  return (
+    <Card style={{ gap: Spacing.three }}>
+      <Txt variant="h3">Choose a tutor</Txt>
+      {away ? <Banner tone="warning" icon="alert">The usual tutor is away that day.</Banner> : null}
+      {options.length === 0 ? <Txt variant="muted">Nobody else is free at this time.</Txt> : null}
+      {options.map((o) => (
+        <Row key={o.tutor.id} style={{ justifyContent: 'space-between' }}>
+          <Row gap={Spacing.two} style={{ flex: 1 }}>
+            <Avatar name={o.tutor.fullName} color={o.tutor.color} size={32} />
+            <View style={{ flex: 1 }}>
+              <Txt>{o.tutor.fullName}</Txt>
+              <Txt variant="small">{o.available ? 'Free and within their availability' : 'Free, but outside their usual hours'}</Txt>
+            </View>
+          </Row>
+          <Button
+            title="Assign"
+            size="sm"
+            loading={reassign.isPending && reassign.variables?.[1] === o.tutor.id}
+            onPress={async () => {
+              await reassign.mutateAsync([lesson.id, o.tutor.id]);
+              onDone();
+              notify('Tutor changed', `${o.tutor.fullName} is now teaching this lesson and has been notified.`);
+            }}
+          />
+        </Row>
+      ))}
+      <ErrorNote error={reassign.error} />
+      <Button title="Back" variant="secondary" onPress={onDone} />
+    </Card>
   );
 }
 

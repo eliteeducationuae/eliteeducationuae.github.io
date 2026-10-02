@@ -4,7 +4,8 @@ import { invoiceTotals } from '@/domain/billing';
 import type { Profile } from '@/domain/types';
 
 import type { DataSource } from '../source';
-import { cmd, DEMO_DB_VERSION, q, type DemoDB } from './db';
+import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
+import { eq } from './engagement';
 import { createSeed } from './seed';
 
 const DB_KEY = 'elite.demo.db';
@@ -83,6 +84,27 @@ export function createDemoSource(): DataSource {
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
     },
     loginEmails: () => read((d) => d.profiles.map((p) => p.email.toLowerCase())),
+    async signUp(email, _password, details) {
+      const d = await load();
+      const e = email.trim().toLowerCase();
+      if (d.profiles.some((p) => p.email.toLowerCase() === e)) throw new Error('An account with that email already exists — sign in instead.');
+      const familyId = newId('fam');
+      d.families.push({
+        id: familyId,
+        name: details.fullName.trim().split(' ').pop() ?? details.fullName,
+        parentName: details.fullName.trim(),
+        email: e,
+        phone: details.phone,
+        status: 'prospect',
+        createdAt: new Date().toISOString(),
+      });
+      const profile = { id: newId('u'), role: 'parent' as const, fullName: details.fullName.trim(), email: e, familyId };
+      d.profiles.push(profile);
+      viewer = profile;
+      await save();
+      await AsyncStorage.setItem(SESSION_KEY, profile.id).catch(() => undefined);
+      return 'signed-in';
+    },
     demoAccounts() {
       return createSeed().profiles;
     },
@@ -122,6 +144,35 @@ export function createDemoSource(): DataSource {
     invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
     setInvoiceStatus: (id, status) => write((d, v) => cmd.setInvoiceStatus(d, v, id, status)),
     recordPayment: (id, amount, method, ref) => write((d, v) => cmd.recordPayment(d, v, id, amount, method, ref)),
+    addMyChild: (child) => write((d, v) => eq.addMyChild(d, v, child)),
+    setFamilyStatus: (id, status) => write((d, v) => eq.setFamilyStatus(d, v, id, status)),
+    async submitEnquiry(e) {
+      const d = await load();
+      eq.submitEnquiry(d, viewer, e);
+      await save();
+    },
+    listEnquiries: () => read((d, v) => eq.enquiries(d, v)),
+    updateEnquiry: (id, patch) => write((d, v) => eq.updateEnquiry(d, v, id, patch)),
+    listAvailability: () => read((d) => d.availability),
+    setAvailability: (tutorId, blocks) => write((d, v) => eq.setAvailability(d, v, tutorId, blocks)),
+    listClosures: () => read((d) => d.closures),
+    saveClosure: (c) => write((d, v) => eq.saveClosure(d, v, c)),
+    deleteClosure: (id) => write((d, v) => eq.deleteClosure(d, v, id)),
+    listAbsences: () => read((d, v) => eq.absences(d, v)),
+    saveAbsence: (a) => write((d, v) => eq.saveAbsence(d, v, a)),
+    deleteAbsence: (id) => write((d, v) => eq.deleteAbsence(d, v, id)),
+    openSlots: (input) => read((d) => eq.openSlots(d, input)),
+    listRequests: () => read((d, v) => eq.requests(d, v)),
+    requestLesson: (input) => write((d, v) => eq.requestLesson(d, v, input)),
+    decideRequest: (id, approve, response) => write((d, v) => eq.decideRequest(d, v, id, approve, response)),
+    withdrawRequest: (id) => write((d, v) => eq.withdrawRequest(d, v, id)),
+    reassignLesson: (lessonId, tutorId) => write((d, v) => eq.reassignLesson(d, v, lessonId, tutorId)),
+    listThreads: () => read((d, v) => eq.threads(d, v)),
+    listMessages: (familyId) => read((d, v) => eq.messages(d, v, familyId)),
+    sendMessage: (familyId, body) => write((d, v) => eq.sendMessage(d, v, familyId, body)),
+    markThreadRead: (familyId) => write((d, v) => eq.markRead(d, v, familyId)),
+    listAnnouncements: () => read((d, v) => eq.announcements(d, v)),
+    postAnnouncement: (a) => write((d, v) => eq.postAnnouncement(d, v, a)),
     async startCardPayment(invoiceId) {
       // No real card processing in the demo: simulate a successful Stripe payment.
       await write((d, v) => {

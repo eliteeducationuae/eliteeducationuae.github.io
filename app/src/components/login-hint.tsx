@@ -1,9 +1,13 @@
+import { Share } from 'react-native';
+
 import { useLoginEmails } from '@/data/hooks';
 
-import { Banner } from './ui';
+import { Banner, Button } from './ui';
 
-/** Explains how this person gets into the app, or confirms that they already can. */
-export function LoginHint({ email, who }: { email: string; who: 'parent' | 'tutor' }) {
+const APP_LINK = 'https://eliteeducation.me';
+
+/** Explains how this person gets into the app (with a ready-made invite to send), or confirms they already can. */
+export function LoginHint({ email, who, name }: { email: string; who: 'parent' | 'tutor'; name?: string }) {
   const logins = useLoginEmails();
   const trimmed = email.trim().toLowerCase();
   if (!trimmed || !logins.data) return null;
@@ -14,10 +18,20 @@ export function LoginHint({ email, who }: { email: string; who: 'parent' | 'tuto
       </Banner>
     );
   }
+  const first = name?.trim().split(' ')[0];
+  const invite =
+    `Hi${first ? ` ${first}` : ''}! ${
+      who === 'parent'
+        ? 'You can now see lessons, lesson notes, progress and invoices in the Elite Education app.'
+        : 'Your Elite Education tutor account is ready — your schedule, lesson notes and pay are all in the app.'
+    }\n\n1. Open ${APP_LINK}\n2. Tap “New here? Create an account”\n3. Sign up with ${trimmed} and enter the code we email you.`;
   return (
-    <Banner icon="person">
-      To give this {who} access, ask them to open the app, tap “Create an account” and sign up with {trimmed}. They’ll be linked
-      automatically once they confirm their email.
-    </Banner>
+    <>
+      <Banner icon="person">
+        No login yet. Ask them to tap “Create an account” in the app and sign up with {trimmed}. They’re linked automatically
+        once they confirm their email.
+      </Banner>
+      <Button title="Send invite" icon="share" variant="secondary" onPress={() => Share.share({ message: invite, title: 'Your Elite Education account' })} />
+    </>
   );
 }

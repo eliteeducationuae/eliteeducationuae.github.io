@@ -23,12 +23,17 @@ export interface Profile {
   icsToken?: string;
 }
 
+export type FamilyStatus = 'prospect' | 'active' | 'archived';
+
 export interface Family {
   id: string;
   name: string;
   parentName: string;
   email: string;
   phone?: string;
+  /** Prospects signed up or enquired but haven't enrolled yet. Defaults to active. */
+  status?: FamilyStatus;
+  createdAt?: string;
 }
 
 export interface Student {
@@ -200,4 +205,112 @@ export interface Settings {
   invoiceDueDays: number;
   nextInvoiceNumber: number;
   bankDetails?: string;
+  /** Where business alerts (new enquiries, requests) are emailed. Defaults to admin logins. */
+  notifyEmail?: string;
+  emailLessonNotes: boolean;
+  emailInvoices: boolean;
+  emailMessages: boolean;
+  /** Parents can only request lessons at least this many hours ahead. */
+  bookingNoticeHours: number;
+}
+
+/** A weekly block when a tutor can teach. `weekday` 0 = Monday. Times are `HH:MM`. */
+export interface Availability {
+  id: string;
+  tutorId: string;
+  weekday: number;
+  start: string;
+  end: string;
+}
+
+/** Holidays and term breaks: no lessons are offered or scheduled. Dates are `YYYY-MM-DD`. */
+export interface Closure {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface TutorAbsence {
+  id: string;
+  tutorId: string;
+  startDate: string;
+  endDate: string;
+  reason?: string;
+}
+
+export type EnquiryStatus = 'new' | 'contacted' | 'trial-booked' | 'enrolled' | 'lost';
+export type EnquirySource = 'app' | 'website' | 'referral' | 'phone' | 'other';
+
+export interface Enquiry {
+  id: string;
+  createdAt: string;
+  status: EnquiryStatus;
+  source: EnquirySource;
+  parentName: string;
+  email?: string;
+  phone?: string;
+  studentName?: string;
+  curriculum?: string;
+  yearGroup?: string;
+  message?: string;
+  preferredTimes?: string;
+  familyId?: string;
+  studentId?: string;
+  trialLessonId?: string;
+  nextActionAt?: string;
+  notes?: string;
+  lostReason?: string;
+}
+
+export type RequestStatus = 'pending' | 'approved' | 'declined' | 'withdrawn';
+
+/** A parent asking for an extra lesson or to move one, at a specific open slot. */
+export interface LessonRequest {
+  id: string;
+  createdAt: string;
+  familyId: string;
+  studentId: string;
+  kind: 'new-lesson' | 'reschedule';
+  lessonId?: string;
+  tutorId: string;
+  serviceId: string;
+  start: string;
+  end: string;
+  note?: string;
+  status: RequestStatus;
+  response?: string;
+  decidedAt?: string;
+}
+
+export interface Message {
+  id: string;
+  familyId: string;
+  senderId?: string;
+  senderName: string;
+  senderRole: Role;
+  body: string;
+  createdAt: string;
+}
+
+/** A family conversation as listed in the inbox. */
+export interface Thread {
+  familyId: string;
+  familyName: string;
+  parentName: string;
+  lastBody?: string;
+  lastSender?: string;
+  lastAt?: string;
+  unread: number;
+}
+
+export type Audience = 'everyone' | 'parents' | 'tutors';
+
+export interface Announcement {
+  id: string;
+  createdAt: string;
+  authorName: string;
+  title: string;
+  body: string;
+  audience: Audience;
 }

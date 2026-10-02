@@ -4,11 +4,11 @@ import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
 import { LoginHint } from '@/components/login-hint';
-import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section } from '@/components/ui';
+import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useFamilies, usePackages, useStudents } from '@/data/hooks';
-import type { Family } from '@/domain/types';
+import type { Family, FamilyStatus } from '@/domain/types';
 
 export default function EditFamily() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -26,6 +26,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
   const [parentName, setParentName] = useState(existing?.parentName ?? '');
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
+  const [status, setStatus] = useState<FamilyStatus>(existing?.status ?? 'active');
   const valid = name.trim() && parentName.trim() && /\S+@\S+/.test(email);
   const kids = existing ? (students.data ?? []).filter((s) => s.familyId === existing.id) : [];
 
@@ -40,7 +41,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
           loading={save.isPending}
           onPress={async () => {
             const saved = await save.mutateAsync([
-              { id: existing?.id, name: name.trim(), parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined },
+              { id: existing?.id, name: name.trim(), parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined, status },
             ]);
             if (existing) router.back();
             else router.replace({ pathname: '/students/edit', params: { familyId: saved.id } });
@@ -52,7 +53,18 @@ function FamilyForm({ existing }: { existing?: Family }) {
       <Field label="Parent / guardian" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
       <Field label="Email (for invoices and reports)" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
       <Field label="Phone / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <LoginHint email={email} who="parent" />
+      <LoginHint email={email} who="parent" name={parentName} />
+      <Section title="Status">
+        <Segmented
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: 'prospect', label: 'Prospect' },
+            { value: 'active', label: 'Active' },
+            { value: 'archived', label: 'Archived' },
+          ]}
+        />
+      </Section>
       <ErrorNote error={save.error} />
       {existing ? (
         <>

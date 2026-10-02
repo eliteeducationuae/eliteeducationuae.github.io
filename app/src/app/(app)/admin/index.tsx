@@ -4,15 +4,18 @@ import { View } from 'react-native';
 import { LessonCard } from '@/components/lessons';
 import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useCharges, useInvoices, useLessons, useLookup, usePackages } from '@/data/hooks';
+import { Icon } from '@/components/icon';
+import { useAbsences, useCharges, useEnquiries, useInvoices, useLessons, useLookup, usePackages, useRequests } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { chargeRevenue, displayStatus, formatAED, invoiceTotals, packageRemaining } from '@/domain/billing';
-import { addDays, formatDay, isSameDay, startOfDay, startOfMonth } from '@/domain/dates';
-import { byStart } from '@/domain/scheduling';
+import { addDays, formatDay, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
+import { byStart, lessonsDuringAbsence } from '@/domain/scheduling';
+import { useTheme } from '@/hooks/use-theme';
 import { plural } from '@/lib/id';
 
 export default function AdminDashboard() {
   const me = useMe();
+  const theme = useTheme();
   const lookup = useLookup();
   const now = new Date();
   const monthStart = startOfMonth(now);
@@ -20,6 +23,10 @@ export default function AdminDashboard() {
   const charges = useCharges();
   const invoices = useInvoices();
   const packages = usePackages();
+  const enquiries = useEnquiries();
+  const requests = useRequests();
+  const absences = useAbsences();
+  const upcoming = useLessons(startOfDay(now), addDays(startOfDay(now), 60));
 
   const today = (lessons.data ?? []).filter((l) => isSameDay(new Date(l.start), now)).sort(byStart);
   const needsNotes = (lessons.data ?? []).filter((l) => l.status === 'scheduled' && new Date(l.end) < now);
@@ -33,6 +40,13 @@ export default function AdminDashboard() {
   const outstanding = open.reduce((s, i) => s + invoiceTotals(i).balance, 0);
   const overdue = open.filter((i) => displayStatus(i) === 'overdue');
   const lowCredit = (packages.data ?? []).filter((p) => packageRemaining(p) <= 2);
+  const newEnquiries = (enquiries.data ?? []).filter((e) => e.status === 'new');
+  const followUps = (enquiries.data ?? []).filter(
+    (e) => e.nextActionAt && e.nextActionAt <= toDateKey(now) && (e.status === 'contacted' || e.status === 'trial-booked'),
+  );
+  const pending = (requests.data ?? []).filter((r) => r.status === 'pending');
+  const needCover = (absences.data ?? []).flatMap((a) => lessonsDuringAbsence(a, upcoming.data ?? []));
+  const attention = needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
 
   const loading = lessons.isLoading || charges.isLoading || invoices.isLoading || !lookup.ready;
 
@@ -54,8 +68,40 @@ export default function AdminDashboard() {
             <Stat label="Ready to invoice" value={formatAED(unbilledTotal)} hint={plural(unbilled.length, 'charge')} tone="info" onPress={() => router.navigate('/admin/billing')} />
           </StatGrid>
 
-          {needsNotes.length || overdue.length || lowCredit.length ? (
+          {attention ? (
             <Section title="Needs attention">
+              {pending.length ? (
+                <ListItem
+                  title={`${plural(pending.length, 'lesson request')} to approve`}
+                  subtitle="Families asking for extra lessons or changes"
+                  left={<Icon name="calendar" size={22} color={theme.warning} />}
+                  onPress={() => router.push('/manage/requests')}
+                />
+              ) : null}
+              {newEnquiries.length ? (
+                <ListItem
+                  title={`${plural(newEnquiries.length, 'new enquiry', 'new enquiries')}`}
+                  subtitle={newEnquiries.map((e) => e.parentName).join(', ')}
+                  left={<Icon name="inbox" size={22} color={theme.gold} />}
+                  onPress={() => router.push('/manage/enquiries')}
+                />
+              ) : null}
+              {followUps.length ? (
+                <ListItem
+                  title={`${plural(followUps.length, 'enquiry', 'enquiries')} to follow up today`}
+                  subtitle={followUps.map((e) => e.parentName).join(', ')}
+                  left={<Icon name="phone" size={22} color={theme.accent} />}
+                  onPress={() => router.push({ pathname: '/manage/enquiry/[id]', params: { id: followUps[0].id } })}
+                />
+              ) : null}
+              {needCover.length ? (
+                <ListItem
+                  title={`${plural(needCover.length, 'lesson')} ${needCover.length === 1 ? 'needs' : 'need'} cover`}
+                  subtitle={`${lookup.tutor(needCover[0].tutorId)?.fullName ?? 'A tutor'} is away. Tap to choose a cover tutor.`}
+                  left={<Icon name="alert" size={22} color={theme.danger} />}
+                  onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: needCover[0].id } })}
+                />
+              ) : null}
               {needsNotes.length ? (
                 <ListItem
                   title={`${needsNotes.length} lesson${needsNotes.length > 1 ? 's' : ''} waiting for notes`}

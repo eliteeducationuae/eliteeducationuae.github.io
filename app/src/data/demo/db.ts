@@ -2,7 +2,14 @@ import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft } fr
 import { toDateKey } from '@/domain/dates';
 import { cancellationOutcome, type CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Announcement,
+  Availability,
   Charge,
+  Closure,
+  Enquiry,
+  LessonRequest,
+  Message,
+  TutorAbsence,
   Family,
   Homework,
   Invoice,
@@ -37,9 +44,18 @@ export interface DemoDB {
   packages: LessonPackage[];
   charges: Charge[];
   invoices: Invoice[];
+  availability: Availability[];
+  closures: Closure[];
+  absences: TutorAbsence[];
+  enquiries: Enquiry[];
+  requests: LessonRequest[];
+  messages: Message[];
+  /** profileId → familyId → last read ISO time. */
+  reads: Record<string, Record<string, string>>;
+  announcements: Announcement[];
 }
 
-export const DEMO_DB_VERSION = 1;
+export const DEMO_DB_VERSION = 2;
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -79,7 +95,7 @@ function canSeeFamily(db: DemoDB, viewer: Profile, familyId: string): boolean {
   return false;
 }
 
-function requireAdmin(viewer: Profile) {
+export function requireAdmin(viewer: Profile) {
   if (viewer.role !== 'admin') throw new AccessError('Only an admin can do that.');
 }
 

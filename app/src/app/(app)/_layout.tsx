@@ -1,0 +1,50 @@
+import { Redirect, Stack } from 'expo-router';
+
+import { stackOptions } from '@/components/stack-options';
+import { Loading } from '@/components/ui';
+import { useSession } from '@/data/session';
+import { useTheme } from '@/hooks/use-theme';
+
+/**
+ * Everything behind sign-in. Waits for the saved session before rendering, so deep links and
+ * notification taps open the right screen, and sends signed-out visitors to the sign-in page.
+ */
+export default function SignedInLayout() {
+  const palette = useTheme();
+  const status = useSession((s) => s.status);
+  if (status === 'loading') return <Loading />;
+  if (status === 'signed-out') return <Redirect href="/sign-in" />;
+  return (
+    <Stack screenOptions={stackOptions(palette)}>
+      <Stack.Screen name="admin" options={{ headerShown: false }} />
+      <Stack.Screen name="tutor" options={{ headerShown: false }} />
+      <Stack.Screen name="parent" options={{ headerShown: false }} />
+      <Stack.Screen name="student" options={{ headerShown: false }} />
+      <Stack.Screen name="lesson/[id]" options={{ title: 'Lesson' }} />
+      <Stack.Screen name="lesson/new" options={{ title: 'Schedule lessons', presentation: 'modal' }} />
+      <Stack.Screen name="complete/[id]" options={{ title: 'Record lesson', presentation: 'modal' }} />
+      <Stack.Screen name="students/[id]" options={{ title: 'Student' }} />
+      <Stack.Screen name="students/edit" options={{ title: 'Student', presentation: 'modal' }} />
+      <Stack.Screen name="invoice/[id]" options={{ title: 'Invoice' }} />
+      <Stack.Screen name="manage/tutors" options={{ title: 'Tutors' }} />
+      <Stack.Screen name="manage/tutor-edit" options={{ title: 'Tutor', presentation: 'modal' }} />
+      <Stack.Screen name="manage/families" options={{ title: 'Families' }} />
+      <Stack.Screen name="manage/family-edit" options={{ title: 'Family', presentation: 'modal' }} />
+      <Stack.Screen name="manage/services" options={{ title: 'Services & rates' }} />
+      <Stack.Screen name="manage/package-new" options={{ title: 'Sell a package', presentation: 'modal' }} />
+      <Stack.Screen name="manage/payroll" options={{ title: 'Tutor pay' }} />
+      <Stack.Screen name="manage/settings" options={{ title: 'Business settings' }} />
+      <Stack.Screen name="manage/enquiries" options={{ title: 'Enquiries' }} />
+      <Stack.Screen name="manage/enquiry/[id]" options={{ title: 'Enquiry' }} />
+      <Stack.Screen name="manage/requests" options={{ title: 'Lesson requests' }} />
+      <Stack.Screen name="manage/closures" options={{ title: 'Holidays & term breaks' }} />
+      <Stack.Screen name="onboarding" options={{ title: 'Welcome' }} />
+      <Stack.Screen name="book" options={{ title: 'Book a lesson', presentation: 'modal' }} />
+      <Stack.Screen name="availability" options={{ title: 'Availability' }} />
+      <Stack.Screen name="pay" options={{ title: 'My pay' }} />
+      <Stack.Screen name="messages/index" options={{ title: 'Messages' }} />
+      <Stack.Screen name="messages/[familyId]" options={{ title: 'Messages' }} />
+      <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
+    </Stack>
+  );
+}

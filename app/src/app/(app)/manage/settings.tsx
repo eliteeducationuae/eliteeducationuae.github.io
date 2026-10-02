@@ -24,6 +24,11 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [vat, setVat] = useState(String(Math.round(initial.vatRate * 100)));
   const [dueDays, setDueDays] = useState(String(initial.invoiceDueDays));
   const [bank, setBank] = useState(initial.bankDetails ?? '');
+  const [notifyEmail, setNotifyEmail] = useState(initial.notifyEmail ?? '');
+  const [emailNotes, setEmailNotes] = useState(initial.emailLessonNotes);
+  const [emailInvoices, setEmailInvoices] = useState(initial.emailInvoices);
+  const [emailMessages, setEmailMessages] = useState(initial.emailMessages);
+  const [notice, setNotice] = useState(String(initial.bookingNoticeHours));
   const pct = (s: string) => Math.max(0, Math.min(100, Number(s) || 0)) / 100;
 
   return (
@@ -45,6 +50,11 @@ function SettingsForm({ initial }: { initial: Settings }) {
                 vatRate: pct(vat),
                 invoiceDueDays: Math.max(0, parseInt(dueDays, 10) || 0),
                 bankDetails: bank.trim() || undefined,
+                notifyEmail: notifyEmail.trim() || undefined,
+                emailLessonNotes: emailNotes,
+                emailInvoices: emailInvoices,
+                emailMessages: emailMessages,
+                bookingNoticeHours: Math.max(0, parseInt(notice, 10) || 0),
               },
             ]);
             router.back();
@@ -80,6 +90,42 @@ function SettingsForm({ initial }: { initial: Settings }) {
             </View>
           </Row>
           <Field label="Bank details on invoices" value={bank} onChangeText={setBank} multiline />
+        </Card>
+      </Section>
+      <Section title="Booking">
+        <Card style={{ gap: Spacing.three }}>
+          <Field
+            label="Minimum notice for lesson requests (hours)"
+            value={notice}
+            onChangeText={setNotice}
+            keyboardType="number-pad"
+            hint="Families can only request times at least this far ahead. Set tutors’ hours under Tutors → Availability."
+          />
+        </Card>
+      </Section>
+      <Section title="Emails to families">
+        <Card style={{ gap: Spacing.three }}>
+          {(
+            [
+              ['Lesson notes after each lesson', emailNotes, setEmailNotes],
+              ['New invoices', emailInvoices, setEmailInvoices],
+              ['Messages from you and tutors', emailMessages, setEmailMessages],
+            ] as const
+          ).map(([label, value, set]) => (
+            <Row key={label} style={{ justifyContent: 'space-between' }}>
+              <Txt style={{ flex: 1 }}>{label}</Txt>
+              <Switch value={value} onValueChange={set} accessibilityLabel={label} />
+            </Row>
+          ))}
+          <Txt variant="small">Families with the app also get push notifications. Booking decisions and announcements are always emailed.</Txt>
+          <Field
+            label="Send business alerts to (optional)"
+            value={notifyEmail}
+            onChangeText={setNotifyEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            hint="New enquiries and lesson requests. Leave blank to use each admin’s login email."
+          />
         </Card>
       </Section>
       <ErrorNote error={save.error} />
