@@ -21,6 +21,7 @@ import type {
   TopicRating,
 } from '@/domain/types';
 
+import { NOT_LINKED } from './messages';
 import type { DataSource } from './source';
 
 type Row = Record<string, any>;
@@ -220,7 +221,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       const profile = await loadProfile();
       if (!profile) {
         await client.auth.signOut();
-        throw new Error('Your account has not been set up yet — please contact Elite Education.');
+        throw new Error(NOT_LINKED);
       }
       return profile;
     },
@@ -228,6 +229,16 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       // Stop reminders going to this device once signed out.
       await client.rpc('set_push_token', { p_token: null }).then(undefined, () => undefined);
       await client.auth.signOut();
+    },
+    async signUp(email, password) {
+      const data = check(await client.auth.signUp({ email: email.trim(), password }));
+      return data.session ? 'signed-in' : 'confirm-email';
+    },
+    async resetPassword(email) {
+      check(await client.auth.resetPasswordForEmail(email.trim()));
+    },
+    async loginEmails() {
+      return check<string[]>(await client.rpc('login_emails'));
     },
     async savePushToken(token) {
       check(await client.rpc('set_push_token', { p_token: token }));

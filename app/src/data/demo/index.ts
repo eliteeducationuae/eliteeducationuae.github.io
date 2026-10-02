@@ -82,6 +82,7 @@ export function createDemoSource(): DataSource {
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
     },
+    loginEmails: () => read((d) => d.profiles.map((p) => p.email.toLowerCase())),
     demoAccounts() {
       return createSeed().profiles;
     },

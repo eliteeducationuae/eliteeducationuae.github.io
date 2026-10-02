@@ -24,6 +24,9 @@ export const useLessons = (from: Date, to: Date) =>
 export const useLesson = (id: string | undefined) =>
   useQuery({ queryKey: ['lesson', id], queryFn: () => source.getLesson(id!), enabled: !!id });
 
+export const useLoginEmails = () =>
+  useQuery({ queryKey: ['login-emails'], queryFn: () => source.loginEmails?.() ?? Promise.resolve([] as string[]) });
+
 export const useNotes = (filter: { studentId?: string; lessonId?: string } = {}) =>
   useQuery({ queryKey: ['notes', filter], queryFn: () => source.listNotes(filter) });
 

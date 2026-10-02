@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type { Profile } from '@/domain/types';
 
 import { source } from './index';
+import { NOT_LINKED } from './messages';
 import { queryClient } from './query';
 
 interface SessionState {
@@ -11,6 +12,8 @@ interface SessionState {
   restore(): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Create a login; signs straight in when no email confirmation is required. */
+  signUp(email: string, password: string): Promise<'signed-in' | 'confirm-email'>;
 }
 
 export const useSession = create<SessionState>((set) => ({
@@ -28,6 +31,20 @@ export const useSession = create<SessionState>((set) => ({
     const profile = await source.signIn(email, password);
     queryClient.clear();
     set({ profile, status: 'signed-in' });
+  },
+  async signUp(email, password) {
+    if (!source.signUp) throw new Error('Sign-up is not available');
+    const result = await source.signUp(email, password);
+    if (result === 'signed-in') {
+      const profile = await source.restoreSession();
+      if (!profile) {
+        await source.signOut();
+        throw new Error(NOT_LINKED);
+      }
+      queryClient.clear();
+      set({ profile, status: 'signed-in' });
+    }
+    return result;
   },
   async signOut() {
     await source.signOut();

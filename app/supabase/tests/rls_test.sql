@@ -118,4 +118,18 @@ select pg_temp.check((select count(*) from public.invoices) = 0, 'other parent s
 select pg_temp.check((select count(*) from public.packages) = 1, 'other parent sees own package');
 
 reset role;
+
+-- Logins link themselves to tutors and families by confirmed email.
+insert into auth.users (id, email, email_confirmed_at) values ('00000000-0000-0000-0000-0000000000f1', 'T2@X', now());
+select pg_temp.check((select role from public.profiles where id = '00000000-0000-0000-0000-0000000000f1') = 'tutor', 'confirmed tutor email gets a tutor login (case-insensitive)');
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f2', 'a@x');
+select pg_temp.check(not exists (select 1 from public.profiles where id = '00000000-0000-0000-0000-0000000000f2'), 'unconfirmed email gets no access yet');
+update auth.users set email_confirmed_at = now() where id = '00000000-0000-0000-0000-0000000000f2';
+select pg_temp.check((select family_id from public.profiles where id = '00000000-0000-0000-0000-0000000000f2') = '20000000-0000-0000-0000-000000000001', 'confirming links the parent to their family');
+insert into auth.users (id, email, email_confirmed_at) values ('00000000-0000-0000-0000-0000000000f3', 'stranger@x', now());
+select pg_temp.check(not exists (select 1 from public.profiles where id = '00000000-0000-0000-0000-0000000000f3'), 'unknown email gets no access');
+insert into public.families (name, parent_name, email) values ('Late', 'Late Parent', 'stranger@x');
+select pg_temp.check((select role from public.profiles where id = '00000000-0000-0000-0000-0000000000f3') = 'parent', 'adding a family later links an existing login');
+select pg_temp.check((select role from public.profiles where id = '00000000-0000-0000-0000-00000000000a') = 'admin', 'existing profiles are never overwritten');
+
 \echo 'All database tests passed'

@@ -1,15 +1,16 @@
 import { router } from 'expo-router';
 import { View } from 'react-native';
 
-import { Avatar, Button, ListItem, Loading, Screen } from '@/components/ui';
+import { Avatar, Badge, Button, ListItem, Loading, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { usePackages, useStudents, useFamilies } from '@/data/hooks';
+import { useFamilies, useLoginEmails, usePackages, useStudents } from '@/data/hooks';
 import { packageRemaining } from '@/domain/billing';
 
 export default function Families() {
   const families = useFamilies();
   const students = useStudents();
   const packages = usePackages();
+  const logins = new Set(useLoginEmails().data ?? []);
   return (
     <Screen footer={<Button title="Add family" icon="plus" variant="gold" style={{ flex: 1 }} onPress={() => router.push('/manage/family-edit')} />}>
       {families.isLoading ? (
@@ -25,6 +26,7 @@ export default function Families() {
                 title={`${f.name} family`}
                 subtitle={`${f.parentName} · ${kids.join(', ') || 'no students yet'}${credits ? ` · ${credits} lesson credits` : ''}`}
                 left={<Avatar name={f.parentName} />}
+                right={<Badge label={logins.has(f.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />}
                 onPress={() => router.push({ pathname: '/manage/family-edit', params: { id: f.id } })}
               />
             );

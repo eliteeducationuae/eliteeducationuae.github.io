@@ -56,6 +56,12 @@ export interface DataSource {
   demoAccounts?(): Profile[];
   /** Demo only: wipe and reseed. */
   resetDemo?(): Promise<void>;
+  /** Create a login. Returns 'confirm-email' if the person must click the link in their inbox first. */
+  signUp?(email: string, password: string): Promise<'signed-in' | 'confirm-email'>;
+  /** Email a password-reset link. */
+  resetPassword?(email: string): Promise<void>;
+  /** Admin: lower-cased emails that have an app login. */
+  loginEmails?(): Promise<string[]>;
   /** Store this device's push token for lesson reminders (production only). */
   savePushToken?(token: string): Promise<void>;
 

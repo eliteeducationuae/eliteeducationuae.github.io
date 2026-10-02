@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
+import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -51,6 +52,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
       <Field label="Parent / guardian" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
       <Field label="Email (for invoices and reports)" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
       <Field label="Phone / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+      <LoginHint email={email} who="parent" />
       <ErrorNote error={save.error} />
       {existing ? (
         <>

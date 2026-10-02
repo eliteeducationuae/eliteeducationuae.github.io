@@ -19,19 +19,34 @@ const ROLE_INFO: Record<Role, { label: string; icon: IconName; blurb: string }> 
 
 export default function SignIn() {
   const theme = useTheme();
-  const { status, signIn } = useSession();
+  const { status, signIn, signUp } = useSession();
+  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   if (status === 'signed-in') return <Redirect href="/" />;
 
   async function go(e = email, p = password) {
     setBusy(true);
     setError(null);
+    setMessage(null);
     try {
-      await signIn(e, p);
+      if (mode === 'sign-up') {
+        if (p.length < 8) throw new Error('Choose a password of at least 8 characters.');
+        if ((await signUp(e, p)) === 'confirm-email') {
+          setMessage(`We’ve emailed a confirmation link to ${e.trim()}. Tap it, then come back and sign in.`);
+          setMode('sign-in');
+        }
+      } else if (mode === 'reset') {
+        await source.resetPassword?.(e);
+        setMessage(`If ${e.trim()} has an account, a password reset link is on its way.`);
+        setMode('sign-in');
+      } else {
+        await signIn(e, p);
+      }
     } catch (err) {
       setError(err);
     } finally {
@@ -40,6 +55,11 @@ export default function SignIn() {
   }
 
   const demo = source.demoAccounts?.();
+  const switchMode = (m: typeof mode) => {
+    setMode(m);
+    setError(null);
+    setMessage(null);
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -69,7 +89,11 @@ export default function SignIn() {
           </View>
         ) : (
           <Card style={{ gap: Spacing.three }}>
-            <Txt variant="h2">Sign in</Txt>
+            <Txt variant="h2">{mode === 'sign-up' ? 'Create your account' : mode === 'reset' ? 'Reset password' : 'Sign in'}</Txt>
+            {mode === 'sign-up' ? (
+              <Txt variant="muted">Use the email address you gave Elite Education, so we can link you to your family or tutor profile.</Txt>
+            ) : null}
+            {message ? <Banner tone="success" icon="check">{message}</Banner> : null}
             <Field
               label="Email"
               value={email}
@@ -79,20 +103,32 @@ export default function SignIn() {
               keyboardType="email-address"
               textContentType="emailAddress"
             />
-            <Field
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-              textContentType="password"
-              onSubmitEditing={() => go()}
-            />
+            {mode !== 'reset' ? (
+              <Field
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoComplete={mode === 'sign-up' ? 'new-password' : 'password'}
+                textContentType={mode === 'sign-up' ? 'newPassword' : 'password'}
+                onSubmitEditing={() => go()}
+              />
+            ) : null}
             <ErrorNote error={error} />
-            <Button title="Sign in" onPress={() => go()} loading={busy} disabled={!email || !password} />
-            <Txt variant="small" style={{ textAlign: 'center' }}>
-              Accounts are created by Elite Education. Contact us if you need access.
-            </Txt>
+            <Button
+              title={mode === 'sign-up' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}
+              onPress={() => go()}
+              loading={busy}
+              disabled={!email || (mode !== 'reset' && !password)}
+            />
+            {mode === 'sign-in' ? (
+              <>
+                <Button title="New here? Create an account" variant="ghost" onPress={() => switchMode('sign-up')} />
+                <Button title="Forgot password?" variant="ghost" size="sm" onPress={() => switchMode('reset')} />
+              </>
+            ) : (
+              <Button title="Back to sign in" variant="ghost" onPress={() => switchMode('sign-in')} />
+            )}
           </Card>
         )}
       </Screen>
