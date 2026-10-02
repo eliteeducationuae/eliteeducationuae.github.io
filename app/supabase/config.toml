@@ -1,0 +1,10 @@
+# Supabase CLI settings (https://supabase.com/docs/guides/cli/config)
+project_id = "elite-education"
+
+# Called by Stripe, not the app — authenticated by the Stripe signature instead.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Calendar apps can't send a login; the feed is protected by each user's secret token.
+[functions.ics]
+verify_jwt = false

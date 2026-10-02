@@ -96,6 +96,7 @@ create table public.lessons (
   series_id uuid,
   cancelled_at timestamptz,
   cancel_reason text,
+  reminded_at timestamptz,
   check (end_at > start_at)
 );
 create index lessons_start_idx on public.lessons (start_at);
