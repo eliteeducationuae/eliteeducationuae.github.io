@@ -1,0 +1,245 @@
+import * as Linking from 'expo-linking';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
+import { Switch, View } from 'react-native';
+
+import { Icon } from '@/components/icon';
+import { LessonStatusBadge } from '@/components/lessons';
+import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { Spacing } from '@/constants/theme';
+import { topicName } from '@/data/curriculum';
+import { source } from '@/data';
+import { useAction, useLesson, useLessons, useLookup, useNotes, useSettings } from '@/data/hooks';
+import { useMe } from '@/data/session';
+import { formatAED } from '@/domain/billing';
+import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
+import { cancellationOutcome, findClashes } from '@/domain/scheduling';
+import { useTheme } from '@/hooks/use-theme';
+import { notify } from '@/lib/confirm';
+
+export default function LessonDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const theme = useTheme();
+  const me = useMe();
+  const lookup = useLookup();
+  const lesson = useLesson(id);
+  const notes = useNotes({ lessonId: id });
+  const [mode, setMode] = useState<'view' | 'cancel' | 'move'>('view');
+
+  if (lesson.isLoading || !lookup.ready) return <Loading />;
+  const l = lesson.data;
+  if (!l) return <Screen><EmptyState title="Lesson not found" /></Screen>;
+
+  const service = lookup.service(l.serviceId);
+  const tutor = lookup.tutor(l.tutorId);
+  const note = notes.data?.[0];
+  const isStaff = me.role === 'admin' || (me.role === 'tutor' && me.tutorId === l.tutorId);
+  const scheduled = l.status === 'scheduled';
+  const started = new Date(l.start) <= new Date();
+  const canCancel = scheduled && !started && me.role !== 'student';
+
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: service?.name ?? 'Lesson' }} />
+      <Card accent={tutor?.color} style={{ gap: Spacing.three }}>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Txt variant="h2">{formatDay(l.start)}</Txt>
+            <Txt variant="muted">
+              {formatTime(l.start)}–{formatTime(l.end)} · {minutesBetween(new Date(l.start), new Date(l.end))} min
+            </Txt>
+          </View>
+          <LessonStatusBadge lesson={l} />
+        </Row>
+        <Row gap={Spacing.two}>
+          <Avatar name={tutor?.fullName ?? '?'} color={tutor?.color} size={32} />
+          <Txt>{tutor?.fullName}</Txt>
+        </Row>
+        <Row gap={Spacing.two}>
+          <Icon name={l.location === 'online' ? 'video' : 'pin'} size={18} color={theme.textMuted} />
+          <Txt style={{ flex: 1 }}>{l.location === 'online' ? 'Online lesson' : (l.address ?? 'In person')}</Txt>
+          {l.location === 'online' && l.meetingUrl && scheduled ? (
+            <Button title="Join" size="sm" icon="video" onPress={() => Linking.openURL(l.meetingUrl!)} />
+          ) : null}
+        </Row>
+        {l.cancelReason ? <Txt variant="muted">Cancelled: {l.cancelReason}</Txt> : null}
+      </Card>
+
+      <Section title={l.studentIds.length > 1 ? 'Students' : 'Student'}>
+        {l.studentIds.map((sid) => {
+          const s = lookup.student(sid);
+          return (
+            <ListItem
+              key={sid}
+              title={s?.fullName ?? 'Student'}
+              subtitle={note?.attendance[sid] ? `Attendance: ${note.attendance[sid]}` : s?.curriculum}
+              left={<Avatar name={s?.fullName ?? '?'} size={36} />}
+              onPress={me.role === 'admin' || me.role === 'tutor' ? () => router.push({ pathname: '/students/[id]', params: { id: sid } }) : undefined}
+            />
+          );
+        })}
+      </Section>
+
+      {note ? (
+        <Section title="Lesson notes">
+          <Card>
+            <Txt>{note.summary || 'No summary written.'}</Txt>
+            {note.topicIds.length ? (
+              <Row gap={4} wrap>
+                {note.topicIds.map((t) => (
+                  <Badge key={t} label={topicName(t)} />
+                ))}
+              </Row>
+            ) : null}
+            {note.privateNote && isStaff ? (
+              <Txt variant="small" style={{ color: theme.warning }}>
+                Private: {note.privateNote}
+              </Txt>
+            ) : null}
+          </Card>
+        </Section>
+      ) : null}
+
+      {isStaff && scheduled ? (
+        <Button
+          title={started ? 'Record lesson: notes, attendance, homework' : 'Record lesson early'}
+          icon="check"
+          variant={started ? 'gold' : 'secondary'}
+          onPress={() => router.push({ pathname: '/complete/[id]', params: { id: l.id } })}
+        />
+      ) : null}
+
+      {mode === 'view' && scheduled ? (
+        <Row gap={Spacing.two}>
+          {me.role === 'admin' && !started ? (
+            <Button title="Reschedule" icon="calendar" variant="secondary" style={{ flex: 1 }} onPress={() => setMode('move')} />
+          ) : null}
+          {canCancel ? <Button title="Cancel lesson" icon="close" variant="danger" style={{ flex: 1 }} onPress={() => setMode('cancel')} /> : null}
+        </Row>
+      ) : null}
+
+      {mode === 'cancel' ? <CancelPanel lessonId={l.id} start={l.start} serviceRate={service?.rate ?? 0} studentCount={l.studentIds.filter((sid) => lookup.student(sid)).length} onDone={() => setMode('view')} /> : null}
+      {mode === 'move' ? <ReschedulePanel lesson={l} onDone={() => setMode('view')} /> : null}
+    </Screen>
+  );
+}
+
+function CancelPanel({
+  lessonId,
+  start,
+  serviceRate,
+  studentCount,
+  onDone,
+}: {
+  lessonId: string;
+  start: string;
+  serviceRate: number;
+  studentCount: number;
+  onDone: () => void;
+}) {
+  const me = useMe();
+  const settings = useSettings();
+  const cancel = useAction(source.cancelLesson);
+  const [reason, setReason] = useState('');
+  const [waive, setWaive] = useState(false);
+  if (!settings.data) return <Loading />;
+
+  const preview = cancellationOutcome({ start }, new Date(), settings.data, { waiveFee: me.role === 'tutor' || (me.role === 'admin' && waive) });
+  const late = preview.hoursNotice < settings.data.cancellationHours;
+  // Families only see their own children, so this is what they would be charged.
+  const fee = serviceRate * preview.fee * studentCount;
+
+  return (
+    <Card style={{ gap: Spacing.three }}>
+      <Txt variant="h3">Cancel this lesson</Txt>
+      {late ? (
+        <Banner tone={preview.chargeable ? 'warning' : 'info'} icon="alert">
+          {preview.chargeable
+            ? `This is less than ${settings.data.cancellationHours} hours’ notice, so the lesson will still be charged (${formatAED(fee)}).`
+            : `Late notice, but no charge will be made${me.role === 'tutor' ? ' because the tutor is cancelling' : ''}.`}
+        </Banner>
+      ) : (
+        <Banner tone="success" icon="check">
+          More than {settings.data.cancellationHours} hours’ notice, so there’s no charge.
+        </Banner>
+      )}
+      {me.role === 'admin' && late ? (
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Txt>Waive the late-cancellation fee</Txt>
+          <Switch value={waive} onValueChange={setWaive} accessibilityLabel="Waive the late-cancellation fee" />
+        </Row>
+      ) : null}
+      <Field label="Reason" placeholder="e.g. Illness, school trip" value={reason} onChangeText={setReason} />
+      <ErrorNote error={cancel.error} />
+      <Row gap={Spacing.two}>
+        <Button title="Keep lesson" variant="secondary" style={{ flex: 1 }} onPress={onDone} />
+        <Button
+          title="Yes, cancel"
+          variant="danger"
+          style={{ flex: 1 }}
+          loading={cancel.isPending}
+          onPress={async () => {
+            const out = await cancel.mutateAsync([lessonId, reason.trim() || 'Cancelled', waive]);
+            onDone();
+            notify('Lesson cancelled', out.chargeable ? 'A late-cancellation charge has been added.' : 'No charge was made.');
+          }}
+        />
+      </Row>
+    </Card>
+  );
+}
+
+function ReschedulePanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof useLesson>['data']>; onDone: () => void }) {
+  const lookup = useLookup();
+  const start = new Date(lesson.start);
+  const duration = minutesBetween(start, new Date(lesson.end));
+  const [date, setDate] = useState(toDateKey(start));
+  const [time, setTime] = useState(formatTime(start));
+  const move = useAction(source.rescheduleLesson);
+  const newStart = fromDateAndTime(date, time);
+  const dayStart = startOfDay(newStart ?? start);
+  const nearby = useLessons(dayStart, addDays(dayStart, 1));
+  const clashes =
+    newStart && nearby.data
+      ? findClashes(
+          { start: newStart, end: new Date(newStart.getTime() + duration * 60_000), tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id },
+          nearby.data,
+        )
+      : [];
+
+  return (
+    <Card style={{ gap: Spacing.three }}>
+      <Txt variant="h3">Move this lesson</Txt>
+      <Row gap={Spacing.two}>
+        <View style={{ flex: 1 }}>
+          <Field label="Date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Field label="Start time" value={time} onChangeText={setTime} placeholder="HH:MM" />
+        </View>
+      </Row>
+      {!newStart ? <Banner tone="danger" icon="alert">Enter a date as YYYY-MM-DD and a time as HH:MM.</Banner> : null}
+      {clashes.map((c) => (
+        <Banner key={c.lesson.id} tone="warning" icon="alert">
+          Clash: {c.reason === 'tutor' ? lookup.tutor(c.lesson.tutorId)?.fullName : lookup.studentNames(c.studentIds)} already has a lesson{' '}
+          {formatTime(c.lesson.start)}–{formatTime(c.lesson.end)}.
+        </Banner>
+      ))}
+      <ErrorNote error={move.error} />
+      <Row gap={Spacing.two}>
+        <Button title="Back" variant="secondary" style={{ flex: 1 }} onPress={onDone} />
+        <Button
+          title={clashes.length ? 'Move anyway' : 'Move lesson'}
+          style={{ flex: 1 }}
+          disabled={!newStart}
+          loading={move.isPending}
+          onPress={async () => {
+            if (!newStart) return;
+            await move.mutateAsync([lesson.id, newStart.toISOString(), new Date(newStart.getTime() + duration * 60_000).toISOString()]);
+            onDone();
+          }}
+        />
+      </Row>
+    </Card>
+  );
+}
