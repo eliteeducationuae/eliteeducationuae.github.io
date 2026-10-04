@@ -1,4 +1,5 @@
-import { builtInSyllabusesFor, enrolmentFieldsFor, getSyllabus, resolveBuiltInSyllabus, SYLLABUSES } from '../curriculum';
+import { builtInSyllabusesFor, courseStillFits, enrolmentFieldsFor, getSyllabus, resolveBuiltInSyllabus, SYLLABUSES } from '../curriculum';
+import { addChildSubjects } from '../rpc-mapping';
 
 describe('built-in syllabuses', () => {
   it('describe their subject, curriculum, level and exam board', () => {
@@ -35,6 +36,13 @@ describe('resolveBuiltInSyllabus', () => {
     expect(id({ subject: 'Maths', curriculum: 'A-Level', syllabusId: 'igcse-0580' })).toBe('alevel-maths');
   });
 
+  it('drops a requested course when the level or exam board given beside it contradicts it', () => {
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Cambridge', syllabusId: 'igcse-4ma1' })).toBe('igcse-0580');
+    expect(id({ subject: 'Maths', curriculum: 'IB DP', level: 'AI SL', syllabusId: 'ib-aa-hl' })).toBe('ib-ai-sl');
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', level: 'Additional', syllabusId: 'igcse-0580' })).toBe('igcse-0606');
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', level: 'Extended', examBoard: 'cambridge', syllabusId: 'igcse-0580' })).toBe('igcse-0580');
+  });
+
   it('finds the single course that matches, and guesses nothing when two fit', () => {
     expect(id({ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel' })).toBe('igcse-4ma1');
     expect(id({ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Cambridge' })).toBe('igcse-0580');
@@ -51,5 +59,28 @@ describe('resolveBuiltInSyllabus', () => {
     expect(enrolmentFieldsFor(aaHl, 'Maths')).toEqual({ curriculum: 'IB DP', level: 'AA HL', examBoard: 'IB', syllabusId: 'ib-aa-hl' });
     const add = SYLLABUSES.find((s) => s.id === 'igcse-0606')!;
     expect(enrolmentFieldsFor(add, 'Additional Maths')).toEqual({ curriculum: 'IGCSE', level: undefined, examBoard: 'Cambridge', syllabusId: 'igcse-0606' });
+  });
+});
+
+describe('courseStillFits', () => {
+  const draft = { subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel', syllabusId: 'igcse-4ma1' };
+
+  it('clears a course that a new exam board or level contradicts', () => {
+    expect(courseStillFits(draft, { examBoard: 'Cambridge' })).toBeUndefined();
+    expect(courseStillFits({ subject: 'Maths', curriculum: 'IB DP', level: 'AA HL', examBoard: 'IB', syllabusId: 'ib-aa-hl' }, { level: 'AI SL' })).toBeUndefined();
+  });
+
+  it('keeps a course that still agrees', () => {
+    expect(courseStillFits(draft, { level: 'Higher' })).toBe('igcse-4ma1');
+    expect(courseStillFits(draft, { examBoard: undefined })).toBe('igcse-4ma1');
+    expect(courseStillFits({ ...draft, syllabusId: undefined }, { level: 'Higher' })).toBeUndefined();
+  });
+});
+
+describe('addChildSubjects', () => {
+  it('sends snake_case keys, trimmed, with blanks left out', () => {
+    expect(addChildSubjects([{ subject: ' Maths ', curriculum: 'IGCSE', syllabusId: ' igcse-4ma1 ', examBoard: '' }])).toEqual([
+      { subject: 'Maths', curriculum: 'IGCSE', syllabus_id: 'igcse-4ma1' },
+    ]);
   });
 });

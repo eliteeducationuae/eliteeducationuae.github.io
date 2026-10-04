@@ -286,6 +286,11 @@ select pg_temp.check((select string_agg(e.subject || '|' || coalesce(e.curriculu
   from public.enrolments e join public.students s on s.id = e.student_id where s.full_name = 'Infer Other')
   = 'Additional Maths|IGCSE||Cambridge|igcse-0606, Maths|A-Level|||alevel-maths, Maths|IB DP|AA HL|IB|ib-aa-hl, Maths|IGCSE||Pearson Edexcel|igcse-4ma1',
   'without a course, the one built-in course that matches the curriculum, level and exam board is chosen; unknown ids are ignored');
+select pg_temp.check(public.builtin_syllabus_for('Maths', 'IGCSE', null, 'Cambridge', 'igcse-4ma1') = 'igcse-0580'
+  and public.builtin_syllabus_for('Maths', 'IB DP', 'AI SL', null, 'ib-aa-hl') = 'ib-ai-sl'
+  and public.builtin_syllabus_for('Maths', 'IGCSE', 'Additional', null, 'igcse-0580') = 'igcse-0606'
+  and public.builtin_syllabus_for('Maths', 'IGCSE', 'Extended', 'Cambridge', 'igcse-0580') = 'igcse-0580',
+  'a requested course is dropped when the level or exam board given beside it contradicts it');
 insert into kid select public.add_my_child('Unsure Other', p_subjects => '[{"subject":"Maths","curriculum":"IGCSE"}]');
 select pg_temp.check((select coalesce(e.syllabus_id, 'none') from public.enrolments e join public.students s on s.id = e.student_id
   where s.full_name = 'Unsure Other') = 'none', 'when two courses fit, none is guessed');

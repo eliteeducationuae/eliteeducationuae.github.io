@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { builtInSyllabusesFor, enrolmentFieldsFor } from '@/data/curriculum';
+import { builtInSyllabusesFor, courseStillFits, enrolmentFieldsFor } from '@/data/curriculum';
 import { CURRICULA, EXAM_BOARDS, levelsFor, SUBJECTS } from '@/domain/catalogue';
 import { enrolmentTitle, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
 import type { Tutor } from '@/domain/types';
@@ -120,12 +120,19 @@ function SubjectCard({
         label="Level"
         options={levelsFor(draft.curriculum, draft.level)}
         value={draft.level}
-        onChange={(v) => onChange({ level: v })}
+        onChange={(v) => onChange({ level: v, syllabusId: courseStillFits(draft, { level: v }) })}
         otherPlaceholder="For example, Year 10 or Grade 8"
         optional
         collapsed={8}
       />
-      <CataloguePicker label="Exam board" options={EXAM_BOARDS} value={draft.examBoard} onChange={(v) => onChange({ examBoard: v })} optional collapsed={6} />
+      <CataloguePicker
+        label="Exam board"
+        options={EXAM_BOARDS}
+        value={draft.examBoard}
+        onChange={(v) => onChange({ examBoard: v, syllabusId: courseStillFits(draft, { examBoard: v }) })}
+        optional
+        collapsed={6}
+      />
 
       {tutors ? (
         <View style={{ gap: Spacing.one }}>

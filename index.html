@@ -145,9 +145,10 @@
         .enquiry input:focus, .enquiry select:focus, .enquiry textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.2); }
         .enquiry input::placeholder, .enquiry textarea::placeholder { color: var(--muted); opacity: 0.85; }
         .enquiry textarea { min-height: 112px; resize: vertical; }
-        /* Selects match the text fields beside them: same height, no native chrome, a gold chevron. */
-        .enquiry input, .enquiry select { box-sizing: border-box; height: 3.25rem; line-height: 1.4; }
-        .enquiry select { -webkit-appearance: none; -moz-appearance: none; appearance: none; padding-right: 2.5rem; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23C9A84C' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.95rem center; background-size: 12px 8px; }
+        /* Selects match the text fields beside them: same height, no native chrome, a Noir chevron on light and a gold one on dark. */
+        .enquiry input:not([type=checkbox]):not([type=radio]), .enquiry select { box-sizing: border-box; height: 3.25rem; line-height: 1.4; }
+        .enquiry select { -webkit-appearance: none; -moz-appearance: none; appearance: none; padding-right: 2.5rem; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%230A0A0A' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.95rem center; background-size: 12px 8px; }
+        @media (prefers-color-scheme: dark) { .enquiry select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23C9A84C' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); } }
         .enquiry button { margin-top: 1.5rem; width: 100%; }
         .enquiry .note { font-size: 0.9375rem; color: var(--muted); margin-top: 1rem; }
         .enquiry .note a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--gold); }
@@ -156,7 +157,7 @@
         .enquiry .status.err { display: block; background: var(--err-bg); color: var(--err-text); }
         .enquiry .checks { display: flex; gap: 0.5rem 1.25rem; flex-wrap: wrap; margin-top: 0.25rem; }
         .enquiry .checks label { display: flex; align-items: center; gap: 0.45rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: var(--text); font-weight: 400; }
-        .enquiry .checks input { width: auto; accent-color: var(--noir); }
+        .enquiry .checks input { width: auto; height: auto; padding: 0; accent-color: var(--noir); }
         @media (prefers-color-scheme: dark) { .enquiry .checks input { accent-color: var(--gold); } }
         .hp { position: absolute; left: -9999px; }
         .enquiry input.other { margin-top: 0.5rem; }
@@ -337,13 +338,13 @@
                 <div><label for="e-subject">Subject</label><input id="e-subject" name="subject" list="subjects-list" placeholder="For example, Chemistry" autocomplete="off"></div>
                 <div><label for="e-phase">Phase</label>
                     <select id="e-phase" name="phase"><option value="">Please choose</option><option>Early Years</option><option>Primary</option><option>Lower Secondary</option><option>GCSE and IGCSE</option><option>Sixth Form and IB Diploma</option><option>University</option><option>Adult learner</option><option>Other</option></select>
-                    <input id="e-phase-other" name="phaseOther" class="other" placeholder="Please specify the phase" maxlength="60" aria-label="Please specify the phase" hidden></div>
+                    <input id="e-phase-other" name="phaseOther" class="other" placeholder="For example, postgraduate" maxlength="60" aria-label="Please specify the phase" hidden></div>
             </div>
             <datalist id="subjects-list"><option value="Maths"></option><option value="Additional Maths"></option><option value="Further Maths"></option><option value="English"></option><option value="English Language"></option><option value="English Literature"></option><option value="Physics"></option><option value="Chemistry"></option><option value="Biology"></option><option value="Combined Science"></option><option value="Arabic"></option><option value="Islamic Studies"></option><option value="French"></option><option value="Spanish"></option><option value="German"></option><option value="Mandarin"></option><option value="History"></option><option value="Geography"></option><option value="Economics"></option><option value="Business"></option><option value="Accounting"></option><option value="Psychology"></option><option value="Computer Science"></option><option value="Global Perspectives"></option><option value="Theory of Knowledge"></option><option value="Extended Essay"></option><option value="Primary (all subjects)"></option><option value="Phonics and reading"></option><option value="11+ and entrance exams"></option><option value="SAT and ACT"></option><option value="University admissions"></option></datalist>
             <div class="row">
                 <div><label for="e-curriculum">Curriculum</label>
                     <select id="e-curriculum" name="curriculum"><option value="">Please choose</option><option>British</option><option>IGCSE</option><option>GCSE</option><option>A-Level</option><option>BTEC</option><option>IB PYP</option><option>IB MYP</option><option>IB DP</option><option>American</option><option>AP</option><option>Indian CBSE</option><option>Indian ICSE</option><option>French</option><option>UAE MoE</option><option>Other</option></select>
-                    <input id="e-curriculum-other" name="curriculumOther" class="other" placeholder="Please specify the curriculum" maxlength="80" aria-label="Please specify the curriculum" hidden></div>
+                    <input id="e-curriculum-other" name="curriculumOther" class="other" placeholder="For example, Australian" maxlength="80" aria-label="Please specify the curriculum" hidden></div>
                 <div><label for="e-year">Year group</label><input id="e-year" name="year" placeholder="For example, Year 11"></div>
             </div>
             <label for="e-times">Preferred times</label><input id="e-times" name="times" placeholder="For example, weekday evenings">
@@ -389,7 +390,7 @@
                 <label><input type="checkbox" name="curricula" value="UAE MoE"> UAE MoE</label>
                 <label><input type="checkbox" name="curricula" value="Other" data-other="a-curricula-other"> Other</label>
             </div>
-            <input id="a-curricula-other" name="curriculaOther" class="other" placeholder="Please specify the other curricula you teach" maxlength="200" aria-label="Please specify the other curricula you teach" hidden>
+            <input id="a-curricula-other" name="curriculaOther" class="other" placeholder="For example, Australian" maxlength="200" aria-label="Please specify the other curricula you teach" hidden>
             <label>Phases you teach</label>
             <div class="checks">
                 <label><input type="checkbox" name="phases" value="Early Years"> Early Years</label>
@@ -401,9 +402,9 @@
                 <label><input type="checkbox" name="phases" value="Adult learner"> Adult learner</label>
                 <label><input type="checkbox" name="phases" value="Other" data-other="a-phases-other"> Other</label>
             </div>
-            <input id="a-phases-other" name="phasesOther" class="other" placeholder="Please specify the other phases you teach" maxlength="200" aria-label="Please specify the other phases you teach" hidden>
+            <input id="a-phases-other" name="phasesOther" class="other" placeholder="For example, postgraduate" maxlength="200" aria-label="Please specify the other phases you teach" hidden>
             <label for="a-subjects">Subjects and levels</label><input id="a-subjects" name="subjects" placeholder="For example, Chemistry, English Literature, Arabic">
-            <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="Schools, years of teaching and examination results"></textarea>
+            <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="For example, eight years at a British school in Dubai, with A-Level results"></textarea>
             <label for="a-qualifications">Qualifications</label><input id="a-qualifications" name="qualifications" placeholder="For example, degree, PGCE, examiner experience">
             <label for="a-availability">Availability</label><input id="a-availability" name="availability" placeholder="For example, weekday evenings and Saturday mornings">
             <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">

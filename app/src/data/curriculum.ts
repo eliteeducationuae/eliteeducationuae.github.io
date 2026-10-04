@@ -179,8 +179,24 @@ export function builtInSyllabusesFor(subject?: string, curriculum?: string): Syl
 const same = (a?: string, b?: string) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
 
 /**
+ * Whether a level and exam board given beside a chosen tree agree with it. A blank matches anything. A tree with
+ * no level of its own takes any level except one that names a sibling tree ('Additional' is the 0606 course, not
+ * 0580); a tree with a level needs that level. A tree with no exam board takes any board.
+ */
+function agrees(s: Syllabus, e: { level?: string; examBoard?: string }): boolean {
+  const level = e.level?.trim();
+  const levelOk = !level
+    ? true
+    : s.level
+      ? same(level, s.level)
+      : !SYLLABUSES.some((o) => o.subject === s.subject && o.curriculum === s.curriculum && same(level, o.level));
+  const boardOk = !e.examBoard?.trim() || !s.examBoard || same(e.examBoard, s.examBoard);
+  return levelOk && boardOk;
+}
+
+/**
  * The built-in topic tree for a new enrolment. Mirrors public.builtin_syllabus_for: a requested id is kept only
- * when it is built in and fits the subject (and curriculum, if given). Otherwise the one built-in tree whose
+ * when it is built in, fits the subject (and curriculum, if given) and agrees with any level and exam board given. Otherwise the one built-in tree whose
  * curriculum, level and exam board match is chosen; a missing exam board on either side matches any, and a
  * curriculum is required. Returns undefined when nothing, or more than one tree, fits.
  */
@@ -188,7 +204,7 @@ export function resolveBuiltInSyllabus(e: { subject: string; curriculum?: string
   const requested = e.syllabusId?.trim();
   if (requested) {
     const hit = builtInSyllabusesFor(e.subject, e.curriculum).find((s) => s.id === requested);
-    if (hit) return hit;
+    if (hit && agrees(hit, e)) return hit;
   }
   if (!e.curriculum?.trim()) return undefined;
   const fits = builtInSyllabusesFor(e.subject, e.curriculum).filter((s) => {
@@ -199,6 +215,19 @@ export function resolveBuiltInSyllabus(e: { subject: string; curriculum?: string
     return levelFits && boardFits;
   });
   return fits.length === 1 ? fits[0] : undefined;
+}
+
+/**
+ * The chosen built-in course after a level or exam board change: kept only while it still agrees with the new
+ * values (so 'Edexcel 4MA1' does not survive a switch to Cambridge), otherwise cleared.
+ */
+export function courseStillFits(
+  draft: { subject: string; curriculum?: string; level?: string; examBoard?: string; syllabusId?: string },
+  patch: { level?: string; examBoard?: string },
+): string | undefined {
+  const subject = draft.subject.trim();
+  if (!draft.syllabusId || !subject) return undefined;
+  return resolveBuiltInSyllabus({ ...draft, ...patch, subject })?.id === draft.syllabusId ? draft.syllabusId : undefined;
 }
 
 /**

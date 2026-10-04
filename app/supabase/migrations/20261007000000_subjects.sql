@@ -125,7 +125,8 @@ $$;
 
 /**
  * The built-in topic tree for a new enrolment (mirrors resolveBuiltInSyllabus in src/data/curriculum.ts).
- * A requested id is kept only when it is built in and fits the subject (and the curriculum, if one is given).
+ * A requested id is kept only when it is built in, fits the subject (and the curriculum, if one is given) and
+ * agrees with any level and exam board given.
  * Otherwise the one built-in tree whose curriculum, level and exam board match is chosen: a missing exam board
  * on either side matches any, a curriculum is required, and 'Additional Maths' as a subject is the 0606 tree.
  * Returns null when nothing, or more than one tree, fits.
@@ -139,7 +140,15 @@ begin
   from public.builtin_syllabuses() m
   where (lower(m.subject) = subj or (m.id = 'igcse-0606' and subj = 'additional maths'))
     and (cur is null or lower(m.curriculum) = cur)
-    and m.id = nullif(trim(p_requested), '');
+    and m.id = nullif(trim(p_requested), '')
+    -- A level or exam board given beside the requested tree must agree with it (a blank agrees with anything). A tree
+    -- with no level of its own takes any level except one that names a sibling tree ('Additional' is 0606, not 0580).
+    and (nullif(trim(p_exam_board), '') is null or m.exam_board is null or lower(trim(p_exam_board)) = lower(m.exam_board))
+    and (nullif(trim(p_level), '') is null
+         or (m.level is not null and lower(trim(p_level)) = lower(m.level))
+         or (m.level is null and not exists (
+               select 1 from public.builtin_syllabuses() o
+               where o.subject = m.subject and o.curriculum = m.curriculum and lower(o.level) = lower(trim(p_level)))));
   if cardinality(found) = 1 then return found[1]; end if;
   if cur is null then return null; end if;
   select array_agg(m.id) into found

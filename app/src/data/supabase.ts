@@ -53,7 +53,8 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import type { DataSource, NewChildSubject, SocialProvider, SocialSignInResult } from './source';
+import { addChildSubjects } from './rpc-mapping';
+import type { DataSource, SocialProvider, SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -389,21 +390,8 @@ const toInvoice = (r: Row): Invoice => ({
   })),
 });
 
-/** The add_my_child RPC's p_subjects: snake_case keys, blanks left out. */
 /** Rows per request when reading topics; at or below the server's response cap. */
 const TOPIC_PAGE = 1000;
-
-export function addChildSubjects(subjects: NewChildSubject[]): Row[] {
-  return subjects.map((s) =>
-    strip({
-      subject: s.subject.trim(),
-      curriculum: s.curriculum?.trim() || undefined,
-      level: s.level?.trim() || undefined,
-      exam_board: s.examBoard?.trim() || undefined,
-      syllabus_id: s.syllabusId?.trim() || undefined,
-    }),
-  );
-}
 
 function strip(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
