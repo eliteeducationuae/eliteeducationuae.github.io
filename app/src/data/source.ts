@@ -63,6 +63,12 @@ export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { s
 
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
 
+/** WhatsApp reminder preferences: whether to send them, and the E.164 number (kept when opting out). */
+export interface WhatsAppPrefs {
+  optIn: boolean;
+  number: string | null;
+}
+
 export interface CardPaymentResult {
   /** Stripe Checkout URL to open (production). */
   url?: string;
@@ -103,6 +109,8 @@ export interface DataSource {
    * a name the office has recorded for an active family is left alone. Returns the refreshed profile.
    */
   setMyName?(fullName: string): Promise<Profile>;
+  /** Save the signed-in person's WhatsApp opt-in and number (E.164). Returns the refreshed profile. */
+  setWhatsApp?(prefs: WhatsAppPrefs): Promise<Profile>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */

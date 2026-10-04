@@ -142,7 +142,46 @@ How it behaves:
 
 **Device checklist (Craig, on a real iPhone):** sign in with Apple in both light and dark mode, and check that the busy spinner shown over the Apple button while signing in matches the button (black on light, white on dark) and is clearly visible.
 
+**WhatsApp reminders.** Families and tutors who choose to can receive short WhatsApp messages: a lesson reminder the day before, a note when lesson notes are ready, a message when an invoice is sent, a reminder when an invoice is overdue, and a reminder when homework is due. Nothing is ever sent unless the person has switched WhatsApp on and entered their number under *Account*; students cannot opt in. Messages use only the five approved templates below, and bank details are never sent (the sender refuses any message that looks like an IBAN or account number). Set it up once, in this order:
+
+1. Create a [Twilio](https://www.twilio.com) account and upgrade it from trial.
+2. Register the business number as a WhatsApp sender through Twilio's WhatsApp self sign-up (*Messaging → Senders → WhatsApp senders*). This includes verifying Elite Education in Meta Business Manager.
+3. In Twilio's *Content Template Builder*, create the five templates below. For each one choose category **Utility**, language **English (UK)**, use the exact name and body shown, and enter the sample values when asked. Submit each for WhatsApp approval; approval usually takes from a few minutes to a day.
+4. Once approved, copy each template's Content SID (it starts `HX`).
+5. Set the secrets (your own values, never committed to the repository):
+   ```bash
+   npx supabase secrets set TWILIO_ACCOUNT_SID=AC… TWILIO_AUTH_TOKEN=… TWILIO_WHATSAPP_FROM=+971… \
+     TWILIO_TEMPLATE_LESSON_REMINDER=HX… TWILIO_TEMPLATE_LESSON_NOTES=HX… TWILIO_TEMPLATE_INVOICE_SENT=HX… \
+     TWILIO_TEMPLATE_INVOICE_OVERDUE=HX… TWILIO_TEMPLATE_HOMEWORK_DUE=HX…
+   ```
+6. Redeploy: `npx supabase functions deploy send-notifications send-reminders`.
+7. Test it by opting in on your own phone under *Account*, then sending yourself an invoice or waiting for a lesson reminder.
+
+| Template name | When it is sent | Variables | Body |
+| --- | --- | --- | --- |
+| `elite_lesson_reminder` | About a day before each lesson | 1 first name, 2 student first names, 3 tutor name (or "you"), 4 day and time, e.g. `Tue 7 Oct, 16:00` | Dear {{1}}, this is a reminder that {{2}} has a lesson with {{3}} on {{4}} (UAE time). Elite Education \| eliteeducation.me |
+| `elite_lesson_notes` | When the tutor shares lesson notes | 1 first name, 2 student first names, 3 date, e.g. `7 Oct` | Dear {{1}}, the lesson notes for {{2}} from {{3}} are now ready in the Elite Education app. Elite Education \| eliteeducation.me |
+| `elite_invoice_sent` | When an invoice is sent | 1 first name, 2 invoice number, 3 amount, e.g. `AED 1,050.00`, 4 due date, e.g. `15 Oct 2026` | Dear {{1}}, invoice {{2}} for {{3}} is now available in the Elite Education app and is due by {{4}}. Elite Education \| eliteeducation.me |
+| `elite_invoice_overdue` | When an invoice passes its due date unpaid | as for `elite_invoice_sent` | Dear {{1}}, invoice {{2}} for {{3}} was due on {{4}} and remains unpaid. You may view and pay it in the Elite Education app. If you have already paid, please disregard this message. Elite Education \| eliteeducation.me |
+| `elite_homework_due` | Shortly before homework is due | 1 first name, 2 student first name, 3 due date, e.g. `Wed 8 Oct`, 4 homework title | Dear {{1}}, this is a reminder that {{2}} has homework due on {{3}}: {{4}}. Elite Education \| eliteeducation.me |
+
+Sample values for approval: first name `Mona`, student `Omar`, tutor `Ms Sarah Khan`, invoice `INV-0042`, amount `AED 1,050.00`, dates as in the table, homework `Quadratic equations worksheet`.
+
+Until Twilio is configured, WhatsApp messages are marked `skipped` and push notifications and email carry on as normal. To check the queue, look at `notification_outbox` in the Supabase table editor: `whatsapp_status` is `pending`, `sent`, `skipped` or `failed`, and the `error` column explains any failure (for example Twilio code 21211 for an invalid number, or 21610 if the person has blocked the number).
+
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
+
+## Round 4 setup checklist
+
+Complete these once, in this order. The function names come from the round 4 plan; each feature's section above carries the detail.
+
+1. **Database.** Run every migration newer than `20261006000000_social_sign_in.sql` in filename order in the Supabase SQL editor, or run `npx supabase db push`.
+2. **Google.** Reuse the OAuth client from *Sign in with Apple and Google*. In the Google Cloud Console, enable the **Google Calendar API**, add the `calendar.events` and `calendar.freebusy` scopes to the OAuth consent screen, and add `https://<project-ref>.supabase.co/functions/v1/google-connect` as an authorised redirect URI. Then `npx supabase secrets set GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=…`.
+3. **Apple.** Follow the Apple steps under *Sign in with Apple and Google*.
+4. **Stripe.** In the Stripe dashboard, enable **Apple Pay** and **Google Pay** under *Settings → Payment methods*, verify the domain `eliteeducation.me`, switch on and configure the **Customer billing portal**, and add `payment_intent.succeeded` and `payment_intent.payment_failed` to the webhook's events.
+5. **Twilio.** Follow *WhatsApp reminders* above.
+6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `send-notifications` every minute and `send-reminders` hourly.
+7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
 ## Checks
 
@@ -154,7 +193,5 @@ npm run test:db    # schema, row-level security and billing functions against a 
 ## Roadmap ideas
 
 - AI worksheets on each student's weak topics
-- Two-way Google Calendar sync
 - Online booking of trial lessons from eliteeducation.me
-- WhatsApp reminders
 - Bank-feed import for expenses

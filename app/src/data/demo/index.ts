@@ -9,6 +9,7 @@ import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
 import { createSeed } from './seed';
+import { setWhatsAppPrefs } from './whatsapp';
 
 const DB_KEY = 'elite.demo.db';
 const SESSION_KEY = 'elite.demo.session';
@@ -92,6 +93,11 @@ export function createDemoSource(): DataSource {
     },
     async setMyName(fullName) {
       const updated = await write((d, v) => eq.setMyName(d, v, fullName));
+      viewer = updated;
+      return updated;
+    },
+    async setWhatsApp(prefs) {
+      const updated = await write((d, v) => setWhatsAppPrefs(d, v, prefs));
       viewer = updated;
       return updated;
     },

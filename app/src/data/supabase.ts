@@ -79,6 +79,8 @@ const toProfile = (r: Row): Profile => ({
   familyId: r.family_id ?? undefined,
   studentId: r.student_id ?? undefined,
   icsToken: r.ics_token ?? undefined,
+  whatsappOptIn: r.whatsapp_opt_in ?? false,
+  whatsappNumber: r.whatsapp_number ?? undefined,
 });
 
 const toSettings = (r: Row): Settings => ({
@@ -478,6 +480,12 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async setMyName(fullName) {
       check(await client.rpc('set_my_name', { p_full_name: fullName.trim() }));
+      const profile = await loadProfile();
+      if (!profile) throw new Error(NOT_LINKED);
+      return profile;
+    },
+    async setWhatsApp(prefs) {
+      check(await client.rpc('set_whatsapp', { p_opt_in: prefs.optIn, p_number: prefs.number }));
       const profile = await loadProfile();
       if (!profile) throw new Error(NOT_LINKED);
       return profile;

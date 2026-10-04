@@ -1,9 +1,14 @@
 // Push reminders ~24 hours before each lesson, to the tutor and the family.
 // Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
+// It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
+// send-notifications delivers those within a minute.
 import { adminClient } from '../_shared/supabase.ts';
 
 Deno.serve(async () => {
   const db = adminClient();
+  const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
+  if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
+  const whatsapp = `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages`;
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')
@@ -12,7 +17,7 @@ Deno.serve(async () => {
     .is('reminded_at', null)
     .gte('start_at', new Date(now + 23 * 3_600_000).toISOString())
     .lte('start_at', new Date(now + 25 * 3_600_000).toISOString());
-  if (!lessons?.length) return new Response('nothing to send');
+  if (!lessons?.length) return new Response(`no pushes to send, ${whatsapp}`);
 
   const { data: students } = await db.from('students').select('id, full_name, family_id');
   const { data: profiles } = await db.from('profiles').select('role, tutor_id, family_id, student_id, push_token').not('push_token', 'is', null);
@@ -45,5 +50,5 @@ Deno.serve(async () => {
     });
   }
   await db.from('lessons').update({ reminded_at: new Date().toISOString() }).in('id', lessons.map((l) => l.id));
-  return new Response(`sent ${messages.length}`);
+  return new Response(`sent ${messages.length} pushes, ${whatsapp}`);
 });

@@ -1,7 +1,12 @@
-// Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend.
-// Schedule every minute or two (Supabase → Edge Functions → Schedules).
+// Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend,
+// and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account).
+// Schedule every minute (Supabase → Edge Functions → Schedules).
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
+// WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
+// Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
+// TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
+import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
 
@@ -31,10 +36,11 @@ Deno.serve(async () => {
   const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me';
   const from = Deno.env.get('EMAIL_FROM') ?? 'Elite Education <hello@eliteeducation.me>';
   const resendKey = Deno.env.get('RESEND_API_KEY');
+  const twilio = twilioConfigFromEnv((k) => Deno.env.get(k));
 
   const { data: queue, error } = await db
     .from('notification_outbox')
-    .select('*, profiles(push_token)')
+    .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number)')
     .is('sent_at', null)
     .lt('attempts', MAX_ATTEMPTS)
     .order('created_at')
@@ -71,10 +77,64 @@ Deno.serve(async () => {
         if (!res.ok) problems.push(`email ${res.status}: ${(await res.text()).slice(0, 200)}`);
       }
     }
+    // WhatsApp: only rows still pending, so a retry for another channel never sends the message twice.
+    const wa: Record<string, unknown> = {};
+    const notes: string[] = [];
+    if (n.whatsapp && n.whatsapp_status === 'pending') {
+      const optedIn = n.profiles?.whatsapp_opt_in === true;
+      const number = n.profiles?.whatsapp_number as string | null;
+      if (!optedIn || !number) {
+        wa.whatsapp_status = 'skipped';
+      } else if (!twilio) {
+        wa.whatsapp_status = 'skipped';
+        notes.push('WhatsApp skipped: Twilio is not configured');
+      } else {
+        const msg = buildTwilioMessage(twilio, number, n.whatsapp_template, n.whatsapp_vars);
+        if (!msg.ok) {
+          wa.whatsapp_status = 'failed';
+          notes.push(`WhatsApp failed: ${msg.reason}`);
+        } else {
+          // Claim the row before calling Twilio, so an overlapping run (or a crash after sending) can never send it twice.
+          // While claimed it reads 'failed'; it only returns to 'pending' when Twilio asks us to retry.
+          const { data: claimed } = await db
+            .from('notification_outbox')
+            .update({ whatsapp_status: 'failed', error: 'WhatsApp send in progress' })
+            .eq('id', n.id)
+            .eq('whatsapp_status', 'pending')
+            .select('id');
+          let result;
+          if (!claimed?.length) {
+            result = null;
+          } else {
+            try {
+              const res = await fetch(msg.url, msg.init);
+              result = readTwilioResult(res.status, await res.text());
+            } catch (e) {
+              // The message may have gone out before the connection dropped, so never retry it.
+              result = { ok: false as const, retry: false, error: `Twilio network error: ${e instanceof Error ? e.message : String(e)}` };
+            }
+          }
+          if (!result) continue; // another run claimed this row and will record the outcome
+          if (result.ok) {
+            wa.whatsapp_status = 'sent';
+            wa.whatsapp_sent_at = new Date().toISOString();
+            wa.whatsapp_sid = result.sid;
+          } else if (result.retry && n.attempts + 1 < MAX_ATTEMPTS) {
+            // Twilio did not accept it: release the claim so the next run tries again.
+            wa.whatsapp_status = 'pending';
+            problems.push(`whatsapp ${result.error}`);
+          } else {
+            wa.whatsapp_status = 'failed';
+            notes.push(`WhatsApp failed: ${result.error}`);
+          }
+        }
+      }
+    }
     if (problems.length) {
-      await db.from('notification_outbox').update({ attempts: n.attempts + 1, error: problems.join('; ') }).eq('id', n.id);
+      const error = [...problems, ...notes].join('; ');
+      await db.from('notification_outbox').update({ attempts: n.attempts + 1, error, ...wa }).eq('id', n.id);
     } else {
-      await db.from('notification_outbox').update({ sent_at: new Date().toISOString(), error: null }).eq('id', n.id);
+      await db.from('notification_outbox').update({ sent_at: new Date().toISOString(), error: notes.length ? notes.join('; ') : null, ...wa }).eq('id', n.id);
       sent++;
     }
   }
