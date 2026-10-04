@@ -1,4 +1,4 @@
-import { coverOptions, findBusyClashes, openSlots, type BusyTime } from '../scheduling';
+import { coverOptions, findBusyClashes, inTimeOrder, openSlots, type BusyTime } from '../scheduling';
 import type { Availability, Lesson, Tutor } from '../types';
 
 // Monday 5 Oct 2026
@@ -90,5 +90,18 @@ describe('coverOptions with busy blocks', () => {
   it('excludes a tutor who is busy in their Google Calendar', () => {
     const blocks = [busy('t2', at(0, 16, 30), at(0, 17, 30)), busy('t3', at(0, 17), at(0, 18))];
     expect(coverOptions(lessons[0], tutors, lessons, avail, [], blocks).map((o) => o.tutor.id)).toEqual(['t3']);
+  });
+});
+
+describe('inTimeOrder', () => {
+  it('places each busy time where it falls among the lessons, busy first on a tie', () => {
+    const l1 = lesson({ id: 'l1', start: at(0, 9).toISOString() });
+    const l2 = lesson({ id: 'l2', start: at(0, 16).toISOString() });
+    const b1 = { ...busy('t1', at(0, 12), at(0, 13)), id: 'b1' };
+    const b2 = { ...busy('t1', at(0, 16), at(0, 17)), id: 'b2' };
+    const b0 = { ...busy('t1', at(0, 7), at(0, 8)), id: 'b0' };
+    const order = inTimeOrder([l2, l1], [b2, b1, b0]).map((e) => (e.kind === 'busy' ? e.busy.id : e.lesson.id));
+    expect(order).toEqual(['b0', 'l1', 'b1', 'b2', 'l2']);
+    expect(inTimeOrder([], [])).toEqual([]);
   });
 });

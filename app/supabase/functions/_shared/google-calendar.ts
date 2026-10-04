@@ -205,7 +205,10 @@ export interface GoogleEventLike {
   id?: string;
   etag?: string;
   hangoutLink?: string;
-  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
+  conferenceData?: {
+    entryPoints?: { entryPointType?: string; uri?: string }[];
+    createRequest?: { requestId?: string; status?: { statusCode?: string } };
+  };
 }
 
 export function meetLinkFromEvent(event: GoogleEventLike | null | undefined): string | undefined {
@@ -213,6 +216,30 @@ export function meetLinkFromEvent(event: GoogleEventLike | null | undefined): st
   if (event.hangoutLink) return event.hangoutLink;
   const video = event.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video' && e.uri);
   return video?.uri;
+}
+
+/**
+ * True when Google has accepted our request for a Meet but not created it yet (createRequest status 'pending').
+ * The event then has no link; the lesson is checked again on the next run rather than asking for a second Meet.
+ */
+export function conferencePending(event: GoogleEventLike | null | undefined): boolean {
+  return !meetLinkFromEvent(event) && event?.conferenceData?.createRequest?.status?.statusCode === 'pending';
+}
+
+/** Shown on the calendar card when a token cannot be renewed for any reason other than withdrawn access. */
+export const RECONNECT = 'We could not renew access to your Google Calendar. Please disconnect and reconnect it.';
+
+/**
+ * How calendar-sync treats a failed token refresh for one calendar:
+ *  - 'withdrawn': Google says access was withdrawn (invalid_grant).
+ *  - 'reconnect': Google answered but gave no usable token (another OAuth error or a malformed answer). Like a
+ *    withdrawal, the calendar is marked as needing to be reconnected, so its lessons do not wait on it.
+ *  - 'unreachable': Google could not be reached (network failure). The calendar's changes wait for the next run.
+ * Only 'unreachable' holds lessons back, and only those that involve that calendar.
+ */
+export function tokenFailure(e: unknown): 'withdrawn' | 'reconnect' | 'unreachable' {
+  if (e instanceof GoogleAuthError) return e.code === 'invalid_grant' ? 'withdrawn' : 'reconnect';
+  return 'unreachable';
 }
 
 // ---------------------------------------------------------------------------

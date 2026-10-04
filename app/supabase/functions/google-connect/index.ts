@@ -74,14 +74,19 @@ function page(title: string, body: string, status = 200) {
   return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-function failure(returnTo: string | null, reason: 'denied' | 'exchange' | 'expired') {
-  if (returnTo) return redirect(withResult(returnTo, `calendar=error&reason=${reason}`));
+/** Shown when an attempt fails for someone who is already connected: the failed attempt changed nothing. */
+const KEPT = 'Your existing connection remains in place.';
+
+/** kept: the person already had a connection, which this failed attempt has left untouched. */
+function failure(returnTo: string | null, reason: 'denied' | 'exchange' | 'expired', kept = false) {
+  if (returnTo) return redirect(withResult(returnTo, `calendar=error&reason=${reason}${kept ? '&kept=1' : ''}`));
   const body =
-    reason === 'denied'
+    (reason === 'denied'
       ? 'Access to Google Calendar was not granted. You may close this window and try again from the app whenever you wish.'
       : reason === 'expired'
         ? 'This connection link has expired. Please close this window and start again from the app.'
-        : 'We were unable to complete the connection with Google. Please close this window and try again from the app.';
+        : 'We were unable to complete the connection with Google. Please close this window and try again from the app.') +
+    (kept ? ` ${KEPT}` : '');
   return page('Google Calendar not connected', body, 400);
 }
 
@@ -103,7 +108,9 @@ async function handleCallback(url: URL) {
       else return failure(returnTo, 'expired');
     }
   }
-  if (url.searchParams.get('error')) return failure(returnTo, 'denied');
+  const hasConnection = async () =>
+    !!profileId && !!(await db.from('calendar_connections').select('profile_id').eq('profile_id', profileId).maybeSingle()).data;
+  if (url.searchParams.get('error')) return failure(returnTo, 'denied', await hasConnection());
   const code = url.searchParams.get('code');
   if (!profileId || !code) return failure(returnTo, 'expired');
 
@@ -117,12 +124,12 @@ async function handleCallback(url: URL) {
     tokens = parseTokenResponse(await res.json(), new Date());
   } catch (e) {
     console.error('google-connect: token exchange failed', e instanceof GoogleAuthError ? e.code : 'network');
-    return failure(returnTo, 'exchange');
+    return failure(returnTo, 'exchange', await hasConnection());
   }
 
   const { data: previous } = await db.from('calendar_connections').select('refresh_token').eq('profile_id', profileId).maybeSingle();
   const refreshToken = tokens.refreshToken ?? previous?.refresh_token ?? null;
-  if (!refreshToken) return failure(returnTo, 'exchange');
+  if (!refreshToken) return failure(returnTo, 'exchange', !!previous);
   const { error } = await db.from('calendar_connections').upsert(
     {
       profile_id: profileId,
@@ -215,6 +222,24 @@ async function disconnect(profile: { id: string; tutor_id: string | null }) {
     } catch (e) {
       console.error('google-connect: cleanup at Google was incomplete', e instanceof GoogleAuthError ? e.code : 'network');
     }
+  }
+  // The Meets this calendar created for upcoming lessons belong to its account and go with it: clear those links,
+  // so families never get a dead link. A link someone pasted by hand is not ours (no meet_url) and stays. Clearing
+  // re-queues the lesson, so another connected calendar of the lesson tutor can give it a fresh Meet.
+  const { data: generated } = await db
+    .from('lesson_calendar_events')
+    .select('lesson_id, meet_url')
+    .eq('profile_id', profile.id)
+    .not('meet_url', 'is', null);
+  const nowIso = new Date().toISOString();
+  for (const g of generated ?? []) {
+    await db
+      .from('lessons')
+      .update({ meeting_url: null })
+      .eq('id', g.lesson_id)
+      .eq('meeting_url', g.meet_url)
+      .eq('status', 'scheduled')
+      .gte('start_at', nowIso);
   }
   await db.from('lesson_calendar_events').delete().eq('profile_id', profile.id);
   await db.from('calendar_connections').delete().eq('profile_id', profile.id);

@@ -117,6 +117,24 @@ export function byStart(a: Pick<Lesson, 'start'>, b: Pick<Lesson, 'start'>): num
   return new Date(a.start).getTime() - new Date(b.start).getTime();
 }
 
+/** One line of a day in the calendar: a lesson or a Google busy time. */
+export type DayEntry<L, B> = { kind: 'lesson'; start: string; lesson: L } | { kind: 'busy'; start: string; busy: B };
+
+/**
+ * Lessons and Google busy times as one list in time order, so a busy time sits where it falls in the day.
+ * At the same start time the busy line comes first; otherwise the original order is kept.
+ */
+export function inTimeOrder<L extends Pick<Lesson, 'start'>, B extends Pick<BusyBlock, 'start'>>(lessons: L[], busy: B[]): DayEntry<L, B>[] {
+  const entries: DayEntry<L, B>[] = [
+    ...busy.map((b) => ({ kind: 'busy' as const, start: b.start, busy: b })),
+    ...lessons.map((l) => ({ kind: 'lesson' as const, start: l.start, lesson: l })),
+  ];
+  return entries
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => byStart(a.e, b.e) || (a.e.kind === b.e.kind ? a.i - b.i : a.e.kind === 'busy' ? -1 : 1))
+    .map(({ e }) => e);
+}
+
 // ---------------------------------------------------------------------------
 // Availability, closures, absences and cover
 // ---------------------------------------------------------------------------

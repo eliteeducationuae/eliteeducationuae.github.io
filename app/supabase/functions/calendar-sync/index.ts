@@ -9,7 +9,9 @@
 //     Only start and end times are stored, never event titles. Lessons we wrote are never counted as busy.
 //
 // If a connected calendar cannot be reached (for example Google is briefly unavailable), the lesson changes
-// it needs stay queued for the next run rather than being lost.
+// it needs stay queued for the next run rather than being lost. A calendar whose token Google refuses to renew
+// is marked as needing to be reconnected instead, so it never holds back lessons for the other calendars.
+// A Meet that Google has accepted but not yet created is checked again on the next run.
 //
 // Never logs tokens and never emails or notifies anyone: Google is told sendUpdates=none throughout.
 import { adminClient, json } from '../_shared/supabase.ts';
@@ -17,6 +19,7 @@ import {
   busyBlocksFor,
   type CalendarLessonRow,
   CALENDAR_API,
+  conferencePending,
   eventUrl,
   findEventUrl,
   firstEventId,
@@ -35,11 +38,13 @@ import {
   parseFreeBusy,
   parseTokenResponse,
   planTargets,
+  RECONNECT,
   refreshBody,
   shouldClearError,
   type SyncConnection,
   type SyncLesson,
   targetsFor,
+  tokenFailure,
 } from '../_shared/google-calendar.ts';
 
 const WITHDRAWN = 'Google access was withdrawn. Please reconnect your calendar.';
@@ -104,6 +109,11 @@ async function accessToken(db: Db, row: ConnectionRow): Promise<string> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: refreshBody({ refreshToken: row.refresh_token, clientId: env('GOOGLE_CLIENT_ID'), clientSecret: env('GOOGLE_CLIENT_SECRET') }),
   });
+  // Google itself is struggling: try again next run rather than asking the person to reconnect.
+  if (res.status >= 500 || res.status === 429) {
+    await res.body?.cancel();
+    throw new Error(`Google's token service returned ${res.status}`);
+  }
   const tokens = parseTokenResponse(await res.json(), new Date());
   await db
     .from('calendar_connections')
@@ -202,6 +212,8 @@ async function syncLesson(db: Db, lessonId: string, live: Live[], unavailable: S
   const eventFor = new Map(existing.map((e) => [e.profileId, e.googleEventId]));
   let written = 0;
   let removed = 0;
+  /** Google accepted the Meet request but has not created it yet: check this lesson again next run. */
+  let meetPending = false;
 
   /** Records our event. meetUrl: a link this event created, null to forget one, undefined to leave as it is. */
   const save = async (conn: Live, data: Record<string, unknown>, meetUrl?: string | null) => {
@@ -241,17 +253,21 @@ async function syncLesson(db: Db, lessonId: string, live: Live[], unavailable: S
     if (meet.create) {
       const organiser = byProfile.get(meet.create.profileId)!;
       const audience = organiser.role === 'admin' ? 'admin' : 'tutor';
-      const requestId = `elite-${lesson.id}-${Date.now().toString(36)}`;
-      const data = await upsertEvent(
-        organiser,
-        lesson.id,
-        eventFor.get(organiser.profileId),
-        lessonToEvent(lesson, audience, { requestMeet: true, requestId }),
-        true,
-      );
+      const priorId = eventFor.get(organiser.profileId);
+      let data: Record<string, unknown> | null = null;
+      if (priorId) {
+        // A Meet asked for on an earlier run may still be on its way: look before asking for another one.
+        const prior = await google(organiser, 'GET', eventUrl(organiser.calendarId, priorId, { conferenceData: true }));
+        if (prior.ok && (conferencePending(prior.data) || meetLinkFromEvent(prior.data))) data = prior.data;
+      }
+      if (!data) {
+        const requestId = `elite-${lesson.id}-${Date.now().toString(36)}`;
+        data = await upsertEvent(organiser, lesson.id, priorId, lessonToEvent(lesson, audience, { requestMeet: true, requestId }), true);
+      }
       const link = meetLinkFromEvent(data);
       await save(organiser, data, link ?? null);
       done.add(organiser.profileId);
+      if (!link && conferencePending(data)) meetPending = true;
       if (link) {
         lesson.meetingUrl = link;
         // This re-queues one harmless 'changed' row, which refreshes every calendar's description with the link.
@@ -283,7 +299,7 @@ async function syncLesson(db: Db, lessonId: string, live: Live[], unavailable: S
     await db.from('lesson_calendar_events').delete().eq('lesson_id', lessonId).eq('profile_id', r.profileId);
     removed++;
   }
-  return { written, removed, waiting };
+  return { written, removed, waiting, meetPending };
 }
 
 /** Every lesson in the window that matters to one calendar's busy times (paged: an office calendar holds many). */
@@ -308,6 +324,7 @@ async function run(db: Db) {
     unreachable: 0,
     lessons: 0,
     waiting: 0,
+    meetPending: 0,
     eventsWritten: 0,
     eventsRemoved: 0,
     failed: 0,
@@ -336,9 +353,16 @@ async function run(db: Db) {
       const token = await accessToken(db, row);
       live.push({ ...base, calendarId: row.calendar_id, token });
     } catch (e) {
-      if (e instanceof GoogleAuthError && e.code === 'invalid_grant') {
+      const failure = tokenFailure(e);
+      if (failure !== 'unreachable') {
+        // Withdrawn, or refused for another reason: the person must reconnect. Not added to `unavailable`, so
+        // lessons for the other calendars carry on rather than waiting for this one.
         summary.withdrawn++;
-        await db.from('calendar_connections').update({ status: 'error', last_error: WITHDRAWN, updated_at: now.toISOString() }).eq('profile_id', row.profile_id);
+        await db
+          .from('calendar_connections')
+          .update({ status: 'error', last_error: failure === 'withdrawn' ? WITHDRAWN : RECONNECT, updated_at: now.toISOString() })
+          .eq('profile_id', row.profile_id);
+        console.error('calendar-sync: token refused', row.profile_id, e instanceof GoogleAuthError ? e.code : 'unknown');
       } else {
         summary.unreachable++;
         unavailable.push(base);
@@ -372,6 +396,20 @@ async function run(db: Db) {
       if (r.waiting) {
         // Leave the rows queued (without counting an attempt) until every calendar involved can be reached.
         summary.waiting++;
+        continue;
+      }
+      if (r.meetPending) {
+        // Keep the rows queued so the next run collects the link; give up quietly after MAX_ATTEMPTS runs.
+        summary.meetPending++;
+        const attempts = Math.max(...items.map((i) => i.attempts)) + 1;
+        await db
+          .from('calendar_sync_queue')
+          .update({
+            attempts,
+            last_error: 'Google is still creating the Meet link.',
+            ...(attempts >= MAX_ATTEMPTS ? { processed_at: new Date().toISOString() } : {}),
+          })
+          .in('id', ids);
         continue;
       }
       await db.from('calendar_sync_queue').update({ processed_at: new Date().toISOString(), last_error: null }).in('id', ids);

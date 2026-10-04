@@ -113,9 +113,31 @@ describe('connecting Google Calendar', () => {
     // Craig's busy time is untouched.
     expect((db.busyBlocks ?? []).some((b) => b.tutorId === 't-craig')).toBe(true);
 
+    // Sarah's generated Meet links on upcoming lessons go with her calendar; links pasted by hand stay.
+    expect(
+      db.lessons.some(
+        (l) => l.tutorId === 't-sarah' && l.status === 'scheduled' && new Date(l.start) > NOW && l.meetingUrl?.startsWith('https://meet.google.com/demo-'),
+      ),
+    ).toBe(false);
+
     // Reconnecting adds sample busy times again.
     cal.connect(db, tutor, NOW);
     expect(cal.busyBlocks(db, tutor).length).toBeGreaterThan(0);
+  });
+
+  it('clears the Meet links its calendar generated on upcoming lessons when disconnecting', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'admin');
+    cal.connect(db, admin, NOW);
+    const generated = db.lessons.filter((l) => l.tutorId === 't-craig' && l.meetingUrl?.startsWith('https://meet.google.com/demo-'));
+    expect(generated.length).toBeGreaterThan(0);
+    const pasted = db.lessons.find((l) => l.tutorId === 't-craig' && l.status === 'scheduled' && new Date(l.start) > NOW && !generated.includes(l));
+    if (pasted) pasted.meetingUrl = 'https://zoom.us/j/123';
+    cal.disconnect(db, admin, NOW);
+    for (const l of generated) {
+      if (l.status === 'scheduled' && new Date(l.start) > NOW) expect(l.meetingUrl).toBeUndefined();
+    }
+    if (pasted) expect(pasted.meetingUrl).toBe('https://zoom.us/j/123');
   });
 
   it('refuses families', () => {
@@ -137,7 +159,7 @@ describe('connecting Google Calendar', () => {
     cal.connect(db, admin, NOW);
     expect(cal.connection(db, admin)?.status).toBe('connected');
     expect(cal.busyBlocks(db, admin).length).toBeGreaterThan(0);
-    cal.disconnect(db, admin);
+    cal.disconnect(db, admin, NOW);
     expect(cal.connection(db, admin)).toBeNull();
     expect(cal.busyBlocks(db, admin)).toEqual([]);
   });

@@ -1,6 +1,7 @@
 import {
   base64UrlDecode,
   busyBlocksFor,
+  conferencePending,
   findEventUrl,
   firstEventId,
   GIVE_UP_PREFIX,
@@ -28,12 +29,14 @@ import {
   parseFreeBusy,
   parseTokenResponse,
   planTargets,
+  RECONNECT,
   refreshBody,
   subtractIntervals,
   type SyncConnection,
   type SyncLesson,
   TIME_ZONE,
   tokenExchangeBody,
+  tokenFailure,
 } from '../../../supabase/functions/_shared/google-calendar';
 
 /** base64url without padding, as Google encodes JWT segments. */
@@ -217,6 +220,33 @@ describe('meetLinkFromEvent', () => {
     ).toBe('https://meet.google.com/b');
     expect(meetLinkFromEvent({ conferenceData: { entryPoints: [] } })).toBeUndefined();
     expect(meetLinkFromEvent(undefined)).toBeUndefined();
+  });
+});
+
+describe('conferencePending', () => {
+  it('is true only while Google is still creating the Meet', () => {
+    const pending = { conferenceData: { createRequest: { requestId: 'r1', status: { statusCode: 'pending' } } } };
+    expect(conferencePending(pending)).toBe(true);
+    expect(conferencePending({ conferenceData: { createRequest: { status: { statusCode: 'success' } } } })).toBe(false);
+    expect(conferencePending({ ...pending, hangoutLink: 'https://meet.google.com/a' })).toBe(false);
+    expect(conferencePending({})).toBe(false);
+    expect(conferencePending(undefined)).toBe(false);
+  });
+});
+
+describe('tokenFailure', () => {
+  it('asks for a reconnect on any refusal from Google, and waits only when Google cannot be reached', () => {
+    expect(tokenFailure(new GoogleAuthError('invalid_grant', 'x'))).toBe('withdrawn');
+    expect(tokenFailure(new GoogleAuthError('oauth_error', 'unauthorized_client'))).toBe('reconnect');
+    expect(tokenFailure(new GoogleAuthError('invalid_response', 'no token'))).toBe('reconnect');
+    expect(tokenFailure(new TypeError('fetch failed'))).toBe('unreachable');
+    expect(tokenFailure(new Error("Google's token service returned 503"))).toBe('unreachable');
+    expect(RECONNECT).toMatch(/reconnect/);
+  });
+  it('never makes other calendars wait for a calendar that needs reconnecting', () => {
+    // calendar-sync passes only 'unreachable' calendars to mustWait; a reconnect is no longer connected.
+    const lesson = { tutorId: 't1', status: 'scheduled' };
+    expect(mustWait(lesson, [], [{ profileId: 'p-office', googleEventId: 'e1' }])).toBe(false);
   });
 });
 

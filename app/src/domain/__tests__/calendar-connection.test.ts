@@ -89,6 +89,13 @@ describe('connectResultNotice', () => {
     expect(connectResultNotice('eliteeducation://calendar-connected?calendar=error&reason=expired')?.message).toMatch(/expired/);
     expect(connectResultNotice('?calendar=error&reason=exchange')?.message).toBe('Google Calendar could not be connected. Please try again.');
     expect(connectResultNotice('?tab=me')).toBeNull();
+    // Declining (or failing) while already connected leaves that connection as it was, and says so.
+    expect(connectResultNotice('?calendar=error&reason=denied&kept=1')?.message).toBe(
+      'Access to Google Calendar was not granted. You may try again whenever you wish. Your existing connection remains in place.',
+    );
+    expect(connectResultNotice('eliteeducation://calendar-connected?calendar=error&reason=exchange&kept=1')?.message).toMatch(
+      /Your existing connection remains in place\.$/,
+    );
     expect(connectResultNotice('')).toBeNull();
   });
 });

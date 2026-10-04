@@ -18,7 +18,8 @@ export interface ConnectNotice {
 
 /**
  * The message for the result Google's consent screen leaves in the return address
- * (?calendar=connected, or ?calendar=error&reason=denied|expired|exchange). Null when there is none.
+ * (?calendar=connected, or ?calendar=error&reason=denied|expired|exchange, with &kept=1 when an existing connection
+ * was left in place). Null when there is none.
  */
 export function connectResultNotice(query: string): ConnectNotice | null {
   const params = new URLSearchParams(query.includes('?') ? query.slice(query.indexOf('?') + 1).split('#')[0] : query);
@@ -28,14 +29,19 @@ export function connectResultNotice(query: string): ConnectNotice | null {
   }
   if (result !== 'error') return null;
   const reason = params.get('reason');
+  // kept=1: the person was already connected, and the failed attempt left that connection as it was.
+  const kept = params.get('kept') === '1' ? ` ${KEPT_CONNECTION}` : '';
   if (reason === 'denied') {
-    return { tone: 'warning', message: 'Access to Google Calendar was not granted. You may try again whenever you wish.' };
+    return { tone: 'warning', message: `Access to Google Calendar was not granted. You may try again whenever you wish.${kept}` };
   }
   if (reason === 'expired') {
-    return { tone: 'warning', message: 'The connection link expired before it was completed. Please try again.' };
+    return { tone: 'warning', message: `The connection link expired before it was completed. Please try again.${kept}` };
   }
-  return { tone: 'warning', message: 'Google Calendar could not be connected. Please try again.' };
+  return { tone: 'warning', message: `Google Calendar could not be connected. Please try again.${kept}` };
 }
+
+/** Added to a failed connection attempt by someone already connected. */
+export const KEPT_CONNECTION = 'Your existing connection remains in place.';
 
 /** A sync older than this is flagged as delayed (calendar-sync runs every few minutes). */
 const DELAYED_AFTER_MIN = 30;

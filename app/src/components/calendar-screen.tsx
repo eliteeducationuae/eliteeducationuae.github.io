@@ -6,7 +6,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
 import { addDays, formatDay, formatMonth, formatTime, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
-import { byStart, findBusyClashes, findClashes, isClosed } from '@/domain/scheduling';
+import { byStart, type DayEntry, findBusyClashes, findClashes, inTimeOrder, isClosed } from '@/domain/scheduling';
 import type { BusyBlock, Lesson } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
@@ -72,6 +72,17 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const dayLessons = all.filter((l) => isSameDay(new Date(l.start), selected));
   const weekBusy = (busyBlocks.data ?? []).filter((b) => !tutorFilter || b.tutorId === tutorFilter);
   const dayBusy = weekBusy.filter((b) => isSameDay(new Date(b.start), selected));
+  /** A busy line or a lesson card, so the day and week views list both in time order. */
+  const renderEntry = (e: DayEntry<Lesson, BusyBlock>) =>
+    e.kind === 'busy' ? (
+      <BusyLine
+        key={`busy-${e.busy.id}`}
+        block={e.busy}
+        tutorName={perspective === 'admin' ? lookup.tutor(e.busy.tutorId)?.fullName ?? 'Tutor' : undefined}
+      />
+    ) : (
+      <LessonCard key={e.lesson.id} lesson={e.lesson} lookup={lookup} perspective={perspective} />
+    );
   const tutorIds =
     perspective === 'tutor'
       ? [...new Set(all.map((l) => l.tutorId))]
@@ -144,12 +155,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
       ) : view === 'day' ? (
         <View style={{ gap: Spacing.two }}>
           <Txt variant="label">{formatDay(selected)}</Txt>
-          {dayBusy.map((b) => (
-            <BusyLine key={b.id} block={b} tutorName={perspective === 'admin' ? lookup.tutor(b.tutorId)?.fullName ?? 'Tutor' : undefined} />
-          ))}
-          {dayLessons.length ? (
-            dayLessons.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />)
-          ) : (
+          {inTimeOrder(dayLessons, dayBusy).map(renderEntry)}
+          {dayLessons.length ? null : (
             <EmptyState icon="calendar" title="No lessons scheduled on this day" message="Lessons will appear here as soon as they are booked." />
           )}
         </View>
@@ -162,12 +169,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
             return (
               <View key={d.toDateString()} style={{ gap: Spacing.two }}>
                 <Txt variant="label">{formatDay(d)}</Txt>
-                {busy.map((b) => (
-                  <BusyLine key={b.id} block={b} tutorName={perspective === 'admin' ? lookup.tutor(b.tutorId)?.fullName ?? 'Tutor' : undefined} />
-                ))}
-                {items.map((l) => (
-                  <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />
-                ))}
+                {inTimeOrder(items, busy).map(renderEntry)}
               </View>
             );
           })}

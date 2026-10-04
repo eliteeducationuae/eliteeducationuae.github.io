@@ -4,6 +4,9 @@ import type { BusyBlock, CalendarConnection, Profile } from '@/domain/types';
 
 import { AccessError, type DemoDB } from './db';
 
+/** Meet links the demo generates on connecting, so disconnecting can tell them from links pasted by hand. */
+const DEMO_MEET_PREFIX = 'https://meet.google.com/demo-';
+
 /**
  * Demo versions of the Google Calendar features. In production the calendar-sync Edge Function copies busy
  * times from Google into busy_blocks and adds lessons (with Meet links) to the tutor's calendar; here,
@@ -84,7 +87,7 @@ export const cal = {
       // Online lessons gain a Google Meet link once they are on the tutor's calendar.
       for (const l of db.lessons) {
         if (l.tutorId === viewer.tutorId && l.status === 'scheduled' && l.location === 'online' && !l.meetingUrl) {
-          l.meetingUrl = `https://meet.google.com/demo-${l.id.replace(/[^a-z0-9]/gi, '').slice(-10).toLowerCase()}`;
+          l.meetingUrl = `${DEMO_MEET_PREFIX}${l.id.replace(/[^a-z0-9]/gi, '').slice(-10).toLowerCase()}`;
         }
       }
       const busy = db.busyBlocks ?? [];
@@ -96,13 +99,20 @@ export const cal = {
     return connection;
   },
 
-  disconnect(db: DemoDB, viewer: Profile) {
+  disconnect(db: DemoDB, viewer: Profile, now = new Date()) {
     if (!canConnect(viewer)) throw new AccessError('Only tutors and the office can manage Google Calendar.');
     const remaining = (db.calendarConnections ?? []).filter((c) => c.profileId !== viewer.id);
     db.calendarConnections = remaining;
     const tutorId = viewer.tutorId;
     if (!tutorId) return;
     const shared = remaining.some((c) => db.profiles.find((p) => p.id === c.profileId)?.tutorId === tutorId);
-    if (!shared) db.busyBlocks = (db.busyBlocks ?? []).filter((b) => b.tutorId !== tutorId);
+    if (shared) return;
+    db.busyBlocks = (db.busyBlocks ?? []).filter((b) => b.tutorId !== tutorId);
+    // The Meet links this calendar generated go with it (links pasted by hand stay), as in production.
+    for (const l of db.lessons) {
+      if (l.tutorId === tutorId && l.status === 'scheduled' && new Date(l.start) > now && l.meetingUrl?.startsWith(DEMO_MEET_PREFIX)) {
+        l.meetingUrl = undefined;
+      }
+    }
   },
 };
