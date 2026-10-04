@@ -1,6 +1,9 @@
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
+  Attachment,
+  HomeworkSubmission,
+  Resource,
   Expense,
   Opportunity,
   OpportunityBid,
@@ -49,7 +52,48 @@ export interface CompleteLessonInput {
   topicIds: string[];
   /** Per-student topic ratings. */
   ratings: { studentId: string; topicId: string; rating: TopicRating['rating'] }[];
-  homework: { studentId: string; title: string; dueDate: string }[];
+  homework: { studentId: string; title: string; dueDate: string; details?: string; attachments?: Attachment[] }[];
+}
+
+/** Private storage buckets files can be uploaded to. */
+export type StorageBucket = 'applications' | 'receipts' | 'classwork';
+
+/** New homework (no id) or an edit to existing homework. */
+export interface HomeworkInput {
+  id?: string;
+  studentId: string;
+  lessonId?: string;
+  title: string;
+  details?: string;
+  dueDate: string;
+  attachments: Attachment[];
+}
+
+/**
+ * Thrown when the main change was saved but a follow-up step was not, for example a lesson recorded
+ * whose homework attachments could not be added. The message says what to finish by hand.
+ */
+export class PartialSaveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PartialSaveError';
+  }
+}
+
+/** A new library resource (no id) or an edit to one. */
+export interface ResourceInput {
+  id?: string;
+  title: string;
+  description?: string;
+  subject?: string;
+  curriculum?: string;
+  level?: string;
+  kind: 'file' | 'link';
+  path?: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  tags: string[];
 }
 
 /** Third-party sign-in providers offered on the sign-in screen. */
@@ -119,7 +163,7 @@ export interface DataSource {
   listLessons(range: { from: string; to: string }): Promise<Lesson[]>;
   getLesson(id: string): Promise<Lesson | null>;
   listNotes(filter?: { studentId?: string; lessonId?: string }): Promise<LessonNote[]>;
-  listHomework(filter?: { studentId?: string }): Promise<Homework[]>;
+  listHomework(filter?: { studentId?: string; lessonId?: string }): Promise<Homework[]>;
   listRatings(filter?: { studentId?: string }): Promise<TopicRating[]>;
   listPackages(filter?: { familyId?: string }): Promise<LessonPackage[]>;
   listCharges(filter?: { familyId?: string }): Promise<Charge[]>;
@@ -140,6 +184,24 @@ export interface DataSource {
   cancelLesson(id: string, reason: string, waiveFee?: boolean): Promise<CancellationOutcome>;
   completeLesson(input: CompleteLessonInput): Promise<void>;
   setHomeworkDone(id: string, done: boolean): Promise<void>;
+
+  // Homework and resources
+  getHomework(id: string): Promise<Homework | null>;
+  /** Tutors (for students they teach) and admins: set new homework or edit its title, details, due date and attachments. */
+  saveHomework(input: HomeworkInput): Promise<Homework>;
+  listSubmissions(filter?: { homeworkId?: string; studentId?: string }): Promise<HomeworkSubmission[]>;
+  /** Students and parents hand in work (note and/or files). Marks the homework done and tells the tutor. */
+  submitHomework(input: { homeworkId: string; note?: string; files: Attachment[] }): Promise<HomeworkSubmission>;
+  /** The student's tutor or an admin: written feedback and an optional mark. Tells the student and family. */
+  giveFeedback(submissionId: string, feedback: string, mark?: string): Promise<void>;
+  /** Tutors/admin: the whole library. Students/parents: resources shared with them. Optional filter to one student's shared resources. */
+  listResources(filter?: { studentId?: string }): Promise<Resource[]>;
+  saveResource(input: ResourceInput): Promise<Resource>;
+  deleteResource(id: string): Promise<void>;
+  /** Share a library resource with a student (and their family). */
+  shareResource(resourceId: string, studentId: string): Promise<void>;
+  /** Stop sharing a library resource with a student. */
+  unshareResource(resourceId: string, studentId: string): Promise<void>;
 
   // Billing
   sellPackage(pkg: Omit<LessonPackage, 'id' | 'lessonsUsed' | 'purchasedAt'>): Promise<Invoice>;
@@ -219,9 +281,11 @@ export interface DataSource {
   deleteExpense(id: string): Promise<void>;
 
   /** Upload a picked file to private storage. Returns the stored path. */
-  uploadFile?(bucket: 'applications' | 'receipts', folder: string, file: PickedFile): Promise<string>;
-  /** A short-lived link to view a stored file (admins). */
-  fileUrl?(bucket: 'applications' | 'receipts', path: string): Promise<string | null>;
+  uploadFile?(bucket: StorageBucket, folder: string, file: PickedFile): Promise<string>;
+  /** A short-lived link to view a stored file. Null when the file cannot be reached (removed, refused or offline). */
+  fileUrl?(bucket: StorageBucket, path: string): Promise<string | null>;
+  /** Remove a file the signed-in user uploaded, e.g. an attachment removed before saving. Best effort. */
+  removeFile?(bucket: StorageBucket, path: string): Promise<void>;
 
   /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
   aiAssist?(request: AiRequest): Promise<AiResult | null>;

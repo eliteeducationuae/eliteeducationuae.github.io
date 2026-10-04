@@ -114,6 +114,66 @@ export interface Homework {
   title: string;
   dueDate: string;
   done: boolean;
+  /** Instructions for the student. */
+  details?: string;
+  attachments?: Attachment[];
+  /** The tutor who set it. */
+  tutorId?: string;
+  createdAt?: string;
+}
+
+/** A file or link attached to homework, a hand-in or a resource. Files live in the private `classwork` bucket. */
+export interface Attachment {
+  kind: 'file' | 'link';
+  name: string;
+  /** Storage path in the classwork bucket (files): students/<studentId>/… or resources/…. */
+  path?: string;
+  /** Web address (links), http or https only. */
+  url?: string;
+  mimeType?: string;
+  /** Set when the attachment came from the resource library. */
+  resourceId?: string;
+}
+
+/** A student's hand-in for a piece of homework, with the tutor's feedback once given. */
+export interface HomeworkSubmission {
+  id: string;
+  homeworkId: string;
+  studentId: string;
+  submittedBy?: string;
+  submittedByName?: string;
+  note?: string;
+  files: Attachment[];
+  submittedAt: string;
+  feedback?: string;
+  mark?: string;
+  feedbackAt?: string;
+  feedbackBy?: string;
+  feedbackByName?: string;
+}
+
+export type ResourceVisibility = 'tutors' | 'students';
+
+/** An item in the shared resource library. */
+export interface Resource {
+  id: string;
+  title: string;
+  description?: string;
+  subject?: string;
+  curriculum?: string;
+  level?: string;
+  kind: 'file' | 'link';
+  path?: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  tags: string[];
+  uploadedBy?: string;
+  uploadedByName?: string;
+  /** 'tutors' = library only; 'students' = also shared with studentIds. Tutors and admins always see every resource. */
+  visibility: ResourceVisibility;
+  studentIds: string[];
+  createdAt: string;
 }
 
 /** One rating of how well a student understands a syllabus topic (1 = weak … 5 = secure). */

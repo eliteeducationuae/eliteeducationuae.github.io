@@ -16,6 +16,7 @@ export default function TutorAccount() {
   const toWrite = (reports.data ?? []).filter((r) => r.tutorId === me.tutorId && r.status === 'draft' && openCycles.has(r.cycleId)).length;
   const links = [
     { title: 'Reports to write', subtitle: toWrite ? `${toWrite} to write. We prepare a draft for you.` : 'End-of-term reports for your students', icon: 'book', href: '/reports', badge: toWrite },
+    { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },
     { title: 'Opportunities', subtitle: 'New students for whom you can put yourself forward', icon: 'school', href: '/opportunities', badge: 0 },
     { title: 'My invoices', subtitle: 'Submit your monthly invoice and follow its payment', icon: 'doc', href: '/tutor-invoices', badge: 0 },
     { title: 'Payment details', subtitle: 'Where we pay you (kept private)', icon: 'card', href: '/payment-details', badge: 0 },

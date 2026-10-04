@@ -3,6 +3,7 @@ import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import type { Invoice, Lesson, Message, Profile, Settings, TopicRating } from '@/domain/types';
 
+import { seedClasswork } from './classwork';
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
 import { ops } from './operations';
 
@@ -106,6 +107,8 @@ export function createSeed(now: Date = new Date()): DemoDB {
     reportCycles: [],
     reports: [],
     expenses: [],
+    submissions: [],
+    resources: [],
   };
 
   const profiles: Profile[] = [
@@ -279,6 +282,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
 
   seedEngagement(db, now);
   seedOperations(db, now);
+  seedClasswork(db, now);
   return db;
 }
 

@@ -15,6 +15,7 @@ import {
   type SocialProviderName,
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
+import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -36,11 +37,13 @@ import type {
   TutorAbsence,
   Family,
   Homework,
+  HomeworkSubmission,
   Invoice,
   Lesson,
   LessonNote,
   LessonPackage,
   Profile,
+  Resource,
   Service,
   Settings,
   Student,
@@ -50,7 +53,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import type { DataSource, SocialProvider, SocialSignInResult } from './source';
+import { PartialSaveError, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -280,7 +283,61 @@ const toHomework = (r: Row): Homework => ({
   title: r.title,
   dueDate: r.due_date,
   done: r.done,
+  details: r.details ?? undefined,
+  attachments: r.attachments ?? [],
+  tutorId: r.tutor_id ?? undefined,
+  createdAt: r.created_at ?? undefined,
 });
+
+export const toSubmission = (r: Row): HomeworkSubmission => ({
+  id: r.id,
+  homeworkId: r.homework_id,
+  studentId: r.student_id,
+  submittedBy: r.submitted_by ?? undefined,
+  submittedByName: r.submitted_by_name ?? undefined,
+  note: r.note ?? undefined,
+  files: r.files ?? [],
+  submittedAt: r.submitted_at,
+  feedback: r.feedback ?? undefined,
+  mark: r.mark ?? undefined,
+  feedbackAt: r.feedback_at ?? undefined,
+  feedbackBy: r.feedback_by ?? undefined,
+  feedbackByName: r.feedback_by_name ?? undefined,
+});
+
+export const toResource = (r: Row): Resource => ({
+  id: r.id,
+  title: r.title,
+  description: r.description ?? undefined,
+  subject: r.subject ?? undefined,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  kind: r.kind,
+  path: r.path ?? undefined,
+  url: r.url ?? undefined,
+  fileName: r.file_name ?? undefined,
+  mimeType: r.mime_type ?? undefined,
+  tags: r.tags ?? [],
+  uploadedBy: r.uploaded_by ?? undefined,
+  uploadedByName: r.uploaded_by_name ?? undefined,
+  visibility: r.visibility,
+  studentIds: r.student_ids ?? [],
+  createdAt: r.created_at,
+});
+
+/** Arguments for the save_homework RPC. */
+export const saveHomeworkArgs = (input: HomeworkInput) => ({
+  p_id: input.id ?? null,
+  p_student_id: input.studentId,
+  p_title: input.title,
+  p_details: input.details ?? null,
+  p_due_date: input.dueDate,
+  p_attachments: input.attachments,
+  p_lesson_id: input.lessonId ?? null,
+});
+
+/** An RPC may return its row directly or as a one-row set. */
+const firstRow = (data: unknown): Row => (Array.isArray(data) ? data[0] : data) as Row;
 
 const toRating = (r: Row): TopicRating => ({
   id: r.id,
@@ -556,6 +613,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async listHomework(filter = {}) {
       let query = client.from('homework').select('*');
       if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      if (filter.lessonId) query = query.eq('lesson_id', filter.lessonId);
       return check(await query.order('due_date', { ascending: false })).map(toHomework);
     },
     async listRatings(filter = {}) {
@@ -655,9 +713,108 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_homework: input.homework,
         }),
       );
+      // complete_lesson stores the title and due date; details and attachments are added through save_homework.
+      const rich = input.homework.filter((h) => h.details?.trim() || h.attachments?.length);
+      if (rich.length === 0) return;
+      // The lesson is already recorded at this point, so a failure here must not read as if nothing was saved.
+      const unsaved: string[] = [];
+      try {
+        const created = check<Row[]>(await client.from('homework').select('id, student_id, title').eq('lesson_id', input.lessonId));
+        for (const h of rich) {
+          const match = created.find((r) => r.student_id === h.studentId && r.title.trim() === h.title.trim());
+          if (!match) {
+            unsaved.push(h.title.trim());
+            continue;
+          }
+          try {
+            check(
+              await client.rpc(
+                'save_homework',
+                saveHomeworkArgs({
+                  id: match.id,
+                  studentId: h.studentId,
+                  lessonId: input.lessonId,
+                  title: h.title.trim(),
+                  details: h.details?.trim() || undefined,
+                  dueDate: h.dueDate,
+                  attachments: h.attachments ?? [],
+                }),
+              ),
+            );
+          } catch {
+            unsaved.push(h.title.trim());
+          }
+        }
+      } catch {
+        unsaved.push(...rich.map((h) => h.title.trim()));
+      }
+      if (unsaved.length) throw new PartialSaveError(lessonHomeworkWarning(unsaved));
     },
     async setHomeworkDone(id, done) {
       check(await client.rpc('set_homework_done', { p_id: id, p_done: done }));
+    },
+
+    // Homework and resources
+    async getHomework(id) {
+      const row = check(await client.from('homework').select('*').eq('id', id).maybeSingle());
+      return row ? toHomework(row) : null;
+    },
+    async saveHomework(input) {
+      return toHomework(firstRow(check(await client.rpc('save_homework', saveHomeworkArgs(input)))));
+    },
+    async listSubmissions(filter = {}) {
+      let query = client.from('homework_submissions').select('*');
+      if (filter.homeworkId) query = query.eq('homework_id', filter.homeworkId);
+      if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      return check(await query.order('submitted_at', { ascending: false })).map(toSubmission);
+    },
+    async submitHomework(input) {
+      const data = check(
+        await client.rpc('submit_homework', { p_homework_id: input.homeworkId, p_note: input.note ?? null, p_files: input.files }),
+      );
+      return toSubmission(firstRow(data));
+    },
+    async giveFeedback(submissionId, feedback, mark) {
+      check(await client.rpc('give_homework_feedback', { p_submission_id: submissionId, p_feedback: feedback, p_mark: mark ?? null }));
+    },
+    async listResources(filter = {}) {
+      // list_resources hides which other families' children a resource is shared with.
+      const rows = check<Row[] | null>(await client.rpc('list_resources', { p_student_id: filter.studentId ?? null }));
+      return (rows ?? []).map(toResource);
+    },
+    async saveResource(input) {
+      // uploaded_by, uploaded_by_name, visibility and student_ids are set by the database.
+      const row = {
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        subject: input.subject?.trim() || null,
+        curriculum: input.curriculum?.trim() || null,
+        level: input.level?.trim() || null,
+        kind: input.kind,
+        path: input.kind === 'file' ? (input.path ?? null) : null,
+        url: input.kind === 'link' && input.url ? (normaliseLink(input.url) ?? input.url) : null,
+        file_name: input.kind === 'file' ? (input.fileName ?? null) : null,
+        mime_type: input.kind === 'file' ? (input.mimeType ?? null) : null,
+        tags: input.tags,
+      };
+      const saved = input.id
+        ? check(await client.from('resources').update(row).eq('id', input.id).select('*').single())
+        : check(await client.from('resources').insert(row).select('*').single());
+      return toResource(saved);
+    },
+    async deleteResource(id) {
+      // delete_resource returns the stored path only when no homework or hand-in still uses the file.
+      const path = check<string | null>(await client.rpc('delete_resource', { p_id: id }));
+      if (path) {
+        // Best effort: the library entry is gone even if the stored file cannot be removed.
+        await client.storage.from('classwork').remove([path]).then(undefined, () => undefined);
+      }
+    },
+    async shareResource(resourceId, studentId) {
+      check(await client.rpc('share_resource', { p_resource_id: resourceId, p_student_id: studentId }));
+    },
+    async unshareResource(resourceId, studentId) {
+      check(await client.rpc('unshare_resource', { p_resource_id: resourceId, p_student_id: studentId }));
     },
 
     async sellPackage(pkg) {
@@ -1050,8 +1207,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return path;
     },
     async fileUrl(bucket, path) {
-      const { data } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      if (error) console.warn(`Could not open ${bucket}/${path}: ${error.message}`);
       return data?.signedUrl ?? null;
+    },
+    async removeFile(bucket, path) {
+      const { error } = await client.storage.from(bucket).remove([path]);
+      if (error) console.warn(`Could not remove ${bucket}/${path}: ${error.message}`);
     },
     async aiAssist(request) {
       // The AI service is optional: any failure (not deployed, no key, offline) returns null so callers use templates.

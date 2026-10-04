@@ -1,16 +1,21 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import { AttachmentEditor } from '@/components/attachments';
 import { RatingPicker } from '@/components/progress';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { getSyllabus, topicName } from '@/data/curriculum';
 import { source } from '@/data';
+import { PartialSaveError } from '@/data/source';
 import { useAction, useLesson, useLookup, useRatings } from '@/data/hooks';
 import { addDays, formatDay, toDateKey } from '@/domain/dates';
+import { classworkFolder } from '@/domain/homework';
 import { masteryByTopic } from '@/domain/progress';
-import type { AttendanceMark, TopicRating } from '@/domain/types';
+import type { Attachment, AttendanceMark, TopicRating } from '@/domain/types';
+import { notify } from '@/lib/confirm';
 
 type Rating = TopicRating['rating'];
 
@@ -21,6 +26,7 @@ export default function CompleteLesson() {
   const lesson = useLesson(id);
   const allRatings = useRatings();
   const complete = useAction(source.completeLesson);
+  const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<'completed' | 'no-show'>('completed');
   const [attendance, setAttendance] = useState<Record<string, AttendanceMark>>({});
@@ -29,6 +35,8 @@ export default function CompleteLesson() {
   const [summary, setSummary] = useState('');
   const [privateNote, setPrivateNote] = useState('');
   const [homework, setHomework] = useState<Record<string, string>>({});
+  // Optional instructions and attachments per student, revealed on request.
+  const [homeworkExtras, setHomeworkExtras] = useState<Record<string, { open: boolean; details: string; attachments: Attachment[] }>>({});
   const [browseUnit, setBrowseUnit] = useState<string | null>(null);
 
   const l = lesson.data;
@@ -65,6 +73,19 @@ export default function CompleteLesson() {
   const presentStudents = students.filter((s) => status === 'completed' && mark(s.id) !== 'absent');
 
   async function save() {
+    try {
+      await record();
+    } catch (err) {
+      // The lesson itself was recorded; only some homework extras were not. Say so and move on,
+      // because the lesson cannot be recorded twice.
+      if (!(err instanceof PartialSaveError)) return; // shown by ErrorNote
+      await queryClient.invalidateQueries();
+      notify('Lesson recorded', err.message);
+    }
+    router.back();
+  }
+
+  async function record() {
     await complete.mutateAsync([
       {
         lessonId: l!.id,
@@ -81,10 +102,18 @@ export default function CompleteLesson() {
           .filter((r) => topicIds.includes(r.topicId) && presentStudents.some((s) => s.id === r.studentId)),
         homework: Object.entries(homework)
           .filter(([, title]) => title.trim())
-          .map(([studentId, title]) => ({ studentId, title, dueDate })),
+          .map(([studentId, title]) => {
+            const extras = homeworkExtras[studentId];
+            return {
+              studentId,
+              title,
+              dueDate,
+              details: extras?.details.trim() || undefined,
+              attachments: extras?.attachments ?? [],
+            };
+          }),
       },
     ]);
-    router.back();
   }
 
   return (
@@ -194,15 +223,41 @@ export default function CompleteLesson() {
 
       {status === 'completed' ? (
         <Section title={`Homework · due ${formatDay(dueDate + 'T12:00:00')}`}>
-          {presentStudents.map((s) => (
-            <Field
-              key={s.id}
-              label={presentStudents.length > 1 ? s.fullName : 'Homework'}
-              value={homework[s.id] ?? ''}
-              onChangeText={(t) => setHomework((h) => ({ ...h, [s.id]: t }))}
-              placeholder="e.g. Exercise 7C Q1–12"
-            />
-          ))}
+          {presentStudents.map((s) => {
+            const extras = homeworkExtras[s.id] ?? { open: false, details: '', attachments: [] };
+            const setExtras = (patch: Partial<typeof extras>) => setHomeworkExtras((x) => ({ ...x, [s.id]: { ...extras, ...x[s.id], ...patch } }));
+            return (
+              <View key={s.id} style={{ gap: Spacing.two }}>
+                <Field
+                  label={presentStudents.length > 1 ? s.fullName : 'Title'}
+                  value={homework[s.id] ?? ''}
+                  onChangeText={(t) => setHomework((h) => ({ ...h, [s.id]: t }))}
+                  placeholder="e.g. Exercise 7C Q1–12"
+                />
+                {extras.open ? (
+                  <Card style={{ gap: Spacing.two }}>
+                    <Field
+                      label="Details (optional)"
+                      multiline
+                      value={extras.details}
+                      onChangeText={(details) => setExtras({ details })}
+                      placeholder="Instructions for the student, e.g. Show all working."
+                    />
+                    <AttachmentEditor
+                      value={extras.attachments}
+                      onChange={(attachments) => setExtras({ attachments })}
+                      folder={classworkFolder({ studentId: s.id })}
+                      allowLibrary
+                    />
+                  </Card>
+                ) : (
+                  <Row>
+                    <Button title="Add details or attachments" icon="attach" size="sm" variant="ghost" onPress={() => setExtras({ open: true })} />
+                  </Row>
+                )}
+              </View>
+            );
+          })}
         </Section>
       ) : null}
 

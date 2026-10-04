@@ -20,6 +20,7 @@ import type {
   TutorAbsence,
   Family,
   Homework,
+  HomeworkSubmission,
   Invoice,
   InvoiceStatus,
   Lesson,
@@ -27,6 +28,7 @@ import type {
   LessonPackage,
   PaymentMethod,
   Profile,
+  Resource,
   Service,
   Settings,
   Student,
@@ -69,6 +71,8 @@ export interface DemoDB {
   reportCycles: ReportCycle[];
   reports: StudentReport[];
   expenses: Expense[];
+  submissions: HomeworkSubmission[];
+  resources: Resource[];
 }
 
 export const DEMO_DB_VERSION = 5;
@@ -150,9 +154,11 @@ export const q = {
       })
       .map((n) => stripPrivate(n, viewer));
   },
-  homework(db: DemoDB, viewer: Profile, studentId?: string): Homework[] {
+  homework(db: DemoDB, viewer: Profile, studentId?: string, lessonId?: string): Homework[] {
     const ids = visibleStudentIds(db, viewer);
-    return db.homework.filter((h) => ids.has(h.studentId) && (!studentId || h.studentId === studentId));
+    return db.homework.filter(
+      (h) => ids.has(h.studentId) && (!studentId || h.studentId === studentId) && (!lessonId || h.lessonId === lessonId),
+    );
   },
   ratings(db: DemoDB, viewer: Profile, studentId?: string): TopicRating[] {
     const ids = visibleStudentIds(db, viewer);
@@ -272,7 +278,18 @@ export const cmd = {
     }
     for (const h of input.homework) {
       if (!lesson.studentIds.includes(h.studentId) || !h.title.trim()) continue;
-      db.homework.push({ id: newId('hw'), lessonId: lesson.id, done: false, ...h, title: h.title.trim() });
+      db.homework.push({
+        id: newId('hw'),
+        lessonId: lesson.id,
+        studentId: h.studentId,
+        title: h.title.trim(),
+        dueDate: h.dueDate,
+        done: false,
+        details: h.details?.trim() || undefined,
+        attachments: h.attachments ?? [],
+        tutorId: lesson.tutorId,
+        createdAt: now.toISOString(),
+      });
     }
     applyCharges(db, lesson, input.attendance);
   },

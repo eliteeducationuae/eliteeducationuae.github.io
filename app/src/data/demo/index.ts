@@ -5,6 +5,7 @@ import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
+import { cw } from './classwork';
 import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
@@ -12,6 +13,9 @@ import { createSeed } from './seed';
 
 const DB_KEY = 'elite.demo.db';
 const SESSION_KEY = 'elite.demo.session';
+
+/** Picked files by stored path, so an upload can be viewed again in this session. */
+const demoFiles = new Map<string, string>();
 
 /**
  * Offline demo backend: a seeded in-memory database persisted to device storage.
@@ -137,7 +141,7 @@ export function createDemoSource(): DataSource {
     listLessons: ({ from, to }) => read((d, v) => q.lessons(d, v, from, to)),
     getLesson: (id) => read((d, v) => q.lessons(d, v, '0000', '9999').find((l) => l.id === id) ?? null),
     listNotes: (filter) => read((d, v) => q.notes(d, v, filter)),
-    listHomework: (filter) => read((d, v) => q.homework(d, v, filter?.studentId)),
+    listHomework: (filter) => read((d, v) => q.homework(d, v, filter?.studentId, filter?.lessonId)),
     listRatings: (filter) => read((d, v) => q.ratings(d, v, filter?.studentId)),
     listPackages: (filter) => read((d, v) => q.packages(d, v, filter?.familyId)),
     listCharges: (filter) => read((d, v) => q.charges(d, v, filter?.familyId)),
@@ -153,8 +157,22 @@ export function createDemoSource(): DataSource {
     createLessons: (lessons) => write((d, v) => cmd.createLessons(d, v, lessons)),
     rescheduleLesson: (id, start, end) => write((d, v) => cmd.rescheduleLesson(d, v, id, start, end)),
     cancelLesson: (id, reason, waive) => write((d, v) => cmd.cancelLesson(d, v, id, reason, waive)),
-    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, input)),
+    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, cw.checkLessonHomework(input))),
     setHomeworkDone: (id, done) => write((d, v) => cmd.setHomeworkDone(d, v, id, done)),
+
+    getHomework: (id) => read((d, v) => cw.getHomework(d, v, id)),
+    saveHomework: (input) => write((d, v) => cw.saveHomework(d, v, input)),
+    listSubmissions: (filter) => read((d, v) => cw.submissions(d, v, filter)),
+    submitHomework: (input) => write((d, v) => cw.submitHomework(d, v, input)),
+    giveFeedback: (id, feedback, mark) => write((d, v) => cw.giveFeedback(d, v, id, feedback, mark)),
+    listResources: (filter) => read((d, v) => cw.resources(d, v, filter)),
+    saveResource: (input) => write((d, v) => cw.saveResource(d, v, input)),
+    async deleteResource(id) {
+      const path = await write((d, v) => cw.deleteResource(d, v, id));
+      if (path) demoFiles.delete(path);
+    },
+    shareResource: (resourceId, studentId) => write((d, v) => cw.shareResource(d, v, resourceId, studentId)),
+    unshareResource: (resourceId, studentId) => write((d, v) => cw.unshareResource(d, v, resourceId, studentId)),
 
     sellPackage: (pkg) => write((d, v) => cmd.sellPackage(d, v, pkg)),
     invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
@@ -189,9 +207,17 @@ export function createDemoSource(): DataSource {
     markThreadRead: (familyId) => write((d, v) => eq.markRead(d, v, familyId)),
     listAnnouncements: () => read((d, v) => eq.announcements(d, v)),
     postAnnouncement: (a) => write((d, v) => eq.postAnnouncement(d, v, a)),
-    // Files aren't stored in the demo; keep the name so the flow can be tried.
-    uploadFile: async (_bucket, folder, file) => `${folder}/${file.name}`,
-    fileUrl: async () => null,
+    // Files aren't stored in the demo; keep the name so the flow can be tried. A file picked in this
+    // session can be opened again from its local uri; seeded files have no content.
+    uploadFile: async (_bucket, folder, file) => {
+      const path = `${folder}/${newId('f')}-${file.name}`;
+      demoFiles.set(path, file.uri);
+      return path;
+    },
+    fileUrl: async (_bucket, path) => demoFiles.get(path) ?? null,
+    removeFile: async (_bucket, path) => {
+      demoFiles.delete(path);
+    },
     listOpportunities: () => read((d, v) => ops.opportunities(d, v)),
     listBids: () => read((d, v) => ops.bids(d, v)),
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),
