@@ -460,10 +460,13 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  disabled,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  /** Shown but not changeable (e.g. autopay before a card is saved). */
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -474,8 +477,11 @@ export function Segmented<T extends string>({
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
+            disabled={disabled}
             accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
+            accessibilityState={{ selected: active, disabled: !!disabled }}
+            aria-selected={active}
+            aria-disabled={!!disabled}
             style={[styles.segment, active && [{ backgroundColor: theme.surface, borderColor: theme.border }, elevation(theme)]]}>
             <Text style={[font('sans', 'bold'), { color: active ? theme.text : theme.textMuted, fontSize: 14 }]}>{o.label}</Text>
             {active ? <View style={[styles.segmentMarker, { backgroundColor: theme.gold }]} /> : null}

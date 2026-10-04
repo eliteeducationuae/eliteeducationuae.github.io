@@ -132,3 +132,7 @@ export const useTutorInvoices = () => useQuery({ queryKey: ['tutor-invoices'], q
 export const useReportCycles = () => useQuery({ queryKey: ['report-cycles'], queryFn: () => source.listReportCycles() });
 export const useStudentReports = () => useQuery({ queryKey: ['student-reports'], queryFn: () => source.listStudentReports() });
 export const useExpenses = () => useQuery({ queryKey: ['expenses'], queryFn: () => source.listExpenses() });
+
+// Card payments: saved cards, autopay and top-ups
+
+export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });

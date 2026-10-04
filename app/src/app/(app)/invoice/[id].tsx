@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
+import { AutopayBadge, AutopayNotice, ChargeSavedCardButton } from '@/components/payments';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -11,6 +12,7 @@ import { useAction, useInvoice, useLookup, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { displayStatus, formatAED, invoiceTotals } from '@/domain/billing';
 import { formatDate } from '@/domain/dates';
+import { paymentLabel } from '@/domain/payments';
 import type { PaymentMethod } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
@@ -50,7 +52,7 @@ export default function InvoicePage() {
   return (
     <Screen
       footer={
-        payable && me.role === 'parent' ? (
+        payable && me.role === 'parent' && inv.autopayStatus !== 'processing' ? (
           <Button title={`Pay ${formatAED(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
         ) : undefined
       }>
@@ -61,7 +63,10 @@ export default function InvoicePage() {
             <Txt variant="h2">{formatAED(totals.total)}</Txt>
             <Txt variant="muted">{family?.parentName ?? family?.name}</Txt>
           </View>
-          <Badge label={s.label} tone={s.tone} />
+          <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
+            <Badge label={s.label} tone={s.tone} />
+            <AutopayBadge invoice={inv} />
+          </View>
         </Row>
         <Row gap={Spacing.four}>
           <View>
@@ -118,7 +123,7 @@ export default function InvoicePage() {
             <Card key={p.id}>
               <Row style={{ justifyContent: 'space-between' }}>
                 <Txt>
-                  {formatDate(p.paidAt)} · {p.method.replace('-', ' ')}
+                  {formatDate(p.paidAt)} · {paymentLabel(p)}
                 </Txt>
                 <Txt variant="h3" color="success">
                   {formatAED(p.amount)}
@@ -129,6 +134,7 @@ export default function InvoicePage() {
         </Section>
       ) : null}
 
+      {me.role === 'parent' ? <AutopayNotice invoice={inv} payable={payable} /> : null}
       {payable && settings.data?.bankDetails ? (
         <Banner icon="money">Prefer bank transfer? {settings.data.bankDetails}. Please quote {inv.number}.</Banner>
       ) : null}
@@ -143,6 +149,7 @@ export default function InvoicePage() {
 
       {me.role === 'admin' ? (
         <>
+          <ChargeSavedCardButton invoice={inv} family={family} balance={totals.balance} />
           {payable ? (
             recording ? (
               <RecordPayment invoiceId={inv.id} balance={totals.balance} onDone={() => setRecording(false)} />

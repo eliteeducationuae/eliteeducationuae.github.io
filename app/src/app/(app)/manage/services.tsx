@@ -1,17 +1,24 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Button, Card, ErrorNote, Field, Loading, Row, Screen, Txt } from '@/components/ui';
+import { OfferForm, OfferRow } from '@/components/payments';
+import { Button, Card, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useServices } from '@/data/hooks';
+import { useAction, usePackageOffers, useServices } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { sortOffers } from '@/domain/payments';
 import type { Service } from '@/domain/types';
 
 export default function Services() {
   const services = useServices();
+  const offers = usePackageOffers();
   const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [editingOffer, setEditingOffer] = useState<string | 'new' | null>(null);
   if (services.isLoading) return <Loading />;
+  const serviceList = services.data ?? [];
+  const offerList = sortOffers(offers.data ?? []);
+  const nextSort = offerList.reduce((n, o) => Math.max(n, o.sort), 0) + 1;
   return (
     <Screen
       footer={editing ? undefined : <Button title="Add service" icon="plus" variant="gold" style={{ flex: 1 }} onPress={() => setEditing('new')} />}>
@@ -34,6 +41,29 @@ export default function Services() {
           ),
         )}
       </View>
+      <Section
+        title="Lesson packages parents can buy"
+        action={
+          editingOffer === 'new' ? undefined : (
+            <Button title="Add package" icon="plus" variant="secondary" size="sm" onPress={() => setEditingOffer('new')} />
+          )
+        }>
+        <Txt variant="muted">Parents can buy these from their Billing tab and pay by card. Credits are added as soon as payment is received.</Txt>
+        {editingOffer === 'new' ? <OfferForm services={serviceList} nextSort={nextSort} onDone={() => setEditingOffer(null)} /> : null}
+        {offers.isLoading ? (
+          <Loading />
+        ) : (
+          <View style={{ gap: Spacing.two }}>
+            {offerList.map((o) =>
+              editingOffer === o.id ? (
+                <OfferForm key={o.id} existing={o} services={serviceList} onDone={() => setEditingOffer(null)} />
+              ) : (
+                <OfferRow key={o.id} offer={o} service={serviceList.find((s) => s.id === o.serviceId)} onPress={() => setEditingOffer(o.id)} />
+              ),
+            )}
+          </View>
+        )}
+      </Section>
     </Screen>
   );
 }

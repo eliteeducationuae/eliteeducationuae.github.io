@@ -8,6 +8,7 @@ import type { DataSource } from '../source';
 import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
+import { pay } from './payments';
 import { createSeed } from './seed';
 
 const DB_KEY = 'elite.demo.db';
@@ -131,7 +132,7 @@ export function createDemoSource(): DataSource {
 
     getSettings: () => read((d) => d.settings),
     listTutors: () => read((d) => d.tutors),
-    listFamilies: () => read((d, v) => q.families(d, v)),
+    listFamilies: () => read((d, v) => pay.stripBilling(q.families(d, v), v)),
     listStudents: () => read((d, v) => q.students(d, v)),
     listServices: () => read((d) => d.services),
     listLessons: ({ from, to }) => read((d, v) => q.lessons(d, v, from, to)),
@@ -146,7 +147,13 @@ export function createDemoSource(): DataSource {
 
     saveSettings: (patch) => write((d, v) => cmd.saveSettings(d, v, patch)),
     saveTutor: (t) => write((d, v) => cmd.saveTutor(d, v, t)),
-    saveFamily: (f) => write((d, v) => cmd.saveFamily(d, v, f)),
+    saveFamily: (f) =>
+      write((d, v) => {
+        // Card and autopay live in family_billing in production; editing a family's details never changes them.
+        const existing = f.id ? d.families.find((x) => x.id === f.id) : undefined;
+        const { autopay: _autopay, savedCard: _card, ...details } = f;
+        return cmd.saveFamily(d, v, existing ? { ...details, autopay: existing.autopay, savedCard: existing.savedCard } : details);
+      }),
     saveStudent: (s) => write((d, v) => cmd.saveStudent(d, v, s)),
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
 
@@ -156,9 +163,18 @@ export function createDemoSource(): DataSource {
     completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, input)),
     setHomeworkDone: (id, done) => write((d, v) => cmd.setHomeworkDone(d, v, id, done)),
 
-    sellPackage: (pkg) => write((d, v) => cmd.sellPackage(d, v, pkg)),
-    invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
-    setInvoiceStatus: (id, status) => write((d, v) => cmd.setInvoiceStatus(d, v, id, status)),
+    sellPackage: (pkg) =>
+      write((d, v) => {
+        const invoice = cmd.sellPackage(d, v, pkg);
+        pay.autopayIfDue(d, invoice);
+        return invoice;
+      }),
+    invoiceUnbilled: (familyId) => write((d, v) => pay.autopayIfDue(d, cmd.invoiceUnbilled(d, v, familyId))),
+    setInvoiceStatus: (id, status) =>
+      write((d, v) => {
+        cmd.setInvoiceStatus(d, v, id, status);
+        if (status === 'sent') pay.autopayIfDue(d, d.invoices.find((i) => i.id === id));
+      }),
     recordPayment: (id, amount, method, ref) => write((d, v) => cmd.recordPayment(d, v, id, amount, method, ref)),
     addMyChild: (child) => write((d, v) => eq.addMyChild(d, v, child)),
     setFamilyStatus: (id, status) => write((d, v) => eq.setFamilyStatus(d, v, id, status)),
@@ -228,8 +244,17 @@ export function createDemoSource(): DataSource {
         const invoice = q.invoices(d, v).find((i) => i.id === invoiceId);
         if (!invoice) throw new Error('Invoice not found');
         cmd.recordPayment(d, v, invoiceId, invoiceTotals(invoice).balance, 'card', 'Demo card payment');
+        pay.saveDemoCard(d, invoice.familyId);
       });
       return { paid: true };
     },
+
+    // Card payments: saved cards, autopay and top-ups (no openBillingPortal: there is no Stripe in the demo)
+    listPackageOffers: () => read((d, v) => pay.offers(d, v)),
+    savePackageOffer: (offer) => write((d, v) => pay.saveOffer(d, v, offer)),
+    deletePackageOffer: (id) => write((d, v) => pay.deleteOffer(d, v, id)),
+    setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
+    buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
+    chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
   };
 }

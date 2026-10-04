@@ -34,6 +34,10 @@ export interface Family {
   /** Prospects signed up or enquired but haven't enrolled yet. Defaults to active. */
   status?: FamilyStatus;
   createdAt?: string;
+  /** Pay new invoices automatically with the saved card. Only present for admins and the family itself. */
+  autopay?: boolean;
+  /** The card kept on file for this family. Only present for admins and the family itself. */
+  savedCard?: SavedCard;
 }
 
 export interface Student {
@@ -187,6 +191,10 @@ export interface Invoice {
   vatRate: number;
   payments: Payment[];
   notes?: string;
+  /** Progress of an automatic charge to the family's saved card, when autopay applies. */
+  autopayStatus?: AutopayStatus;
+  /** Why the last automatic charge failed, in words the family can act on. */
+  autopayError?: string;
 }
 
 export interface Settings {
@@ -450,4 +458,32 @@ export interface Expense {
   amount: number;
   vatAmount: number;
   receiptPath?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Card payments: saved cards, autopay and top-ups
+// ---------------------------------------------------------------------------
+
+/** A family's card on file. Card numbers never leave Stripe; only these details are kept. */
+export interface SavedCard {
+  brand: string;
+  last4: string;
+  /** 'MM/YY' */
+  expires?: string;
+}
+
+export type AutopayStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
+
+/** A lesson bundle parents can buy themselves by card. */
+export interface PackageOffer {
+  id: string;
+  name: string;
+  /** Credits only apply to this lesson type when set. */
+  serviceId?: string;
+  lessons: number;
+  /** AED, before VAT. */
+  price: number;
+  /** Shown to parents. */
+  active: boolean;
+  sort: number;
 }

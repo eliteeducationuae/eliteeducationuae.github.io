@@ -32,6 +32,7 @@ import type {
   Student,
   Tutor,
   TopicRating,
+  PackageOffer,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -69,6 +70,8 @@ export interface DemoDB {
   reportCycles: ReportCycle[];
   reports: StudentReport[];
   expenses: Expense[];
+  /** Card payments: lesson bundles parents can buy. Optional because databases saved before it lack the field. */
+  packageOffers?: PackageOffer[];
 }
 
 export const DEMO_DB_VERSION = 5;
@@ -135,6 +138,8 @@ export const q = {
   families(db: DemoDB, viewer: Profile): Family[] {
     if (viewer.role === 'admin') return db.families;
     const familyIds = new Set(q.students(db, viewer).map((s) => s.familyId));
+    // Mirrors the "see families" policy: a parent always sees their own family, even before a child is added.
+    if (viewer.familyId) familyIds.add(viewer.familyId);
     return db.families.filter((f) => familyIds.has(f.id));
   },
   lessons(db: DemoDB, viewer: Profile, from: string, to: string): Lesson[] {
