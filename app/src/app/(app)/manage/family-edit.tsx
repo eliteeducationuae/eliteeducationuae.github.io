@@ -6,6 +6,7 @@ import { PackageCard } from '@/components/billing';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
+import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useEnrolments, useFamilies, usePackages, useStudents } from '@/data/hooks';
@@ -90,6 +91,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
           <Section title="Card and autopay">
             <FamilyCardAdmin family={existing} />
           </Section>
+          <ViewAsActions familyId={existing.id} />
         </>
       ) : null}
     </Screen>

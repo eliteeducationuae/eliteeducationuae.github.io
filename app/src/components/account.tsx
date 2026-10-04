@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 
@@ -17,6 +18,8 @@ import { Avatar, Badge, Button, Card, Row, Screen, Section, Txt } from './ui';
 export function AccountScreen({ children }: { children?: ReactNode }) {
   const me = useMe();
   const signOut = useSession((s) => s.signOut);
+  const viewing = useSession((s) => !!s.viewing);
+  const exitViewAs = useSession((s) => s.exitViewAs);
   const settings = useSettings();
   const [resetting, setResetting] = useState(false);
 
@@ -69,7 +72,19 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
         </Section>
       ) : null}
 
-      <Button title="Sign out" variant="danger" icon="logout" onPress={() => signOut()} />
+      {viewing ? (
+        <Button
+          title="Exit view"
+          variant="secondary"
+          icon="eye"
+          onPress={async () => {
+            await exitViewAs();
+            router.replace('/admin');
+          }}
+        />
+      ) : (
+        <Button title="Sign out" variant="danger" icon="logout" onPress={() => signOut()} />
+      )}
     </Screen>
   );
 }

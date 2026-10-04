@@ -3,9 +3,10 @@ import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/icon';
-import { EmptyState, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
+import { EmptyState, ErrorNote, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
+import { useCanViewAs, useStartViewAs, viewAsRows } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
-import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors } from '@/data/hooks';
+import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors, useViewTargets } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
 import { studentSubjects } from '@/domain/enrolments';
@@ -35,6 +36,9 @@ export default function Search() {
   const opportunities = useOpportunities();
   const applications = useApplications();
   const enrolments = useEnrolments();
+  const canViewAs = useCanViewAs();
+  const viewTargets = useViewTargets();
+  const viewAs = useStartViewAs();
 
   const groups = useMemo(() => {
     const q = norm(query.trim());
@@ -104,6 +108,13 @@ export default function Search() {
     return out.filter((g) => g.hits.length).map((g) => ({ ...g, hits: g.hits.slice(0, 8) }));
   }, [query, admin, students.data, families.data, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
 
+  // Admins on their own account can open the app as any family, tutor or student found above.
+  const viewRows = useMemo(() => {
+    if (!canViewAs || !viewTargets.data) return [];
+    const ids = (title: string) => groups.find((g) => g.title === title)?.hits.map((h) => ({ id: h.key, title: h.title })) ?? [];
+    return viewAsRows(viewTargets.data, { families: ids('Families'), tutors: ids('Tutors'), students: ids('Students') });
+  }, [canViewAs, viewTargets.data, groups]);
+
   return (
     <Screen>
       <Field
@@ -135,6 +146,22 @@ export default function Search() {
           </Section>
         ))
       )}
+      {viewRows.length ? (
+        <Section title="View as">
+          <View style={{ gap: Spacing.two }}>
+            {viewRows.map(({ key, title, subtitle, target }) => (
+              <ListItem
+                key={key}
+                title={title}
+                subtitle={subtitle}
+                left={<Icon name="eye" size={20} color={target ? theme.accent : theme.textMuted} />}
+                onPress={target && !viewAs.busyId ? () => void viewAs.start(target) : undefined}
+              />
+            ))}
+            <ErrorNote error={viewAs.error} />
+          </View>
+        </Section>
+      ) : null}
     </Screen>
   );
 }

@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
+import { isViewOnlyError, VIEW_ONLY_MESSAGE } from '@/data/view-as';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Icon, type IconName } from './icon';
@@ -317,6 +318,14 @@ export function Loading() {
 
 export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null;
+  // A change refused while an admin is viewing as someone else is expected, not an error: keep it calm.
+  if (isViewOnlyError(error)) {
+    return (
+      <Banner tone="info" icon="eye">
+        {VIEW_ONLY_MESSAGE}
+      </Banner>
+    );
+  }
   return (
     <Banner tone="danger" icon="alert">
       {error instanceof Error ? error.message : String(error)}

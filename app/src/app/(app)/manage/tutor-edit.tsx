@@ -6,6 +6,7 @@ import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { LoginHint } from '@/components/login-hint';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
 import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
+import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useTutors } from '@/data/hooks';
@@ -94,6 +95,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
         </Row>
       </Section>
       <ErrorNote error={save.error} />
+      {existing ? <ViewAsActions tutorId={existing.id} /> : null}
     </Screen>
   );
 }
