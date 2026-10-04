@@ -7,6 +7,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
 import { corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 
 const MODEL = 'claude-opus-5-5';
 
@@ -64,6 +65,9 @@ Deno.serve(async (req) => {
     const supabase = userClient(req);
     const me = await role(supabase);
     if (!me || (me.role !== 'admin' && me.role !== 'tutor')) return json({ error: 'Not allowed' }, 403);
+    // A View as session (read only) cannot use the AI.
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
 
     if (body.task === 'report-draft') {
       // Only proceed if the caller can see this report (their own, or any for admins).

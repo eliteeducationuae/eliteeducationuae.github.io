@@ -271,6 +271,33 @@ Complete these once, in this order. The function names come from the round 4 pla
 6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
+## View as (read only)
+
+The office can see the app exactly as a particular parent, student or tutor sees it, in order to answer a question or check what a family has been sent. A view is strictly read only: nothing can be added, changed, sent, paid for or deleted while it is open, and the app shows *Viewing only — changes are disabled.* if anything is attempted. Only admins can start a view, and an admin cannot view another admin.
+
+**How it works.** The `view-as` Edge Function, called with the admin's own login, creates a one-time sign-in for the person through the Supabase auth admin API (`generateLink`; no email is sent), exchanges it for a session on the server, and binds that session to a row in `view_as_sessions` before the tokens are returned to the admin's app. The auth admin API and the service-role key are used only inside the Edge Function and never appear in the app. Every database request made with a view's session then passes through `public.view_as_guard`, which PostgREST runs before each request: it allows reads and a short list of read-only functions, makes the whole request read-only, and refuses everything else. Storage uploads and deletions are refused by restrictive storage policies, and the AI, card payment, billing portal and Google Calendar functions refuse view sessions.
+
+**Limits and records.**
+
+- Each view lasts at most 60 minutes. After that, or once the admin returns to their own account, the view's session is refused entirely and the app shows *This view has ended. Please return to your own account.*
+- Every start and end of a view is recorded, with the admin, the person and the time, in `view_as_audit`. Only admins can read it, and nobody can change it.
+- Because a view signs in as the person, their *last signed in* time in Supabase updates when they are viewed.
+- The person cannot change their email address, phone number or password while a view of their account is active.
+- A person who has never been given a login cannot be viewed (*This person does not have a login yet.*).
+
+**Deploying.**
+
+1. Run `npx supabase db push` (or run `20261013000000_viewas.sql` in the SQL editor). The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
+2. Run `npx supabase functions deploy view-as`. It keeps the default JWT check, so no `config.toml` change is needed.
+3. Redeploy the functions that now refuse view sessions: `npx supabase functions deploy ai-assist billing-portal charge-invoice create-checkout google-connect`.
+
+**Checking that it works.**
+
+1. In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard`.
+2. Sign in as an admin and view a test parent. Their lessons, invoices and messages should appear as they would for the parent.
+3. Try to send a message, book a lesson or upload a file: each should be refused with *Viewing only — changes are disabled.*
+4. Return to your own account, and confirm that `view_as_audit` shows a `start` and an `end` row for the view and that `view_as_sessions` shows an `ended_at` time.
+
 ## Checks
 
 ```bash

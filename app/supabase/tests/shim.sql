@@ -13,3 +13,5 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
+-- Columns used by the View as trigger on auth.users (present in the real auth schema).
+alter table auth.users add column if not exists phone text, add column if not exists encrypted_password text;

@@ -7,6 +7,7 @@
 // verify_jwt is off for this function (see config.toml) because Google redirects back without a
 // login; start and disconnect check the caller's session themselves. Tokens never leave the server.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 import {
   BRAND_FOOTER,
   buildAuthUrl,
@@ -262,6 +263,9 @@ Deno.serve(async (req) => {
 
   const { data: auth } = await userClient(req).auth.getUser();
   if (!auth?.user) return json({ error: 'Please sign in again.' }, 401);
+  // A View as session (read only) cannot connect or disconnect a calendar. The callback above needs no session.
+  const refused = await refuseViewAs(req);
+  if (refused) return refused;
   const { data: profile } = await adminClient().from('profiles').select('id, role, email, tutor_id').eq('id', auth.user.id).maybeSingle();
   if (!profile || !['tutor', 'admin'].includes(profile.role)) {
     return json({ error: 'Google Calendar is available to tutors and the office only.' }, 403);

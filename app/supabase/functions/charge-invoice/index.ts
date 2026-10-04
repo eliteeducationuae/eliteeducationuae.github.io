@@ -14,6 +14,7 @@
 // otherwise the payment intent is only looked up, never charged again. Only an answer about the card counts as a
 // decline (classifyAutopayResponse); any other error keeps the invoice 'unknown' and held from the family.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 import {
   autopayIdempotencyKey,
   autopayIntentListPath,
@@ -294,6 +295,11 @@ Deno.serve(async (req) => {
   try {
     const who = await caller(req);
     if (!who) return json({ error: 'Only the schedule or an admin can run autopay.' }, 403);
+    if (who === 'admin') {
+      // A View as session (read only) cannot charge cards. The schedule's service key is not a user session.
+      const refused = await refuseViewAs(req);
+      if (refused) return refused;
+    }
     if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).' }, 500);
     const body = await req.json().catch(() => ({}));
     const invoiceId = typeof body?.invoiceId === 'string' ? body.invoiceId : null;
