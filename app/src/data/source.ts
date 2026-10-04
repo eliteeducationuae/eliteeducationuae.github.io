@@ -43,6 +43,8 @@ import type {
   Student,
   Tutor,
   TopicRating,
+  AutopayStatus,
+  PackageOffer,
 } from '@/domain/types';
 
 export interface CompleteLessonInput {
@@ -308,6 +310,28 @@ export interface DataSource {
   /** Start connecting Google Calendar. Production returns once the browser flow finishes; the demo connects at once. */
   connectGoogleCalendar?(): Promise<'connected' | 'cancelled' | 'redirecting'>;
   disconnectGoogleCalendar?(): Promise<void>;
+
+  // Card payments: saved cards, autopay and top-ups
+  /** Admins see every offer; everyone else sees active ones. Sorted by position, then fewest lessons. */
+  listPackageOffers(): Promise<PackageOffer[]>;
+  /** Admin: create or update a top-up offer. */
+  savePackageOffer(offer: Omit<PackageOffer, 'id'> & { id?: string }): Promise<PackageOffer>;
+  /** Admin: remove a top-up offer. */
+  deletePackageOffer(id: string): Promise<void>;
+  /** The family's parent or an admin. Switching on needs a saved card (AUTOPAY_NO_CARD_MESSAGE otherwise). */
+  setAutopay(familyId: string, enabled: boolean): Promise<void>;
+  /** Parent: buy an offer by card. Production returns the Checkout url; the demo records the purchase at once. */
+  buyPackageOffer(offerId: string): Promise<CardPaymentResult>;
+  /** Production only: the Stripe page where a family manages its saved cards. Admins pass the family. */
+  openBillingPortal?(familyId?: string): Promise<{ url: string }>;
+  /** Admin: charge a sent invoice to the family's saved card now. */
+  chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+}
+
+/** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */
+export interface AutopayChargeResult {
+  status: AutopayStatus | 'skipped';
+  error?: string;
 }
 
 export interface PickedFile {

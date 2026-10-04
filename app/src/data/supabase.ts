@@ -52,11 +52,12 @@ import type {
   Student,
   Tutor,
   TopicRating,
+  PackageOffer,
 } from '@/domain/types';
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import { PartialSaveError, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
+import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -143,6 +144,30 @@ const toFamily = (r: Row): Family => ({
   phone: r.phone ?? undefined,
   status: r.status ?? 'active',
   createdAt: r.created_at ?? undefined,
+  ...toBilling(r.family_billing),
+});
+
+/**
+ * The embedded family_billing row (one-to-one, so PostgREST may give an object, a one-element array or null).
+ * RLS only returns it to admins and the family itself; everyone else gets no card or autopay fields at all.
+ */
+function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard'> {
+  const b = (Array.isArray(embedded) ? embedded[0] : embedded) as Row | null | undefined;
+  if (!b) return {};
+  return {
+    autopay: b.autopay ?? false,
+    savedCard: b.card_last4 ? { brand: b.card_brand ?? 'Card', last4: b.card_last4, expires: b.card_expires ?? undefined } : undefined,
+  };
+}
+
+const toOffer = (r: Row): PackageOffer => ({
+  id: r.id,
+  name: r.name,
+  serviceId: r.service_id ?? undefined,
+  lessons: r.lessons,
+  price: Number(r.price),
+  active: r.active,
+  sort: r.sort ?? 0,
 });
 
 const toEnquiry = (r: Row): Enquiry => ({
@@ -388,6 +413,8 @@ const toInvoice = (r: Row): Invoice => ({
   items: r.items ?? [],
   vatRate: Number(r.vat_rate),
   notes: r.notes ?? undefined,
+  autopayStatus: r.autopay_status ?? undefined,
+  autopayError: r.autopay_error ?? undefined,
   payments: (r.payments ?? []).map((p: Row) => ({
     id: p.id,
     invoiceId: p.invoice_id,
@@ -430,6 +457,23 @@ function calendarReturnTo(href: string): string {
   url.searchParams.delete('calendar');
   url.searchParams.delete('reason');
   return url.toString();
+}
+
+/**
+ * Unwrap an Edge Function response. Functions reply to failures with a non-2xx status and JSON {error}; show that
+ * message (e.g. "No saved card yet. …") rather than the client's generic "non-2xx status code".
+ */
+async function invokeResult<T>(result: { data: unknown; error: unknown }): Promise<T> {
+  const error = result.error as { message?: string; context?: { json?: () => Promise<unknown> } } | null;
+  if (!error) return result.data as T;
+  let message = error.message || 'Something went wrong. Please try again.';
+  try {
+    const body = (await error.context?.json?.()) as { error?: unknown } | undefined;
+    if (body && typeof body.error === 'string' && body.error) message = body.error;
+  } catch {
+    // Not JSON (e.g. the function could not be reached); keep the client's message.
+  }
+  throw new Error(message);
 }
 
 export function createSupabaseSource(url: string, anonKey: string): DataSource {
@@ -535,6 +579,15 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     return (await completeFromCallback(provider, res.url)) === 'cancelled' ? { status: 'cancelled' } : 'done';
   }
 
+  /**
+   * An invoice just sent to an autopay family with a saved card is marked 'pending' by the database. Ask
+   * charge-invoice to take payment now; if this fails, the 15-minute schedule charges it instead.
+   */
+  function chargeIfAutopay(row: Row | null | undefined) {
+    if (!row?.id || row.autopay_status !== 'pending') return;
+    client.functions.invoke('charge-invoice', { body: { invoiceId: row.id } }).catch(() => undefined);
+  }
+
   return {
     kind: 'supabase',
 
@@ -627,7 +680,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return check(await client.from('tutors').select('*').order('full_name')).map(toTutor);
     },
     async listFamilies() {
-      return check(await client.from('families').select('*').order('name')).map(toFamily);
+      return check(await client.from('families').select('*, family_billing(*)').order('name')).map(toFamily);
     },
     async listStudents() {
       // student_notes is protected by RLS, so families simply get no notes back.
@@ -691,7 +744,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async saveFamily(f) {
       const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone, status: f.status });
-      return toFamily(check(await client.from('families').upsert(row).select().single()));
+      return toFamily(check(await client.from('families').upsert(row).select('*, family_billing(*)').single()));
     },
     async saveStudent(s) {
       const row = strip({
@@ -869,14 +922,17 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_expires_at: pkg.expiresAt ?? null,
         }),
       );
+      chargeIfAutopay(row as Row);
       return toInvoice(row as Row);
     },
     async invoiceUnbilled(familyId) {
       const row = check(await client.rpc('invoice_unbilled', { p_family_id: familyId })) as Row | null;
+      if (row && row.id) chargeIfAutopay(row);
       return row && row.id ? toInvoice(row) : null;
     },
     async setInvoiceStatus(id, status) {
-      check(await client.from('invoices').update({ status }).eq('id', id));
+      const row = check(await client.from('invoices').update({ status }).eq('id', id).select('id, autopay_status').maybeSingle()) as Row | null;
+      if (status === 'sent') chargeIfAutopay(row);
     },
     async recordPayment(invoiceId, amount, method, reference) {
       check(await client.from('payments').insert(strip({ invoice_id: invoiceId, amount, method, reference })));
@@ -1263,7 +1319,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return data;
     },
     async startCardPayment(invoiceId) {
-      const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };
+      // invokeResult shows the function's own message, e.g. when autopay is already charging this invoice.
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { invoiceId } }));
       return { url: data.url };
     },
 
@@ -1301,6 +1358,37 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async disconnectGoogleCalendar() {
       check(await client.functions.invoke('google-connect', { body: { action: 'disconnect' } }));
+    },
+    // Card payments: saved cards, autopay and top-ups
+    async listPackageOffers() {
+      // RLS returns only active offers to everyone but admins.
+      return check(await client.from('package_offers').select('*').order('sort').order('lessons')).map(toOffer);
+    },
+    async savePackageOffer(o) {
+      const row = strip({ id: o.id, name: o.name, service_id: o.serviceId ?? null, lessons: o.lessons, price: o.price, active: o.active, sort: o.sort });
+      return toOffer(check(await client.from('package_offers').upsert(row).select().single()));
+    },
+    async deletePackageOffer(id) {
+      check(await client.from('package_offers').delete().eq('id', id));
+    },
+    async setAutopay(familyId, enabled) {
+      check(await client.rpc('set_autopay', { p_family_id: familyId, p_enabled: enabled }));
+    },
+    async buyPackageOffer(offerId) {
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { offerId } }));
+      return { url: data.url };
+    },
+    async openBillingPortal(familyId) {
+      const body = familyId ? { familyId } : {};
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('billing-portal', { body }));
+      return { url: data.url };
+    },
+    async chargeSavedCard(invoiceId) {
+      const data = await invokeResult<{ results?: (AutopayChargeResult & { invoiceId?: string })[] }>(
+        await client.functions.invoke('charge-invoice', { body: { invoiceId } }),
+      );
+      const first = data?.results?.[0];
+      return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
     },
   };
 }

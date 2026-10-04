@@ -60,8 +60,9 @@ app/
    - The project URL and publishable key are in `src/config.ts`.
 2. **Stripe** (UAE account, for card payments in AED).
    - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://…`
-   - `npx supabase functions deploy create-checkout stripe-webhook ics send-reminders send-notifications`
-   - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for `checkout.session.completed`.
+   - `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal ics send-reminders send-notifications`
+   - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for these six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`.
+   - Saved cards, autopay, Apple Pay, Google Pay and lesson top-ups need a few more steps: see *Card payments: saved cards, autopay and top-ups* below.
    - Schedule `send-reminders` to run hourly (Supabase → Edge Functions → Schedules).
 3. **App Store.** This needs an Apple Developer account ($99/yr). No Mac is required.
    ```bash
@@ -217,6 +218,24 @@ Sample values for approval: first name `Mona`, student `Omar`, tutor `Ms Sarah K
 
 Until Twilio is configured, WhatsApp messages are marked `skipped` and push notifications and email carry on as normal. To check the queue, look at `notification_outbox` in the Supabase table editor: `whatsapp_status` is `pending`, `sent`, `skipped` or `failed`, and the `error` column explains any failure (for example Twilio code 21211 for an invalid number, or 21610 if the person has blocked the number).
 
+**Card payments: saved cards, autopay and top-ups.** Families can keep a card on file, let invoices pay themselves, and buy more lessons in one tap. The card itself stays with Stripe; the app only stores the brand, the last four digits and the expiry date. Set it up once, in this order:
+
+1. **Database.** Run `supabase/migrations/20261010000000_payments.sql` in the Supabase SQL editor.
+2. **Secrets.** `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://eliteeducationuae.github.io/app`. `APP_URL` must be the app's public web address (no trailing slash), because Stripe sends parents back there after paying.
+3. **Functions.** `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal`, and make sure the Stripe webhook lists the six events in *Going live* above.
+4. **Apple Pay and Google Pay.** In the Stripe Dashboard, go to *Settings → Payments → Payment methods* and switch on **Apple Pay** and **Google Pay**. Stripe-hosted Checkout then shows them automatically on supported phones and browsers; no domain file is needed. Only if card fields are ever embedded in the website itself, register the domain under *Settings → Payments → Payment method domains*.
+5. **Customer portal ("Manage cards").** In the Stripe Dashboard, go to *Settings → Billing → Customer portal*. Allow customers to **update payment methods**, set the business name to **Elite Education**, add the privacy policy and terms of service links, and save.
+6. **Autopay schedule.** In the Supabase Dashboard, go to *Integrations → Cron* (switch on the Cron and pg_net integrations if asked), create a job that calls the Supabase Edge Function `charge-invoice` with method POST and body `{}`, and run it **every 15 minutes** (`*/15 * * * *`). The schedule authenticates with the service role key (`Authorization: Bearer <service role key>`); never put that key in the app.
+
+How it works for families:
+
+- **Saving a card.** Whenever a parent pays an invoice or buys lessons by card, Stripe keeps the card securely for next time. Their saved card appears in the Billing tab, and *Manage cards* opens Stripe's secure page to add, replace or remove cards.
+- **Autopay.** Once a card is saved, the parent can switch on autopay in the Billing tab. From then on, every invoice sent to the family is charged to the saved card within about 15 minutes. If the bank declines, or asks the parent to confirm the payment, the family and the office are each told once, the invoice stays open to pay in the app, and an admin can try again from the invoice. While autopay is waiting to charge an invoice, the family is not offered another way to pay it (they can choose *Pay now instead*, which takes that invoice out of autopay first), so an invoice is never paid twice. Late or repeated failure messages from Stripe are ignored once the invoice is paid, voided or charged again. If Stripe cannot be reached mid-charge, the invoice shows *Confirming payment*: the family is not asked to pay (no Pay button or bank details), only the office is asked to check, and the next run sends the very same request to Stripe again with the same idempotency key, which returns the original result rather than charging twice. It is resent only while the invoice still wants exactly that charge (still sent, autopay still on, nothing paid towards it since, and under 23 hours old); otherwise the app only looks the payment up in Stripe and never charges again. Only an answer about the card (a decline, or the bank asking the parent to confirm) is reported to the family as a failed payment; any other Stripe error keeps the invoice held until Stripe gives an answer. While a charge is under way or unknown, the admin's *Record a payment* and *Void invoice* ask the office to check the Stripe Dashboard first. A charge left *processing* for more than 30 minutes is checked the same way, and an admin can press *Check payment with Stripe* on the invoice at any time. Switching autopay off, or recording a bank transfer, hands invoices waiting for autopay back to the family at once. Removing the last saved card switches autopay off and tells the family once. Admins can open a family's saved cards with *Manage cards* on the family's page.
+- **Buying more lessons.** Add lesson packages (name, service, number of lessons, price) in *Services and rates*. Parents tap *Buy more lessons*, pay through Checkout, and the package is added to their account straight away with a paid receipt in the Billing tab. What the parent was shown (name, lessons, price and VAT) travels with the payment, so hiding, repricing or deleting a package while someone is paying never changes or loses their purchase.
+- Notifications about card payments never include bank details, full card numbers or Stripe references.
+
+**Testing (Stripe test mode).** Use test keys (`sk_test_…`) and a test webhook secret. Pay an invoice with card `4242 4242 4242 4242` (any future expiry, any CVC): the invoice is marked paid and the card appears in the Billing tab. Then, with *Manage cards*, add card `4000 0000 0000 0341`, make it the default and switch on autopay: this card attaches successfully but fails when charged later, so the next invoice shows *Autopay failed* and the family receives the "We could not take payment" message.
+
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
 ## Round 4 setup checklist
@@ -228,7 +247,7 @@ Complete these once, in this order. The function names come from the round 4 pla
 3. **Apple.** Follow the Apple steps under *Sign in with Apple and Google*.
 4. **Stripe.** In the Stripe dashboard, enable **Apple Pay** and **Google Pay** under *Settings → Payment methods*, verify the domain `eliteeducation.me`, switch on and configure the **Customer billing portal**, and add `payment_intent.succeeded` and `payment_intent.payment_failed` to the webhook's events.
 5. **Twilio.** Follow *WhatsApp reminders* above.
-6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `send-notifications` every minute and `send-reminders` hourly.
+6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
 ## Checks

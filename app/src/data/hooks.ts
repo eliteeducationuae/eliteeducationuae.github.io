@@ -169,3 +169,7 @@ export function useCalendarConnection() {
     enabled,
   });
 }
+
+// Card payments: saved cards, autopay and top-ups
+
+export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });

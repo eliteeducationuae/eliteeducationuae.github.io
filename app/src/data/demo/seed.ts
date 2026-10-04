@@ -285,6 +285,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedOperations(db, now);
   seedClasswork(db, now);
   seedCalendar(db, now);
+  seedPayments(db);
   return db;
 }
 
@@ -309,6 +310,21 @@ function seedCalendar(db: DemoDB, now: Date) {
   for (const l of db.lessons) {
     if (l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > now) l.meetingUrl = undefined;
   }
+}
+
+/** Card payments: Fatima has a card on file (autopay off), and parents can top up from a few lesson packages. */
+function seedPayments(db: DemoDB) {
+  const mansoori = db.families.find((f) => f.id === 'f-mansoori');
+  if (mansoori) {
+    mansoori.savedCard = { brand: 'Visa', last4: '4242', expires: '08/29' };
+    mansoori.autopay = false;
+  }
+  db.packageOffers = [
+    { id: 'offer-ib-10', name: 'IB Maths: ten lessons', serviceId: 'svc-ib', lessons: 10, price: 4050, active: true, sort: 1 },
+    { id: 'offer-igcse-10', name: 'IGCSE Maths: ten lessons', serviceId: 'svc-igcse', lessons: 10, price: 3150, active: true, sort: 2 },
+    { id: 'offer-igcse-20', name: 'IGCSE Maths: twenty lessons', serviceId: 'svc-igcse', lessons: 20, price: 5950, active: true, sort: 3 },
+    { id: 'offer-any-5', name: 'Any lesson: five lessons', lessons: 5, price: 2000, active: false, sort: 4 },
+  ];
 }
 
 /** Roles with bids, applications, bank details, tutor invoices, a report round and expenses. */

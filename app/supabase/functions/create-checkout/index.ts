@@ -1,46 +1,92 @@
-// Creates a Stripe Checkout session for the balance of an invoice the caller can see.
+// Creates a Stripe Checkout session and returns its { url }.
+//   { invoiceId }  pays the balance of an invoice the caller can see (parent or admin).
+//   { offerId }    a parent buys a lesson package ("Buy more lessons"); the webhook adds the package.
+// Paying an invoice that autopay is waiting to charge takes it out of autopay first, so it is never charged twice.
+// The card is saved to the family's Stripe customer for next time (and for autopay, if the family turns it on).
+// Apple Pay and Google Pay appear automatically once switched on in the Stripe Dashboard.
 // Secrets: STRIPE_SECRET_KEY, APP_URL (where Stripe returns the parent afterwards).
-import { corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { checkoutInvoiceForm, checkoutOfferForm, invoiceBalanceFils, offerChargeFils } from '../_shared/stripe.ts';
+import { ensureCustomer, stripe } from '../_shared/stripe-api.ts';
+
+const CHARGING = 'Your saved card is being charged for this invoice. Please wait a moment and refresh.';
+
+const OFFER_GONE = 'This lesson package is no longer available.';
+
+/** The app's address, e.g. https://eliteeducationuae.github.io/app. Never guessed: Stripe must return parents to the app. */
+const appUrl = () => (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
+const NO_APP_URL = 'Card payments are not set up yet (APP_URL is missing).';
+
+async function invoiceCheckout(req: Request, invoiceId: string) {
+  const supabase = userClient(req);
+  // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
+  const { data: inv, error } = await supabase
+    .from('invoices')
+    .select('id, number, status, items, vat_rate, family_id, autopay_status, payments(amount)')
+    .eq('id', invoiceId)
+    .single();
+  if (error || !inv) return json({ error: 'Invoice not found' }, 404);
+  if (inv.status !== 'sent') return json({ error: 'This invoice is not payable' }, 400);
+
+  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? []);
+  if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
+
+  const admin = adminClient();
+  // 'unknown': Stripe could not be reached mid-charge, so the card may have been charged. Never offer a second payment.
+  if (inv.autopay_status === 'processing' || inv.autopay_status === 'unknown') return json({ error: CHARGING }, 409);
+  if (inv.autopay_status === 'pending' || inv.autopay_status === 'failed') {
+    // Atomic: whichever comes first, this or the autopay run (which claims 'pending' or 'failed' the same way), wins.
+    const { data: released } = await admin
+      .from('invoices')
+      .update({ autopay_status: null, autopay_error: null })
+      .eq('id', inv.id)
+      .eq('autopay_status', inv.autopay_status)
+      .select('id')
+      .maybeSingle();
+    if (!released) return json({ error: CHARGING }, 409);
+  }
+  const { data: family, error: famError } = await admin.from('families').select('id, name, parent_name, email').eq('id', inv.family_id).single();
+  if (famError || !family) return json({ error: 'Family not found' }, 404);
+  const customerId = await ensureCustomer(admin, family);
+  const res = await stripe('/checkout/sessions', {
+    form: checkoutInvoiceForm({ invoiceId: inv.id, invoiceNumber: inv.number, balanceFils: balance, customerId, familyId: family.id, appUrl: appUrl() }),
+  });
+  if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
+  return json({ url: res.body.url });
+}
+
+async function offerCheckout(req: Request, offerId: string) {
+  const supabase = userClient(req);
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return json({ error: 'Please sign in again.' }, 401);
+  const { data: profile } = await supabase.from('profiles').select('role, family_id').eq('id', auth.user.id).single();
+  if (profile?.role !== 'parent' || !profile.family_id) return json({ error: 'Only parents can buy lessons' }, 403);
+
+  // Row-level security only shows parents active offers.
+  const { data: offer } = await supabase.from('package_offers').select('id, name, lessons, price, service_id, active').eq('id', offerId).maybeSingle();
+  if (!offer || !offer.active) return json({ error: OFFER_GONE }, 404);
+  const { data: settings } = await supabase.from('settings').select('vat_rate').eq('id', 1).single();
+  const amount = offerChargeFils(offer.price, settings?.vat_rate ?? 0);
+
+  const admin = adminClient();
+  const { data: family, error } = await admin.from('families').select('id, name, parent_name, email').eq('id', profile.family_id).single();
+  if (error || !family) return json({ error: 'Family not found' }, 404);
+  const customerId = await ensureCustomer(admin, family);
+  const res = await stripe('/checkout/sessions', {
+    form: checkoutOfferForm({ offer, vatRate: settings?.vat_rate ?? 0, amountFils: amount, customerId, familyId: family.id, appUrl: appUrl() }),
+  });
+  if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
+  return json({ url: res.body.url });
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const { invoiceId } = await req.json();
-    const supabase = userClient(req);
-
-    // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
-    const { data: inv, error } = await supabase.from('invoices').select('*, payments(amount), families(email)').eq('id', invoiceId).single();
-    if (error || !inv) return json({ error: 'Invoice not found' }, 404);
-    if (inv.status !== 'sent') return json({ error: 'This invoice is not payable' }, 400);
-
-    const subtotal = (inv.items as { quantity: number; unitPrice: number }[]).reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const total = Math.round(subtotal * (1 + Number(inv.vat_rate)) * 100) / 100;
-    const paid = (inv.payments as { amount: number }[]).reduce((s, p) => s + Number(p.amount), 0);
-    const balance = Math.round((total - paid) * 100); // fils
-    if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
-
-    const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me';
-    const form = new URLSearchParams({
-      mode: 'payment',
-      'line_items[0][quantity]': '1',
-      'line_items[0][price_data][currency]': 'aed',
-      'line_items[0][price_data][unit_amount]': String(balance),
-      'line_items[0][price_data][product_data][name]': `Elite Education invoice ${inv.number}`,
-      'metadata[invoice_id]': inv.id,
-      'payment_intent_data[metadata][invoice_id]': inv.id,
-      success_url: `${appUrl}/invoice/${inv.id}?paid=1`,
-      cancel_url: `${appUrl}/invoice/${inv.id}`,
-    });
-    if (inv.families?.email) form.set('customer_email', inv.families.email);
-
-    const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form,
-    });
-    const session = await res.json();
-    if (!res.ok) return json({ error: session.error?.message ?? 'Stripe error' }, 502);
-    return json({ url: session.url });
+    if (!appUrl()) return json({ error: NO_APP_URL }, 500);
+    const body = await req.json().catch(() => ({}));
+    if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
+    if (typeof body?.offerId === 'string') return await offerCheckout(req, body.offerId);
+    return json({ error: 'Choose an invoice or a lesson package to pay for.' }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

@@ -36,6 +36,7 @@ import type {
   Student,
   Tutor,
   TopicRating,
+  PackageOffer,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -78,9 +79,11 @@ export interface DemoDB {
   // Google Calendar. Optional because demo databases saved before this feature lack them: read with `?? []`.
   busyBlocks?: BusyBlock[];
   calendarConnections?: CalendarConnection[];
+  /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
+  packageOffers?: PackageOffer[];
 }
 
-export const DEMO_DB_VERSION = 6;
+export const DEMO_DB_VERSION = 7;
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -144,6 +147,8 @@ export const q = {
   families(db: DemoDB, viewer: Profile): Family[] {
     if (viewer.role === 'admin') return db.families;
     const familyIds = new Set(q.students(db, viewer).map((s) => s.familyId));
+    // Mirrors the "see families" policy: a parent always sees their own family, even before a child is added.
+    if (viewer.familyId) familyIds.add(viewer.familyId);
     return db.families.filter((f) => familyIds.has(f.id));
   },
   lessons(db: DemoDB, viewer: Profile, from: string, to: string): Lesson[] {
