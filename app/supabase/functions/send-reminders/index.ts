@@ -2,13 +2,17 @@
 // Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
+// It also queues police clearance expiry alerts (60, 30 and 7 days before, and on expiry) for tutors and the office,
+// which send-notifications delivers in the same way.
 import { adminClient } from '../_shared/supabase.ts';
 
 Deno.serve(async () => {
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
-  const whatsapp = `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages`;
+  const { data: vetting, error: vettingError } = await db.rpc('queue_vetting_alerts');
+  if (vettingError) console.error('queue_vetting_alerts failed', vettingError.message);
+  const whatsapp = `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages, ${typeof vetting === 'number' ? vetting : 0} clearance alerts`;
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')
