@@ -41,7 +41,7 @@ export default function TutorEarnings() {
         <Stat label="Hours" value={String(e.hours)} hint={plural(e.lessons, 'lesson')} />
         <Stat label="Still to teach" value={String(pending.length)} hint="lessons this month" />
       </StatGrid>
-      <Txt variant="small">Paid at {formatAED(tutor.hourlyPay)} per hour.</Txt>
+      <Txt variant="small">{customRates.length ? `Your usual rate is ${formatAED(tutor.hourlyPay)} per hour.` : `Paid at ${formatAED(tutor.hourlyPay)} per hour.`}</Txt>
       {customRates.length ? (
         <Section title="Custom rates">
           <Txt variant="small">These students’ lessons with you are paid at an agreed rate instead of your usual rate.</Txt>

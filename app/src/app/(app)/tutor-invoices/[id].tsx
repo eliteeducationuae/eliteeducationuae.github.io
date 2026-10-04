@@ -96,15 +96,20 @@ function Detail({ inv }: { inv: TutorInvoice }) {
       <Section
         title={`Lessons (${lessonLines.length})`}
         action={editable ? <Button title="Refresh from lessons" size="sm" variant="ghost" loading={refresh.isPending} onPress={() => refresh.mutate([inv.tutorId, inv.periodStart])} /> : undefined}>
-        <Card style={{ gap: Spacing.one }}>
+        <Card style={{ gap: Spacing.two }}>
           {lessonLines.length === 0 ? <Txt variant="muted">No taught lessons this month yet.</Txt> : null}
           {lessonLines.map((i, n) => (
-            <Row key={n} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
-              <Txt style={{ flex: 1 }}>{i.description}</Txt>
-              {i.rateSource === 'custom' ? <CustomBadge /> : null}
-              <Txt variant="muted">
-                {i.quantity} × {formatAED(i.unitPrice)}
-              </Txt>
+            <Row key={n} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.two}>
+              {/* The description keeps the full width; the hours, rate and any Custom badge sit beneath it. */}
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt>{i.description}</Txt>
+                <Row gap={Spacing.two} wrap>
+                  <Txt variant="muted">
+                    {i.quantity} × {formatAED(i.unitPrice)}
+                  </Txt>
+                  {i.rateSource === 'custom' ? <CustomBadge /> : null}
+                </Row>
+              </View>
               <Txt style={{ width: 90, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{formatAED(i.quantity * i.unitPrice)}</Txt>
             </Row>
           ))}
