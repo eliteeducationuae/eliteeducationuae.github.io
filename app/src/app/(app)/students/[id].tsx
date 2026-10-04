@@ -1,6 +1,8 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { View } from 'react-native';
 
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
+import { FamilyContactsReadOnly } from '@/components/family-contacts';
 import { StudentOverview } from '@/components/student-overview';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -35,11 +37,17 @@ export default function StudentPage() {
       {family && (me.role === 'admin' || me.role === 'tutor') ? (
         <Card style={{ gap: 4 }}>
           <Txt variant="label">Family</Txt>
-          <Txt variant="h3">{family.parentName}</Txt>
-          <Txt variant="muted">
-            {family.email}
-            {family.phone ? ` · ${family.phone}` : ''}
-          </Txt>
+          <Txt variant="h3">{`${family.name} family`}</Txt>
+          {/* Tutors see the family's contacts by name and relationship only. */}
+          {me.role === 'admin' ? (
+            <Txt variant="muted">
+              {family.email}
+              {family.phone ? ` · ${family.phone}` : ''}
+            </Txt>
+          ) : null}
+          <View style={{ marginTop: Spacing.two }}>
+            <FamilyContactsReadOnly familyId={family.id} />
+          </View>
         </Card>
       ) : null}
       {me.role === 'admin' ? (
