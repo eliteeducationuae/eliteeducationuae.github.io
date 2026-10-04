@@ -4,6 +4,7 @@ export default function TutorLayout() {
   return (
     <RoleTabs
       role="tutor"
+      search
       tabs={[
         { name: 'index', title: 'Today', icon: 'home' },
         { name: 'calendar', title: 'Calendar', icon: 'calendar' },

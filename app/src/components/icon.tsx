@@ -42,6 +42,7 @@ const ICONS = {
   phone: { ios: 'phone.fill', android: 'call', web: 'call' },
   mail: { ios: 'envelope.fill', android: 'mail', web: 'mail' },
   drag: { ios: 'arrow.up.and.down', android: 'drag_indicator', web: 'drag_indicator' },
+  search: { ios: 'magnifyingglass', android: 'search', web: 'search' },
 } satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

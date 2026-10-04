@@ -101,6 +101,12 @@
         .enquiry .status { margin-top: 1rem; padding: 0.8rem 1rem; border-radius: 8px; display: none; }
         .enquiry .status.ok { display: block; background: #e6f4ea; color: #2f855a; }
         .enquiry .status.err { display: block; background: #fde8e8; color: #c53030; }
+        .enquiry .checks { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.25rem; }
+        .enquiry .checks label { display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.95rem; color: var(--text); font-weight: 400; }
+        .enquiry .checks input { width: auto; }
+        .teach { background: var(--light); max-width: none; }
+        .teach > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+        .teach .enquiry { max-width: 640px; box-shadow: 0 2px 12px rgba(26, 54, 93, 0.08); }
         .hp { position: absolute; left: -9999px; }
         footer { background: #0f2440; color: var(--muted); text-align: center; padding: 1.5rem; font-size: 0.875rem; }
         @media (max-width: 768px) {
@@ -122,6 +128,8 @@
         <a href="#subjects">Subjects</a>
         <a href="#why">Why Us</a>
         <a href="#contact">Contact</a>
+        <a href="#teach">Teach with us</a>
+        <a href="/app/">Sign in</a>
     </nav>
 </header>
 <section class="hero">
@@ -210,6 +218,32 @@
     </div>
     <a href="mailto:craig@craigobrieneducation.com" class="btn btn-primary">Book a Consultation</a>
 </section>
+<section class="section teach" id="teach">
+    <h2 class="section-title">Teach with Elite Education</h2>
+    <p class="section-subtitle">Experienced IB, IGCSE or A-Level maths teacher? Join our team of specialist tutors in the UAE.</p>
+    <form class="enquiry" id="apply" novalidate>
+        <h3>Apply to tutor with us</h3>
+        <div class="row">
+            <div><label for="a-name">Your name</label><input id="a-name" name="name" required autocomplete="name"></div>
+            <div><label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email"></div>
+        </div>
+        <label for="a-phone">Mobile / WhatsApp</label><input id="a-phone" name="phone" type="tel" autocomplete="tel">
+        <label>Curricula you teach</label>
+        <div class="checks">
+            <label><input type="checkbox" name="curricula" value="IB"> IB</label>
+            <label><input type="checkbox" name="curricula" value="IGCSE"> IGCSE</label>
+            <label><input type="checkbox" name="curricula" value="A-Level"> A-Level</label>
+        </div>
+        <label for="a-subjects">Courses and levels</label><input id="a-subjects" name="subjects" placeholder="e.g. IB AA HL, IGCSE Further Maths">
+        <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="Schools, years teaching, exam results…"></textarea>
+        <label for="a-qualifications">Qualifications</label><input id="a-qualifications" name="qualifications" placeholder="e.g. BSc Mathematics, PGCE, IB examiner">
+        <label for="a-availability">Availability</label><input id="a-availability" name="availability" placeholder="e.g. Weekday evenings, Saturday mornings">
+        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button type="submit" class="btn btn-primary">Send application</button>
+        <div class="status" id="apply-status" role="status"></div>
+        <p class="note">Want to attach your CV? <a href="/app/teach">Apply in our app</a> instead. We only use your details to consider your application.</p>
+    </form>
+</section>
 <footer>&copy; 2026 Elite Education UAE. All rights reserved.</footer>
 <script>
 (function () {
@@ -243,6 +277,36 @@
         }).catch(function (err) {
             show(false, (err && err.message ? err.message + '. ' : '') + 'You can also email craig@craigobrieneducation.com.');
         }).finally(function () { button.disabled = false; button.textContent = 'Send enquiry'; });
+    });
+
+    // Tutor applications go straight into the app's hiring pipeline.
+    var apply = document.getElementById('apply');
+    var applyStatus = document.getElementById('apply-status');
+    function showApply(ok, text) { applyStatus.className = 'status ' + (ok ? 'ok' : 'err'); applyStatus.textContent = text; }
+    apply.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var f = apply.elements;
+        if (f.website.value) return;
+        if (!f.name.value.trim()) return showApply(false, 'Please enter your name.');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.value.trim())) return showApply(false, 'Please enter a valid email address.');
+        var curricula = Array.prototype.filter.call(apply.querySelectorAll('input[name=curricula]'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+        var button = apply.querySelector('button');
+        button.disabled = true; button.textContent = 'Sending…';
+        fetch(URL.replace('submit_enquiry', 'submit_tutor_application'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: KEY },
+            body: JSON.stringify({
+                p_full_name: f.name.value, p_email: f.email.value, p_phone: f.phone.value || null, p_curricula: curricula,
+                p_subjects: f.subjects.value || null, p_experience: f.experience.value || null,
+                p_qualifications: f.qualifications.value || null, p_availability: f.availability.value || null
+            })
+        }).then(function (r) {
+            if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || 'Something went wrong'); });
+            apply.reset();
+            showApply(true, 'Thank you for applying! We’ll review your application and be in touch soon.');
+        }).catch(function (err) {
+            showApply(false, (err && err.message ? err.message + '. ' : '') + 'You can also email craig@craigobrieneducation.com.');
+        }).finally(function () { button.disabled = false; button.textContent = 'Send application'; });
     });
 })();
 </script>

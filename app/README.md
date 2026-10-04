@@ -17,6 +17,13 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | Enquiries | Separate CRM | Built-in pipeline (new → contacted → trial booked → enrolled / lost) fed by the website form, the app and logged phone calls |
 | Booking | Admin books everything | Parents pick a real open slot from the tutor's availability to request an extra lesson or a move; one-tap approval creates or moves the lesson |
 | Messaging | Email only | A conversation per family with you and their tutors, announcements, and automatic emails + push for notes, invoices, messages and booking decisions |
+| New students for tutors | Phone calls and WhatsApp | Post a role (prefilled from an enquiry); your tutors pitch for it; you pick one and schedule in one tap |
+| Hiring | Google Forms | "Teach with us" form on the website and in the app, with CV upload, feeding a hiring pipeline. **Hire** creates the tutor. |
+| Tutor pay | Tutors email invoices | Tutors submit a monthly invoice built from the lessons they taught. You approve it, pay it and record the reference. Bank details are collected in the app and kept private. |
+| Reports | Written from scratch | Report rounds with a facts panel for each student, one-tap grades and **Draft for me** (AI). You review it and send it to families as a PDF. |
+| Money | Spreadsheets | Profit and loss by month, expenses with receipts, the pay run and CSV exports for your accountant |
+| Insights | Basic reports | Revenue trends, tutor capacity, family activity, enquiry conversion, students to check on and an AI summary |
+| Desktop | | A sidebar layout on laptops, global search (Ctrl/⌘-K) and the web app at `/app` |
 
 ## Run it
 
@@ -40,7 +47,7 @@ app/
   src/data/           DataSource interface, Supabase implementation, offline demo implementation, syllabus data
   supabase/
     migrations/       database schema, row-level security, server functions (complete/cancel lesson, invoicing)
-    functions/        Edge Functions: Stripe checkout + webhook, calendar feed, lesson reminders
+    functions/        Edge Functions: Stripe checkout + webhook, calendar feed, reminders, notifications, AI drafting
     tests/            permission tests run against a throwaway Postgres
 ```
 
@@ -87,6 +94,21 @@ Until this is set up, everything still works in the app; the emails simply wait 
 
 **Website enquiries.** The "Book a free consultation" form on eliteeducation.me posts straight into the enquiry pipeline.
 
+**Roles, hiring, tutor invoices, reports and money (round 3).** Run `supabase/migrations/20261005000000_operations.sql` in the SQL editor. It also creates the private `applications` (CVs) and `receipts` storage buckets with their access rules.
+
+**AI drafting (optional).** Report drafts, parent updates and the insights summary use Claude through the `ai-assist` Edge Function. Without it, tutors still get a template draft.
+
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com).
+2. `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-…`
+3. `npx supabase functions deploy ai-assist`
+
+The function reads data as the signed-in person, so the AI only sees what that person can already see. It uses server-side fallbacks: if the main model declines a request, the API retries it on a recommended fallback model. Bank details are never sent.
+
+**Web app at `/app`.** `.github/workflows/deploy.yml` publishes the website and the web app on every push to `main`. One-off setup: in GitHub, go to repo **Settings → Pages → Source** and choose **GitHub Actions**. Then:
+
+- Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app.
+- Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs.
+
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
 ## Checks
@@ -98,8 +120,8 @@ npm run test:db    # schema, row-level security and billing functions against a 
 
 ## Roadmap ideas
 
-- AI: draft parent updates from lesson notes, generate worksheets on weak topics, flag at-risk students
-- Two-way Google Calendar sync and drag-to-reschedule
+- AI worksheets on each student's weak topics
+- Two-way Google Calendar sync
 - Online booking of trial lessons from eliteeducation.me
-- WhatsApp reminders and in-app messaging
-- Tutor availability and automatic cover suggestions
+- WhatsApp reminders
+- Bank-feed import for expenses

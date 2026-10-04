@@ -43,7 +43,7 @@ export default function RootLayout() {
           <Stack.Screen name="sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="(app)" options={{ headerShown: false }} />
           <Stack.Screen name="enquire" options={{ title: 'Book a free consultation' }} />
-          <Stack.Screen name="apply" options={{ title: 'Teach with Elite Education' }} />
+          <Stack.Screen name="teach" options={{ title: 'Teach with Elite Education' }} />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>
