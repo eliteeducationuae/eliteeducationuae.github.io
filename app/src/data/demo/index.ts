@@ -6,6 +6,7 @@ import type { Profile } from '@/domain/types';
 import type { DataSource } from '../source';
 import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
+import { ops } from './operations';
 import { createSeed } from './seed';
 
 const DB_KEY = 'elite.demo.db';
@@ -173,6 +174,36 @@ export function createDemoSource(): DataSource {
     markThreadRead: (familyId) => write((d, v) => eq.markRead(d, v, familyId)),
     listAnnouncements: () => read((d, v) => eq.announcements(d, v)),
     postAnnouncement: (a) => write((d, v) => eq.postAnnouncement(d, v, a)),
+    listOpportunities: () => read((d, v) => ops.opportunities(d, v)),
+    listBids: () => read((d, v) => ops.bids(d, v)),
+    saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),
+    placeBid: (id, pitch, availability) => write((d, v) => ops.placeBid(d, v, id, pitch, availability)),
+    withdrawBid: (id) => write((d, v) => ops.withdrawBid(d, v, id)),
+    awardOpportunity: (bidId) => write((d, v) => ops.awardOpportunity(d, v, bidId)),
+    async submitTutorApplication(a) {
+      const d = await load();
+      ops.submitApplication(d, a);
+      await save();
+    },
+    listApplications: () => read((d, v) => ops.applications(d, v)),
+    updateApplication: (id, patch) => write((d, v) => ops.updateApplication(d, v, id, patch)),
+    getPaymentDetails: (tutorId) => read((d, v) => ops.paymentDetails(d, v, tutorId)),
+    savePaymentDetails: (details) => write((d, v) => ops.savePaymentDetails(d, v, details)),
+    listTutorInvoices: () => read((d, v) => ops.tutorInvoices(d, v)),
+    createTutorInvoice: (tutorId, month) => write((d, v) => ops.createTutorInvoice(d, v, tutorId, month)),
+    updateTutorInvoice: (id, extras, notes) => write((d, v) => ops.updateTutorInvoice(d, v, id, extras, notes)),
+    submitTutorInvoice: (id) => write((d, v) => ops.submitTutorInvoice(d, v, id)),
+    reviewTutorInvoice: (id, approve, comment) => write((d, v) => ops.reviewTutorInvoice(d, v, id, approve, comment)),
+    markTutorInvoicePaid: (id, reference) => write((d, v) => ops.markTutorInvoicePaid(d, v, id, reference)),
+    listReportCycles: () => read((d) => d.reportCycles),
+    openReportCycle: (name, startsOn, due) => write((d, v) => ops.openReportCycle(d, v, name, startsOn, due)),
+    listStudentReports: () => read((d, v) => ops.reports(d, v)),
+    saveReport: (id, fields) => write((d, v) => ops.saveReport(d, v, id, fields)),
+    submitReport: (id) => write((d, v) => ops.submitReport(d, v, id)),
+    setReportStatus: (id, status) => write((d, v) => ops.setReportStatus(d, v, id, status)),
+    listExpenses: () => read((d, v) => ops.expenses(d, v)),
+    saveExpense: (e) => write((d, v) => ops.saveExpense(d, v, e)),
+    deleteExpense: (id) => write((d, v) => ops.deleteExpense(d, v, id)),
     async startCardPayment(invoiceId) {
       // No real card processing in the demo: simulate a successful Stripe payment.
       await write((d, v) => {

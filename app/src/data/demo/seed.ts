@@ -4,6 +4,7 @@ import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import type { Invoice, Lesson, Message, Profile, Settings, TopicRating } from '@/domain/types';
 
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
+import { ops } from './operations';
 
 const SUMMARIES = [
   'Worked through {t1} from first principles, then exam-style questions on {t2}. Good engagement — method is much more secure.',
@@ -96,6 +97,14 @@ export function createSeed(now: Date = new Date()): DemoDB {
     messages: [],
     reads: {},
     announcements: [],
+    opportunities: [],
+    bids: [],
+    applications: [],
+    paymentDetails: [],
+    tutorInvoices: [],
+    reportCycles: [],
+    reports: [],
+    expenses: [],
   };
 
   const profiles: Profile[] = [
@@ -260,7 +269,90 @@ export function createSeed(now: Date = new Date()): DemoDB {
   db.settings.nextInvoiceNumber += 1;
 
   seedEngagement(db, now);
+  seedOperations(db, now);
   return db;
+}
+
+/** Roles with bids, applications, bank details, tutor invoices, a report round and expenses. */
+function seedOperations(db: DemoDB, now: Date) {
+  const admin = db.profiles.find((p) => p.role === 'admin')!;
+  const as = (tutorId: string): Profile => ({ ...admin, role: 'tutor', tutorId });
+  const iso = (d: Date) => d.toISOString();
+  const daysAgo = (n: number) => addDays(now, -n);
+
+  // Roles tutors can express interest in.
+  const sophie = ops.saveOpportunity(db, admin, {
+    title: 'Year 12 A-Level Maths — Hugo',
+    description: 'Referred by an existing family. Hugo is predicted an A and wants an A*. Pure and Statistics focus.',
+    curriculum: 'A-Level', syllabusId: 'alevel-maths', enquiryId: 'enq-3', schedule: 'Tuesdays 5–6:30pm, from next week',
+    location: 'Online', payRate: 260, closesOn: toDateKey(addDays(now, 4)), visibility: 'all', invitedTutorIds: [],
+  }, daysAgo(2));
+  ops.placeBid(db, as('t-james'), sophie.id, 'I’ve taught A-Level Pure and Stats for six years; four of last year’s students got A*. Tuesday evenings are free for me.', 'Tuesdays after 4pm', daysAgo(1));
+  ops.placeBid(db, as('t-sarah'), sophie.id, 'Happy to take Hugo on — I’ve been building up my A-Level hours and have strong Stats experience.', 'Tue/Thu evenings', daysAgo(1));
+
+  ops.saveOpportunity(db, admin, {
+    title: 'IB Maths AA HL — Year 13 IA support',
+    description: 'Six sessions to guide an Internal Assessment on modelling. Deadline mid-November.',
+    curriculum: 'IB', syllabusId: 'ib-aa-hl', enquiryId: 'enq-2', schedule: 'Weekends, flexible',
+    location: 'Online', payRate: 280, closesOn: toDateKey(addDays(now, 7)), visibility: 'all', invitedTutorIds: [],
+  }, daysAgo(1));
+
+  const filled = ops.saveOpportunity(db, admin, {
+    title: 'IGCSE small group — Haddad twins',
+    curriculum: 'IGCSE', schedule: 'Saturdays 10–11:30am', location: 'Al Barsha centre', payRate: 200, visibility: 'all', invitedTutorIds: [],
+  }, daysAgo(40));
+  ops.placeBid(db, as('t-sarah'), filled.id, 'I love group teaching and I’m at the centre on Saturdays.', 'Saturday mornings', daysAgo(39));
+  ops.awardOpportunity(db, admin, db.bids.find((b) => b.opportunityId === filled.id)!.id, daysAgo(38));
+
+  // Applications to join.
+  db.applications.push(
+    { id: 'app-1', createdAt: iso(daysAgo(1)), fullName: 'Hannah Clarke', email: 'hannah@example.com', phone: '+971 52 000 0011', curricula: ['IB', 'A-Level'], subjects: 'Maths, Further Maths', experience: 'Head of Maths at a British international school, 9 years. IB examiner for Paper 2.', qualifications: 'MSc Mathematics, PGCE', availability: 'Weekday evenings, Saturdays', status: 'applied' },
+    { id: 'app-2', createdAt: iso(daysAgo(6)), fullName: 'Ravi Menon', email: 'ravi@example.com', curricula: ['IGCSE'], subjects: 'Maths, Additional Maths', experience: '3 years private tutoring, engineering graduate.', qualifications: 'BEng', availability: 'After 5pm', status: 'interview', notes: 'Strong on 0606. Interview Thursday 4pm.' },
+    { id: 'app-3', createdAt: iso(daysAgo(20)), fullName: 'Lucy Grant', email: 'lucy@example.com', curricula: ['IGCSE', 'IB'], subjects: 'Maths', experience: 'Newly qualified teacher.', availability: 'Weekends only', status: 'rejected', notes: 'Not enough availability for now — revisit in spring.' },
+  );
+
+  // Bank details (Sarah has filled hers in; James hasn't yet).
+  ops.savePaymentDetails(db, as('t-sarah'), { tutorId: 't-sarah', accountName: 'Sarah Khan', bankName: 'Emirates NBD', iban: 'AE070331234567890123456', swift: 'EBILAEAD' });
+  ops.savePaymentDetails(db, admin, { tutorId: 't-craig', accountName: "Craig O'Brien", bankName: 'Mashreq', iban: 'GB82WEST12345698765432' });
+
+  // Last month's tutor invoices: James paid, Sarah waiting for approval. Two months ago everyone paid.
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const twoMonths = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const plan: [string, Date, string[]][] = [
+    ['t-sarah', twoMonths, ['submit', 'approve', 'pay']],
+    ['t-james', twoMonths, ['submit', 'approve', 'pay']],
+    ['t-james', lastMonth, ['submit', 'approve', 'pay']],
+    ['t-sarah', lastMonth, ['submit']],
+  ];
+  for (const [tutorId, month, steps] of plan) {
+    const id = ops.createTutorInvoice(db, as(tutorId), tutorId, toDateKey(month), month);
+    if (tutorId === 't-sarah' && month === lastMonth) {
+      ops.updateTutorInvoice(db, as(tutorId), id, [{ description: 'Mock exam marking (Layla)', quantity: 2, unitPrice: 150 }], 'Includes marking Layla’s mock paper.');
+    }
+    if (steps.includes('submit')) ops.submitTutorInvoice(db, as(tutorId), id, addDays(month, 32));
+    if (steps.includes('approve')) ops.reviewTutorInvoice(db, admin, id, true, undefined, addDays(month, 33));
+    if (steps.includes('pay')) ops.markTutorInvoicePaid(db, admin, id, `FT${toDateKey(month).replace(/-/g, '').slice(2, 6)}${tutorId.slice(2, 5).toUpperCase()}`, addDays(month, 35));
+  }
+
+  // A report round in progress: some written, one waiting for approval.
+  ops.openReportCycle(db, admin, 'Autumn half-term 2026', toDateKey(daysAgo(45)), toDateKey(addDays(now, 10)), daysAgo(3));
+  const layla = db.reports.find((r) => r.studentId === 's-layla')!;
+  ops.saveReport(db, admin, layla.id, {
+    attainment: '7', effort: 5, progress: 4,
+    strengths: 'Layla is now confident with algebraic manipulation and simultaneous equations, and her written working is clear and well organised.',
+    nextSteps: 'Focus next on circle theorems and vectors, with timed past-paper practice to build exam speed.',
+    comment: 'Layla has worked hard all half-term and her homework has been excellent. She asks thoughtful questions and is on track for her target grade.',
+    aiAssisted: true,
+  });
+  ops.submitReport(db, admin, layla.id, daysAgo(1));
+
+  // Expenses over the last few months.
+  const months = [0, 1, 2, 3, 4, 5].map((n) => new Date(now.getFullYear(), now.getMonth() - n, 1));
+  for (const m of months) {
+    db.expenses.push({ id: `exp-rent-${toDateKey(m)}`, date: toDateKey(m), category: 'Rent', description: 'Al Barsha centre room', amount: 2500, vatAmount: 125 });
+    db.expenses.push({ id: `exp-sw-${toDateKey(m)}`, date: toDateKey(addDays(m, 4)), category: 'Software', description: 'Zoom, Google Workspace', amount: 180, vatAmount: 0 });
+  }
+  db.expenses.push({ id: 'exp-ads', date: toDateKey(daysAgo(10)), category: 'Marketing', description: 'Instagram ads — mock exam season', amount: 600, vatAmount: 0 });
 }
 
 /** Availability, holidays, enquiries, a pending request, messages and an announcement. */

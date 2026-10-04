@@ -2,6 +2,14 @@ import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft } fr
 import { toDateKey } from '@/domain/dates';
 import { cancellationOutcome, type CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Expense,
+  Opportunity,
+  OpportunityBid,
+  PaymentDetails,
+  ReportCycle,
+  StudentReport,
+  TutorApplication,
+  TutorInvoice,
   Announcement,
   Availability,
   Charge,
@@ -53,9 +61,17 @@ export interface DemoDB {
   /** profileId → familyId → last read ISO time. */
   reads: Record<string, Record<string, string>>;
   announcements: Announcement[];
+  opportunities: Opportunity[];
+  bids: OpportunityBid[];
+  applications: TutorApplication[];
+  paymentDetails: PaymentDetails[];
+  tutorInvoices: TutorInvoice[];
+  reportCycles: ReportCycle[];
+  reports: StudentReport[];
+  expenses: Expense[];
 }
 
-export const DEMO_DB_VERSION = 2;
+export const DEMO_DB_VERSION = 3;
 
 let counter = 0;
 export function newId(prefix: string): string {

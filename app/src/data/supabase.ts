@@ -6,6 +6,14 @@ import { Platform } from 'react-native';
 
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Expense,
+  Opportunity,
+  OpportunityBid,
+  PaymentDetails,
+  ReportCycle,
+  StudentReport,
+  TutorApplication,
+  TutorInvoice,
   Announcement,
   Availability,
   Charge,
@@ -146,6 +154,61 @@ const toRequest = (r: Row): LessonRequest => ({
 });
 
 const hhmm = (t: string) => t.slice(0, 5);
+
+const toOpportunity = (r: Row): Opportunity => ({
+  id: r.id,
+  createdAt: r.created_at,
+  title: r.title,
+  description: r.description ?? undefined,
+  curriculum: r.curriculum ?? undefined,
+  syllabusId: r.syllabus_id ?? undefined,
+  studentId: r.student_id ?? undefined,
+  enquiryId: r.enquiry_id ?? undefined,
+  schedule: r.schedule ?? undefined,
+  location: r.location ?? undefined,
+  payRate: Number(r.pay_rate),
+  closesOn: r.closes_on ?? undefined,
+  status: r.status,
+  visibility: r.visibility,
+  invitedTutorIds: r.invited_tutor_ids ?? [],
+  awardedTutorId: r.awarded_tutor_id ?? undefined,
+  awardedAt: r.awarded_at ?? undefined,
+});
+
+const toTutorInvoice = (r: Row): TutorInvoice => ({
+  id: r.id,
+  createdAt: r.created_at,
+  tutorId: r.tutor_id,
+  number: r.number,
+  periodStart: r.period_start,
+  periodEnd: r.period_end,
+  status: r.status,
+  items: (r.items ?? []).map((i: Row) => ({ description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), lessonId: i.lessonId ?? undefined })),
+  notes: r.notes ?? undefined,
+  adminComment: r.admin_comment ?? undefined,
+  submittedAt: r.submitted_at ?? undefined,
+  approvedAt: r.approved_at ?? undefined,
+  paidAt: r.paid_at ?? undefined,
+  paymentReference: r.payment_reference ?? undefined,
+});
+
+const toReport = (r: Row): StudentReport => ({
+  id: r.id,
+  cycleId: r.cycle_id,
+  studentId: r.student_id,
+  tutorId: r.tutor_id,
+  attainment: r.attainment ?? undefined,
+  effort: r.effort ?? undefined,
+  progress: r.progress ?? undefined,
+  strengths: r.strengths ?? undefined,
+  nextSteps: r.next_steps ?? undefined,
+  comment: r.comment ?? undefined,
+  status: r.status,
+  aiAssisted: r.ai_assisted,
+  updatedAt: r.updated_at,
+  submittedAt: r.submitted_at ?? undefined,
+  publishedAt: r.published_at ?? undefined,
+});
 
 const toStudent = (r: Row): Student => ({
   id: r.id,
@@ -654,6 +717,193 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async postAnnouncement(a) {
       const me = await loadProfile();
       check(await client.from('announcements').insert({ author_name: me?.fullName ?? 'Elite Education', title: a.title.trim(), body: a.body.trim(), audience: a.audience }));
+    },
+    async listOpportunities() {
+      return check(await client.from('opportunities').select('*').order('created_at', { ascending: false })).map(toOpportunity);
+    },
+    async listBids() {
+      const rows = check(await client.from('opportunity_bids').select('*').order('created_at'));
+      return rows.map(
+        (r: Row): OpportunityBid => ({
+          id: r.id,
+          createdAt: r.created_at,
+          opportunityId: r.opportunity_id,
+          tutorId: r.tutor_id,
+          pitch: r.pitch,
+          availability: r.availability ?? undefined,
+          status: r.status,
+        }),
+      );
+    },
+    async saveOpportunity(o) {
+      const row = strip({
+        id: o.id,
+        title: o.title.trim(),
+        description: o.description,
+        curriculum: o.curriculum,
+        syllabus_id: o.syllabusId,
+        student_id: o.studentId,
+        enquiry_id: o.enquiryId,
+        schedule: o.schedule,
+        location: o.location,
+        pay_rate: o.payRate,
+        closes_on: o.closesOn,
+        visibility: o.visibility,
+        invited_tutor_ids: o.invitedTutorIds,
+        status: o.status,
+      });
+      return toOpportunity(check(await client.from('opportunities').upsert(row).select().single()));
+    },
+    async placeBid(opportunityId, pitch, availability) {
+      check(await client.rpc('place_bid', { p_opportunity_id: opportunityId, p_pitch: pitch, p_availability: availability ?? null }));
+    },
+    async withdrawBid(opportunityId) {
+      check(await client.rpc('withdraw_bid', { p_opportunity_id: opportunityId }));
+    },
+    async awardOpportunity(bidId) {
+      check(await client.rpc('award_opportunity', { p_bid_id: bidId }));
+    },
+
+    async submitTutorApplication(a) {
+      check(
+        await client.rpc('submit_tutor_application', {
+          p_full_name: a.fullName,
+          p_email: a.email,
+          p_phone: a.phone ?? null,
+          p_curricula: a.curricula,
+          p_subjects: a.subjects ?? null,
+          p_experience: a.experience ?? null,
+          p_qualifications: a.qualifications ?? null,
+          p_availability: a.availability ?? null,
+          p_cv_path: a.cvPath ?? null,
+        }),
+      );
+    },
+    async listApplications() {
+      const rows = check(await client.from('tutor_applications').select('*').order('created_at', { ascending: false }));
+      return rows.map(
+        (r: Row): TutorApplication => ({
+          id: r.id,
+          createdAt: r.created_at,
+          fullName: r.full_name,
+          email: r.email,
+          phone: r.phone ?? undefined,
+          curricula: r.curricula ?? [],
+          subjects: r.subjects ?? undefined,
+          experience: r.experience ?? undefined,
+          qualifications: r.qualifications ?? undefined,
+          availability: r.availability ?? undefined,
+          cvPath: r.cv_path ?? undefined,
+          status: r.status,
+          notes: r.notes ?? undefined,
+          tutorId: r.tutor_id ?? undefined,
+        }),
+      );
+    },
+    async updateApplication(id, p) {
+      check(await client.from('tutor_applications').update(strip({ status: p.status, notes: p.notes, tutor_id: p.tutorId })).eq('id', id));
+    },
+
+    async getPaymentDetails(tutorId) {
+      const r = check(await client.from('tutor_payment_details').select('*').eq('tutor_id', tutorId).maybeSingle()) as Row | null;
+      return r
+        ? { tutorId: r.tutor_id, accountName: r.account_name, bankName: r.bank_name, iban: r.iban, swift: r.swift ?? undefined, updatedAt: r.updated_at }
+        : null;
+    },
+    async savePaymentDetails(d: PaymentDetails) {
+      check(
+        await client.from('tutor_payment_details').upsert({
+          tutor_id: d.tutorId,
+          account_name: d.accountName.trim(),
+          bank_name: d.bankName.trim(),
+          iban: d.iban.replace(/\s+/g, '').toUpperCase(),
+          swift: d.swift?.trim().toUpperCase() || null,
+          updated_at: new Date().toISOString(),
+        }),
+      );
+    },
+    async listTutorInvoices() {
+      return check(await client.from('tutor_invoices').select('*').order('period_start', { ascending: false })).map(toTutorInvoice);
+    },
+    async createTutorInvoice(tutorId, month) {
+      return check<string>(await client.rpc('create_tutor_invoice', { p_tutor_id: tutorId, p_month: month }));
+    },
+    async updateTutorInvoice(id, extras, notes) {
+      check(await client.rpc('update_tutor_invoice', { p_id: id, p_extras: extras, p_notes: notes ?? null }));
+    },
+    async submitTutorInvoice(id) {
+      check(await client.rpc('submit_tutor_invoice', { p_id: id }));
+    },
+    async reviewTutorInvoice(id, approve, comment) {
+      check(await client.rpc('review_tutor_invoice', { p_id: id, p_approve: approve, p_comment: comment ?? null }));
+    },
+    async markTutorInvoicePaid(id, reference) {
+      check(await client.rpc('mark_tutor_invoice_paid', { p_id: id, p_reference: reference ?? null }));
+    },
+
+    async listReportCycles() {
+      const rows = check(await client.from('report_cycles').select('*').order('created_at', { ascending: false }));
+      return rows.map(
+        (r: Row): ReportCycle => ({ id: r.id, createdAt: r.created_at, name: r.name, startsOn: r.starts_on, dueDate: r.due_date, status: r.status }),
+      );
+    },
+    async openReportCycle(name, startsOn, dueDate) {
+      check(await client.rpc('open_report_cycle', { p_name: name, p_starts_on: startsOn, p_due: dueDate }));
+    },
+    async listStudentReports() {
+      return check(await client.from('student_reports').select('*').order('updated_at', { ascending: false })).map(toReport);
+    },
+    async saveReport(id, f) {
+      check(
+        await client.rpc('save_report', {
+          p_id: id,
+          p_attainment: f.attainment ?? null,
+          p_effort: f.effort ?? null,
+          p_progress: f.progress ?? null,
+          p_strengths: f.strengths ?? null,
+          p_next_steps: f.nextSteps ?? null,
+          p_comment: f.comment ?? null,
+          p_ai_assisted: !!f.aiAssisted,
+        }),
+      );
+    },
+    async submitReport(id) {
+      check(await client.rpc('submit_report', { p_id: id }));
+    },
+    async setReportStatus(id, status) {
+      check(await client.rpc('set_report_status', { p_id: id, p_status: status }));
+    },
+
+    async listExpenses() {
+      const rows = check(await client.from('expenses').select('*').order('date', { ascending: false }));
+      return rows.map(
+        (r: Row): Expense => ({
+          id: r.id,
+          date: r.date,
+          category: r.category,
+          description: r.description ?? undefined,
+          amount: Number(r.amount),
+          vatAmount: Number(r.vat_amount),
+          receiptPath: r.receipt_path ?? undefined,
+        }),
+      );
+    },
+    async saveExpense(e) {
+      check(
+        await client.from('expenses').upsert(
+          strip({ id: e.id, date: e.date, category: e.category, description: e.description, amount: e.amount, vat_amount: e.vatAmount, receipt_path: e.receiptPath }),
+        ),
+      );
+    },
+    async deleteExpense(id) {
+      check(await client.from('expenses').delete().eq('id', id));
+    },
+
+    async aiAssist(request) {
+      // The AI service is optional: any failure (not deployed, no key, offline) returns null so callers use templates.
+      const { data, error } = await client.functions.invoke('ai-assist', { body: request });
+      if (error || !data || data.error) return null;
+      return data;
     },
     async startCardPayment(invoiceId) {
       const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };

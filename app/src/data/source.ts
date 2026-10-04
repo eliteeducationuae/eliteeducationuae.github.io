@@ -1,5 +1,16 @@
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  ApplicationStatus,
+  Expense,
+  Opportunity,
+  OpportunityBid,
+  PaymentDetails,
+  ReportCycle,
+  ReportStatus,
+  StudentReport,
+  TutorApplication,
+  TutorInvoice,
+  TutorInvoiceItem,
   Announcement,
   Audience,
   Availability,
@@ -149,7 +160,94 @@ export interface DataSource {
   markThreadRead(familyId: string): Promise<void>;
   listAnnouncements(): Promise<Announcement[]>;
   postAnnouncement(a: { title: string; body: string; audience: Audience }): Promise<void>;
+
+  // Roles tutors express interest in
+  listOpportunities(): Promise<Opportunity[]>;
+  listBids(): Promise<OpportunityBid[]>;
+  saveOpportunity(o: NewOpportunity & { id?: string; status?: Opportunity['status'] }): Promise<Opportunity>;
+  placeBid(opportunityId: string, pitch: string, availability?: string): Promise<void>;
+  withdrawBid(opportunityId: string): Promise<void>;
+  awardOpportunity(bidId: string): Promise<void>;
+
+  // Hiring
+  submitTutorApplication(a: NewTutorApplication): Promise<void>;
+  listApplications(): Promise<TutorApplication[]>;
+  updateApplication(id: string, patch: { status?: ApplicationStatus; notes?: string; tutorId?: string }): Promise<void>;
+
+  // Tutor pay
+  getPaymentDetails(tutorId: string): Promise<PaymentDetails | null>;
+  savePaymentDetails(d: Omit<PaymentDetails, 'updatedAt'>): Promise<void>;
+  listTutorInvoices(): Promise<TutorInvoice[]>;
+  /** Build (or rebuild a draft of) a tutor's invoice for the month containing `month` (YYYY-MM-DD). Returns its id. */
+  createTutorInvoice(tutorId: string, month: string): Promise<string>;
+  updateTutorInvoice(id: string, extras: Omit<TutorInvoiceItem, 'lessonId'>[], notes?: string): Promise<void>;
+  submitTutorInvoice(id: string): Promise<void>;
+  reviewTutorInvoice(id: string, approve: boolean, comment?: string): Promise<void>;
+  markTutorInvoicePaid(id: string, reference?: string): Promise<void>;
+
+  // Student reports
+  listReportCycles(): Promise<ReportCycle[]>;
+  openReportCycle(name: string, startsOn: string, dueDate: string): Promise<void>;
+  listStudentReports(): Promise<StudentReport[]>;
+  saveReport(id: string, fields: ReportFields): Promise<void>;
+  submitReport(id: string): Promise<void>;
+  setReportStatus(id: string, status: Extract<ReportStatus, 'draft' | 'approved' | 'published'>): Promise<void>;
+
+  // Money
+  listExpenses(): Promise<Expense[]>;
+  saveExpense(e: Omit<Expense, 'id'> & { id?: string }): Promise<void>;
+  deleteExpense(id: string): Promise<void>;
+
+  /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
+  aiAssist?(request: AiRequest): Promise<AiResult | null>;
 }
+
+export interface NewOpportunity {
+  title: string;
+  description?: string;
+  curriculum?: string;
+  syllabusId?: string;
+  studentId?: string;
+  enquiryId?: string;
+  schedule?: string;
+  location?: string;
+  payRate: number;
+  closesOn?: string;
+  visibility: Opportunity['visibility'];
+  invitedTutorIds: string[];
+}
+
+export interface NewTutorApplication {
+  fullName: string;
+  email: string;
+  phone?: string;
+  curricula: string[];
+  subjects?: string;
+  experience?: string;
+  qualifications?: string;
+  availability?: string;
+  cvPath?: string;
+}
+
+export interface ReportFields {
+  attainment?: string;
+  effort?: number;
+  progress?: number;
+  strengths?: string;
+  nextSteps?: string;
+  comment?: string;
+  aiAssisted?: boolean;
+}
+
+export type AiRequest =
+  | { task: 'report-draft'; reportId: string; facts: unknown }
+  | { task: 'parent-update'; lessonId: string }
+  | { task: 'insights'; figures: unknown };
+
+export type AiResult =
+  | { task: 'report-draft'; strengths: string; nextSteps: string; comment: string }
+  | { task: 'parent-update'; message: string }
+  | { task: 'insights'; summary: string };
 
 export interface SignUpDetails {
   fullName: string;

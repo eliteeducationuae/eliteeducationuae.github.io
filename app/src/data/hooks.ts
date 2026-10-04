@@ -120,3 +120,15 @@ export function useUnreadCount(): number {
   const threads = useThreads();
   return (threads.data ?? []).reduce((n, t) => n + t.unread, 0);
 }
+
+// Running the business: roles, hiring, tutor pay, reports, money
+
+export const useOpportunities = () => useQuery({ queryKey: ['opportunities'], queryFn: () => source.listOpportunities() });
+export const useBids = () => useQuery({ queryKey: ['bids'], queryFn: () => source.listBids() });
+export const useApplications = () => useQuery({ queryKey: ['applications'], queryFn: () => source.listApplications() });
+export const usePaymentDetails = (tutorId: string | undefined) =>
+  useQuery({ queryKey: ['payment-details', tutorId], queryFn: () => source.getPaymentDetails(tutorId!), enabled: !!tutorId });
+export const useTutorInvoices = () => useQuery({ queryKey: ['tutor-invoices'], queryFn: () => source.listTutorInvoices() });
+export const useReportCycles = () => useQuery({ queryKey: ['report-cycles'], queryFn: () => source.listReportCycles() });
+export const useStudentReports = () => useQuery({ queryKey: ['student-reports'], queryFn: () => source.listStudentReports() });
+export const useExpenses = () => useQuery({ queryKey: ['expenses'], queryFn: () => source.listExpenses() });
