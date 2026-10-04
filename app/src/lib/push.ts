@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { source } from '@/data';
+import { useSession } from '@/data/session';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -21,6 +22,8 @@ Notifications.setNotificationHandler({
  */
 export async function registerForPushNotifications(): Promise<void> {
   if (!source.savePushToken || Platform.OS === 'web' || !Device.isDevice) return;
+  // Never register a device for someone an admin is only viewing as.
+  if (useSession.getState().viewing) return;
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     if (!projectId) return; // Set by `eas init`.

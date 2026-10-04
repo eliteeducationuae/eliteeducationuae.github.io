@@ -28,6 +28,12 @@ export const useLessons = (from: Date, to: Date) =>
 export const useLesson = (id: string | undefined) =>
   useQuery({ queryKey: ['lesson', id], queryFn: () => source.getLesson(id!), enabled: !!id });
 
+/** Admin: people the app can be viewed as. Off while already viewing. */
+export function useViewTargets() {
+  const enabled = useSession((s) => s.profile?.role === 'admin' && !s.viewing);
+  return useQuery({ queryKey: ['view-targets'], queryFn: async () => (await source.listViewTargets?.()) ?? [], enabled });
+}
+
 export const useLoginEmails = () =>
   useQuery({ queryKey: ['login-emails'], queryFn: () => source.loginEmails?.() ?? Promise.resolve([] as string[]) });
 
