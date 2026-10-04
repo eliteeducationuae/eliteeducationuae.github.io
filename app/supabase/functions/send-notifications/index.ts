@@ -1,12 +1,13 @@
 // Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend,
-// and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account).
+// and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account, or family contacts
+// without a login whom the family or office recorded as agreeing to WhatsApp messages).
 // Schedule every minute (Supabase → Edge Functions → Schedules).
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
 // WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
 // TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
-import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
+import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv, whatsappRecipient } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
 /** Written to a WhatsApp row while it is claimed for sending (see below). */
@@ -45,7 +46,7 @@ Deno.serve(async () => {
   const now = new Date().toISOString();
   const { data: queue, error } = await db
     .from('notification_outbox')
-    .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number)')
+    .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number), family_contacts(receives_whatsapp, phone)')
     .is('sent_at', null)
     .lt('attempts', MAX_ATTEMPTS)
     .or(`whatsapp_not_before.is.null,whatsapp_not_before.lte."${now}"`)
@@ -92,9 +93,9 @@ Deno.serve(async () => {
       // An earlier run claimed this row and stopped before recording Twilio's answer. Keep a trace for the office.
       notes.push('WhatsApp outcome unknown: the send was interrupted, so it was not retried');
     } else if (n.whatsapp && n.whatsapp_status === 'pending') {
-      const optedIn = n.profiles?.whatsapp_opt_in === true;
-      const number = n.profiles?.whatsapp_number as string | null;
-      if (!optedIn || !number) {
+      // A login's own opt-in, or a family contact (no login) who still agrees to WhatsApp messages.
+      const number = whatsappRecipient(n);
+      if (!number) {
         wa.whatsapp_status = 'skipped';
       } else if (!twilio) {
         wa.whatsapp_status = 'skipped';

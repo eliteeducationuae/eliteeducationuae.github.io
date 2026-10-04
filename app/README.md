@@ -284,3 +284,28 @@ npm run test:db    # schema, row-level security and billing functions against a 
 - Microsoft Outlook calendar sync, alongside the Google Calendar sync
 - Online booking of trial lessons from eliteeducation.me
 - Bank-feed import for expenses
+
+## Family contacts
+
+Each family can have several contacts (migration `20261015000000_contacts.sql`, table `family_contacts`): a mother, a father, a guardian, a PA, the family office or a driver. Families manage their own contacts in the app, and the office manages them from the family's page. Every change goes through `save_family_contact` and `remove_family_contact`; when a parent makes a change, the office is told.
+
+**What each setting controls**
+
+- **Receives invoices**: new invoices, autopay notices, failed payments, lessons bought and other billing notices.
+- **Receives reports**: published progress reports.
+- **Receives lesson notes**: lesson notes, homework, homework feedback and shared resources.
+- **General notices** (such as lesson request decisions) go to every contact who can sign in and to the main contact.
+- **Can sign in**: the contact may create a login with their own email address, and then sees the family's lessons, progress and messages. A new sign-in contact without a login is sent an invitation email. Each family must keep at least one contact who can sign in; only the office can remove the last one.
+- **WhatsApp**: a contact without a login receives WhatsApp messages only when "receives WhatsApp" is ticked and their mobile number includes its country code (for example +971 50 123 4567). A contact with a login manages their own WhatsApp consent under Account; their contact record simply mirrors it.
+
+A contact with a login receives notices by push and by email to that login; a contact without one receives email only. Nobody is sent the same notice twice.
+
+**The main contact.** Every family has exactly one main contact, who must have an email address. `families.parent_name`, `families.email` and `families.phone` are kept as a mirror of the main contact, so invoices, Stripe, message threads and older versions of the app continue to work unchanged. Editing those fields updates the main contact, and choosing a different main contact updates them.
+
+**Apple private-relay addresses.** A parent who signs in with Apple and hides their email arrives with an address ending `@privaterelay.appleid.com`, and is first given an empty prospect family. Add that relay address to the right family as a contact who can sign in: the login moves to that family and the empty prospect family is archived (never deleted).
+
+**One family per login email.** A sign-in email address belongs to one family only. The same address may appear in another family as a contact who does not sign in (for example a PA who works for two families).
+
+**Removing access.** Removing a contact who has a login, or switching off their sign-in, removes that login from the family straight away.
+
+Bank details never appear in any notification, email or WhatsApp message; they remain on the invoice in the app.

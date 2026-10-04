@@ -213,3 +213,29 @@ export function readTwilioResult(status: number, text: string): TwilioResult {
   const detail = [code !== undefined && code !== null ? `code ${String(code)}` : '', message].filter(Boolean).join(': ');
   return { ok: false, retry, error: `Twilio ${status}${detail ? ` ${detail}` : ''}` };
 }
+
+/** The parts of a notification_outbox row (with its profile and family contact) that decide where a WhatsApp goes. */
+export interface WhatsAppRecipientRow {
+  profile_id: string | null;
+  contact_id?: string | null;
+  whatsapp_to: string | null;
+  profiles?: { whatsapp_opt_in?: boolean | null; whatsapp_number?: string | null } | null;
+  family_contacts?: { receives_whatsapp?: boolean | null; phone?: string | null } | null;
+}
+
+/**
+ * The number to send a queued WhatsApp to, or null to skip it. A login's message goes to the number they opted in
+ * with, and only while they are still opted in. A family contact without a login (no profile, contact_id set) is sent
+ * to the number queued, and only while the contact still agrees to WhatsApp messages: consent withdrawn after the
+ * message was queued means it is skipped. Anything else is skipped.
+ */
+export function whatsappRecipient(row: WhatsAppRecipientRow): string | null {
+  if (row.profile_id) {
+    const number = row.profiles?.whatsapp_number;
+    return row.profiles?.whatsapp_opt_in === true && number ? number : null;
+  }
+  if (row.contact_id) {
+    return row.family_contacts?.receives_whatsapp === true && row.whatsapp_to ? row.whatsapp_to : null;
+  }
+  return null;
+}
