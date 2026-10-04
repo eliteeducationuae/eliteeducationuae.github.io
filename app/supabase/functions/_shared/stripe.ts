@@ -116,6 +116,11 @@ function offerMetadata(prefix: string, o: { offerId: string; familyId: string; s
   return md;
 }
 
+/** 'Ten IB lessons' as it is; 'Exam season' becomes 'Exam season (10 lessons)'. Matches the receipt fulfil_package_offer writes. */
+export function packageLine(name: string, lessons: number): string {
+  return /lesson/i.test(name) ? name : `${name} (${lessons} ${lessons === 1 ? 'lesson' : 'lessons'})`;
+}
+
 /**
  * Checkout for a lesson package bought by a parent ("Buy more lessons"). The webhook creates the package from the
  * snapshot in the metadata, so a change to the offer while the parent is paying never changes what they get.
@@ -128,7 +133,7 @@ export function checkoutOfferForm(o: {
   familyId: string;
   appUrl: string;
 }): URLSearchParams {
-  const name = `Elite Education: ${o.offer.name} (${o.offer.lessons} lessons)`;
+  const name = `Elite Education: ${packageLine(o.offer.name, Number(o.offer.lessons))}`;
   const snapshot: OfferSnapshot = {
     name: o.offer.name,
     lessons: Number(o.offer.lessons),
@@ -185,6 +190,12 @@ export function offSessionIntentForm(o: {
 /** One key per attempt: a retried request never charges twice, and a later retry is a new attempt. */
 export function autopayIdempotencyKey(invoiceId: string, attempt: number): string {
   return `autopay-${invoiceId}-${attempt}`;
+}
+
+/** Stripe search query for the payment intent of one autopay attempt (used once its idempotency key may have expired). */
+export function autopayIntentSearchQuery(invoiceId: string, attempt: number): string {
+  const quote = (v: string) => v.replace(/['\\]/g, '');
+  return `metadata['invoice_id']:'${quote(invoiceId)}' AND metadata['autopay_attempt']:'${quote(String(attempt))}'`;
 }
 
 export function customerForm(o: { familyId: string; email?: string | null; name?: string | null }): URLSearchParams {

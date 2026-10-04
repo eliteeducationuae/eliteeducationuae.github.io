@@ -472,7 +472,8 @@ export interface SavedCard {
   expires?: string;
 }
 
-export type AutopayStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
+/** 'unknown': the card processor could not be reached mid-charge; the invoice stays held until the outcome is known. */
+export type AutopayStatus = 'pending' | 'processing' | 'unknown' | 'succeeded' | 'failed';
 
 /** A lesson package parents can buy themselves by card. */
 export interface PackageOffer {

@@ -1,6 +1,6 @@
 import { invoiceTotals, newInvoiceDraft } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
-import { AUTOPAY_CHARGING_MESSAGE, AUTOPAY_NO_CARD_MESSAGE, sortOffers, validateOffer } from '@/domain/payments';
+import { AUTOPAY_CHARGING_MESSAGE, AUTOPAY_NO_CARD_MESSAGE, packageReceiptLine, sortOffers, validateOffer } from '@/domain/payments';
 import type { Family, Invoice, LessonPackage, PackageOffer, Profile, SavedCard } from '@/domain/types';
 
 import type { AutopayChargeResult, CardPaymentResult } from '../source';
@@ -70,6 +70,15 @@ export const pay = {
     const family = findFamily(db, familyId);
     if (enabled && !family.savedCard) throw new Error(AUTOPAY_NO_CARD_MESSAGE);
     family.autopay = enabled;
+    if (!enabled) {
+      // Waiting and failed invoices go back to the family at once; a charge already under way is left to finish.
+      for (const inv of db.invoices) {
+        if (inv.familyId === familyId && (inv.autopayStatus === 'pending' || inv.autopayStatus === 'failed')) {
+          inv.autopayStatus = undefined;
+          inv.autopayError = undefined;
+        }
+      }
+    }
   },
 
   /**
@@ -95,8 +104,10 @@ export const pay = {
     };
     db.packages.push(created);
 
-    const items = [{ description: `${offer.name} (${offer.lessons} lessons)`, quantity: 1, unitPrice: offer.price, packageId: created.id }];
-    const invoice: Invoice = { ...newInvoiceDraft(familyId, items, db.settings, now), id: newId('inv'), status: 'sent' };
+    const items = [{ description: packageReceiptLine(offer.name, offer.lessons), quantity: 1, unitPrice: offer.price, packageId: created.id }];
+    const draft = newInvoiceDraft(familyId, items, db.settings, now);
+    // A receipt is due the day it is issued, as in fulfil_package_offer.
+    const invoice: Invoice = { ...draft, dueDate: draft.issueDate, id: newId('inv'), status: 'sent' };
     db.settings.nextInvoiceNumber += 1;
     db.invoices.push(invoice);
     payBalance(invoice, undefined, now);
@@ -113,7 +124,7 @@ export const pay = {
     const stored = db.invoices.find((i) => i.id === invoice.id);
     if (!stored) throw new Error('Invoice not found');
     if (stored.status !== 'sent') throw new Error('This invoice is not payable');
-    if (stored.autopayStatus === 'processing') throw new Error(AUTOPAY_CHARGING_MESSAGE);
+    if (stored.autopayStatus === 'processing' || stored.autopayStatus === 'unknown') throw new Error(AUTOPAY_CHARGING_MESSAGE);
     if (stored.autopayStatus === 'pending' || stored.autopayStatus === 'failed') {
       stored.autopayStatus = undefined;
       stored.autopayError = undefined;

@@ -13,7 +13,9 @@ const CHARGING = 'Your saved card is being charged for this invoice. Please wait
 
 const OFFER_GONE = 'This lesson package is no longer available.';
 
-const appUrl = () => (Deno.env.get('APP_URL') ?? 'https://eliteeducation.me').replace(/\/+$/, '');
+/** The app's address, e.g. https://eliteeducationuae.github.io/app. Never guessed: Stripe must return parents to the app. */
+const appUrl = () => (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
+const NO_APP_URL = 'Card payments are not set up yet (APP_URL is missing).';
 
 async function invoiceCheckout(req: Request, invoiceId: string) {
   const supabase = userClient(req);
@@ -30,7 +32,8 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
 
   const admin = adminClient();
-  if (inv.autopay_status === 'processing') return json({ error: CHARGING }, 409);
+  // 'unknown': Stripe could not be reached mid-charge, so the card may have been charged. Never offer a second payment.
+  if (inv.autopay_status === 'processing' || inv.autopay_status === 'unknown') return json({ error: CHARGING }, 409);
   if (inv.autopay_status === 'pending' || inv.autopay_status === 'failed') {
     // Atomic: whichever comes first, this or the autopay run (which claims 'pending' or 'failed' the same way), wins.
     const { data: released } = await admin
@@ -79,6 +82,7 @@ async function offerCheckout(req: Request, offerId: string) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
+    if (!appUrl()) return json({ error: NO_APP_URL }, 500);
     const body = await req.json().catch(() => ({}));
     if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
     if (typeof body?.offerId === 'string') return await offerCheckout(req, body.offerId);

@@ -11,6 +11,7 @@ import {
   activeOffers,
   AUTOPAY_NO_CARD_MESSAGE,
   autopayFailureReason,
+  autopayFailureReasonForOffice,
   autopayStatusText,
   canEnableAutopay,
   cardExpiryLabel,
@@ -48,9 +49,10 @@ async function openAndRefresh(url: string) {
   await queryClient.invalidateQueries();
 }
 
-async function openBillingPortal() {
+/** A parent opens their own family's cards; an admin passes the family. */
+async function openBillingPortal(familyId?: string) {
   if (!source.openBillingPortal) throw new Error('Managing cards is not available here.');
-  const { url } = await source.openBillingPortal();
+  const { url } = await source.openBillingPortal(familyId);
   await openAndRefresh(url);
 }
 
@@ -76,9 +78,7 @@ export function SavedCardPanel({ family }: { family: Family }) {
           {expiry ? <Txt variant="muted">{expiry}</Txt> : null}
         </View>
       ) : (
-        <Txt variant="muted">
-          No card saved yet. Your card is saved securely by Stripe the next time you pay an invoice or buy lessons by card.
-        </Txt>
+        <Txt variant="muted">No card saved yet.</Txt>
       )}
       {card && source.openBillingPortal ? (
         <Button
@@ -137,6 +137,35 @@ export function AutopayPanel({ family }: { family: Family }) {
       />
       {!allowed && !on ? <Banner icon="card">{AUTOPAY_NO_CARD_MESSAGE}</Banner> : null}
       <ErrorNote error={save.error} />
+    </Card>
+  );
+}
+
+/** Admin, on a family's page: the saved card and autopay, with the Stripe page for the family's cards. */
+export function FamilyCardAdmin({ family }: { family: Family }) {
+  const portal = useAction(openBillingPortal);
+  const card = family.savedCard;
+  const expiry = card ? cardExpiryLabel(card) : null;
+  return (
+    <Card style={{ gap: Spacing.two }}>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Txt variant="label">Saved card</Txt>
+        <Badge label={family.autopay ? 'Autopay on' : 'Autopay off'} tone={family.autopay ? 'success' : 'neutral'} />
+      </Row>
+      <Txt variant={card ? 'h3' : 'muted'}>{card ? cardLabel(card) : 'No card saved yet.'}</Txt>
+      {expiry ? <Txt variant="muted">{expiry}</Txt> : null}
+      {source.openBillingPortal ? (
+        <Button
+          title="Manage cards"
+          icon="card"
+          variant="secondary"
+          size="sm"
+          style={{ alignSelf: 'flex-start' }}
+          loading={portal.isPending}
+          onPress={() => portal.mutate([family.id])}
+        />
+      ) : null}
+      <ErrorNote error={portal.error} />
     </Card>
   );
 }
@@ -401,6 +430,7 @@ export function OfferForm({
 const AUTOPAY_TONE: Record<AutopayStatus, Tone> = {
   pending: 'info',
   processing: 'neutral',
+  unknown: 'neutral',
   succeeded: 'success',
   failed: 'warning',
 };
@@ -426,28 +456,49 @@ export function AutopayNotice({ invoice, payable }: { invoice: Invoice; payable:
   if (invoice.autopayStatus === 'processing') {
     return <Banner icon="card">Your saved card is being charged for this invoice. This usually takes a few moments.</Banner>;
   }
+  if (invoice.autopayStatus === 'unknown') {
+    return (
+      <Banner icon="card">
+        We are confirming the payment from your saved card with the card processor. There is nothing you need to do, and you will not be
+        charged twice; this invoice will update shortly.
+      </Banner>
+    );
+  }
   return null;
 }
 
-/** Admin: why the last autopay charge failed, to read before charging the card again. */
+/** Admin: why the last autopay charge failed, or that its outcome is not yet known, to read before charging again. */
 export function AutopayFailureNote({ invoice }: { invoice: Invoice }) {
+  if (invoice.autopayStatus === 'unknown') {
+    return (
+      <Banner tone="warning" icon="alert">
+        Outcome unknown: the card processor could not be reached during the last autopay charge, so it is not yet known whether the
+        family&apos;s card was charged. The app checks again automatically; please check the Stripe Dashboard before charging the card
+        again. The family has not been asked to pay.
+      </Banner>
+    );
+  }
   if (invoice.status !== 'sent' || invoice.autopayStatus !== 'failed') return null;
   return (
     <Banner tone="warning" icon="alert">
-      {`Autopay could not take this payment: ${autopayFailureReason(invoice.autopayError)}. The family has been asked to update their card or pay in the app.`}
+      {`Autopay could not take this payment: ${autopayFailureReasonForOffice(invoice.autopayError)}. The family has been asked to update their card or pay in the app.`}
     </Banner>
   );
 }
 
-/** Admin: charge an autopay family's saved card now, for a sent invoice that is still owed. */
+/**
+ * Admin: charge an autopay family's saved card now, for a sent invoice that is still owed. When the last charge's outcome
+ * is unknown (or it has been processing for a while), the button only asks Stripe what happened to that charge (it resends the same request, which can never
+ * charge twice), so a second charge is never offered while the first may have gone through.
+ */
 export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: Invoice; family?: Family; balance: number }) {
   const charge = useAction(chargeSavedCardNow);
+  // 'processing' too: a charge left processing for over half an hour (a missed webhook) can be checked the same way.
+  const check = invoice.autopayStatus === 'unknown' || invoice.autopayStatus === 'processing';
   const eligible =
     !!source.chargeSavedCard &&
-    !!family?.autopay &&
-    invoice.status === 'sent' &&
-    (invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'failed') &&
-    balance > 0;
+    (check ||
+      (!!family?.autopay && invoice.status === 'sent' && (invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'failed') && balance > 0));
   if (!eligible) return null;
   const card = family?.savedCard ? cardLabel(family.savedCard) : 'the saved card';
 
@@ -455,7 +506,10 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
     try {
       const result = await charge.mutateAsync([invoice.id]);
       if (result.status === 'succeeded') notify('Payment taken', 'The saved card was charged and the payment has been recorded.');
-      else if (result.status === 'processing' || result.status === 'pending') notify('Payment still processing', 'The invoice will update once the card payment clears.');
+      else if (result.status === 'processing') notify('Payment still processing', 'The invoice will update once the card payment clears.');
+      else if (result.status === 'unknown') notify('Still unknown', 'The card processor could not be reached. The app will check again automatically.');
+      else if (result.status === 'pending') notify('Not charged yet', result.error ?? 'Autopay will try again shortly.');
+      else if (check && result.status === 'skipped') notify('Nothing to check yet', result.error ?? 'Please try again in a few minutes.');
       else notify(result.error ? `The card was not charged: ${result.error}` : 'The card was not charged.');
     } catch {
       // Shown below by ErrorNote.
@@ -464,13 +518,30 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
 
   return (
     <>
-      <Button
-        title="Charge saved card now"
-        icon="card"
-        variant="secondary"
-        loading={charge.isPending}
-        onPress={() => confirm('Charge the saved card?', `${formatAED(balance)} will be taken from ${card} now.`, run, 'Charge card')}
-      />
+      {check ? (
+        <Button
+          title="Check payment with Stripe"
+          icon="card"
+          variant="secondary"
+          loading={charge.isPending}
+          onPress={() =>
+            confirm(
+              'Check this payment with Stripe?',
+              'This asks Stripe for the result of the last autopay charge and records it. It never charges the card a second time.',
+              run,
+              'Check now',
+            )
+          }
+        />
+      ) : (
+        <Button
+          title="Charge saved card now"
+          icon="card"
+          variant="secondary"
+          loading={charge.isPending}
+          onPress={() => confirm('Charge the saved card?', `${formatAED(balance)} will be taken from ${card} now.`, run, 'Charge card')}
+        />
+      )}
       <ErrorNote error={charge.error} />
     </>
   );

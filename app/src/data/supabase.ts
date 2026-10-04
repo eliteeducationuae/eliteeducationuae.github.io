@@ -1140,8 +1140,9 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { offerId } }));
       return { url: data.url };
     },
-    async openBillingPortal() {
-      const data = await invokeResult<{ url: string }>(await client.functions.invoke('billing-portal', { body: {} }));
+    async openBillingPortal(familyId) {
+      const body = familyId ? { familyId } : {};
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('billing-portal', { body }));
       return { url: data.url };
     },
     async chargeSavedCard(invoiceId) {

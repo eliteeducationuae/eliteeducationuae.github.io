@@ -58,7 +58,9 @@ export default function ParentBilling() {
           </View>
         </Section>
       ) : null}
-      {settings.data ? <BuyLessons offers={offers.data ?? []} services={services.data ?? []} vatRate={settings.data.vatRate} /> : null}
+      <Section title="Invoices">
+        {list.length ? list.map((i) => <InvoiceCard key={i.id} invoice={i} />) : <EmptyState icon="card" title="No invoices yet" message="Your invoices will appear here as soon as they are issued." />}
+      </Section>
       {family ? (
         <Section title="Card and autopay">
           <View style={{ gap: Spacing.two }}>
@@ -67,9 +69,7 @@ export default function ParentBilling() {
           </View>
         </Section>
       ) : null}
-      <Section title="Invoices">
-        {list.length ? list.map((i) => <InvoiceCard key={i.id} invoice={i} />) : <EmptyState icon="card" title="No invoices yet" message="Your invoices will appear here as soon as they are issued." />}
-      </Section>
+      {settings.data ? <BuyLessons offers={offers.data ?? []} services={services.data ?? []} vatRate={settings.data.vatRate} /> : null}
     </Screen>
   );
 }

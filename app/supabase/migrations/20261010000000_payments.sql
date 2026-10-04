@@ -31,11 +31,29 @@ create table public.package_offers (
 );
 
 -- Autopay progress on each invoice: pending (waiting for charge-invoice) → processing → succeeded / failed.
+-- 'unknown': Stripe could not be reached during a charge, so it is not yet known whether the card was charged. The
+-- invoice stays out of the family's hands (no Pay button, no bank details) until charge-invoice resends that same
+-- attempt, which Stripe answers with the original result instead of charging again, and settles it either way.
 alter table public.invoices
-  add column autopay_status text check (autopay_status in ('pending', 'processing', 'succeeded', 'failed')),
+  add column autopay_status text check (autopay_status in ('pending', 'processing', 'unknown', 'succeeded', 'failed')),
   add column autopay_error text,
-  add column autopay_attempts int not null default 0;
-create index invoices_autopay_pending_idx on public.invoices (autopay_status) where autopay_status = 'pending';
+  add column autopay_attempts int not null default 0,
+  -- When the current attempt was claimed; a 'processing' invoice left alone for long is checked again with Stripe.
+  add column autopay_claimed_at timestamptz;
+create index invoices_autopay_open_idx on public.invoices (autopay_status)
+  where autopay_status in ('pending', 'processing', 'unknown');
+
+-- Exactly what was sent to Stripe for each autopay attempt, so an attempt whose outcome is unknown can be sent again
+-- word for word with its idempotency key. Service role only: no policies, so families and tutors never see it.
+create table public.autopay_requests (
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  attempt int not null,
+  request jsonb not null,
+  sent_at timestamptz not null default now(),
+  primary key (invoice_id, attempt)
+);
+alter table public.autopay_requests enable row level security;
+revoke all on public.autopay_requests from public, anon, authenticated;
 
 -- A Stripe payment is recorded once, whichever webhook event (or the charge itself) reports it first.
 alter table public.payments add column stripe_payment_intent text unique;
@@ -84,6 +102,12 @@ begin
   end if;
   insert into public.family_billing (family_id, autopay, updated_at) values (p_family_id, coalesce(p_enabled, false), now())
   on conflict (family_id) do update set autopay = excluded.autopay, updated_at = now();
+  if not coalesce(p_enabled, false) then
+    -- Hand waiting invoices back to the family straight away, so they can pay them now. A charge already under way
+    -- (processing or unknown) is left to finish, so it is never paid twice.
+    update public.invoices set autopay_status = null, autopay_error = null
+     where family_id = p_family_id and autopay_status in ('pending', 'failed');
+  end if;
 end $$;
 revoke all on function public.set_autopay(uuid, boolean) from public, anon;
 grant execute on function public.set_autopay(uuid, boolean) to authenticated;
@@ -96,14 +120,17 @@ create function public.mark_autopay_pending() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if new.status = 'sent' and (tg_op = 'INSERT' or old.status is distinct from 'sent') then
-    if exists (select 1 from public.family_billing b
-               where b.family_id = new.family_id and b.autopay and b.card_last4 is not null) then
+    -- A charge still under way (processing or unknown) is never replaced by a new one.
+    if coalesce(new.autopay_status, '') not in ('processing', 'unknown') and exists (
+      select 1 from public.family_billing b where b.family_id = new.family_id and b.autopay and b.card_last4 is not null
+    ) then
       new.autopay_status := 'pending';
       new.autopay_error := null;
     end if;
-  elsif new.status = 'void' and new.autopay_status in ('pending', 'failed') then
-    -- A voided invoice must never be charged.
+  elsif new.status <> 'sent' and new.autopay_status in ('pending', 'failed') then
+    -- Paid another way (for example a bank transfer the office recorded), voided or back to draft: nothing to charge.
     new.autopay_status := null;
+    new.autopay_error := null;
   end if;
   return new;
 end $$;
@@ -122,18 +149,20 @@ create trigger invoices_autopay before insert or update of status on public.invo
 create function public.record_stripe_payment(
   p_invoice_id uuid, p_amount numeric, p_payment_intent text, p_session_id text default null, p_autopay boolean default false
 ) returns void language plpgsql security definer set search_path = public as $$
-declare inserted int;
 begin
+  if exists (select 1 from public.payments
+             where stripe_payment_intent = p_payment_intent or (p_session_id is not null and stripe_session_id = p_session_id)) then
+    return;
+  end if;
+  -- Settle autopay before the payment marks the invoice paid (the invoices_autopay trigger would otherwise clear it).
+  update public.invoices
+     set autopay_status = case when coalesce(p_autopay, false) then 'succeeded' end, autopay_error = null
+   where id = p_invoice_id and autopay_status is not null;
   -- No conflict target, so either unique column (payment intent or checkout session) stops a duplicate.
   insert into public.payments (invoice_id, amount, method, reference, stripe_session_id, stripe_payment_intent)
   values (p_invoice_id, p_amount, 'card', case when coalesce(p_autopay, false) then 'Autopay' else p_payment_intent end,
           p_session_id, p_payment_intent)
   on conflict do nothing;
-  get diagnostics inserted = row_count;
-  if inserted = 0 then return; end if;
-  update public.invoices
-     set autopay_status = case when coalesce(p_autopay, false) then 'succeeded' end, autopay_error = null
-   where id = p_invoice_id and autopay_status is not null;
 end $$;
 
 /**
@@ -158,6 +187,7 @@ declare
   v_price numeric;
   v_service uuid;
   v_vat numeric;
+  v_line text;
   snapshot boolean := nullif(trim(p_name), '') is not null and p_lessons > 0 and p_price > 0;
 begin
   if p_payment_intent is null then raise exception 'A payment intent is required'; end if;
@@ -197,12 +227,14 @@ begin
     return inv_id;
   end if;
 
+  -- 'IB Maths: ten lessons' already says what it is; 'Exam season' becomes 'Exam season (10 lessons)'.
+  v_line := case when v_name ~* 'lesson' then v_name else v_name || ' (' || v_lessons || ' lessons)' end;
   insert into public.packages (family_id, name, service_id, lessons_total, price)
   values (fam.id, v_name, v_service, v_lessons, v_price) returning id into pkg_id;
   -- Created as paid, so the "new invoice due" message never goes out for a receipt.
   insert into public.invoices (number, family_id, issue_date, due_date, status, items, vat_rate)
   values (public.next_invoice_number(), fam.id, current_date, current_date, 'paid',
-          jsonb_build_array(jsonb_build_object('description', v_name || ' (' || v_lessons || ' lessons)',
+          jsonb_build_array(jsonb_build_object('description', v_line,
                                                'quantity', 1, 'unitPrice', v_price, 'packageId', pkg_id)),
           v_vat)
   returning id into inv_id;
@@ -215,53 +247,68 @@ begin
       || ' lessons have been added to your account. Your receipt is in the Billing tab of the Elite Education app.',
     'Lessons added', v_lessons || ' lessons added to your account', '/parent/billing');
   perform public.notify_admins('Lessons bought: ' || fam.name,
-    'The ' || fam.name || ' family bought ' || v_name || ' (' || v_lessons || ' lessons) for AED '
+    'The ' || fam.name || ' family bought ' || v_line || ' for AED '
       || to_char(p_amount, 'FM999,999,990.00') || ' by card. The lesson package has been added to their account.',
     'Lessons bought', fam.name || ': ' || v_lessons || ' lessons', '/invoice/' || inv_id);
   return inv_id;
 end $$;
 
 /**
- * An autopay charge did not go through: tell the family and the office once, and keep the latest reason.
- * Stripe may deliver a failure late, twice or out of order, so it only counts while this invoice is still owed and
- * being charged (processing or failed), and only for the latest attempt (p_attempt, from the payment's metadata).
- * p_tell_family = false when Stripe could not be reached: the office is asked to check, the family is not alarmed.
+ * An autopay charge did not go through, or its outcome is not known. Stripe may deliver a failure late, twice or out of
+ * order, so it only counts while autopay is charging this invoice (processing, unknown or failed) and only for the
+ * latest attempt (p_attempt, from the payment's metadata).
+ *   p_tell_family = true:  a real decline. The invoice is marked failed and the family and the office are told once.
+ *   p_tell_family = false: Stripe could not be reached, so the card may or may not have been charged. The invoice is
+ *     marked unknown (still held from the family, so it can never be paid twice) and only the office is told, once.
+ *     charge-invoice then resends the same attempt to learn the outcome; a decline found then is reported as above.
  */
 create function public.autopay_failed(p_invoice_id uuid, p_message text, p_attempt int default null, p_tell_family boolean default true)
 returns void language plpgsql security definer set search_path = public as $$
-declare inv public.invoices; fam public.families; balance numeric; amount text; reason text;
+declare inv public.invoices; fam public.families; balance numeric; amount text; reason text; tell boolean := coalesce(p_tell_family, true);
 begin
   select * into inv from public.invoices where id = p_invoice_id for update;
-  if inv.id is null or inv.status <> 'sent' or inv.autopay_status is null or inv.autopay_status not in ('processing', 'failed') then
+  if inv.id is null or inv.autopay_status is null or inv.autopay_status not in ('processing', 'unknown', 'failed') then
     return;
   end if;
   if p_attempt is not null and p_attempt <> inv.autopay_attempts then return; end if;
+  if inv.status <> 'sent' then
+    -- Paid another way or voided meanwhile: once the charge is known not to have gone through, autopay is finished.
+    if tell and inv.autopay_status in ('processing', 'unknown') then
+      update public.invoices set autopay_status = null, autopay_error = null where id = inv.id;
+    end if;
+    return;
+  end if;
   balance := public.invoice_total(inv) - (select coalesce(sum(p.amount), 0) from public.payments p where p.invoice_id = inv.id);
   if balance <= 0 then return; end if;
 
-  if inv.autopay_status = 'failed' then
+  if inv.autopay_status = 'failed' or (not tell and inv.autopay_status = 'unknown') then
+    -- Already reported: keep the latest reason only.
     update public.invoices set autopay_error = left(p_message, 300) where id = inv.id;
     return;
   end if;
-  update public.invoices set autopay_status = 'failed', autopay_error = left(p_message, 300) where id = inv.id;
 
   select * into fam from public.families where id = inv.family_id;
-  -- "…did not go through: your card has expired." reads as one sentence.
-  reason := coalesce(nullif(trim(trailing '.' from trim(p_message)), ''), 'the card was declined');
-  reason := lower(left(reason, 1)) || substr(reason, 2);
   amount := 'AED ' || to_char(balance, 'FM999,999,990.00');
-  if not coalesce(p_tell_family, true) then
+  if not tell then
+    update public.invoices set autopay_status = 'unknown', autopay_error = left(p_message, 300) where id = inv.id;
     perform public.notify_admins('Autopay to check: ' || inv.number || ' (' || fam.name || ')',
       'Autopay could not confirm a charge of ' || amount || ' for invoice ' || inv.number || ' from the ' || fam.name
-        || ' family because the card processor could not be reached. Please check the Stripe Dashboard for this payment before charging the card again.',
+        || ' family because the card processor could not be reached. The app will check again automatically; please look at the Stripe Dashboard before charging the card again.',
       'Autopay to check', inv.number || ' (' || fam.name || ')', '/invoice/' || inv.id);
     return;
   end if;
+
+  update public.invoices set autopay_status = 'failed', autopay_error = left(p_message, 300) where id = inv.id;
+  -- "…did not go through: your card has expired." reads as one sentence.
+  reason := coalesce(nullif(trim(trailing '.' from trim(p_message)), ''), 'the card was declined');
+  reason := lower(left(reason, 1)) || substr(reason, 2);
   perform public.notify_family(inv.family_id,
     'We could not take payment for invoice ' || inv.number,
     'We tried to take ' || amount || ' for invoice ' || inv.number || ' using your saved card, but the payment did not go through: '
       || reason || '. Please update your card with Manage cards in the Billing tab, or pay the invoice in the Elite Education app.',
     'Payment not taken', 'Invoice ' || inv.number || ': ' || amount || ' could not be charged', '/invoice/' || inv.id);
+  -- The office reads about the family's card, not "your card".
+  reason := replace(replace(reason, 'your card', 'the family''s card'), 'your bank', 'their bank');
   perform public.notify_admins('Autopay failed: ' || inv.number || ' (' || fam.name || ')',
     'Autopay could not take ' || amount || ' for invoice ' || inv.number || ' from the ' || fam.name || ' family: '
       || reason || '. The family has been asked to update their card or pay in the app.',

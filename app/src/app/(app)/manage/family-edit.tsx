@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
+import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -83,6 +84,9 @@ function FamilyForm({ existing }: { existing?: Family }) {
                 <PackageCard key={p.id} pkg={p} />
               ))}
             </View>
+          </Section>
+          <Section title="Card and autopay">
+            <FamilyCardAdmin family={existing} />
           </Section>
         </>
       ) : null}

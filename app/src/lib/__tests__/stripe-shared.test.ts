@@ -1,5 +1,6 @@
 import {
   autopayIdempotencyKey,
+  autopayIntentSearchQuery,
   cardSummary,
   checkoutInvoiceForm,
   checkoutOfferForm,
@@ -107,7 +108,7 @@ describe('Checkout forms', () => {
     expect(form.get('customer')).toBe('cus_1');
     expect(form.has('customer_email')).toBe(false);
     expect([...form.keys()].some((k) => k.startsWith('payment_method_types'))).toBe(false);
-    expect(form.get('line_items[0][price_data][product_data][name]')).toBe('Elite Education: Ten IB lessons (10 lessons)');
+    expect(form.get('line_items[0][price_data][product_data][name]')).toBe('Elite Education: Ten IB lessons');
     expect(form.get('line_items[0][price_data][unit_amount]')).toBe('420000');
     expect(form.get('payment_intent_data[setup_future_usage]')).toBe('off_session');
     expect(form.get('metadata[offer_id]')).toBe('off-1');
@@ -158,6 +159,10 @@ describe('autopay and customer forms', () => {
   it('uses one idempotency key per attempt', () => {
     expect(autopayIdempotencyKey('inv-1', 1)).toBe('autopay-inv-1-1');
     expect(autopayIdempotencyKey('inv-1', 2)).not.toBe(autopayIdempotencyKey('inv-1', 1));
+  });
+  it('looks up the payment intent of one autopay attempt by its metadata', () => {
+    expect(autopayIntentSearchQuery('inv-1', 3)).toBe("metadata['invoice_id']:'inv-1' AND metadata['autopay_attempt']:'3'");
+    expect(autopayIntentSearchQuery("inv'1", 3)).toBe("metadata['invoice_id']:'inv1' AND metadata['autopay_attempt']:'3'");
   });
   it('creates a customer tagged with the family', () => {
     expect(Object.fromEntries(customerForm({ familyId: 'fam-1', email: 'mum@x', name: 'Mona Ahmed' }))).toEqual({

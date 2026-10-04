@@ -71,6 +71,7 @@ export function canEnableAutopay(family: Family): boolean {
 const AUTOPAY_STATUS_TEXT: Record<AutopayStatus, string> = {
   pending: 'Autopay scheduled',
   processing: 'Charging saved card',
+  unknown: 'Confirming payment',
   succeeded: 'Paid by autopay',
   failed: 'Autopay failed',
 };
@@ -80,11 +81,11 @@ export function autopayStatusText(status: AutopayStatus): string {
 }
 
 /**
- * True while autopay is about to charge (pending) or is charging (processing) this invoice. The family is then not
- * offered card or bank-transfer payment, so the invoice can never be paid twice.
+ * True while autopay is about to charge (pending), is charging (processing) or is waiting to learn whether a charge
+ * went through (unknown). The family is then not offered card or bank-transfer payment, so it is never paid twice.
  */
 export function autopayHoldsInvoice(invoice: Pick<Invoice, 'autopayStatus'>): boolean {
-  return invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'processing';
+  return invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'processing' || invoice.autopayStatus === 'unknown';
 }
 
 /** Shown when a family tries to pay an invoice while its saved card is being charged. Matches create-checkout. */
@@ -98,6 +99,19 @@ export function autopayFailureReason(error?: string | null): string {
   const reason = (error ?? '').trim().replace(/\.+$/, '').trim();
   if (!reason) return 'the card was declined';
   return reason.charAt(0).toLowerCase() + reason.slice(1);
+}
+
+/** The same reason as the office reads it: 'the family's card has expired', 'declined by their bank'. Matches autopay_failed. */
+export function autopayFailureReasonForOffice(error?: string | null): string {
+  return autopayFailureReason(error).replace(/\byour card\b/g, "the family's card").replace(/\byour bank\b/g, 'their bank');
+}
+
+/**
+ * The receipt line for a lesson package: 'IB Maths: ten lessons' already says what it is, while 'Exam season' becomes
+ * 'Exam season (10 lessons)'. Matches fulfil_package_offer.
+ */
+export function packageReceiptLine(name: string, lessons: number): string {
+  return /lesson/i.test(name) ? name : `${name} (${lessons} ${lessons === 1 ? 'lesson' : 'lessons'})`;
 }
 
 export const MAX_OFFER_LESSONS = 200;

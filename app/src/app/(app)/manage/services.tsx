@@ -48,7 +48,7 @@ export default function Services() {
             <Button title="Add package" icon="plus" variant="secondary" size="sm" onPress={() => setEditingOffer('new')} />
           )
         }>
-        <Txt variant="muted">Parents can buy these from their Billing tab and pay by card. Credits are added as soon as payment is received.</Txt>
+        <Txt variant="muted">Parents can buy these from their Billing tab and pay by card. Lessons are added as soon as payment is received.</Txt>
         {editingOffer === 'new' ? <OfferForm services={serviceList} nextSort={nextSort} onDone={() => setEditingOffer(null)} /> : null}
         {offers.isLoading ? (
           <Loading />

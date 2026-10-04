@@ -239,8 +239,8 @@ export interface DataSource {
   setAutopay(familyId: string, enabled: boolean): Promise<void>;
   /** Parent: buy an offer by card. Production returns the Checkout url; the demo records the purchase at once. */
   buyPackageOffer(offerId: string): Promise<CardPaymentResult>;
-  /** Production only: the Stripe page where a family manages its saved cards. */
-  openBillingPortal?(): Promise<{ url: string }>;
+  /** Production only: the Stripe page where a family manages its saved cards. Admins pass the family. */
+  openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
 }

@@ -2,8 +2,10 @@ import {
   activeOffers,
   AUTOPAY_NO_CARD_MESSAGE,
   autopayFailureReason,
+  autopayFailureReasonForOffice,
   autopayHoldsInvoice,
   autopayStatusText,
+  packageReceiptLine,
   canEnableAutopay,
   cardExpiryLabel,
   cardLabel,
@@ -96,6 +98,7 @@ describe('saved cards and autopay', () => {
     expect(autopayStatusText('processing')).toBe('Charging saved card');
     expect(autopayStatusText('succeeded')).toBe('Paid by autopay');
     expect(autopayStatusText('failed')).toBe('Autopay failed');
+    expect(autopayStatusText('unknown')).toBe('Confirming payment');
   });
 });
 
@@ -139,6 +142,8 @@ describe('autopay on an invoice', () => {
   it('holds the invoice while autopay is waiting or charging', () => {
     expect(autopayHoldsInvoice({ autopayStatus: 'pending' })).toBe(true);
     expect(autopayHoldsInvoice({ autopayStatus: 'processing' })).toBe(true);
+    // Stripe could not be reached mid-charge: the card may have been charged, so the family must not pay again.
+    expect(autopayHoldsInvoice({ autopayStatus: 'unknown' })).toBe(true);
     expect(autopayHoldsInvoice({ autopayStatus: 'failed' })).toBe(false);
     expect(autopayHoldsInvoice({ autopayStatus: 'succeeded' })).toBe(false);
     expect(autopayHoldsInvoice({})).toBe(false);
@@ -148,5 +153,18 @@ describe('autopay on an invoice', () => {
     expect(autopayFailureReason('  The security code for your card was not accepted. ')).toBe('the security code for your card was not accepted');
     expect(autopayFailureReason('')).toBe('the card was declined');
     expect(autopayFailureReason(undefined)).toBe('the card was declined');
+    expect(autopayFailureReasonForOffice('Your card was declined by your bank.')).toBe("the family's card was declined by their bank");
+    expect(autopayFailureReasonForOffice('Your bank asked to confirm this payment, which cannot be done automatically.')).toBe(
+      'their bank asked to confirm this payment, which cannot be done automatically',
+    );
+    expect(autopayFailureReasonForOffice('No saved card is available')).toBe('no saved card is available');
+  });
+});
+
+describe('packageReceiptLine', () => {
+  it('adds the number of lessons only when the name does not mention lessons', () => {
+    expect(packageReceiptLine('IB Maths: ten lessons', 10)).toBe('IB Maths: ten lessons');
+    expect(packageReceiptLine('Exam season', 10)).toBe('Exam season (10 lessons)');
+    expect(packageReceiptLine('Taster', 1)).toBe('Taster (1 lesson)');
   });
 });

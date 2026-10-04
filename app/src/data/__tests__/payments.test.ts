@@ -109,6 +109,17 @@ describe('setAutopay (mirror set_autopay)', () => {
     pay.setAutopay(db, who(db, 'admin'), 'f-mansoori', true);
     expect(family(db, 'f-mansoori').autopay).toBe(true);
   });
+  it('hands waiting and failed invoices back at once when switched off, but not a charge under way', () => {
+    const db = createSeed(NOW);
+    const base = db.invoices.find((i) => i.familyId === 'f-mansoori')!;
+    const [a, b, c] = ['x1', 'x2', 'x3'].map((id) => ({ ...base, id, status: 'sent' as const, payments: [] }));
+    db.invoices.push(a, b, c);
+    a.autopayStatus = 'pending';
+    b.autopayStatus = 'failed';
+    c.autopayStatus = 'unknown';
+    pay.setAutopay(db, who(db, 'admin'), 'f-mansoori', false);
+    expect([a.autopayStatus, b.autopayStatus, c.autopayStatus]).toEqual([undefined, undefined, 'unknown']);
+  });
 });
 
 describe('buyOffer (mirror create-checkout and the webhook)', () => {
@@ -123,7 +134,8 @@ describe('buyOffer (mirror create-checkout and the webhook)', () => {
 
     const invoice = db.invoices[db.invoices.length - 1];
     expect(invoice).toMatchObject({ familyId: 'f-mansoori', status: 'paid', vatRate: db.settings.vatRate, number: `INV-${number}` });
-    expect(invoice.items).toEqual([{ description: 'IB Maths: ten lessons (10 lessons)', quantity: 1, unitPrice: 4050, packageId: pkg.id }]);
+    expect(invoice.items).toEqual([{ description: 'IB Maths: ten lessons', quantity: 1, unitPrice: 4050, packageId: pkg.id }]);
+    expect(invoice.dueDate).toBe(invoice.issueDate);
     expect(invoice.payments).toHaveLength(1);
     expect(invoice.payments[0]).toMatchObject({ method: 'card', amount: invoiceTotals(invoice).total });
     expect(paymentLabel(invoice.payments[0])).toBe('Card');
@@ -230,6 +242,13 @@ describe('payInvoiceByCard (mirror create-checkout for an invoice)', () => {
     const db = createSeed(NOW);
     const invoice = sentInvoice(db);
     invoice.autopayStatus = 'processing';
+    expect(() => pay.payInvoiceByCard(db, invoice, NOW)).toThrow(AUTOPAY_CHARGING_MESSAGE);
+    expect(invoice.payments).toHaveLength(0);
+  });
+  it('refuses while it is not known whether an autopay charge went through', () => {
+    const db = createSeed(NOW);
+    const invoice = sentInvoice(db);
+    invoice.autopayStatus = 'unknown';
     expect(() => pay.payInvoiceByCard(db, invoice, NOW)).toThrow(AUTOPAY_CHARGING_MESSAGE);
     expect(invoice.payments).toHaveLength(0);
   });

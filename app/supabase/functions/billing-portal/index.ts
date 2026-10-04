@@ -27,7 +27,8 @@ Deno.serve(async (req) => {
       return json({ error: 'No saved card yet. Your card is saved securely the next time you pay by card.' }, 400);
     }
 
-    const appUrl = (Deno.env.get('APP_URL') ?? 'https://eliteeducation.me').replace(/\/+$/, '');
+    const appUrl = (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
+    if (!appUrl) return json({ error: 'Managing cards is not set up yet (APP_URL is missing).' }, 500);
     // Families come back to Billing; an admin comes back to the family they were looking after.
     const returnUrl = profile?.role === 'admin' ? `${appUrl}/manage/family-edit?id=${encodeURIComponent(familyId)}` : `${appUrl}/parent/billing`;
     const res = await stripe('/billing_portal/sessions', { form: portalForm(billing.stripe_customer_id, returnUrl) });

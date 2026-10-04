@@ -187,7 +187,7 @@ select pg_temp.check((select count(*) from public.packages where family_id = 'c0
   and (select name || '/' || lessons_total || '/' || price || '/' || service_id from public.packages)
       = 'Ten IB lessons/10/4000.00/e0000000-0000-0000-0000-000000000001', 'one package is created from the offer');
 select pg_temp.check((select count(*) from public.invoices i where i.id in (select id from topup) and i.status = 'paid'
-  and i.items->0->>'description' = 'Ten IB lessons (10 lessons)' and i.vat_rate = 0.05
+  and i.items->0->>'description' = 'Ten IB lessons' and i.vat_rate = 0.05
   and (i.items->0->>'packageId')::uuid = (select id from public.packages)) = 1, 'one paid receipt invoice is created');
 select pg_temp.check((select count(*) from public.payments where stripe_payment_intent = 'pi_top' and amount = 4200
   and stripe_session_id = 'cs_top' and method = 'card') = 1, 'one card payment is recorded');
@@ -213,6 +213,9 @@ select public.fulfil_package_offer('c0000000-0000-0000-0000-000000000001', 'f100
 select pg_temp.check((select count(*) from public.packages where name = 'Old bundle' and lessons_total = 5 and price = 2000) = 1
   and (select count(*) from public.payments where stripe_payment_intent = 'pi_deleted' and amount = 2100) = 1,
   'a paid top-up is fulfilled after the offer is deleted');
+select pg_temp.check((select i.items->0->>'description' from public.invoices i join public.payments p on p.invoice_id = i.id
+  where p.stripe_payment_intent = 'pi_deleted') = 'Old bundle (5 lessons)',
+  'a receipt adds the number of lessons only when the package name does not mention lessons');
 -- No snapshot and no offer: the money is kept on a receipt and the office is asked to add the lessons.
 select public.fulfil_package_offer('c0000000-0000-0000-0000-000000000001', gen_random_uuid(), 2100, 'pi_unknown');
 select pg_temp.check((select count(*) from public.payments p join public.invoices i on i.id = p.invoice_id
@@ -242,6 +245,9 @@ select pg_temp.check((select body from public.notification_outbox where subject 
   'the failed-autopay message is clear and complete');
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Autopay failed: INV-9005 (Ahmed)') = 1,
   'the office is told about a failed autopay once');
+select pg_temp.check((select body from public.notification_outbox where subject = 'Autopay failed: INV-9005 (Ahmed)')
+  = 'Autopay could not take AED 1,050.00 for invoice INV-9005 from the Ahmed family: the family''s card has insufficient funds. The family has been asked to update their card or pay in the app.',
+  'the office reads about the family''s card, not "your card"');
 
 -- The admin tries again (attempt 2) and it succeeds; attempt 1's failure then arrives again, late.
 update public.invoices set autopay_status = 'processing', autopay_attempts = 2 where id = '10000000-0000-0000-0000-000000000005';
@@ -259,8 +265,8 @@ select pg_temp.check((select status || '/' || autopay_status || '/' || coalesce(
 update public.invoices set autopay_status = 'processing', autopay_attempts = 1 where id = '10000000-0000-0000-0000-000000000006';
 update public.invoices set status = 'void' where id = '10000000-0000-0000-0000-000000000006';
 select public.autopay_failed('10000000-0000-0000-0000-000000000006', 'Your card was declined by your bank.', 1);
-select pg_temp.check((select status || '/' || autopay_status || '/' || coalesce(autopay_error, '-') from public.invoices
-  where id = '10000000-0000-0000-0000-000000000006') = 'void/processing/-', 'autopay_failed on a voided invoice changes nothing');
+select pg_temp.check((select status || '/' || coalesce(autopay_status, '-') || '/' || coalesce(autopay_error, '-') from public.invoices
+  where id = '10000000-0000-0000-0000-000000000006') = 'void/-/-', 'a decline on a voided invoice ends its autopay quietly');
 -- An invoice not being charged by autopay at all (paid by Checkout earlier).
 select public.autopay_failed('10000000-0000-0000-0000-000000000003', 'Your card was declined by your bank.');
 select pg_temp.check((select autopay_status from public.invoices where id = '10000000-0000-0000-0000-000000000003') is null,
@@ -268,7 +274,7 @@ select pg_temp.check((select autopay_status from public.invoices where id = '100
 select pg_temp.check(not exists (select 1 from public.notification_outbox where id not in (select id from outbox_mark)),
   'stale, paid and voided failures notify no one');
 
--- Stripe could not be reached: only the office is asked to check.
+-- Stripe could not be reached: the outcome is unknown. Only the office is asked to check, and the invoice stays held.
 insert into public.invoices (id, number, family_id, due_date, status, items, vat_rate) values
   ('10000000-0000-0000-0000-000000000008', 'INV-9008', 'c0000000-0000-0000-0000-000000000001', current_date + 7, 'sent',
    '[{"description":"IB 1:1","quantity":1,"unitPrice":500}]', 0.05);
@@ -276,13 +282,70 @@ insert into outbox_before select id from public.notification_outbox where id not
 update public.invoices set autopay_status = 'processing', autopay_attempts = 3 where id = '10000000-0000-0000-0000-000000000008';
 delete from outbox_mark;
 insert into outbox_mark select id from public.notification_outbox;
-select public.autopay_failed('10000000-0000-0000-0000-000000000008', 'The payment could not be completed.', 3, false);
-select pg_temp.check((select autopay_status from public.invoices where id = '10000000-0000-0000-0000-000000000008') = 'failed'
-  and (select count(*) from public.notification_outbox where id not in (select id from outbox_mark)
-       and subject = 'Autopay to check: INV-9008 (Ahmed)') >= 1
+select public.autopay_failed('10000000-0000-0000-0000-000000000008', 'The card processor could not be reached.', 3, false);
+select public.autopay_failed('10000000-0000-0000-0000-000000000008', 'The card processor could not be reached again.', 3, false);
+select pg_temp.check((select autopay_status || '/' || autopay_error from public.invoices where id = '10000000-0000-0000-0000-000000000008')
+  = 'unknown/The card processor could not be reached again.', 'an unreachable card processor leaves the outcome unknown, not failed');
+select pg_temp.check((select count(*) from public.notification_outbox where id not in (select id from outbox_mark)
+       and subject = 'Autopay to check: INV-9008 (Ahmed)') = 1
   and not exists (select 1 from public.notification_outbox where id not in (select id from outbox_mark)
        and profile_id = 'a0000000-0000-0000-0000-00000000000c'),
-  'when Stripe cannot be reached the office is asked to check and the family is not told');
+  'when Stripe cannot be reached the office is asked to check once and the family is not told');
+-- Nothing hands an unknown charge back to the family: switching autopay off, or re-sending the invoice.
+select public.set_autopay('c0000000-0000-0000-0000-000000000001', false);
+update public.invoices set status = 'sent' where id = '10000000-0000-0000-0000-000000000008';
+select pg_temp.check((select autopay_status from public.invoices where id = '10000000-0000-0000-0000-000000000008') = 'unknown',
+  'an unknown charge stays held from the family until Stripe answers');
+update public.family_billing set autopay = true where family_id = 'c0000000-0000-0000-0000-000000000001';
+-- Stripe then reports a real decline for that attempt: the family is told, once.
+select public.autopay_failed('10000000-0000-0000-0000-000000000008', 'Your card was declined by your bank.', 3);
+select public.autopay_failed('10000000-0000-0000-0000-000000000008', 'Your card was declined by your bank.', 3);
+select pg_temp.check((select autopay_status from public.invoices where id = '10000000-0000-0000-0000-000000000008') = 'failed'
+  and (select count(*) from public.notification_outbox where subject = 'We could not take payment for invoice INV-9008'
+       and profile_id = 'a0000000-0000-0000-0000-00000000000c') = 1
+  and (select count(*) from public.notification_outbox where subject = 'Autopay failed: INV-9008 (Ahmed)') = 1,
+  'a decline that arrives after an unknown outcome is reported to the family once');
+-- Or Stripe reports that the unknown charge went through.
+insert into public.invoices (id, number, family_id, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000009', 'INV-9009', 'c0000000-0000-0000-0000-000000000001', current_date + 7, 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":200}]', 0);
+update public.invoices set autopay_status = 'unknown', autopay_attempts = 1 where id = '10000000-0000-0000-0000-000000000009';
+select public.record_stripe_payment('10000000-0000-0000-0000-000000000009', 200, 'pi_9', null, true);
+select pg_temp.check((select status || '/' || autopay_status from public.invoices where id = '10000000-0000-0000-0000-000000000009')
+  = 'paid/succeeded', 'an unknown charge that went through is recorded as paid by autopay');
+
+-- Switching autopay off, or a bank transfer, hands waiting invoices back at once.
+insert into public.invoices (id, number, family_id, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000010', 'INV-9010', 'c0000000-0000-0000-0000-000000000001', current_date + 7, 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":200}]', 0),
+  ('10000000-0000-0000-0000-000000000011', 'INV-9011', 'c0000000-0000-0000-0000-000000000001', current_date + 7, 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":200}]', 0);
+insert into outbox_before select id from public.notification_outbox where id not in (select id from outbox_before);
+select pg_temp.check((select count(*) from public.invoices where id in ('10000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000011')
+  and autopay_status = 'pending') = 2, 'both invoices wait for autopay');
+insert into public.payments (invoice_id, amount, method, reference) values ('10000000-0000-0000-0000-000000000011', 200, 'bank-transfer', 'TT 123');
+update public.invoices set status = 'paid' where id = '10000000-0000-0000-0000-000000000011';
+select pg_temp.check((select status || '/' || coalesce(autopay_status, '-') from public.invoices where id = '10000000-0000-0000-0000-000000000011')
+  = 'paid/-', 'an invoice paid by bank transfer leaves autopay at once');
+update public.invoices set autopay_status = 'failed', autopay_attempts = 1 where id = '10000000-0000-0000-0000-000000000008';
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+select public.set_autopay('c0000000-0000-0000-0000-000000000001', false);
+reset role;
+select pg_temp.check((select count(*) from public.invoices where id in ('10000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000008')
+  and autopay_status is null) = 2, 'switching autopay off hands waiting and failed invoices back to the family at once');
+update public.family_billing set autopay = true where family_id = 'c0000000-0000-0000-0000-000000000001';
+
+-- What was sent to Stripe stays with the service role.
+insert into public.autopay_requests (invoice_id, attempt, request) values ('10000000-0000-0000-0000-000000000009', 1, '{"amount":"20000"}');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+do $$ begin
+  perform 1 from public.autopay_requests;
+  raise exception 'read autopay requests';
+exception when insufficient_privilege then raise notice 'ok - signed-in users cannot read autopay requests';
+end $$;
+reset role;
 
 -- set_family_card --------------------------------------------------------------------
 update public.invoices set autopay_status = 'pending' where id = '10000000-0000-0000-0000-000000000008';
