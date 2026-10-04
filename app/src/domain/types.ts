@@ -22,6 +22,10 @@ export interface Profile {
   studentId?: string;
   /** Secret token for the personal calendar feed URL. */
   icsToken?: string;
+  /** Whether this person has asked for reminders on WhatsApp (parents and tutors). */
+  whatsappOptIn?: boolean;
+  /** The WhatsApp number for reminders, in E.164 form, e.g. +971501234567. Kept when they opt out. */
+  whatsappNumber?: string;
 }
 
 export type FamilyStatus = 'prospect' | 'active' | 'archived';
@@ -35,6 +39,10 @@ export interface Family {
   /** Prospects signed up or enquired but haven't enrolled yet. Defaults to active. */
   status?: FamilyStatus;
   createdAt?: string;
+  /** Pay new invoices automatically with the saved card. Only present for admins and the family itself. */
+  autopay?: boolean;
+  /** The card kept on file for this family. Only present for admins and the family itself. */
+  savedCard?: SavedCard;
 }
 
 export interface Student {
@@ -162,6 +170,66 @@ export interface Homework {
   title: string;
   dueDate: string;
   done: boolean;
+  /** Instructions for the student. */
+  details?: string;
+  attachments?: Attachment[];
+  /** The tutor who set it. */
+  tutorId?: string;
+  createdAt?: string;
+}
+
+/** A file or link attached to homework, a hand-in or a resource. Files live in the private `classwork` bucket. */
+export interface Attachment {
+  kind: 'file' | 'link';
+  name: string;
+  /** Storage path in the classwork bucket (files): students/<studentId>/… or resources/…. */
+  path?: string;
+  /** Web address (links), http or https only. */
+  url?: string;
+  mimeType?: string;
+  /** Set when the attachment came from the resource library. */
+  resourceId?: string;
+}
+
+/** A student's hand-in for a piece of homework, with the tutor's feedback once given. */
+export interface HomeworkSubmission {
+  id: string;
+  homeworkId: string;
+  studentId: string;
+  submittedBy?: string;
+  submittedByName?: string;
+  note?: string;
+  files: Attachment[];
+  submittedAt: string;
+  feedback?: string;
+  mark?: string;
+  feedbackAt?: string;
+  feedbackBy?: string;
+  feedbackByName?: string;
+}
+
+export type ResourceVisibility = 'tutors' | 'students';
+
+/** An item in the shared resource library. */
+export interface Resource {
+  id: string;
+  title: string;
+  description?: string;
+  subject?: string;
+  curriculum?: string;
+  level?: string;
+  kind: 'file' | 'link';
+  path?: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  tags: string[];
+  uploadedBy?: string;
+  uploadedByName?: string;
+  /** 'tutors' = library only; 'students' = also shared with studentIds. Tutors and admins always see every resource. */
+  visibility: ResourceVisibility;
+  studentIds: string[];
+  createdAt: string;
 }
 
 /** One rating of how well a student understands a syllabus topic (1 = weak … 5 = secure). */
@@ -235,6 +303,10 @@ export interface Invoice {
   vatRate: number;
   payments: Payment[];
   notes?: string;
+  /** Progress of an automatic charge to the family's saved card, when autopay applies. */
+  autopayStatus?: AutopayStatus;
+  /** Why the last automatic charge failed, in words the family can act on. */
+  autopayError?: string;
 }
 
 export interface Settings {
@@ -285,6 +357,30 @@ export interface TutorAbsence {
   startDate: string;
   endDate: string;
   reason?: string;
+}
+
+/** A time the tutor is busy in their own Google Calendar, copied by calendar-sync. Times only, never event details. */
+export interface BusyBlock {
+  id: string;
+  tutorId: string;
+  /** ISO date-time. */
+  start: string;
+  /** ISO date-time. */
+  end: string;
+  source: 'google';
+}
+
+export type CalendarConnectionStatus = 'connected' | 'error';
+
+/** A tutor's or admin's link to their Google Calendar. Tokens never reach the app. */
+export interface CalendarConnection {
+  profileId: string;
+  provider: 'google';
+  googleEmail?: string;
+  calendarId: string;
+  status: CalendarConnectionStatus;
+  lastSyncedAt?: string;
+  lastError?: string;
 }
 
 export type EnquiryStatus = 'new' | 'contacted' | 'trial-booked' | 'enrolled' | 'lost';
@@ -506,4 +602,33 @@ export interface Expense {
   amount: number;
   vatAmount: number;
   receiptPath?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Card payments: saved cards, autopay and top-ups
+// ---------------------------------------------------------------------------
+
+/** A family's card on file. Card numbers never leave Stripe; only these details are kept. */
+export interface SavedCard {
+  brand: string;
+  last4: string;
+  /** 'MM/YY' */
+  expires?: string;
+}
+
+/** 'unknown': the card processor could not be reached mid-charge; the invoice stays held until the outcome is known. */
+export type AutopayStatus = 'pending' | 'processing' | 'unknown' | 'succeeded' | 'failed';
+
+/** A lesson package parents can buy themselves by card. */
+export interface PackageOffer {
+  id: string;
+  name: string;
+  /** Credits only apply to this lesson type when set. */
+  serviceId?: string;
+  lessons: number;
+  /** AED, before VAT. */
+  price: number;
+  /** Shown to parents. */
+  active: boolean;
+  sort: number;
 }

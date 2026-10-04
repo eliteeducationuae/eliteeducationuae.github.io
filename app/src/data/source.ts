@@ -2,6 +2,9 @@ import type { EnrolmentDraft } from '@/domain/enrolments';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
+  Attachment,
+  HomeworkSubmission,
+  Resource,
   Expense,
   Opportunity,
   OpportunityBid,
@@ -16,6 +19,8 @@ import type {
   Audience,
   Availability,
   AttendanceMark,
+  BusyBlock,
+  CalendarConnection,
   Closure,
   Enquiry,
   Enrolment,
@@ -42,6 +47,8 @@ import type {
   Topic,
   TopicList,
   TopicRating,
+  AutopayStatus,
+  PackageOffer,
 } from '@/domain/types';
 
 export interface CompleteLessonInput {
@@ -53,7 +60,48 @@ export interface CompleteLessonInput {
   topicIds: string[];
   /** Per-student topic ratings. */
   ratings: { studentId: string; topicId: string; rating: TopicRating['rating'] }[];
-  homework: { studentId: string; title: string; dueDate: string }[];
+  homework: { studentId: string; title: string; dueDate: string; details?: string; attachments?: Attachment[] }[];
+}
+
+/** Private storage buckets files can be uploaded to. */
+export type StorageBucket = 'applications' | 'receipts' | 'classwork';
+
+/** New homework (no id) or an edit to existing homework. */
+export interface HomeworkInput {
+  id?: string;
+  studentId: string;
+  lessonId?: string;
+  title: string;
+  details?: string;
+  dueDate: string;
+  attachments: Attachment[];
+}
+
+/**
+ * Thrown when the main change was saved but a follow-up step was not, for example a lesson recorded
+ * whose homework attachments could not be added. The message says what to finish by hand.
+ */
+export class PartialSaveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PartialSaveError';
+  }
+}
+
+/** A new library resource (no id) or an edit to one. */
+export interface ResourceInput {
+  id?: string;
+  title: string;
+  description?: string;
+  subject?: string;
+  curriculum?: string;
+  level?: string;
+  kind: 'file' | 'link';
+  path?: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  tags: string[];
 }
 
 /** Third-party sign-in providers offered on the sign-in screen. */
@@ -66,6 +114,12 @@ export type SocialProvider = 'apple' | 'google';
 export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { status: 'redirecting' } | { status: 'cancelled' };
 
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
+
+/** WhatsApp reminder preferences: whether to send them, and the E.164 number (kept when opting out). */
+export interface WhatsAppPrefs {
+  optIn: boolean;
+  number: string | null;
+}
 
 export interface CardPaymentResult {
   /** Stripe Checkout URL to open (production). */
@@ -107,6 +161,8 @@ export interface DataSource {
    * a name the office has recorded for an active family is left alone. Returns the refreshed profile.
    */
   setMyName?(fullName: string): Promise<Profile>;
+  /** Save the signed-in person's WhatsApp opt-in and number (E.164). Returns the refreshed profile. */
+  setWhatsApp?(prefs: WhatsAppPrefs): Promise<Profile>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */
@@ -123,7 +179,7 @@ export interface DataSource {
   listLessons(range: { from: string; to: string }): Promise<Lesson[]>;
   getLesson(id: string): Promise<Lesson | null>;
   listNotes(filter?: { studentId?: string; lessonId?: string }): Promise<LessonNote[]>;
-  listHomework(filter?: { studentId?: string }): Promise<Homework[]>;
+  listHomework(filter?: { studentId?: string; lessonId?: string }): Promise<Homework[]>;
   listRatings(filter?: { studentId?: string }): Promise<TopicRating[]>;
   listPackages(filter?: { familyId?: string }): Promise<LessonPackage[]>;
   listCharges(filter?: { familyId?: string }): Promise<Charge[]>;
@@ -157,6 +213,24 @@ export interface DataSource {
   cancelLesson(id: string, reason: string, waiveFee?: boolean): Promise<CancellationOutcome>;
   completeLesson(input: CompleteLessonInput): Promise<void>;
   setHomeworkDone(id: string, done: boolean): Promise<void>;
+
+  // Homework and resources
+  getHomework(id: string): Promise<Homework | null>;
+  /** Tutors (for students they teach) and admins: set new homework or edit its title, details, due date and attachments. */
+  saveHomework(input: HomeworkInput): Promise<Homework>;
+  listSubmissions(filter?: { homeworkId?: string; studentId?: string }): Promise<HomeworkSubmission[]>;
+  /** Students and parents hand in work (note and/or files). Marks the homework done and tells the tutor. */
+  submitHomework(input: { homeworkId: string; note?: string; files: Attachment[] }): Promise<HomeworkSubmission>;
+  /** The student's tutor or an admin: written feedback and an optional mark. Tells the student and family. */
+  giveFeedback(submissionId: string, feedback: string, mark?: string): Promise<void>;
+  /** Tutors/admin: the whole library. Students/parents: resources shared with them. Optional filter to one student's shared resources. */
+  listResources(filter?: { studentId?: string }): Promise<Resource[]>;
+  saveResource(input: ResourceInput): Promise<Resource>;
+  deleteResource(id: string): Promise<void>;
+  /** Share a library resource with a student (and their family). */
+  shareResource(resourceId: string, studentId: string): Promise<void>;
+  /** Stop sharing a library resource with a student. */
+  unshareResource(resourceId: string, studentId: string): Promise<void>;
 
   // Billing
   sellPackage(pkg: Omit<LessonPackage, 'id' | 'lessonsUsed' | 'purchasedAt'>): Promise<Invoice>;
@@ -236,12 +310,45 @@ export interface DataSource {
   deleteExpense(id: string): Promise<void>;
 
   /** Upload a picked file to private storage. Returns the stored path. */
-  uploadFile?(bucket: 'applications' | 'receipts', folder: string, file: PickedFile): Promise<string>;
-  /** A short-lived link to view a stored file (admins). */
-  fileUrl?(bucket: 'applications' | 'receipts', path: string): Promise<string | null>;
+  uploadFile?(bucket: StorageBucket, folder: string, file: PickedFile): Promise<string>;
+  /** A short-lived link to view a stored file. Null when the file cannot be reached (removed, refused or offline). */
+  fileUrl?(bucket: StorageBucket, path: string): Promise<string | null>;
+  /** Remove a file the signed-in user uploaded, e.g. an attachment removed before saving. Best effort. */
+  removeFile?(bucket: StorageBucket, path: string): Promise<void>;
 
   /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
   aiAssist?(request: AiRequest): Promise<AiResult | null>;
+
+  // Google Calendar (tutors and admin)
+  /** Google busy times. Admins see every tutor's, tutors their own, families none. */
+  listBusyBlocks?(filter?: { tutorId?: string; from?: string; to?: string }): Promise<BusyBlock[]>;
+  /** The signed-in tutor's or admin's Google Calendar link, or null. */
+  getCalendarConnection?(): Promise<CalendarConnection | null>;
+  /** Start connecting Google Calendar. Production returns once the browser flow finishes; the demo connects at once. */
+  connectGoogleCalendar?(): Promise<'connected' | 'cancelled' | 'redirecting'>;
+  disconnectGoogleCalendar?(): Promise<void>;
+
+  // Card payments: saved cards, autopay and top-ups
+  /** Admins see every offer; everyone else sees active ones. Sorted by position, then fewest lessons. */
+  listPackageOffers(): Promise<PackageOffer[]>;
+  /** Admin: create or update a top-up offer. */
+  savePackageOffer(offer: Omit<PackageOffer, 'id'> & { id?: string }): Promise<PackageOffer>;
+  /** Admin: remove a top-up offer. */
+  deletePackageOffer(id: string): Promise<void>;
+  /** The family's parent or an admin. Switching on needs a saved card (AUTOPAY_NO_CARD_MESSAGE otherwise). */
+  setAutopay(familyId: string, enabled: boolean): Promise<void>;
+  /** Parent: buy an offer by card. Production returns the Checkout url; the demo records the purchase at once. */
+  buyPackageOffer(offerId: string): Promise<CardPaymentResult>;
+  /** Production only: the Stripe page where a family manages its saved cards. Admins pass the family. */
+  openBillingPortal?(familyId?: string): Promise<{ url: string }>;
+  /** Admin: charge a sent invoice to the family's saved card now. */
+  chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+}
+
+/** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */
+export interface AutopayChargeResult {
+  status: AutopayStatus | 'skipped';
+  error?: string;
 }
 
 export interface PickedFile {

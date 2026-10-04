@@ -1,17 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { invoiceTotals } from '@/domain/billing';
 import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
+import { cw } from './classwork';
+import { cal } from './calendar';
 import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
+import { pay } from './payments';
 import { createSeed } from './seed';
+import { setWhatsAppPrefs } from './whatsapp';
 
 const DB_KEY = 'elite.demo.db';
 const SESSION_KEY = 'elite.demo.session';
+
+/** Picked files by stored path, so an upload can be viewed again in this session. */
+const demoFiles = new Map<string, string>();
 
 /**
  * Offline demo backend: a seeded in-memory database persisted to device storage.
@@ -95,6 +101,11 @@ export function createDemoSource(): DataSource {
       viewer = updated;
       return updated;
     },
+    async setWhatsApp(prefs) {
+      const updated = await write((d, v) => setWhatsAppPrefs(d, v, prefs));
+      viewer = updated;
+      return updated;
+    },
     async signOut() {
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
@@ -131,13 +142,13 @@ export function createDemoSource(): DataSource {
 
     getSettings: () => read((d) => d.settings),
     listTutors: () => read((d) => d.tutors),
-    listFamilies: () => read((d, v) => q.families(d, v)),
+    listFamilies: () => read((d, v) => pay.stripBilling(q.families(d, v), v)),
     listStudents: () => read((d, v) => q.students(d, v)),
     listServices: () => read((d) => d.services),
     listLessons: ({ from, to }) => read((d, v) => q.lessons(d, v, from, to)),
     getLesson: (id) => read((d, v) => q.lessons(d, v, '0000', '9999').find((l) => l.id === id) ?? null),
     listNotes: (filter) => read((d, v) => q.notes(d, v, filter)),
-    listHomework: (filter) => read((d, v) => q.homework(d, v, filter?.studentId)),
+    listHomework: (filter) => read((d, v) => q.homework(d, v, filter?.studentId, filter?.lessonId)),
     listRatings: (filter) => read((d, v) => q.ratings(d, v, filter?.studentId)),
     listPackages: (filter) => read((d, v) => q.packages(d, v, filter?.familyId)),
     listCharges: (filter) => read((d, v) => q.charges(d, v, filter?.familyId)),
@@ -146,7 +157,13 @@ export function createDemoSource(): DataSource {
 
     saveSettings: (patch) => write((d, v) => cmd.saveSettings(d, v, patch)),
     saveTutor: (t) => write((d, v) => cmd.saveTutor(d, v, t)),
-    saveFamily: (f) => write((d, v) => cmd.saveFamily(d, v, f)),
+    saveFamily: (f) =>
+      write((d, v) => {
+        // Card and autopay live in family_billing in production; editing a family's details never changes them.
+        const existing = f.id ? d.families.find((x) => x.id === f.id) : undefined;
+        const { autopay: _autopay, savedCard: _card, ...details } = f;
+        return cmd.saveFamily(d, v, existing ? { ...details, autopay: existing.autopay, savedCard: existing.savedCard } : details);
+      }),
     saveStudent: (s) => write((d, v) => cmd.saveStudent(d, v, s)),
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
 
@@ -159,12 +176,35 @@ export function createDemoSource(): DataSource {
     createLessons: (lessons) => write((d, v) => cmd.createLessons(d, v, lessons)),
     rescheduleLesson: (id, start, end) => write((d, v) => cmd.rescheduleLesson(d, v, id, start, end)),
     cancelLesson: (id, reason, waive) => write((d, v) => cmd.cancelLesson(d, v, id, reason, waive)),
-    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, input)),
+    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, cw.checkLessonHomework(input))),
     setHomeworkDone: (id, done) => write((d, v) => cmd.setHomeworkDone(d, v, id, done)),
 
-    sellPackage: (pkg) => write((d, v) => cmd.sellPackage(d, v, pkg)),
-    invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
-    setInvoiceStatus: (id, status) => write((d, v) => cmd.setInvoiceStatus(d, v, id, status)),
+    getHomework: (id) => read((d, v) => cw.getHomework(d, v, id)),
+    saveHomework: (input) => write((d, v) => cw.saveHomework(d, v, input)),
+    listSubmissions: (filter) => read((d, v) => cw.submissions(d, v, filter)),
+    submitHomework: (input) => write((d, v) => cw.submitHomework(d, v, input)),
+    giveFeedback: (id, feedback, mark) => write((d, v) => cw.giveFeedback(d, v, id, feedback, mark)),
+    listResources: (filter) => read((d, v) => cw.resources(d, v, filter)),
+    saveResource: (input) => write((d, v) => cw.saveResource(d, v, input)),
+    async deleteResource(id) {
+      const path = await write((d, v) => cw.deleteResource(d, v, id));
+      if (path) demoFiles.delete(path);
+    },
+    shareResource: (resourceId, studentId) => write((d, v) => cw.shareResource(d, v, resourceId, studentId)),
+    unshareResource: (resourceId, studentId) => write((d, v) => cw.unshareResource(d, v, resourceId, studentId)),
+
+    sellPackage: (pkg) =>
+      write((d, v) => {
+        const invoice = cmd.sellPackage(d, v, pkg);
+        pay.autopayIfDue(d, invoice);
+        return invoice;
+      }),
+    invoiceUnbilled: (familyId) => write((d, v) => pay.autopayIfDue(d, cmd.invoiceUnbilled(d, v, familyId))),
+    setInvoiceStatus: (id, status) =>
+      write((d, v) => {
+        cmd.setInvoiceStatus(d, v, id, status);
+        if (status === 'sent') pay.autopayIfDue(d, d.invoices.find((i) => i.id === id));
+      }),
     recordPayment: (id, amount, method, ref) => write((d, v) => cmd.recordPayment(d, v, id, amount, method, ref)),
     addMyChild: async (child) => {
       await write((d, v) => eq.addMyChild(d, v, child));
@@ -197,9 +237,17 @@ export function createDemoSource(): DataSource {
     markThreadRead: (familyId) => write((d, v) => eq.markRead(d, v, familyId)),
     listAnnouncements: () => read((d, v) => eq.announcements(d, v)),
     postAnnouncement: (a) => write((d, v) => eq.postAnnouncement(d, v, a)),
-    // Files aren't stored in the demo; keep the name so the flow can be tried.
-    uploadFile: async (_bucket, folder, file) => `${folder}/${file.name}`,
-    fileUrl: async () => null,
+    // Files aren't stored in the demo; keep the name so the flow can be tried. A file picked in this
+    // session can be opened again from its local uri; seeded files have no content.
+    uploadFile: async (_bucket, folder, file) => {
+      const path = `${folder}/${newId('f')}-${file.name}`;
+      demoFiles.set(path, file.uri);
+      return path;
+    },
+    fileUrl: async (_bucket, path) => demoFiles.get(path) ?? null,
+    removeFile: async (_bucket, path) => {
+      demoFiles.delete(path);
+    },
     listOpportunities: () => read((d, v) => ops.opportunities(d, v)),
     listBids: () => read((d, v) => ops.bids(d, v)),
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),
@@ -230,14 +278,29 @@ export function createDemoSource(): DataSource {
     listExpenses: () => read((d, v) => ops.expenses(d, v)),
     saveExpense: (e) => write((d, v) => ops.saveExpense(d, v, e)),
     deleteExpense: (id) => write((d, v) => ops.deleteExpense(d, v, id)),
-    async startCardPayment(invoiceId) {
+    startCardPayment: (invoiceId) =>
       // No real card processing in the demo: simulate a successful Stripe payment.
-      await write((d, v) => {
+      write((d, v) => {
         const invoice = q.invoices(d, v).find((i) => i.id === invoiceId);
         if (!invoice) throw new Error('Invoice not found');
-        cmd.recordPayment(d, v, invoiceId, invoiceTotals(invoice).balance, 'card', 'Demo card payment');
-      });
-      return { paid: true };
+        return pay.payInvoiceByCard(d, invoice);
+      }),
+
+    // Google Calendar
+    listBusyBlocks: (filter) => read((d, v) => cal.busyBlocks(d, v, filter)),
+    getCalendarConnection: () => read((d, v) => cal.connection(d, v)),
+    async connectGoogleCalendar() {
+      await write((d, v) => cal.connect(d, v));
+      return 'connected' as const;
     },
+    disconnectGoogleCalendar: () => write((d, v) => cal.disconnect(d, v)),
+
+    // Card payments: saved cards, autopay and top-ups (no openBillingPortal: there is no Stripe in the demo)
+    listPackageOffers: () => read((d, v) => pay.offers(d, v)),
+    savePackageOffer: (offer) => write((d, v) => pay.saveOffer(d, v, offer)),
+    deletePackageOffer: (id) => write((d, v) => pay.deleteOffer(d, v, id)),
+    setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
+    buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
+    chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
   };
 }

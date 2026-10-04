@@ -33,6 +33,7 @@ export default function AdminMore() {
     { title: 'Tutor invoices', subtitle: 'Approve monthly invoices and pay tutors', icon: 'doc', href: '/manage/tutor-invoices', badge: (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted').length },
     { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
     { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: (applications.data ?? []).filter((a) => a.status === 'applied').length },
+    { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },
   ] as const;
   const business = [
     { title: 'Money', subtitle: 'Profit, expenses, pay run and exports', icon: 'money', href: '/manage/money' },

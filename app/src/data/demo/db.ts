@@ -14,6 +14,8 @@ import type {
   TutorInvoice,
   Announcement,
   Availability,
+  BusyBlock,
+  CalendarConnection,
   Charge,
   Closure,
   Enquiry,
@@ -23,6 +25,7 @@ import type {
   TutorAbsence,
   Family,
   Homework,
+  HomeworkSubmission,
   Invoice,
   InvoiceStatus,
   Lesson,
@@ -30,6 +33,7 @@ import type {
   LessonPackage,
   PaymentMethod,
   Profile,
+  Resource,
   Service,
   Settings,
   Student,
@@ -37,6 +41,7 @@ import type {
   Topic,
   TopicList,
   TopicRating,
+  PackageOffer,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -79,6 +84,13 @@ export interface DemoDB {
   topics: Topic[];
   /** Messages the office would receive (mirrors public.notify_admins writing to notification_outbox). */
   outbox: OutboxMessage[];
+  submissions: HomeworkSubmission[];
+  resources: Resource[];
+  // Google Calendar. Optional because demo databases saved before this feature lack them: read with `?? []`.
+  busyBlocks?: BusyBlock[];
+  calendarConnections?: CalendarConnection[];
+  /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
+  packageOffers?: PackageOffer[];
 }
 
 export interface OutboxMessage {
@@ -95,7 +107,7 @@ export function notifyAdmins(db: DemoDB, subject: string, body: string, url?: st
   (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'admins', subject, body, url });
 }
 
-export const DEMO_DB_VERSION = 7;
+export const DEMO_DB_VERSION = 8;
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -163,6 +175,8 @@ export const q = {
   families(db: DemoDB, viewer: Profile): Family[] {
     if (viewer.role === 'admin') return db.families;
     const familyIds = new Set(q.students(db, viewer).map((s) => s.familyId));
+    // Mirrors the "see families" policy: a parent always sees their own family, even before a child is added.
+    if (viewer.familyId) familyIds.add(viewer.familyId);
     return db.families.filter((f) => familyIds.has(f.id));
   },
   lessons(db: DemoDB, viewer: Profile, from: string, to: string): Lesson[] {
@@ -178,9 +192,11 @@ export const q = {
       })
       .map((n) => stripPrivate(n, viewer));
   },
-  homework(db: DemoDB, viewer: Profile, studentId?: string): Homework[] {
+  homework(db: DemoDB, viewer: Profile, studentId?: string, lessonId?: string): Homework[] {
     const ids = visibleStudentIds(db, viewer);
-    return db.homework.filter((h) => ids.has(h.studentId) && (!studentId || h.studentId === studentId));
+    return db.homework.filter(
+      (h) => ids.has(h.studentId) && (!studentId || h.studentId === studentId) && (!lessonId || h.lessonId === lessonId),
+    );
   },
   ratings(db: DemoDB, viewer: Profile, studentId?: string): TopicRating[] {
     const ids = visibleStudentIds(db, viewer);
@@ -306,7 +322,18 @@ export const cmd = {
     }
     for (const h of input.homework) {
       if (!lesson.studentIds.includes(h.studentId) || !h.title.trim()) continue;
-      db.homework.push({ id: newId('hw'), lessonId: lesson.id, done: false, ...h, title: h.title.trim() });
+      db.homework.push({
+        id: newId('hw'),
+        lessonId: lesson.id,
+        studentId: h.studentId,
+        title: h.title.trim(),
+        dueDate: h.dueDate,
+        done: false,
+        details: h.details?.trim() || undefined,
+        attachments: h.attachments ?? [],
+        tutorId: lesson.tutorId,
+        createdAt: now.toISOString(),
+      });
     }
     applyCharges(db, lesson, input.attendance);
   },

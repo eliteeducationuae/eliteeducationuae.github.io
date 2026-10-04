@@ -1,5 +1,8 @@
 import { addDays, addMinutes, hoursBetween, startOfDay, toDateKey } from './dates';
-import type { Availability, Closure, Lesson, Settings, Tutor, TutorAbsence } from './types';
+import type { Availability, BusyBlock, Closure, Lesson, Settings, Tutor, TutorAbsence } from './types';
+
+/** The parts of a Google Calendar busy block that scheduling needs. */
+export type BusyTime = Pick<BusyBlock, 'tutorId' | 'start' | 'end'>;
 
 export interface Slot {
   start: Date;
@@ -70,6 +73,16 @@ export function findClashes(
   return clashes;
 }
 
+/**
+ * Google Calendar busy blocks for the proposed tutor that overlap the slot, earliest first.
+ * Touching edges are not an overlap. Shown as warnings separately from lesson clashes.
+ */
+export function findBusyClashes<B extends BusyTime>(proposed: Slot & { tutorId: string }, busy: B[]): B[] {
+  return busy
+    .filter((b) => b.tutorId === proposed.tutorId && overlaps(proposed, { start: new Date(b.start), end: new Date(b.end) }))
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+}
+
 export interface CancellationOutcome {
   /** Status the lesson should move to. */
   status: 'cancelled' | 'late-cancel';
@@ -102,6 +115,24 @@ export function cancellationOutcome(
 /** Sort lessons by start time (ascending). */
 export function byStart(a: Pick<Lesson, 'start'>, b: Pick<Lesson, 'start'>): number {
   return new Date(a.start).getTime() - new Date(b.start).getTime();
+}
+
+/** One line of a day in the calendar: a lesson or a Google busy time. */
+export type DayEntry<L, B> = { kind: 'lesson'; start: string; lesson: L } | { kind: 'busy'; start: string; busy: B };
+
+/**
+ * Lessons and Google busy times as one list in time order, so a busy time sits where it falls in the day.
+ * At the same start time the busy line comes first; otherwise the original order is kept.
+ */
+export function inTimeOrder<L extends Pick<Lesson, 'start'>, B extends Pick<BusyBlock, 'start'>>(lessons: L[], busy: B[]): DayEntry<L, B>[] {
+  const entries: DayEntry<L, B>[] = [
+    ...busy.map((b) => ({ kind: 'busy' as const, start: b.start, busy: b })),
+    ...lessons.map((l) => ({ kind: 'lesson' as const, start: l.start, lesson: l })),
+  ];
+  return entries
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => byStart(a.e, b.e) || (a.e.kind === b.e.kind ? a.i - b.i : a.e.kind === 'busy' ? -1 : 1))
+    .map(({ e }) => e);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,12 +193,15 @@ export interface OpenSlotInput {
   now: Date;
   ignoreLessonId?: string;
   stepMin?: number;
+  /** Times the tutor is busy in their own Google Calendar. Blocks for other tutors are ignored. */
+  busyBlocks?: BusyTime[];
 }
 
 /**
  * Bookable start times for a tutor. Mirrors public.open_slots() in the database:
  * inside weekly availability, in 30-minute steps, not clashing with the tutor's lessons,
- * not on closures or absences, and at least `noticeHours` from now.
+ * not on closures or absences, not overlapping the tutor's Google Calendar busy blocks
+ * (public.open_slots() also honours busy_blocks), and at least `noticeHours` from now.
  */
 export function openSlots(input: OpenSlotInput): Slot[] {
   const step = input.stepMin ?? 30;
@@ -175,6 +209,9 @@ export function openSlots(input: OpenSlotInput): Slot[] {
   const busy = input.lessons.filter(
     (l) => l.tutorId === input.tutorId && l.id !== input.ignoreLessonId && l.status !== 'cancelled' && l.status !== 'late-cancel',
   );
+  const googleBusy = (input.busyBlocks ?? [])
+    .filter((b) => b.tutorId === input.tutorId)
+    .map((b) => ({ start: new Date(b.start), end: new Date(b.end) }));
   const out: Slot[] = [];
   for (let i = 0; i < Math.min(Math.max(input.days, 1), 60); i++) {
     const day = addDays(startOfDay(input.from), i);
@@ -188,6 +225,7 @@ export function openSlots(input: OpenSlotInput): Slot[] {
         const slot = { start: new Date(t), end: new Date(t + input.durationMin * 60_000) };
         if (t < earliest) continue;
         if (busy.some((l) => overlaps(slot, { start: new Date(l.start), end: new Date(l.end) }))) continue;
+        if (googleBusy.some((b) => overlaps(slot, b))) continue;
         out.push(slot);
       }
     }
@@ -213,18 +251,23 @@ export interface CoverOption {
   available: boolean;
 }
 
-/** Tutors who could take a lesson: not the current tutor, not away that day and free at that time. */
+/**
+ * Tutors who could take a lesson: not the current tutor, not away that day, free at that time
+ * and not busy in their own Google Calendar (`busy`, optional).
+ */
 export function coverOptions(
   lesson: Lesson,
   tutors: Tutor[],
   lessons: Lesson[],
   availability: Availability[],
   absences: TutorAbsence[],
+  busy: BusyTime[] = [],
 ): CoverOption[] {
   const slot = { start: new Date(lesson.start), end: new Date(lesson.end) };
   return tutors
     .filter((t) => t.id !== lesson.tutorId && !isAbsent(t.id, slot.start, absences))
     .filter((t) => findClashes({ ...slot, tutorId: t.id, studentIds: [], ignoreLessonId: lesson.id }, lessons).length === 0)
+    .filter((t) => findBusyClashes({ ...slot, tutorId: t.id }, busy).length === 0)
     .map((t) => ({ tutor: t, available: withinAvailability(t.id, slot, availability) }))
     .sort((a, b) => Number(b.available) - Number(a.available) || a.tutor.fullName.localeCompare(b.tutor.fullName));
 }

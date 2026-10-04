@@ -9,6 +9,8 @@ import { useMe, useSession } from '@/data/session';
 import { confirm } from '@/lib/confirm';
 
 import { CalendarSyncCard } from './calendar-sync';
+import { GoogleCalendarCard } from './google-calendar';
+import { WhatsAppCard } from './whatsapp-card';
 import { Avatar, Badge, Button, Card, Row, Screen, Section, Txt } from './ui';
 
 /** Profile, calendar sync, policies and sign-out — shared by every role. `children` render first. */
@@ -32,7 +34,9 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
         </Row>
       </Card>
 
+      <GoogleCalendarCard />
       <CalendarSyncCard />
+      <WhatsAppCard />
 
       {settings.data ? (
         <Section title="Policies">

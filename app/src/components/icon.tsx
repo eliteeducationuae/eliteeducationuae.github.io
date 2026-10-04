@@ -43,6 +43,11 @@ const ICONS = {
   mail: { ios: 'envelope.fill', android: 'mail', web: 'mail' },
   drag: { ios: 'arrow.up.and.down', android: 'drag_indicator', web: 'drag_indicator' },
   search: { ios: 'magnifyingglass', android: 'search', web: 'search' },
+  attach: { ios: 'paperclip', android: 'attach_file', web: 'attach_file' },
+  photo: { ios: 'photo', android: 'image', web: 'image' },
+  camera: { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' },
+  link: { ios: 'link', android: 'link', web: 'link' },
+  folder: { ios: 'folder.fill', android: 'folder', web: 'folder' },
 } satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

@@ -52,7 +52,15 @@
           "color": "#C9A84C"
         }
       ],
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Elite Education uses your photo library so you can hand in homework and share classwork.",
+          "cameraPermission": "Elite Education uses your camera so you can photograph homework to hand in.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
