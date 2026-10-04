@@ -314,3 +314,34 @@ export const useViewNotice = create<ViewNoticeState>((set) => ({
     set({ notice: null, at: 0 });
   },
 }));
+
+/**
+ * Raise the calm notice for an error that is an expected "View as" refusal. Returns true when it was one, so the
+ * caller can treat it as handled.
+ */
+export function flagViewError(err: unknown): boolean {
+  if (isViewOnlyError(err)) useViewNotice.getState().flag('view-only');
+  else if (isViewEndedError(err)) useViewNotice.getState().flag('ended');
+  else return false;
+  return true;
+}
+
+type RejectionTarget = {
+  addEventListener?: (type: 'unhandledrejection', listener: (e: { reason?: unknown; preventDefault(): void }) => void) => void;
+  removeEventListener?: (type: 'unhandledrejection', listener: (e: { reason?: unknown; preventDefault(): void }) => void) => void;
+};
+
+/**
+ * On the web, a screen that awaits a refused change without catching it (for example a mutateAsync in a button
+ * handler) would otherwise surface the refusal as an uncaught error. While viewing, a refusal is expected and is
+ * already shown as the calm notice, so it is marked as handled here. Any other rejection is left alone.
+ * Returns a function that removes the listener. Does nothing where there is no window (native, tests).
+ */
+export function handleViewRejections(target: RejectionTarget | undefined = globalThis as RejectionTarget): () => void {
+  if (!target || typeof target.addEventListener !== 'function') return () => undefined;
+  const listener = (e: { reason?: unknown; preventDefault(): void }) => {
+    if (flagViewError(e.reason)) e.preventDefault();
+  };
+  target.addEventListener('unhandledrejection', listener);
+  return () => target.removeEventListener?.('unhandledrejection', listener);
+}

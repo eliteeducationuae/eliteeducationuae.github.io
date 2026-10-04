@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createDemoSource } from '../demo';
 import type { DataSource } from '../source';
 import {
+  handleViewRejections,
   isViewEndedError,
   isViewOnlyError,
   minutesLeft,
@@ -12,6 +13,7 @@ import {
   VIEW_ONLY_MESSAGE,
   ViewOnlyError,
   viewTargetsFor,
+  useViewNotice,
   type ViewTarget,
 } from '../view-as';
 
@@ -181,3 +183,50 @@ describe('minutesLeft', () => {
 
 // Keep the AsyncStorage import used, so the mock above is the module the demo source sees.
 void AsyncStorage;
+
+describe('handleViewRejections', () => {
+  type Listener = (e: { reason?: unknown; preventDefault(): void }) => void;
+  const fakeWindow = () => {
+    const listeners: Listener[] = [];
+    return {
+      listeners,
+      addEventListener: (_type: 'unhandledrejection', l: Listener) => void listeners.push(l),
+      removeEventListener: (_type: 'unhandledrejection', l: Listener) => void listeners.splice(listeners.indexOf(l), 1),
+      reject(reason: unknown) {
+        let prevented = false;
+        for (const l of listeners) l({ reason, preventDefault: () => (prevented = true) });
+        return prevented;
+      },
+    };
+  };
+
+  beforeEach(() => useViewNotice.getState().clear());
+
+  it('marks an uncaught view-only refusal as handled and raises the calm notice', () => {
+    const w = fakeWindow();
+    const remove = handleViewRejections(w);
+    expect(w.reject(new ViewOnlyError())).toBe(true);
+    expect(useViewNotice.getState().notice).toBe('view-only');
+    remove();
+    expect(w.listeners).toHaveLength(0);
+  });
+
+  it('treats an ended view the same way', () => {
+    const w = fakeWindow();
+    handleViewRejections(w);
+    expect(w.reject(new Error(VIEW_ENDED_MESSAGE))).toBe(true);
+    expect(useViewNotice.getState().notice).toBe('ended');
+  });
+
+  it('leaves every other rejection alone', () => {
+    const w = fakeWindow();
+    handleViewRejections(w);
+    expect(w.reject(new Error('Network request failed'))).toBe(false);
+    expect(useViewNotice.getState().notice).toBeNull();
+  });
+
+  it('does nothing where there is no window', () => {
+    expect(() => handleViewRejections({})()).not.toThrow();
+    expect(() => handleViewRejections(undefined)()).not.toThrow();
+  });
+});
