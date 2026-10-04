@@ -99,15 +99,44 @@ export function checkoutInvoiceForm(o: {
   });
 }
 
-/** Checkout for a lesson bundle bought by a parent ("Buy more lessons"). The webhook creates the package. */
+/** What the parent was shown for a lesson package. Sent with the payment so the webhook fulfils exactly that. */
+export type OfferSnapshot = { name: string; lessons: number; price: number; serviceId?: string | null; vatRate: number };
+
+/** Metadata keys carrying an OfferSnapshot (Stripe metadata values are strings of up to 500 characters). */
+function offerMetadata(prefix: string, o: { offerId: string; familyId: string; snapshot: OfferSnapshot }): Record<string, string> {
+  const md: Record<string, string> = {
+    [`${prefix}[offer_id]`]: o.offerId,
+    [`${prefix}[family_id]`]: o.familyId,
+    [`${prefix}[offer_name]`]: o.snapshot.name.slice(0, 500),
+    [`${prefix}[offer_lessons]`]: String(o.snapshot.lessons),
+    [`${prefix}[offer_price]`]: String(o.snapshot.price),
+    [`${prefix}[offer_vat_rate]`]: String(o.snapshot.vatRate),
+  };
+  if (o.snapshot.serviceId) md[`${prefix}[offer_service_id]`] = o.snapshot.serviceId;
+  return md;
+}
+
+/**
+ * Checkout for a lesson package bought by a parent ("Buy more lessons"). The webhook creates the package from the
+ * snapshot in the metadata, so a change to the offer while the parent is paying never changes what they get.
+ */
 export function checkoutOfferForm(o: {
-  offer: { id: string; name: string; lessons: number };
+  offer: { id: string; name: string; lessons: number; price: number | string; service_id?: string | null };
+  vatRate: number | string;
   amountFils: number;
   customerId: string;
   familyId: string;
   appUrl: string;
 }): URLSearchParams {
   const name = `Elite Education: ${o.offer.name} (${o.offer.lessons} lessons)`;
+  const snapshot: OfferSnapshot = {
+    name: o.offer.name,
+    lessons: Number(o.offer.lessons),
+    price: Number(o.offer.price),
+    serviceId: o.offer.service_id ?? null,
+    vatRate: Number(o.vatRate || 0),
+  };
+  const meta = { offerId: o.offer.id, familyId: o.familyId, snapshot };
   return new URLSearchParams({
     mode: 'payment',
     customer: o.customerId,
@@ -117,11 +146,9 @@ export function checkoutOfferForm(o: {
     'line_items[0][price_data][product_data][name]': name,
     'payment_intent_data[setup_future_usage]': 'off_session',
     'payment_intent_data[description]': name,
-    'payment_intent_data[metadata][offer_id]': o.offer.id,
-    'payment_intent_data[metadata][family_id]': o.familyId,
+    ...offerMetadata('payment_intent_data[metadata]', meta),
     'payment_method_data[allow_redisplay]': 'always',
-    'metadata[offer_id]': o.offer.id,
-    'metadata[family_id]': o.familyId,
+    ...offerMetadata('metadata', meta),
     success_url: `${o.appUrl}/parent/billing?topup=1`,
     cancel_url: `${o.appUrl}/parent/billing`,
   });
@@ -135,6 +162,8 @@ export function offSessionIntentForm(o: {
   amountFils: number;
   customerId: string;
   paymentMethodId: string;
+  /** invoices.autopay_attempts for this charge: a late failure from an earlier attempt is then ignored. */
+  attempt: number;
 }): URLSearchParams {
   return new URLSearchParams({
     amount: String(o.amountFils),
@@ -149,6 +178,7 @@ export function offSessionIntentForm(o: {
     'metadata[invoice_id]': o.invoiceId,
     'metadata[family_id]': o.familyId,
     'metadata[autopay]': '1',
+    'metadata[autopay_attempt]': String(o.attempt),
   });
 }
 
@@ -221,9 +251,30 @@ export function describeStripeError(err: unknown): string {
 }
 
 export type ClassifiedEvent =
-  | { kind: 'invoice-paid'; invoiceId: string; amount: number; paymentIntent: string; sessionId?: string; customerId?: string; paymentMethodId?: string }
-  | { kind: 'offer-paid'; offerId: string; familyId: string; amount: number; paymentIntent: string; sessionId?: string; customerId?: string; paymentMethodId?: string }
-  | { kind: 'payment-failed'; invoiceId: string; message: string; autopay: boolean }
+  | {
+      kind: 'invoice-paid';
+      invoiceId: string;
+      amount: number;
+      paymentIntent: string;
+      /** A charge on the saved card made by autopay (recorded as "Autopay"). */
+      autopay: boolean;
+      sessionId?: string;
+      customerId?: string;
+      paymentMethodId?: string;
+    }
+  | {
+      kind: 'offer-paid';
+      offerId: string;
+      familyId: string;
+      amount: number;
+      paymentIntent: string;
+      /** What the parent was shown at Checkout; absent for payments started before it was sent. */
+      snapshot?: OfferSnapshot;
+      sessionId?: string;
+      customerId?: string;
+      paymentMethodId?: string;
+    }
+  | { kind: 'payment-failed'; invoiceId: string; message: string; autopay: boolean; attempt?: number }
   | { kind: 'card-changed'; customerId: string }
   | { kind: 'ignore' };
 
@@ -240,11 +291,30 @@ function paid(
   if (!paymentIntent || !(amount > 0)) return IGNORE;
   const clean = Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) as typeof extra;
   const invoiceId = str(md.invoice_id);
-  if (invoiceId) return { kind: 'invoice-paid', invoiceId, amount, paymentIntent, ...clean };
+  if (invoiceId) return { kind: 'invoice-paid', invoiceId, amount, paymentIntent, autopay: md.autopay === '1', ...clean };
   const offerId = str(md.offer_id);
   const familyId = str(md.family_id);
-  if (offerId && familyId) return { kind: 'offer-paid', offerId, familyId, amount, paymentIntent, ...clean };
+  if (offerId && familyId) {
+    const snapshot = offerSnapshot(md);
+    return { kind: 'offer-paid', offerId, familyId, amount, paymentIntent, ...(snapshot ? { snapshot } : {}), ...clean };
+  }
   return IGNORE;
+}
+
+/** The OfferSnapshot in a payment's metadata, or undefined when it is missing or incomplete. */
+function offerSnapshot(md: Obj): OfferSnapshot | undefined {
+  const name = str(md.offer_name)?.trim();
+  const lessons = Number(md.offer_lessons);
+  const price = Number(md.offer_price);
+  const vatRate = Number(md.offer_vat_rate ?? 0);
+  if (!name || !Number.isInteger(lessons) || lessons <= 0 || !(price > 0) || !Number.isFinite(vatRate) || vatRate < 0) return undefined;
+  return { name, lessons, price, serviceId: str(md.offer_service_id) ?? null, vatRate };
+}
+
+/** A positive whole number from metadata, else undefined. */
+function wholeNumber(v: unknown): number | undefined {
+  const n = Number(v);
+  return typeof v === 'string' && Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 /** Turns a verified Stripe webhook event into the one thing the app needs to do about it. */
@@ -261,7 +331,14 @@ export function classifyEvent(event: unknown): ClassifiedEvent {
       const md = isObj(o.metadata) ? o.metadata : {};
       const invoiceId = str(md.invoice_id);
       if (!invoiceId) return IGNORE;
-      return { kind: 'payment-failed', invoiceId, message: describeStripeError(o.last_payment_error), autopay: md.autopay === '1' };
+      const attempt = wholeNumber(md.autopay_attempt);
+      return {
+        kind: 'payment-failed',
+        invoiceId,
+        message: describeStripeError(o.last_payment_error),
+        autopay: md.autopay === '1',
+        ...(attempt ? { attempt } : {}),
+      };
     }
     case 'payment_method.attached': {
       const customerId = ref(o.customer);

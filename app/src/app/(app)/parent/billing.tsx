@@ -1,5 +1,5 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { InvoiceCard, PackageCard } from '@/components/billing';
@@ -21,11 +21,14 @@ export default function ParentBilling() {
   const offers = usePackageOffers();
   const services = useServices();
   const settings = useSettings();
-  const toppedUp = topup === '1';
+  // Read once: the thank-you stays for this visit, but the address is cleared so a reload does not show it again.
+  const [toppedUp] = useState(() => topup === '1');
 
   // Back from Stripe Checkout after a top-up: the webhook may land a moment later, so look again once.
   useEffect(() => {
     if (!toppedUp) return;
+    // Drop ?topup=1 from the address. The tab screen stays mounted, so the banner stays for this visit.
+    router.replace('/parent/billing');
     void queryClient.invalidateQueries({ queryKey: ['packages'] });
     void queryClient.invalidateQueries({ queryKey: ['invoices'] });
     void queryClient.invalidateQueries({ queryKey: ['families'] });

@@ -35,18 +35,25 @@ Deno.serve(async (req) => {
           p_amount: event.amount,
           p_payment_intent: event.paymentIntent,
           p_session_id: event.sessionId ?? null,
+          p_autopay: event.autopay,
         });
         if (error) return new Response(error.message, { status: 500 });
         await rememberCard(event.customerId, event.paymentMethodId);
         break;
       }
       case 'offer-paid': {
+        // Fulfilled from what the parent was shown at Checkout, even if the offer has since been hidden or deleted.
         const { error } = await db.rpc('fulfil_package_offer', {
           p_family_id: event.familyId,
           p_offer_id: event.offerId,
           p_amount: event.amount,
           p_payment_intent: event.paymentIntent,
           p_session_id: event.sessionId ?? null,
+          p_name: event.snapshot?.name ?? null,
+          p_lessons: event.snapshot?.lessons ?? null,
+          p_price: event.snapshot?.price ?? null,
+          p_service_id: event.snapshot?.serviceId ?? null,
+          p_vat_rate: event.snapshot?.vatRate ?? null,
         });
         if (error) return new Response(error.message, { status: 500 });
         await rememberCard(event.customerId, event.paymentMethodId);
@@ -55,7 +62,12 @@ Deno.serve(async (req) => {
       case 'payment-failed': {
         // Declines inside Checkout are shown to the parent there and they can try again, so only autopay is reported.
         if (!event.autopay) break;
-        const { error } = await db.rpc('autopay_failed', { p_invoice_id: event.invoiceId, p_message: event.message });
+        // The database ignores failures that arrive late: for an earlier attempt, or once the invoice is paid or void.
+        const { error } = await db.rpc('autopay_failed', {
+          p_invoice_id: event.invoiceId,
+          p_message: event.message,
+          p_attempt: event.attempt ?? null,
+        });
         if (error) return new Response(error.message, { status: 500 });
         break;
       }

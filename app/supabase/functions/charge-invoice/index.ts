@@ -33,10 +33,22 @@ async function caller(req: Request): Promise<'schedule' | 'admin' | null> {
   return profile?.role === 'admin' ? 'admin' : null;
 }
 
-async function failed(db: Db, invoiceId: string, message: string): Promise<Result> {
-  const { error } = await db.rpc('autopay_failed', { p_invoice_id: invoiceId, p_message: message });
+/**
+ * Records a failed attempt. tellFamily = false when Stripe could not be reached, so it is not known whether the card
+ * was charged: the office is asked to check, and the family is never told a payment failed that may have succeeded.
+ */
+async function failed(db: Db, invoiceId: string, attempt: number, message: string, tellFamily = true): Promise<Result> {
+  const { error } = await db.rpc('autopay_failed', {
+    p_invoice_id: invoiceId,
+    p_message: message,
+    p_attempt: attempt,
+    p_tell_family: tellFamily,
+  });
   return { invoiceId, status: 'failed', error: error ? error.message : message };
 }
+
+/** Stripe could not be reached. */
+const UNREACHABLE = 'The card processor could not be reached, so it is not yet known whether the payment went through.';
 
 // deno-lint-ignore no-explicit-any
 async function charge(db: Db, inv: any): Promise<Result> {
@@ -69,31 +81,41 @@ async function charge(db: Db, inv: any): Promise<Result> {
     .maybeSingle();
   if (!claimed) return { invoiceId: id, status: 'skipped', error: 'This invoice is already being charged.' };
 
-  if (!billing.stripe_customer_id) return await failed(db, id, NO_CARD);
+  const attempt: number = claimed.autopay_attempts;
+  if (!billing.stripe_customer_id) return await failed(db, id, attempt, NO_CARD);
   let card: { id: string } | null;
   try {
     card = await defaultCard(billing.stripe_customer_id);
   } catch {
-    return await failed(db, id, describeStripeError(null));
+    // Nothing was charged, but the family need not hear about an outage: the office checks and tries again.
+    return await failed(db, id, attempt, UNREACHABLE, false);
   }
-  if (!card) return await failed(db, id, NO_CARD);
+  if (!card) return await failed(db, id, attempt, NO_CARD);
 
+  const request = {
+    form: offSessionIntentForm({
+      invoiceId: id,
+      invoiceNumber: inv.number,
+      familyId: inv.family_id,
+      amountFils: balance,
+      customerId: billing.stripe_customer_id,
+      paymentMethodId: card.id,
+      attempt,
+    }),
+    idempotencyKey: autopayIdempotencyKey(id, attempt),
+  };
   let res;
   try {
-    res = await stripe('/payment_intents', {
-      form: offSessionIntentForm({
-        invoiceId: id,
-        invoiceNumber: inv.number,
-        familyId: inv.family_id,
-        amountFils: balance,
-        customerId: billing.stripe_customer_id,
-        paymentMethodId: card.id,
-      }),
-      idempotencyKey: autopayIdempotencyKey(id, claimed.autopay_attempts),
-    });
+    res = await stripe('/payment_intents', request);
   } catch {
-    // If Stripe did take the payment after all, the webhook records it and marks the invoice paid.
-    return await failed(db, id, describeStripeError(null));
+    // The request may or may not have reached Stripe. Sending the identical request with the same idempotency key
+    // is safe: Stripe returns the original result rather than charging again.
+    try {
+      res = await stripe('/payment_intents', request);
+    } catch {
+      // Still unknown. If Stripe did take the payment, the webhook records it and the office alert can be ignored.
+      return await failed(db, id, attempt, UNREACHABLE, false);
+    }
   }
 
   const pi = res.ok ? res.body : res.body?.error?.payment_intent;
@@ -103,13 +125,16 @@ async function charge(db: Db, inv: any): Promise<Result> {
       p_amount: Number(pi.amount_received ?? pi.amount ?? balance) / 100,
       p_payment_intent: pi.id,
       p_session_id: null,
+      p_autopay: true,
     });
     // The webhook (payment_intent.succeeded) records it too, so a database hiccup here is not lost.
     return error ? { invoiceId: id, status: 'processing', error: error.message } : { invoiceId: id, status: 'succeeded' };
   }
   if (res.ok && pi?.status === 'processing') return { invoiceId: id, status: 'processing' };
-  if (res.ok && pi?.status === 'requires_action') return await failed(db, id, describeStripeError({ code: 'authentication_required' }));
-  return await failed(db, id, describeStripeError(res.ok ? pi?.last_payment_error : res.body?.error));
+  if (res.ok && pi?.status === 'requires_action') return await failed(db, id, attempt, describeStripeError({ code: 'authentication_required' }));
+  // Stripe's own outages and rate limits (5xx, 429) say nothing about the card.
+  if (!res.ok && (res.status >= 500 || res.status === 429)) return await failed(db, id, attempt, UNREACHABLE, false);
+  return await failed(db, id, attempt, describeStripeError(res.ok ? pi?.last_payment_error : res.body?.error));
 }
 
 Deno.serve(async (req) => {

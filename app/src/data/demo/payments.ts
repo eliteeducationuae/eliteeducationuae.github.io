@@ -1,6 +1,6 @@
 import { invoiceTotals, newInvoiceDraft } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
-import { AUTOPAY_NO_CARD_MESSAGE, sortOffers, validateOffer } from '@/domain/payments';
+import { AUTOPAY_CHARGING_MESSAGE, AUTOPAY_NO_CARD_MESSAGE, sortOffers, validateOffer } from '@/domain/payments';
 import type { Family, Invoice, LessonPackage, PackageOffer, Profile, SavedCard } from '@/domain/types';
 
 import type { AutopayChargeResult, CardPaymentResult } from '../source';
@@ -22,11 +22,18 @@ function findFamily(db: DemoDB, familyId: string): Family {
   return family;
 }
 
-/** Record a card payment for whatever is still owed. */
-function payBalance(invoice: Invoice, reference: string, now: Date) {
+/** Record a card payment for whatever is still owed. Checkout payments carry no reference (production keeps only the Stripe id). */
+function payBalance(invoice: Invoice, reference: string | undefined, now: Date) {
   const { balance } = invoiceTotals(invoice);
   if (balance <= 0) return;
-  invoice.payments.push({ id: newId('pay'), invoiceId: invoice.id, amount: balance, method: 'card', reference, paidAt: now.toISOString() });
+  invoice.payments.push({
+    id: newId('pay'),
+    invoiceId: invoice.id,
+    amount: balance,
+    method: 'card',
+    ...(reference ? { reference } : {}),
+    paidAt: now.toISOString(),
+  });
   invoice.status = 'paid';
 }
 
@@ -72,7 +79,7 @@ export const pay = {
   buyOffer(db: DemoDB, viewer: Profile, offerId: string, now = new Date()): CardPaymentResult {
     if (viewer.role !== 'parent' || !viewer.familyId) throw new AccessError('Only a parent can buy lessons.');
     const offer = offersOf(db).find((o) => o.id === offerId);
-    if (!offer || !offer.active) throw new Error('This package is no longer available.');
+    if (!offer || !offer.active) throw new Error('This lesson package is no longer available.');
     const familyId = viewer.familyId;
     findFamily(db, familyId);
 
@@ -92,9 +99,28 @@ export const pay = {
     const invoice: Invoice = { ...newInvoiceDraft(familyId, items, db.settings, now), id: newId('inv'), status: 'sent' };
     db.settings.nextInvoiceNumber += 1;
     db.invoices.push(invoice);
-    payBalance(invoice, 'Demo card payment', now);
+    payBalance(invoice, undefined, now);
 
     pay.saveDemoCard(db, familyId);
+    return { paid: true };
+  },
+
+  /**
+   * Mirrors create-checkout for an invoice plus the webhook: a parent (or admin) pays the balance by card. An invoice
+   * autopay is charging cannot be paid; one autopay is waiting to charge is taken out of autopay first.
+   */
+  payInvoiceByCard(db: DemoDB, invoice: Invoice, now = new Date()): CardPaymentResult {
+    const stored = db.invoices.find((i) => i.id === invoice.id);
+    if (!stored) throw new Error('Invoice not found');
+    if (stored.status !== 'sent') throw new Error('This invoice is not payable');
+    if (stored.autopayStatus === 'processing') throw new Error(AUTOPAY_CHARGING_MESSAGE);
+    if (stored.autopayStatus === 'pending' || stored.autopayStatus === 'failed') {
+      stored.autopayStatus = undefined;
+      stored.autopayError = undefined;
+    }
+    if (invoiceTotals(stored).balance <= 0) throw new Error('Nothing left to pay');
+    payBalance(stored, undefined, now);
+    pay.saveDemoCard(db, stored.familyId);
     return { paid: true };
   },
 

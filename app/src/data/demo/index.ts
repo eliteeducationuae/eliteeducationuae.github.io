@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { invoiceTotals } from '@/domain/billing';
 import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
@@ -238,16 +237,13 @@ export function createDemoSource(): DataSource {
     listExpenses: () => read((d, v) => ops.expenses(d, v)),
     saveExpense: (e) => write((d, v) => ops.saveExpense(d, v, e)),
     deleteExpense: (id) => write((d, v) => ops.deleteExpense(d, v, id)),
-    async startCardPayment(invoiceId) {
+    startCardPayment: (invoiceId) =>
       // No real card processing in the demo: simulate a successful Stripe payment.
-      await write((d, v) => {
+      write((d, v) => {
         const invoice = q.invoices(d, v).find((i) => i.id === invoiceId);
         if (!invoice) throw new Error('Invoice not found');
-        cmd.recordPayment(d, v, invoiceId, invoiceTotals(invoice).balance, 'card', 'Demo card payment');
-        pay.saveDemoCard(d, invoice.familyId);
-      });
-      return { paid: true };
-    },
+        return pay.payInvoiceByCard(d, invoice);
+      }),
 
     // Card payments: saved cards, autopay and top-ups (no openBillingPortal: there is no Stripe in the demo)
     listPackageOffers: () => read((d, v) => pay.offers(d, v)),

@@ -1116,7 +1116,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return data;
     },
     async startCardPayment(invoiceId) {
-      const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };
+      // invokeResult shows the function's own message, e.g. when autopay is already charging this invoice.
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { invoiceId } }));
       return { url: data.url };
     },
 

@@ -1,12 +1,17 @@
 // Creates a Stripe Checkout session and returns its { url }.
 //   { invoiceId }  pays the balance of an invoice the caller can see (parent or admin).
-//   { offerId }    a parent buys a lesson bundle ("Buy more lessons"); the webhook adds the package.
+//   { offerId }    a parent buys a lesson package ("Buy more lessons"); the webhook adds the package.
+// Paying an invoice that autopay is waiting to charge takes it out of autopay first, so it is never charged twice.
 // The card is saved to the family's Stripe customer for next time (and for autopay, if the family turns it on).
 // Apple Pay and Google Pay appear automatically once switched on in the Stripe Dashboard.
 // Secrets: STRIPE_SECRET_KEY, APP_URL (where Stripe returns the parent afterwards).
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { checkoutInvoiceForm, checkoutOfferForm, invoiceBalanceFils, offerChargeFils } from '../_shared/stripe.ts';
 import { ensureCustomer, stripe } from '../_shared/stripe-api.ts';
+
+const CHARGING = 'Your saved card is being charged for this invoice. Please wait a moment and refresh.';
+
+const OFFER_GONE = 'This lesson package is no longer available.';
 
 const appUrl = () => (Deno.env.get('APP_URL') ?? 'https://eliteeducation.me').replace(/\/+$/, '');
 
@@ -15,7 +20,7 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
   const { data: inv, error } = await supabase
     .from('invoices')
-    .select('id, number, status, items, vat_rate, family_id, payments(amount)')
+    .select('id, number, status, items, vat_rate, family_id, autopay_status, payments(amount)')
     .eq('id', invoiceId)
     .single();
   if (error || !inv) return json({ error: 'Invoice not found' }, 404);
@@ -25,6 +30,18 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
 
   const admin = adminClient();
+  if (inv.autopay_status === 'processing') return json({ error: CHARGING }, 409);
+  if (inv.autopay_status === 'pending' || inv.autopay_status === 'failed') {
+    // Atomic: whichever comes first, this or the autopay run (which claims 'pending' or 'failed' the same way), wins.
+    const { data: released } = await admin
+      .from('invoices')
+      .update({ autopay_status: null, autopay_error: null })
+      .eq('id', inv.id)
+      .eq('autopay_status', inv.autopay_status)
+      .select('id')
+      .maybeSingle();
+    if (!released) return json({ error: CHARGING }, 409);
+  }
   const { data: family, error: famError } = await admin.from('families').select('id, name, parent_name, email').eq('id', inv.family_id).single();
   if (famError || !family) return json({ error: 'Family not found' }, 404);
   const customerId = await ensureCustomer(admin, family);
@@ -43,8 +60,8 @@ async function offerCheckout(req: Request, offerId: string) {
   if (profile?.role !== 'parent' || !profile.family_id) return json({ error: 'Only parents can buy lessons' }, 403);
 
   // Row-level security only shows parents active offers.
-  const { data: offer } = await supabase.from('package_offers').select('id, name, lessons, price, active').eq('id', offerId).maybeSingle();
-  if (!offer || !offer.active) return json({ error: 'This lesson bundle is no longer available.' }, 404);
+  const { data: offer } = await supabase.from('package_offers').select('id, name, lessons, price, service_id, active').eq('id', offerId).maybeSingle();
+  if (!offer || !offer.active) return json({ error: OFFER_GONE }, 404);
   const { data: settings } = await supabase.from('settings').select('vat_rate').eq('id', 1).single();
   const amount = offerChargeFils(offer.price, settings?.vat_rate ?? 0);
 
@@ -53,7 +70,7 @@ async function offerCheckout(req: Request, offerId: string) {
   if (error || !family) return json({ error: 'Family not found' }, 404);
   const customerId = await ensureCustomer(admin, family);
   const res = await stripe('/checkout/sessions', {
-    form: checkoutOfferForm({ offer, amountFils: amount, customerId, familyId: family.id, appUrl: appUrl() }),
+    form: checkoutOfferForm({ offer, vatRate: settings?.vat_rate ?? 0, amountFils: amount, customerId, familyId: family.id, appUrl: appUrl() }),
   });
   if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
   return json({ url: res.body.url });
@@ -65,7 +82,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
     if (typeof body?.offerId === 'string') return await offerCheckout(req, body.offerId);
-    return json({ error: 'Choose an invoice or a lesson bundle to pay for.' }, 400);
+    return json({ error: 'Choose an invoice or a lesson package to pay for.' }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

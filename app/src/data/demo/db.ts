@@ -70,7 +70,7 @@ export interface DemoDB {
   reportCycles: ReportCycle[];
   reports: StudentReport[];
   expenses: Expense[];
-  /** Card payments: lesson bundles parents can buy. Optional because databases saved before it lack the field. */
+  /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
 }
 

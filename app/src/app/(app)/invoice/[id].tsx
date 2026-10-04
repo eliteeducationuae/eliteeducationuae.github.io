@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
-import { AutopayBadge, AutopayNotice, ChargeSavedCardButton } from '@/components/payments';
+import { AutopayBadge, AutopayFailureNote, AutopayNotice, ChargeSavedCardButton } from '@/components/payments';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -12,7 +12,7 @@ import { useAction, useInvoice, useLookup, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { displayStatus, formatAED, invoiceTotals } from '@/domain/billing';
 import { formatDate } from '@/domain/dates';
-import { paymentLabel } from '@/domain/payments';
+import { autopayHoldsInvoice, paymentLabel } from '@/domain/payments';
 import type { PaymentMethod } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
@@ -38,6 +38,8 @@ export default function InvoicePage() {
   const status = displayStatus(inv);
   const s = INVOICE_STATUS[status];
   const payable = (inv.status === 'sent') && totals.balance > 0;
+  // While autopay is about to charge (or is charging) the saved card, other ways to pay are not offered.
+  const autopayHolds = payable && autopayHoldsInvoice(inv);
 
   async function payByCard() {
     const result = await pay.mutateAsync([inv!.id]);
@@ -52,7 +54,7 @@ export default function InvoicePage() {
   return (
     <Screen
       footer={
-        payable && me.role === 'parent' && inv.autopayStatus !== 'processing' ? (
+        payable && me.role === 'parent' && !autopayHolds ? (
           <Button title={`Pay ${formatAED(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
         ) : undefined
       }>
@@ -135,7 +137,25 @@ export default function InvoicePage() {
       ) : null}
 
       {me.role === 'parent' ? <AutopayNotice invoice={inv} payable={payable} /> : null}
-      {payable && settings.data?.bankDetails ? (
+      {me.role === 'parent' && payable && inv.autopayStatus === 'pending' ? (
+        <Button
+          title="Pay now instead"
+          variant="ghost"
+          size="sm"
+          style={{ alignSelf: 'flex-start' }}
+          loading={pay.isPending}
+          onPress={() =>
+            confirm(
+              'Pay now instead?',
+              `You will pay ${formatAED(totals.balance)} by card now, and autopay will not charge this invoice.`,
+              () => void payByCard().catch(() => undefined),
+              'Pay now',
+            )
+          }
+        />
+      ) : null}
+      {me.role === 'admin' ? <AutopayFailureNote invoice={inv} /> : null}
+      {payable && !autopayHolds && settings.data?.bankDetails ? (
         <Banner icon="money">Prefer bank transfer? {settings.data.bankDetails}. Please quote {inv.number}.</Banner>
       ) : null}
       <ErrorNote error={pay.error ?? setStatus.error} />

@@ -28,7 +28,9 @@ Deno.serve(async (req) => {
     }
 
     const appUrl = (Deno.env.get('APP_URL') ?? 'https://eliteeducation.me').replace(/\/+$/, '');
-    const res = await stripe('/billing_portal/sessions', { form: portalForm(billing.stripe_customer_id, `${appUrl}/parent/billing`) });
+    // Families come back to Billing; an admin comes back to the family they were looking after.
+    const returnUrl = profile?.role === 'admin' ? `${appUrl}/manage/family-edit?id=${encodeURIComponent(familyId)}` : `${appUrl}/parent/billing`;
+    const res = await stripe('/billing_portal/sessions', { form: portalForm(billing.stripe_customer_id, returnUrl) });
     if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
     return json({ url: res.body.url });
   } catch (e) {

@@ -1,6 +1,8 @@
 import {
   activeOffers,
   AUTOPAY_NO_CARD_MESSAGE,
+  autopayFailureReason,
+  autopayHoldsInvoice,
   autopayStatusText,
   canEnableAutopay,
   cardExpiryLabel,
@@ -130,5 +132,21 @@ describe('payment labels', () => {
     expect(paymentLabel({ method: 'card', reference: 'pi_3Abc123' })).toBe('Card');
     expect(paymentLabel({ method: 'card', reference: 'cs_test_a1' })).toBe('Card');
     expect(paymentLabel({ method: 'bank-transfer', reference: 'Bank transfer' })).toBe('Bank transfer');
+  });
+});
+
+describe('autopay on an invoice', () => {
+  it('holds the invoice while autopay is waiting or charging', () => {
+    expect(autopayHoldsInvoice({ autopayStatus: 'pending' })).toBe(true);
+    expect(autopayHoldsInvoice({ autopayStatus: 'processing' })).toBe(true);
+    expect(autopayHoldsInvoice({ autopayStatus: 'failed' })).toBe(false);
+    expect(autopayHoldsInvoice({ autopayStatus: 'succeeded' })).toBe(false);
+    expect(autopayHoldsInvoice({})).toBe(false);
+  });
+  it('reads the failure reason mid-sentence, as the family message does', () => {
+    expect(autopayFailureReason('Your card has expired.')).toBe('your card has expired');
+    expect(autopayFailureReason('  The security code for your card was not accepted. ')).toBe('the security code for your card was not accepted');
+    expect(autopayFailureReason('')).toBe('the card was declined');
+    expect(autopayFailureReason(undefined)).toBe('the card was declined');
   });
 });

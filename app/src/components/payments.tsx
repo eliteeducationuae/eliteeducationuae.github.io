@@ -10,6 +10,7 @@ import { formatAED } from '@/domain/billing';
 import {
   activeOffers,
   AUTOPAY_NO_CARD_MESSAGE,
+  autopayFailureReason,
   autopayStatusText,
   canEnableAutopay,
   cardExpiryLabel,
@@ -379,7 +380,7 @@ export function OfferForm({
           onPress={() =>
             confirm(
               'Delete this package?',
-              'Parents will no longer be able to buy it. Lessons already bought are not affected.',
+              'Parents will no longer be able to buy it. Lessons already bought, including any being paid for at this moment, are not affected.',
               async () => {
                 await remove.mutateAsync([existing.id]);
                 onDone();
@@ -413,20 +414,29 @@ export function AutopayBadge({ invoice }: { invoice: Invoice }) {
 export function AutopayNotice({ invoice, payable }: { invoice: Invoice; payable: boolean }) {
   if (!payable) return null;
   if (invoice.autopayStatus === 'failed') {
-    const reason = invoice.autopayError?.trim().replace(/\.$/, '') || 'the card was declined';
     return (
       <Banner tone="warning" icon="alert">
-        {`Autopay could not take this payment: ${reason}. Please pay by card below, or update your card under Manage cards in Billing.`}
+        {`Autopay could not take this payment: ${autopayFailureReason(invoice.autopayError)}. Please pay by card below, or update your card under Manage cards in Billing.`}
       </Banner>
     );
   }
   if (invoice.autopayStatus === 'pending') {
-    return <Txt variant="muted">This invoice will be paid automatically from your saved card.</Txt>;
+    return <Banner icon="card">This invoice will be paid automatically from your saved card. There is nothing you need to do.</Banner>;
   }
   if (invoice.autopayStatus === 'processing') {
-    return <Txt variant="muted">Your saved card is being charged for this invoice. This usually takes a few moments.</Txt>;
+    return <Banner icon="card">Your saved card is being charged for this invoice. This usually takes a few moments.</Banner>;
   }
   return null;
+}
+
+/** Admin: why the last autopay charge failed, to read before charging the card again. */
+export function AutopayFailureNote({ invoice }: { invoice: Invoice }) {
+  if (invoice.status !== 'sent' || invoice.autopayStatus !== 'failed') return null;
+  return (
+    <Banner tone="warning" icon="alert">
+      {`Autopay could not take this payment: ${autopayFailureReason(invoice.autopayError)}. The family has been asked to update their card or pay in the app.`}
+    </Banner>
+  );
 }
 
 /** Admin: charge an autopay family's saved card now, for a sent invoice that is still owed. */
@@ -439,6 +449,19 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
     (invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'failed') &&
     balance > 0;
   if (!eligible) return null;
+  const card = family?.savedCard ? cardLabel(family.savedCard) : 'the saved card';
+
+  async function run() {
+    try {
+      const result = await charge.mutateAsync([invoice.id]);
+      if (result.status === 'succeeded') notify('Payment taken', 'The saved card was charged and the payment has been recorded.');
+      else if (result.status === 'processing' || result.status === 'pending') notify('Payment still processing', 'The invoice will update once the card payment clears.');
+      else notify(result.error ? `The card was not charged: ${result.error}` : 'The card was not charged.');
+    } catch {
+      // Shown below by ErrorNote.
+    }
+  }
+
   return (
     <>
       <Button
@@ -446,16 +469,7 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
         icon="card"
         variant="secondary"
         loading={charge.isPending}
-        onPress={async () => {
-          try {
-            const result = await charge.mutateAsync([invoice.id]);
-            if (result.status === 'succeeded') notify('Payment taken', 'The saved card was charged and the payment has been recorded.');
-            else if (result.status === 'processing' || result.status === 'pending') notify('Payment still processing', 'The invoice will update once the card payment clears.');
-            else notify(result.error ? `The card was not charged: ${result.error}` : 'The card was not charged.');
-          } catch {
-            // Shown below by ErrorNote.
-          }
-        }}
+        onPress={() => confirm('Charge the saved card?', `${formatAED(balance)} will be taken from ${card} now.`, run, 'Charge card')}
       />
       <ErrorNote error={charge.error} />
     </>

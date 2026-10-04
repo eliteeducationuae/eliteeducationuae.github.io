@@ -1,5 +1,5 @@
 import { roundMoney } from './billing';
-import type { AutopayStatus, Family, PackageOffer, Payment, SavedCard, Service } from './types';
+import type { AutopayStatus, Family, Invoice, PackageOffer, Payment, SavedCard, Service } from './types';
 
 /** Card payments: saved cards, autopay and lesson top-ups. Pure helpers shared by every data source and screen. */
 
@@ -77,6 +77,27 @@ const AUTOPAY_STATUS_TEXT: Record<AutopayStatus, string> = {
 
 export function autopayStatusText(status: AutopayStatus): string {
   return AUTOPAY_STATUS_TEXT[status];
+}
+
+/**
+ * True while autopay is about to charge (pending) or is charging (processing) this invoice. The family is then not
+ * offered card or bank-transfer payment, so the invoice can never be paid twice.
+ */
+export function autopayHoldsInvoice(invoice: Pick<Invoice, 'autopayStatus'>): boolean {
+  return invoice.autopayStatus === 'pending' || invoice.autopayStatus === 'processing';
+}
+
+/** Shown when a family tries to pay an invoice while its saved card is being charged. Matches create-checkout. */
+export const AUTOPAY_CHARGING_MESSAGE = 'Your saved card is being charged for this invoice. Please wait a moment and refresh.';
+
+/**
+ * The reason an autopay charge failed, ready to follow a colon mid-sentence: 'your card has expired' (no capital,
+ * no full stop), as autopay_failed writes it in the family's message.
+ */
+export function autopayFailureReason(error?: string | null): string {
+  const reason = (error ?? '').trim().replace(/\.+$/, '').trim();
+  if (!reason) return 'the card was declined';
+  return reason.charAt(0).toLowerCase() + reason.slice(1);
 }
 
 export const MAX_OFFER_LESSONS = 200;

@@ -283,7 +283,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   return db;
 }
 
-/** Card payments: Fatima has a card on file (autopay off), and parents can top up from a few lesson bundles. */
+/** Card payments: Fatima has a card on file (autopay off), and parents can top up from a few lesson packages. */
 function seedPayments(db: DemoDB) {
   const mansoori = db.families.find((f) => f.id === 'f-mansoori');
   if (mansoori) {

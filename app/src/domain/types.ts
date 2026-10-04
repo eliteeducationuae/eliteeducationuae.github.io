@@ -474,7 +474,7 @@ export interface SavedCard {
 
 export type AutopayStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
 
-/** A lesson bundle parents can buy themselves by card. */
+/** A lesson package parents can buy themselves by card. */
 export interface PackageOffer {
   id: string;
   name: string;

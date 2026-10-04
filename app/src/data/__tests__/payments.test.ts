@@ -1,5 +1,5 @@
 import { invoiceTotals } from '@/domain/billing';
-import { AUTOPAY_NO_CARD_MESSAGE } from '@/domain/payments';
+import { AUTOPAY_CHARGING_MESSAGE, AUTOPAY_NO_CARD_MESSAGE, paymentLabel } from '@/domain/payments';
 import type { Profile } from '@/domain/types';
 
 import { AccessError, cmd, q } from '../demo/db';
@@ -125,7 +125,8 @@ describe('buyOffer (mirror create-checkout and the webhook)', () => {
     expect(invoice).toMatchObject({ familyId: 'f-mansoori', status: 'paid', vatRate: db.settings.vatRate, number: `INV-${number}` });
     expect(invoice.items).toEqual([{ description: 'IB Maths: ten lessons (10 lessons)', quantity: 1, unitPrice: 4050, packageId: pkg.id }]);
     expect(invoice.payments).toHaveLength(1);
-    expect(invoice.payments[0]).toMatchObject({ method: 'card', amount: invoiceTotals(invoice).total, reference: 'Demo card payment' });
+    expect(invoice.payments[0]).toMatchObject({ method: 'card', amount: invoiceTotals(invoice).total });
+    expect(paymentLabel(invoice.payments[0])).toBe('Card');
     expect(invoiceTotals(invoice).balance).toBe(0);
     expect(db.settings.nextInvoiceNumber).toBe(number + 1);
   });
@@ -210,6 +211,45 @@ describe('autopay (mirror the invoices trigger and charge-invoice)', () => {
     family(db, 'f-sharma').autopay = true;
     expect(pay.chargeSavedCard(db, admin, invoice.id, NOW)).toEqual({ status: 'skipped', error: 'This family has no saved card.' });
     expect(invoice.status).toBe('sent');
+  });
+});
+
+describe('payInvoiceByCard (mirror create-checkout for an invoice)', () => {
+  function sentInvoice(db: DB) {
+    addUnbilled(db, 'f-mansoori');
+    return cmd.invoiceUnbilled(db, who(db, 'admin'), 'f-mansoori', NOW)!;
+  }
+  it('pays the balance by card, shown simply as "Card"', () => {
+    const db = createSeed(NOW);
+    const invoice = sentInvoice(db);
+    expect(pay.payInvoiceByCard(db, invoice, NOW)).toEqual({ paid: true });
+    expect(invoice.status).toBe('paid');
+    expect(paymentLabel(invoice.payments.at(-1)!)).toBe('Card');
+  });
+  it('refuses while autopay is charging, so the family is never charged twice', () => {
+    const db = createSeed(NOW);
+    const invoice = sentInvoice(db);
+    invoice.autopayStatus = 'processing';
+    expect(() => pay.payInvoiceByCard(db, invoice, NOW)).toThrow(AUTOPAY_CHARGING_MESSAGE);
+    expect(invoice.payments).toHaveLength(0);
+  });
+  it('takes a waiting invoice out of autopay before paying, so autopay never charges it as well', () => {
+    const db = createSeed(NOW);
+    pay.setAutopay(db, who(db, 'admin'), 'f-mansoori', true);
+    const invoice = sentInvoice(db);
+    invoice.autopayStatus = 'pending';
+    pay.payInvoiceByCard(db, invoice, NOW);
+    expect(invoice).toMatchObject({ status: 'paid', autopayStatus: undefined });
+    expect(invoice.payments).toHaveLength(1);
+    // A later autopay run finds nothing to charge.
+    expect(pay.chargeSavedCard(db, who(db, 'admin'), invoice.id, NOW).status).toBe('skipped');
+    expect(invoice.payments).toHaveLength(1);
+  });
+  it('refuses an invoice with nothing to pay', () => {
+    const db = createSeed(NOW);
+    const invoice = sentInvoice(db);
+    pay.payInvoiceByCard(db, invoice, NOW);
+    expect(() => pay.payInvoiceByCard(db, invoice, NOW)).toThrow('not payable');
   });
 });
 

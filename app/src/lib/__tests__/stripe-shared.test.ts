@@ -95,9 +95,10 @@ describe('Checkout forms', () => {
     expect(invoice.get('cancel_url')).toBe('https://eliteeducationuae.github.io/app/invoice/inv-1');
   });
 
-  it('buys a lesson bundle', () => {
+  it('buys a lesson package', () => {
     const form = checkoutOfferForm({
-      offer: { id: 'off-1', name: 'Ten IB lessons', lessons: 10 },
+      offer: { id: 'off-1', name: 'Ten IB lessons', lessons: 10, price: '4000.00', service_id: 'svc-1' },
+      vatRate: '0.05',
       amountFils: 420000,
       customerId: 'cus_1',
       familyId: 'fam-1',
@@ -114,6 +115,14 @@ describe('Checkout forms', () => {
     expect(form.get('payment_intent_data[metadata][offer_id]')).toBe('off-1');
     expect(form.get('payment_intent_data[metadata][family_id]')).toBe('fam-1');
     expect(form.has('metadata[invoice_id]')).toBe(false);
+    // What the parent was shown travels with the payment, on both the session and the payment intent.
+    for (const prefix of ['metadata', 'payment_intent_data[metadata]']) {
+      expect(form.get(`${prefix}[offer_name]`)).toBe('Ten IB lessons');
+      expect(form.get(`${prefix}[offer_lessons]`)).toBe('10');
+      expect(form.get(`${prefix}[offer_price]`)).toBe('4000');
+      expect(form.get(`${prefix}[offer_service_id]`)).toBe('svc-1');
+      expect(form.get(`${prefix}[offer_vat_rate]`)).toBe('0.05');
+    }
     expect(form.get('success_url')).toBe('https://x.test/app/parent/billing?topup=1');
     expect(form.get('cancel_url')).toBe('https://x.test/app/parent/billing');
   });
@@ -128,6 +137,7 @@ describe('autopay and customer forms', () => {
       amountFils: 94500,
       customerId: 'cus_1',
       paymentMethodId: 'pm_1',
+      attempt: 2,
     });
     expect(Object.fromEntries(form)).toEqual({
       amount: '94500',
@@ -142,6 +152,7 @@ describe('autopay and customer forms', () => {
       'metadata[invoice_id]': 'inv-1',
       'metadata[family_id]': 'fam-1',
       'metadata[autopay]': '1',
+      'metadata[autopay_attempt]': '2',
     });
   });
   it('uses one idempotency key per attempt', () => {
@@ -222,14 +233,41 @@ describe('classifyEvent', () => {
           metadata: { invoice_id: 'inv-1', family_id: 'fam-1' },
         }),
       ),
-    ).toEqual({ kind: 'invoice-paid', invoiceId: 'inv-1', amount: 945, paymentIntent: 'pi_1', sessionId: 'cs_1', customerId: 'cus_1' });
+    ).toEqual({ kind: 'invoice-paid', invoiceId: 'inv-1', amount: 945, paymentIntent: 'pi_1', autopay: false, sessionId: 'cs_1', customerId: 'cus_1' });
   });
   it('ignores an unpaid Checkout session', () => {
     expect(classifyEvent(ev('checkout.session.completed', { id: 'cs_1', payment_status: 'unpaid', metadata: { invoice_id: 'inv-1' } }))).toEqual({
       kind: 'ignore',
     });
   });
-  it('reads a paid lesson bundle Checkout session', () => {
+  it('reads a paid lesson package Checkout session with what the parent was shown', () => {
+    const snapshot = { offer_name: 'Ten IB lessons', offer_lessons: '10', offer_price: '4000', offer_vat_rate: '0.05', offer_service_id: 'svc-1' };
+    expect(
+      classifyEvent(
+        ev('checkout.session.completed', {
+          id: 'cs_2',
+          payment_status: 'paid',
+          amount_total: 420000,
+          payment_intent: 'pi_2',
+          metadata: { offer_id: 'off-1', family_id: 'fam-1', ...snapshot },
+        }),
+      ),
+    ).toEqual({
+      kind: 'offer-paid',
+      offerId: 'off-1',
+      familyId: 'fam-1',
+      amount: 4200,
+      paymentIntent: 'pi_2',
+      sessionId: 'cs_2',
+      snapshot: { name: 'Ten IB lessons', lessons: 10, price: 4000, vatRate: 0.05, serviceId: 'svc-1' },
+    });
+    // An incomplete snapshot is left out, so the database falls back to the offer.
+    const partial = classifyEvent(
+      ev('payment_intent.succeeded', { id: 'pi_9', amount_received: 420000, metadata: { offer_id: 'off-1', family_id: 'fam-1', offer_name: 'X', offer_lessons: 'ten' } }),
+    );
+    expect(partial).toEqual({ kind: 'offer-paid', offerId: 'off-1', familyId: 'fam-1', amount: 4200, paymentIntent: 'pi_9' });
+  });
+  it('reads a paid lesson package Checkout session started before snapshots', () => {
     expect(
       classifyEvent(
         ev('checkout.session.completed', {
@@ -253,7 +291,7 @@ describe('classifyEvent', () => {
           metadata: { invoice_id: 'inv-1', family_id: 'fam-1', autopay: '1' },
         }),
       ),
-    ).toEqual({ kind: 'invoice-paid', invoiceId: 'inv-1', amount: 945, paymentIntent: 'pi_3', customerId: 'cus_1', paymentMethodId: 'pm_1' });
+    ).toEqual({ kind: 'invoice-paid', invoiceId: 'inv-1', amount: 945, paymentIntent: 'pi_3', autopay: true, customerId: 'cus_1', paymentMethodId: 'pm_1' });
     expect(
       classifyEvent(
         ev('payment_intent.succeeded', { id: 'pi_4', amount_received: 420000, customer: 'cus_1', payment_method: 'pm_1', metadata: { offer_id: 'off-1', family_id: 'fam-1' } }),
@@ -268,11 +306,14 @@ describe('classifyEvent', () => {
       classifyEvent(
         ev('payment_intent.payment_failed', {
           id: 'pi_6',
-          metadata: { invoice_id: 'inv-1', autopay: '1' },
+          metadata: { invoice_id: 'inv-1', autopay: '1', autopay_attempt: '3' },
           last_payment_error: { code: 'card_declined', decline_code: 'insufficient_funds' },
         }),
       ),
-    ).toEqual({ kind: 'payment-failed', invoiceId: 'inv-1', message: 'Your card has insufficient funds.', autopay: true });
+    ).toEqual({ kind: 'payment-failed', invoiceId: 'inv-1', message: 'Your card has insufficient funds.', autopay: true, attempt: 3 });
+    expect(
+      classifyEvent(ev('payment_intent.payment_failed', { id: 'pi_6b', metadata: { invoice_id: 'inv-1', autopay: '1', autopay_attempt: 'x' } })),
+    ).toEqual({ kind: 'payment-failed', invoiceId: 'inv-1', message: 'The payment could not be completed.', autopay: true });
     expect(classifyEvent(ev('payment_intent.payment_failed', { id: 'pi_7', metadata: { invoice_id: 'inv-1' } }))).toEqual({
       kind: 'payment-failed',
       invoiceId: 'inv-1',
