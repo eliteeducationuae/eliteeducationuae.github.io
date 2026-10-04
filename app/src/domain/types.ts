@@ -314,3 +314,140 @@ export interface Announcement {
   body: string;
   audience: Audience;
 }
+
+// ---------------------------------------------------------------------------
+// Running the business: roles, hiring, tutor pay, reports, expenses
+// ---------------------------------------------------------------------------
+
+export type OpportunityStatus = 'open' | 'awarded' | 'closed';
+
+/** A student placement tutors can express interest in. Pay is set by the business. */
+export interface Opportunity {
+  id: string;
+  createdAt: string;
+  title: string;
+  description?: string;
+  curriculum?: string;
+  syllabusId?: string;
+  studentId?: string;
+  enquiryId?: string;
+  schedule?: string;
+  location?: string;
+  /** AED per hour paid to the tutor. */
+  payRate: number;
+  closesOn?: string;
+  status: OpportunityStatus;
+  visibility: 'all' | 'invited';
+  invitedTutorIds: string[];
+  awardedTutorId?: string;
+  awardedAt?: string;
+}
+
+export type BidStatus = 'pending' | 'awarded' | 'declined' | 'withdrawn';
+
+export interface OpportunityBid {
+  id: string;
+  createdAt: string;
+  opportunityId: string;
+  tutorId: string;
+  pitch: string;
+  availability?: string;
+  status: BidStatus;
+}
+
+export type ApplicationStatus = 'applied' | 'interview' | 'offer' | 'hired' | 'rejected';
+
+export interface TutorApplication {
+  id: string;
+  createdAt: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  curricula: string[];
+  subjects?: string;
+  experience?: string;
+  qualifications?: string;
+  availability?: string;
+  cvPath?: string;
+  status: ApplicationStatus;
+  notes?: string;
+  tutorId?: string;
+}
+
+export interface PaymentDetails {
+  tutorId: string;
+  accountName: string;
+  bankName: string;
+  iban: string;
+  swift?: string;
+  updatedAt?: string;
+}
+
+export type TutorInvoiceStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid';
+
+export interface TutorInvoiceItem {
+  description: string;
+  /** Hours for lessons; any quantity for extras. */
+  quantity: number;
+  unitPrice: number;
+  lessonId?: string;
+}
+
+export interface TutorInvoice {
+  id: string;
+  createdAt: string;
+  tutorId: string;
+  number: string;
+  periodStart: string;
+  periodEnd: string;
+  status: TutorInvoiceStatus;
+  items: TutorInvoiceItem[];
+  notes?: string;
+  adminComment?: string;
+  submittedAt?: string;
+  approvedAt?: string;
+  paidAt?: string;
+  paymentReference?: string;
+}
+
+export interface ReportCycle {
+  id: string;
+  createdAt: string;
+  name: string;
+  startsOn: string;
+  dueDate: string;
+  status: 'open' | 'closed';
+}
+
+export type ReportStatus = 'draft' | 'submitted' | 'approved' | 'published';
+
+export interface StudentReport {
+  id: string;
+  cycleId: string;
+  studentId: string;
+  tutorId: string;
+  /** Working-at grade, e.g. "6" or "A". */
+  attainment?: string;
+  /** 1–5 */
+  effort?: number;
+  /** 1–5 */
+  progress?: number;
+  strengths?: string;
+  nextSteps?: string;
+  comment?: string;
+  status: ReportStatus;
+  aiAssisted: boolean;
+  updatedAt: string;
+  submittedAt?: string;
+  publishedAt?: string;
+}
+
+export interface Expense {
+  id: string;
+  date: string;
+  category: string;
+  description?: string;
+  amount: number;
+  vatAmount: number;
+  receiptPath?: string;
+}
