@@ -38,6 +38,17 @@ export default function SignedInLayout() {
       <Stack.Screen name="manage/enquiry/[id]" options={{ title: 'Enquiry' }} />
       <Stack.Screen name="manage/requests" options={{ title: 'Lesson requests' }} />
       <Stack.Screen name="manage/closures" options={{ title: 'Holidays & term breaks' }} />
+      <Stack.Screen name="manage/opportunities" options={{ title: 'Roles for tutors' }} />
+      <Stack.Screen name="manage/opportunity/[id]" options={{ title: 'Role' }} />
+      <Stack.Screen name="manage/opportunity-edit" options={{ title: 'Post a role', presentation: 'modal' }} />
+      <Stack.Screen name="manage/applications" options={{ title: 'Hiring' }} />
+      <Stack.Screen name="manage/application/[id]" options={{ title: 'Application' }} />
+      <Stack.Screen name="manage/tutor-invoices" options={{ title: 'Tutor invoices' }} />
+      <Stack.Screen name="opportunities/index" options={{ title: 'Opportunities' }} />
+      <Stack.Screen name="opportunities/[id]" options={{ title: 'Opportunity' }} />
+      <Stack.Screen name="tutor-invoices/index" options={{ title: 'My invoices' }} />
+      <Stack.Screen name="tutor-invoices/[id]" options={{ title: 'Invoice' }} />
+      <Stack.Screen name="payment-details" options={{ title: 'Payment details' }} />
       <Stack.Screen name="onboarding" options={{ title: 'Welcome' }} />
       <Stack.Screen name="book" options={{ title: 'Book a lesson', presentation: 'modal' }} />
       <Stack.Screen name="availability" options={{ title: 'Availability' }} />

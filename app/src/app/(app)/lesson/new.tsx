@@ -15,7 +15,7 @@ import { uuid } from '@/lib/id';
 type Repeat = 'once' | 'weekly' | 'fortnightly';
 
 export default function NewLesson() {
-  const params = useLocalSearchParams<{ date?: string; studentId?: string }>();
+  const params = useLocalSearchParams<{ date?: string; studentId?: string; tutorId?: string }>();
   const lookup = useLookup();
   const students = useStudents();
   const tutors = useTutors();
@@ -24,7 +24,7 @@ export default function NewLesson() {
 
   const initial = params.date ? new Date(params.date) : new Date();
   const [studentIds, setStudentIds] = useState<string[]>(params.studentId ? [params.studentId] : []);
-  const [tutorId, setTutorId] = useState<string | null>(null);
+  const [tutorId, setTutorId] = useState<string | null>(params.tutorId ?? null);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [date, setDate] = useState(toDateKey(initial));
   const [time, setTime] = useState('16:00');

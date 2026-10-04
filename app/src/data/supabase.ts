@@ -899,6 +899,17 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(await client.from('expenses').delete().eq('id', id));
     },
 
+    async uploadFile(bucket, folder, file) {
+      const safe = file.name.replace(/[^\w.-]+/g, '_').slice(-80);
+      const path = `${folder}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+      const body = file.file ?? (await (await fetch(file.uri)).arrayBuffer());
+      check(await client.storage.from(bucket).upload(path, body, { contentType: file.mimeType, upsert: false }));
+      return path;
+    },
+    async fileUrl(bucket, path) {
+      const { data } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      return data?.signedUrl ?? null;
+    },
     async aiAssist(request) {
       // The AI service is optional: any failure (not deployed, no key, offline) returns null so callers use templates.
       const { data, error } = await client.functions.invoke('ai-assist', { body: request });

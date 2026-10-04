@@ -174,6 +174,9 @@ export function createDemoSource(): DataSource {
     markThreadRead: (familyId) => write((d, v) => eq.markRead(d, v, familyId)),
     listAnnouncements: () => read((d, v) => eq.announcements(d, v)),
     postAnnouncement: (a) => write((d, v) => eq.postAnnouncement(d, v, a)),
+    // Files aren't stored in the demo; keep the name so the flow can be tried.
+    uploadFile: async (_bucket, folder, file) => `${folder}/${file.name}`,
+    fileUrl: async () => null,
     listOpportunities: () => read((d, v) => ops.opportunities(d, v)),
     listBids: () => read((d, v) => ops.bids(d, v)),
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),

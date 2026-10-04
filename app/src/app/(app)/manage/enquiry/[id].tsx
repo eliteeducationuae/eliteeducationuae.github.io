@@ -110,6 +110,7 @@ function Detail({ e }: { e: Enquiry }) {
                   router.push({ pathname: '/lesson/new', params: { studentId: student.id } });
                 }}
               />
+              <Button title="Find a tutor (post role)" icon="school" size="sm" variant="secondary" onPress={() => router.push({ pathname: '/manage/opportunity-edit', params: { enquiryId: e.id, studentId: student.id } })} />
               <Button title="Student profile" size="sm" variant="secondary" onPress={() => router.push({ pathname: '/students/[id]', params: { id: student.id } })} />
               <Button title="Message" icon="chat" size="sm" variant="secondary" onPress={() => router.push({ pathname: '/messages/[familyId]', params: { familyId: family.id } })} />
             </Row>

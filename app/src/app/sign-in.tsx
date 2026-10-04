@@ -208,6 +208,7 @@ export default function SignIn() {
           <Txt variant="h3">Just want to ask a question?</Txt>
           <Txt variant="muted">Send us an enquiry and we’ll get back to you within one working day. No account needed.</Txt>
           <Button title="Send an enquiry" icon="doc" variant="secondary" onPress={() => router.push('/enquire')} />
+          <Button title="Are you a maths teacher? Teach with us" variant="ghost" size="sm" onPress={() => router.push('/apply')} />
         </Card>
       </Screen>
     </KeyboardAvoidingView>

@@ -198,8 +198,21 @@ export interface DataSource {
   saveExpense(e: Omit<Expense, 'id'> & { id?: string }): Promise<void>;
   deleteExpense(id: string): Promise<void>;
 
+  /** Upload a picked file to private storage. Returns the stored path. */
+  uploadFile?(bucket: 'applications' | 'receipts', folder: string, file: PickedFile): Promise<string>;
+  /** A short-lived link to view a stored file (admins). */
+  fileUrl?(bucket: 'applications' | 'receipts', path: string): Promise<string | null>;
+
   /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
   aiAssist?(request: AiRequest): Promise<AiResult | null>;
+}
+
+export interface PickedFile {
+  name: string;
+  uri: string;
+  mimeType?: string;
+  /** Present on web. */
+  file?: Blob;
 }
 
 export interface NewOpportunity {
