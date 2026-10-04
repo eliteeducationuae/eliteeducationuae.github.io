@@ -71,6 +71,8 @@ const MAX_VARIABLE_LENGTH = 300;
 /** Meta rejects empty, multi-line and 4+ space variables: make every value a tidy single line. */
 export function cleanVariable(v: unknown): string {
   const s = String(v ?? '')
+    // Template braces never pass through, so a value cannot add a placeholder of its own.
+    .replace(/\{\{|\}\}/g, '')
     .replace(/[\r\n\t\v\f]+/g, ' ')
     .replace(/ {2,}/g, ' ')
     .trim();

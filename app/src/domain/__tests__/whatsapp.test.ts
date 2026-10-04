@@ -30,8 +30,12 @@ describe('formatWhatsAppNumber', () => {
     expect(formatWhatsAppNumber('+971501234567')).toBe('+971 50 123 4567');
     expect(formatWhatsAppNumber('+97141234567')).toBe('+971 4 123 4567');
   });
-  it('leaves other numbers unchanged', () => {
-    expect(formatWhatsAppNumber('+447700900123')).toBe('+447700900123');
+  it('groups other numbers lightly after the country code', () => {
+    expect(formatWhatsAppNumber('+447700900123')).toBe('+44 770 090 0123');
+    expect(formatWhatsAppNumber('+12025550123')).toBe('+1 202 555 0123');
+    expect(formatWhatsAppNumber('+966501234567')).toBe('+966 50 123 4567');
+    expect(formatWhatsAppNumber('+33612345678')).toBe('+33 61 234 5678');
+    expect(formatWhatsAppNumber('not a number')).toBe('not a number');
   });
 });
 

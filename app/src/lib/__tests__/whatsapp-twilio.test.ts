@@ -80,6 +80,9 @@ describe('cleanVariable', () => {
     expect(cleanVariable('a     b')).toBe('a b');
     expect(cleanVariable('line one\r\n\r\nline two')).toBe('line one line two');
   });
+  it('removes template braces', () => {
+    expect(cleanVariable('Read {{4}} first')).toBe('Read 4 first');
+  });
   it('never sends an empty value', () => {
     expect(cleanVariable('')).toBe('-');
     expect(cleanVariable('   \n ')).toBe('-');

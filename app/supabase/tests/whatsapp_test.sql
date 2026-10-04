@@ -33,7 +33,7 @@ insert into public.profiles (id, role, full_name, email, tutor_id, family_id, st
   ('a0000000-0000-0000-0000-00000000000b', 'tutor', 'Tia Tutor', 'tutor@x', 'b0000000-0000-0000-0000-000000000001', null, null),
   ('a0000000-0000-0000-0000-00000000000c', 'parent', 'Mona Ahmed', 'mum@x', null, 'c0000000-0000-0000-0000-000000000001', null),
   ('a0000000-0000-0000-0000-00000000000d', 'parent', 'Karim Ahmed', 'dad@x', null, 'c0000000-0000-0000-0000-000000000001', null),
-  ('a0000000-0000-0000-0000-00000000000e', 'parent', 'Otto Other', 'other@x', null, 'c0000000-0000-0000-0000-000000000002', null),
+  ('a0000000-0000-0000-0000-00000000000e', 'parent', 'Mr Otto Other', 'other@x', null, 'c0000000-0000-0000-0000-000000000002', null),
   ('a0000000-0000-0000-0000-00000000000f', 'student', 'Sami Ahmed', 'sami@x', null, null, 'd0000000-0000-0000-0000-000000000001');
 insert into public.services (id, name, duration_min, rate) values ('e0000000-0000-0000-0000-000000000001', 'IB 1:1', 60, 450);
 
@@ -47,6 +47,17 @@ select pg_temp.check((select bool_and(public.whatsapp_template_body(t) is not nu
   from unnest(array['lesson_reminder', 'lesson_notes', 'invoice_sent', 'invoice_overdue', 'homework_due']) t),
   'all five templates exist, carry the footer and contain no apostrophes');
 select pg_temp.check(public.whatsapp_template_body('nope') is null, 'unknown templates have no body');
+select pg_temp.check(public.whatsapp_clean('Read {{4}} and {{1}}') = 'Read 4 and 1', 'variables cannot carry placeholders of their own');
+select pg_temp.check(public.whatsapp_preview('homework_due', jsonb_build_object('4', public.whatsapp_clean('{{2}}'))) like '%: 2. Elite%',
+  'cleaned values are not substituted twice');
+select pg_temp.check(public.whatsapp_join_names('{}') = '' and public.whatsapp_join_names('{Omar}') = 'Omar'
+  and public.whatsapp_join_names('{Omar,Layla}') = 'Omar and Layla'
+  and public.whatsapp_join_names('{Omar,Layla,Sami}') = 'Omar, Layla and Sami', 'names are joined in house style');
+select pg_temp.check(public.whatsapp_first_name('Mrs Mona Al Mansoori') = 'Mona' and public.whatsapp_first_name('Dr. Sarah Khan') = 'Sarah'
+  and public.whatsapp_first_name('Sheikha Fatima') = 'Fatima' and public.whatsapp_first_name('mr  omar') = 'omar'
+  and public.whatsapp_first_name('Mona Ahmed') = 'Mona' and public.whatsapp_first_name('  ') = ''
+  and public.whatsapp_first_name(null) = '' and public.whatsapp_first_name('Misha Roy') = 'Misha',
+  'greetings use the first name without an honorific');
 
 -- Opting in --------------------------------------------------------------------
 set role authenticated;
@@ -183,8 +194,8 @@ select pg_temp.as_user('a0000000-0000-0000-0000-00000000000b');
 select public.complete_lesson('f0000000-0000-0000-0000-000000000001', 'completed', '{}', 'Vectors: dot product', null, '{}', '[]', '[]');
 reset role;
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_template = 'lesson_notes') = 1
-  and (select body = 'Dear Mona, the lesson notes for Sami & Lina from 1 Oct are now ready in the Elite Education app. Elite Education | eliteeducation.me'
-      and whatsapp_vars = '{"1":"Mona","2":"Sami & Lina","3":"1 Oct"}'::jsonb and url = '/lesson/f0000000-0000-0000-0000-000000000001'
+  and (select body = 'Dear Mona, the lesson notes for Sami and Lina from 1 Oct are now ready in the Elite Education app. Elite Education | eliteeducation.me'
+      and whatsapp_vars = '{"1":"Mona","2":"Sami and Lina","3":"1 Oct"}'::jsonb and url = '/lesson/f0000000-0000-0000-0000-000000000001'
     from pg_temp.wa('a0000000-0000-0000-0000-00000000000c', 'lesson_notes')), 'completing a lesson sends the notes WhatsApp to the opted-in parent');
 insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location, status) values
   ('f0000000-0000-0000-0000-000000000009', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}',
@@ -193,8 +204,8 @@ insert into public.lesson_notes (lesson_id, summary) values ('f0000000-0000-0000
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_template = 'lesson_notes') = 1,
   'no-show lessons send no notes WhatsApp');
 
--- Daily reminders at 08:00 Dubai on Tuesday 6 October 2026 ------------------------------
--- Lessons: 16:00 today (Sami & Ollie, two families), 30 hours away, and 1 hour away.
+-- Reminders on Tuesday 6 October 2026 (Dubai): 00:30, 07:30, 08:30 and 09:30 ---------------
+-- Lessons: 16:00 today (Sami and Ollie, two families), Wednesday 14:00 (too far ahead), and 09:30 today (too soon at 08:30).
 insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location) values
   ('f0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001',
    '{d0000000-0000-0000-0000-000000000001,d0000000-0000-0000-0000-000000000002}', 'e0000000-0000-0000-0000-000000000001',
@@ -202,7 +213,7 @@ insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end
   ('f0000000-0000-0000-0000-000000000003', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}',
    'e0000000-0000-0000-0000-000000000001', '2026-10-07 14:00+04', '2026-10-07 15:00+04', 'online'),
   ('f0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}',
-   'e0000000-0000-0000-0000-000000000001', '2026-10-06 09:00+04', '2026-10-06 10:00+04', 'online');
+   'e0000000-0000-0000-0000-000000000001', '2026-10-06 09:30+04', '2026-10-06 10:30+04', 'online');
 -- Invoices: due yesterday (sent), due 40 days ago (sent), due yesterday (paid). Inserting the two sent ones queues invoice_sent for Mona.
 insert into public.invoices (id, number, family_id, issue_date, due_date, status, items) values
   ('10000000-0000-0000-0000-000000000043', 'INV-0043', 'c0000000-0000-0000-0000-000000000001', '2026-09-28', '2026-10-05', 'sent',
@@ -211,38 +222,63 @@ insert into public.invoices (id, number, family_id, issue_date, due_date, status
    '[{"description":"IB 1:1","quantity":1,"unitPrice":450}]'),
   ('10000000-0000-0000-0000-000000000045', 'INV-0045', 'c0000000-0000-0000-0000-000000000002', '2026-09-28', '2026-10-05', 'paid',
    '[{"description":"IB 1:1","quantity":1,"unitPrice":450}]');
+-- INV-0043 has been part paid: 200 of 450.
+insert into public.payments (invoice_id, amount, method) values ('10000000-0000-0000-0000-000000000043', 200, 'bank-transfer');
 -- Homework: due tomorrow (not done), due tomorrow (done).
 insert into public.homework (id, student_id, title, due_date, done) values
   ('20000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', E'Ex 13A:\nvectors  questions 1-5', '2026-10-07', false),
   ('20000000-0000-0000-0000-000000000002', 'd0000000-0000-0000-0000-000000000002', 'Past paper', '2026-10-07', true);
 
+select pg_temp.check((select status from public.invoices where number = 'INV-0043') = 'sent', 'a part-paid invoice stays sent');
 select count(*) as before_rows from public.notification_outbox \gset
+
+-- Just after midnight nothing is sent and nothing is marked, so the items wait for the day.
 set role service_role;
-select public.queue_whatsapp_reminders('2026-10-06 08:00+04') as queued \gset
+select public.queue_whatsapp_reminders('2026-10-06 00:30+04') as midnight \gset
+select public.queue_whatsapp_reminders('2026-10-06 07:30+04') as early \gset
 reset role;
--- Tutor + Mona + Otto for the lesson, Mona for the overdue invoice, Mona for the homework.
-select pg_temp.check(:queued = 5, 'the reminder run queues five WhatsApp messages (got ' || :queued || ')');
-select pg_temp.check((select count(*) from public.notification_outbox) = :before_rows + 5, 'and the outbox grows by five');
-select pg_temp.check((select whatsapp_vars = '{"1":"Tia","2":"Sami & Ollie","3":"you","4":"Tue 6 Oct, 16:00"}'::jsonb
-    and body = 'Dear Tia, this is a reminder that Sami & Ollie has a lesson with you on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
+select pg_temp.check(:midnight = 0 and :early = 0 and (select count(*) from public.notification_outbox) = :before_rows,
+  'nothing is queued at 00:30 or 07:30 UAE time');
+select pg_temp.check(not exists (select 1 from public.lessons where whatsapp_reminded_at is not null)
+  and not exists (select 1 from public.invoices where overdue_whatsapp_at is not null)
+  and not exists (select 1 from public.homework where due_whatsapp_at is not null), 'and nothing is marked as reminded');
+
+-- 08:30: lesson reminders only (tutor, Mona and Otto); the overdue chase and homework wait until 09:00.
+set role service_role;
+select public.queue_whatsapp_reminders('2026-10-06 08:30+04') as lessons_run \gset
+reset role;
+select pg_temp.check(:lessons_run = 3 and (select count(*) from public.notification_outbox where whatsapp
+    and whatsapp_template in ('invoice_overdue', 'homework_due')) = 0
+  and not exists (select 1 from public.invoices where overdue_whatsapp_at is not null)
+  and not exists (select 1 from public.homework where due_whatsapp_at is not null),
+  'at 08:30 lessons are reminded but invoices and homework are held back (got ' || :lessons_run || ')');
+
+-- 09:30: Mona for the overdue invoice and Mona for the homework.
+set role service_role;
+select public.queue_whatsapp_reminders('2026-10-06 09:30+04') as day_run \gset
+reset role;
+select pg_temp.check(:day_run = 2, 'the 09:30 run queues the overdue chase and the homework reminder (got ' || :day_run || ')');
+select pg_temp.check((select count(*) from public.notification_outbox) = :before_rows + 5, 'and the outbox grows by five in all');
+select pg_temp.check((select whatsapp_vars = '{"1":"Tia","2":"Sami and Ollie","3":"you","4":"Tue 6 Oct, 16:00"}'::jsonb
+    and body = 'Dear Tia, this is a reminder that Sami and Ollie has a lesson with you on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
     and whatsapp_to = '+971500000001' and url = '/lesson/f0000000-0000-0000-0000-000000000002'
   from pg_temp.wa('a0000000-0000-0000-0000-00000000000b', 'lesson_reminder')), 'the tutor is reminded of their lesson');
 select pg_temp.check((select whatsapp_vars = '{"1":"Mona","2":"Sami","3":"Tia Tutor","4":"Tue 6 Oct, 16:00"}'::jsonb
     and body = 'Dear Mona, this is a reminder that Sami has a lesson with Tia Tutor on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
   from pg_temp.wa('a0000000-0000-0000-0000-00000000000c', 'lesson_reminder')), 'the parent is reminded with the tutor name and Dubai time');
-select pg_temp.check((select whatsapp_vars->>'2' = 'Ollie' and whatsapp_to = '+447700900123'
-  from pg_temp.wa('a0000000-0000-0000-0000-00000000000e', 'lesson_reminder')), 'each family hears only about its own children');
+select pg_temp.check((select whatsapp_vars->>'1' = 'Otto' and whatsapp_vars->>'2' = 'Ollie' and whatsapp_to = '+447700900123'
+  from pg_temp.wa('a0000000-0000-0000-0000-00000000000e', 'lesson_reminder')), 'each family hears only about its own children, greeted without an honorific');
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_template = 'lesson_reminder'
   and url <> '/lesson/f0000000-0000-0000-0000-000000000002') = 0, 'lessons 30 hours or 1 hour away are not reminded');
 select pg_temp.check((select whatsapp_reminded_at is null from public.lessons where id = 'f0000000-0000-0000-0000-000000000003')
   and (select whatsapp_reminded_at is null from public.lessons where id = 'f0000000-0000-0000-0000-000000000004')
-  and (select whatsapp_reminded_at = '2026-10-06 08:00+04' from public.lessons where id = 'f0000000-0000-0000-0000-000000000002'),
+  and (select whatsapp_reminded_at = '2026-10-06 08:30+04' from public.lessons where id = 'f0000000-0000-0000-0000-000000000002'),
   'only the lesson in the window is marked as reminded');
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_template = 'invoice_overdue') = 1
-  and (select body = 'Dear Mona, invoice INV-0043 for AED 450.00 was due on 5 Oct 2026 and remains unpaid. You may view and pay it in the Elite Education app. If you have already paid, please disregard this message. Elite Education | eliteeducation.me'
+  and (select body = 'Dear Mona, invoice INV-0043 for AED 250.00 was due on 5 Oct 2026 and remains unpaid. You may view and pay it in the Elite Education app. If you have already paid, please disregard this message. Elite Education | eliteeducation.me'
       and url = '/invoice/10000000-0000-0000-0000-000000000043'
     from pg_temp.wa('a0000000-0000-0000-0000-00000000000c', 'invoice_overdue')),
-  'an invoice due yesterday is chased; one 40 days late and a paid one are not');
+  'an invoice due yesterday is chased for the balance still owed; one 40 days late and a paid one are not');
 select pg_temp.check((select overdue_whatsapp_at is not null from public.invoices where number = 'INV-0043')
   and (select overdue_whatsapp_at is null from public.invoices where number = 'INV-0044'), 'only the chased invoice is marked');
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_template = 'homework_due') = 1
@@ -255,7 +291,7 @@ select pg_temp.check(not exists (select 1 from public.notification_outbox where 
   'no reminder carries bank details or an unfilled placeholder');
 
 set role service_role;
-select public.queue_whatsapp_reminders('2026-10-06 08:00+04') as again \gset
+select public.queue_whatsapp_reminders('2026-10-06 09:30+04') as again \gset
 reset role;
 select pg_temp.check(:again = 0 and (select count(*) from public.notification_outbox) = :before_rows + 5,
   'running the reminders again queues nothing');
@@ -291,4 +327,17 @@ select public.set_whatsapp(true, '+971501234567');
 reset role;
 select pg_temp.check((select whatsapp_opt_in and whatsapp_opted_in_at > '2026-01-01T00:00:00Z'
   from public.profiles where id = 'a0000000-0000-0000-0000-00000000000c'), 'opting back in records a fresh time');
+
+-- Names ------------------------------------------------------------------------------------
+-- Karim opts in but his profile has no name and the family record is Mona's, so nothing is queued rather than a nameless message.
+update public.profiles set full_name = '', whatsapp_opt_in = true, whatsapp_number = '+971500000077'
+  where id = 'a0000000-0000-0000-0000-00000000000d';
+select pg_temp.check(not public.queue_whatsapp('a0000000-0000-0000-0000-00000000000d', 'lesson_notes', '{"2":"Sami","3":"1 Oct"}')
+  and not exists (select 1 from public.notification_outbox where whatsapp and profile_id = 'a0000000-0000-0000-0000-00000000000d'),
+  'a profile with no name is not sent a message addressed to nobody');
+-- When the family record is his, its parent name is used instead.
+update public.families set parent_name = 'Mr Karim Ahmed', email = 'DAD@x' where id = 'c0000000-0000-0000-0000-000000000001';
+select pg_temp.check(public.queue_whatsapp('a0000000-0000-0000-0000-00000000000d', 'lesson_notes', '{"2":"Sami","3":"1 Oct"}')
+  and (select whatsapp_vars->>'1' = 'Karim' and body like 'Dear Karim, %'
+    from pg_temp.wa('a0000000-0000-0000-0000-00000000000d', 'lesson_notes')), 'a nameless parent is greeted by the family record name');
 \echo 'All WhatsApp tests passed'

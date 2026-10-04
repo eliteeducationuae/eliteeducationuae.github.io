@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Switch } from 'react-native';
+import { Switch, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -72,14 +72,26 @@ export function WhatsAppCard() {
               setOptIn(v);
               setInvalid(false);
             }}
-            trackColor={{ true: theme.gold, false: theme.border }}
-            thumbColor={theme.onHero}
+            // Off: a surface-coloured thumb on a muted track; on: a noir thumb on gold. Both clear 3:1 against the card.
+            trackColor={{ true: theme.gold, false: theme.textMuted }}
+            thumbColor={optIn ? theme.onGold : theme.surface}
             // react-native-web paints the "on" thumb teal unless told otherwise.
-            {...({ activeThumbColor: theme.onHero } as object)}
+            {...({ activeThumbColor: theme.onGold } as object)}
             accessibilityLabel="WhatsApp reminders"
           />
         </Row>
-        <Txt variant="muted">{whatsAppMessageKinds(me.role).map((kind) => `• ${kind}`).join('\n')}</Txt>
+        <View style={{ gap: Spacing.one }}>
+          {whatsAppMessageKinds(me.role).map((kind) => (
+            <Row key={kind} style={{ alignItems: 'flex-start' }}>
+              <Txt variant="muted" style={{ width: 10 }} aria-hidden>
+                •
+              </Txt>
+              <Txt variant="muted" style={{ flex: 1 }}>
+                {kind}
+              </Txt>
+            </Row>
+          ))}
+        </View>
         {showNumber ? (
           <Field
             label="WhatsApp number"
@@ -91,7 +103,10 @@ export function WhatsAppCard() {
             keyboardType="phone-pad"
             autoComplete="tel"
             textContentType="telephoneNumber"
-            hint="Include your country code, for example +971 50 123 4567."
+            // While the error shows it says the same thing, so the hint steps aside.
+            hint={invalid ? undefined : 'Include your country code, for example +971 50 123 4567.'}
+            style={invalid ? { borderColor: theme.danger } : undefined}
+            {...({ 'aria-invalid': invalid } as object)}
           />
         ) : null}
         {invalid ? (
@@ -100,8 +115,8 @@ export function WhatsAppCard() {
           </Txt>
         ) : null}
         <Txt variant="small">
-          We send only the messages listed above. We never send marketing or bank details by WhatsApp, and you can switch
-          this off at any time.
+          We send only the messages listed above, during the day (UAE time). We never send marketing or bank details by
+          WhatsApp, and you can switch this off at any time.
           {optIn ? ' By saving, you agree to receive these messages from Elite Education on WhatsApp at this number.' : ''}
         </Txt>
         {source.kind === 'demo' ? <Txt variant="small">Demo mode: no WhatsApp messages are sent.</Txt> : null}

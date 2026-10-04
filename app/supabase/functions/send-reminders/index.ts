@@ -1,7 +1,7 @@
 // Push reminders ~24 hours before each lesson, to the tutor and the family.
 // Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
-// send-notifications delivers those within a minute.
+// send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
 import { adminClient } from '../_shared/supabase.ts';
 
 Deno.serve(async () => {

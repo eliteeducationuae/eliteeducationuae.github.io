@@ -52,10 +52,30 @@ language sql immutable set search_path = public as $$
   end
 $$;
 
-/** WhatsApp variables must be single-line: whitespace runs (newlines, tabs) become one space, then trimmed. */
+/**
+ * WhatsApp variables must be single-line: whitespace runs (newlines, tabs) become one space, then trimmed.
+ * Template braces are removed too, so a value such as a homework title can never introduce a placeholder of its own.
+ */
 create function public.whatsapp_clean(p_text text) returns text
 language sql immutable set search_path = public as $$
-  select btrim(regexp_replace(p_text, '\s+', ' ', 'g'))
+  select btrim(regexp_replace(regexp_replace(p_text, '\{\{|\}\}', '', 'g'), '\s+', ' ', 'g'))
+$$;
+
+/** House style for several names: 'Omar', 'Omar and Layla', 'Omar, Layla and Sami' (as joinNames in src/domain/greeting.ts). */
+create function public.whatsapp_join_names(p_names text[]) returns text
+language sql immutable set search_path = public as $$
+  select case
+    when coalesce(cardinality(p_names), 0) = 0 then ''
+    when cardinality(p_names) = 1 then p_names[1]
+    else array_to_string(p_names[1:cardinality(p_names) - 1], ', ') || ' and ' || p_names[cardinality(p_names)]
+  end
+$$;
+
+/** The first name to greet someone by: honorifics such as Mrs, Dr or Sheikha are set aside. Empty when there is no name. */
+create function public.whatsapp_first_name(p_full_name text) returns text
+language sql immutable set search_path = public as $$
+  select split_part(regexp_replace(public.whatsapp_clean(coalesce(p_full_name, '')),
+    '^((mr|mrs|ms|miss|mx|dr|prof|sheikh|sheikha|sheikhah)\.?\s+)+', '', 'i'), ' ', 1)
 $$;
 
 /** The message as the recipient will read it: the template body with each {{n}} replaced by p_vars->>n. */
@@ -73,17 +93,30 @@ end $$;
 -- Queueing
 -- ---------------------------------------------------------------------------
 
-/** Queue one WhatsApp message for a parent, tutor or admin who has opted in. Returns whether a message was queued. */
+/**
+ * Queue one WhatsApp message for a parent, tutor or admin who has opted in. Returns whether a message was queued.
+ * {{1}} is always the recipient's first name. When the profile has no name, the family's or tutor's record is used if it is
+ * clearly the same person; failing that nothing is queued, since a message without a name would be refused anyway.
+ */
 create function public.queue_whatsapp(p_profile_id uuid, p_template text, p_vars jsonb, p_url text default null)
 returns boolean language plpgsql security definer set search_path = public as $$
-declare p public.profiles; vars jsonb;
+declare p public.profiles; vars jsonb; first_name text;
 begin
   select * into p from public.profiles where id = p_profile_id;
   if p.id is null or p.role not in ('parent', 'tutor', 'admin') or not p.whatsapp_opt_in or p.whatsapp_number is null then
     return false;
   end if;
+  first_name := nullif(public.whatsapp_first_name(p.full_name), '');
+  if first_name is null and p.family_id is not null then
+    select nullif(public.whatsapp_first_name(f.parent_name), '') into first_name
+      from public.families f where f.id = p.family_id and lower(f.email) = lower(p.email);
+  end if;
+  if first_name is null and p.tutor_id is not null then
+    select nullif(public.whatsapp_first_name(t.full_name), '') into first_name from public.tutors t where t.id = p.tutor_id;
+  end if;
+  if first_name is null then return false; end if;
   select coalesce(jsonb_object_agg(key, coalesce(public.whatsapp_clean(value), '')), '{}') into vars
-    from jsonb_each_text(coalesce(p_vars, '{}') || jsonb_build_object('1', split_part(public.whatsapp_clean(p.full_name), ' ', 1)));
+    from jsonb_each_text(coalesce(p_vars, '{}') || jsonb_build_object('1', first_name));
   insert into public.notification_outbox (profile_id, email, subject, body, push_title, push_body, url, send_email,
     whatsapp, whatsapp_to, whatsapp_template, whatsapp_vars, whatsapp_status)
   values (p.id, null,
@@ -110,11 +143,16 @@ begin
   return n;
 end $$;
 
-/** Variables shared by invoice_sent and invoice_overdue: number, amount and due date. Never bank details. */
-create function public.whatsapp_invoice_vars(inv public.invoices) returns jsonb
+/**
+ * Variables shared by invoice_sent and invoice_overdue: number, amount and due date. Never bank details.
+ * invoice_sent quotes the full total; the overdue chase (p_outstanding) quotes what is still owed after any part payments.
+ */
+create function public.whatsapp_invoice_vars(inv public.invoices, p_outstanding boolean default false) returns jsonb
 language sql stable set search_path = public as $$
   select jsonb_build_object('2', inv.number,
-    '3', 'AED ' || to_char(public.invoice_total(inv), 'FM999,999,990.00'),
+    '3', 'AED ' || to_char(greatest(public.invoice_total(inv)
+      - case when p_outstanding then (select coalesce(sum(pm.amount), 0) from public.payments pm where pm.invoice_id = inv.id) else 0 end,
+      0), 'FM999,999,990.00'),
     '4', to_char(inv.due_date, 'FMDD Mon YYYY'))
 $$;
 
@@ -138,7 +176,7 @@ begin
   select * into l from public.lessons where id = new.lesson_id;
   if l.id is null or l.status <> 'completed' then return new; end if;
   for fam in select distinct st.family_id from public.students st where st.id = any (l.student_ids) loop
-    select string_agg(split_part(st.full_name, ' ', 1), ' & ' order by array_position(l.student_ids, st.id)) into names
+    select public.whatsapp_join_names(array_agg(split_part(st.full_name, ' ', 1) order by array_position(l.student_ids, st.id))) into names
       from public.students st where st.id = any (l.student_ids) and st.family_id = fam;
     perform public.queue_whatsapp_family(fam, 'lesson_notes',
       jsonb_build_object('2', names, '3', to_char(l.start_at at time zone 'Asia/Dubai', 'FMDD Mon')), '/lesson/' || l.id);
@@ -149,49 +187,58 @@ create trigger lesson_notes_whatsapp after insert on public.lesson_notes
   for each row execute function public.on_lesson_notes_whatsapp();
 
 /**
- * Daily reminders, called by the send-reminders Edge Function with the service-role key:
+ * Reminders, called hourly by the send-reminders Edge Function with the service-role key:
  * lessons starting in 2–25 hours, invoices up to 30 days overdue, and homework due tomorrow (Dubai dates).
- * Each item is marked so it is only ever reminded once. Returns the number of WhatsApp messages queued.
+ * Quiet hours (UAE time): lesson reminders are queued only from 08:00 to 20:59, and overdue chases and homework
+ * reminders only from 09:00 to 19:59, so nobody is messaged late at night. Items are marked only when they are
+ * queued, so anything held back is picked up by the next run in the window.
+ * Each item is reminded once. Returns the number of WhatsApp messages queued.
  */
 create function public.queue_whatsapp_reminders(p_now timestamptz default now())
 returns int language plpgsql security definer set search_path = public as $$
 declare
   today date := (p_now at time zone 'Asia/Dubai')::date;
+  local_hour int := extract(hour from p_now at time zone 'Asia/Dubai')::int;
   n int := 0; l record; p record; fam uuid; names text; inv public.invoices; h record;
 begin
-  -- a. Lessons
-  for l in
-    select ls.*, t.full_name as tutor_name from public.lessons ls join public.tutors t on t.id = ls.tutor_id
-    where ls.status = 'scheduled' and ls.whatsapp_reminded_at is null
-      and ls.start_at > p_now + interval '2 hours' and ls.start_at <= p_now + interval '25 hours'
-    order by ls.start_at
-    for update of ls
-  loop
-    select string_agg(split_part(st.full_name, ' ', 1), ' & ' order by array_position(l.student_ids, st.id)) into names
-      from public.students st where st.id = any (l.student_ids);
-    for p in select id from public.profiles where tutor_id = l.tutor_id and role in ('tutor', 'admin') order by id loop
-      if public.queue_whatsapp(p.id, 'lesson_reminder', jsonb_build_object('2', names, '3', 'you',
-           '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id) then
-        n := n + 1;
-      end if;
+  -- a. Lessons, 08:00 to 20:59
+  if local_hour between 8 and 20 then
+    for l in
+      select ls.*, t.full_name as tutor_name from public.lessons ls join public.tutors t on t.id = ls.tutor_id
+      where ls.status = 'scheduled' and ls.whatsapp_reminded_at is null
+        and ls.start_at > p_now + interval '2 hours' and ls.start_at <= p_now + interval '25 hours'
+      order by ls.start_at
+      for update of ls
+    loop
+      select public.whatsapp_join_names(array_agg(split_part(st.full_name, ' ', 1) order by array_position(l.student_ids, st.id))) into names
+        from public.students st where st.id = any (l.student_ids);
+      for p in select id from public.profiles where tutor_id = l.tutor_id and role in ('tutor', 'admin') order by id loop
+        if public.queue_whatsapp(p.id, 'lesson_reminder', jsonb_build_object('2', names, '3', 'you',
+             '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id) then
+          n := n + 1;
+        end if;
+      end loop;
+      for fam in select distinct st.family_id from public.students st where st.id = any (l.student_ids) loop
+        select public.whatsapp_join_names(array_agg(split_part(st.full_name, ' ', 1) order by array_position(l.student_ids, st.id))) into names
+          from public.students st where st.id = any (l.student_ids) and st.family_id = fam;
+        n := n + public.queue_whatsapp_family(fam, 'lesson_reminder', jsonb_build_object('2', names, '3', l.tutor_name,
+          '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id);
+      end loop;
+      update public.lessons set whatsapp_reminded_at = p_now where id = l.id;
     end loop;
-    for fam in select distinct st.family_id from public.students st where st.id = any (l.student_ids) loop
-      select string_agg(split_part(st.full_name, ' ', 1), ' & ' order by array_position(l.student_ids, st.id)) into names
-        from public.students st where st.id = any (l.student_ids) and st.family_id = fam;
-      n := n + public.queue_whatsapp_family(fam, 'lesson_reminder', jsonb_build_object('2', names, '3', l.tutor_name,
-        '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id);
-    end loop;
-    update public.lessons set whatsapp_reminded_at = p_now where id = l.id;
-  end loop;
+  end if;
 
-  -- b. Overdue invoices (up to 30 days late)
+  -- Overdue chases and homework reminders wait for the working day.
+  if local_hour not between 9 and 19 then return n; end if;
+
+  -- b. Overdue invoices (up to 30 days late), quoting the balance still owed
   for inv in
     select * from public.invoices
     where status = 'sent' and overdue_whatsapp_at is null and due_date < today and due_date >= today - 30
     order by due_date
     for update
   loop
-    n := n + public.queue_whatsapp_family(inv.family_id, 'invoice_overdue', public.whatsapp_invoice_vars(inv), '/invoice/' || inv.id);
+    n := n + public.queue_whatsapp_family(inv.family_id, 'invoice_overdue', public.whatsapp_invoice_vars(inv, true), '/invoice/' || inv.id);
     update public.invoices set overdue_whatsapp_at = p_now where id = inv.id;
   end loop;
 
@@ -250,8 +297,9 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 revoke all on function public.whatsapp_template_body(text), public.whatsapp_clean(text), public.whatsapp_preview(text, jsonb),
+  public.whatsapp_join_names(text[]), public.whatsapp_first_name(text),
   public.queue_whatsapp(uuid, text, jsonb, text), public.queue_whatsapp_family(uuid, text, jsonb, text),
-  public.whatsapp_invoice_vars(public.invoices), public.queue_whatsapp_reminders(timestamptz),
+  public.whatsapp_invoice_vars(public.invoices, boolean), public.queue_whatsapp_reminders(timestamptz),
   public.on_invoice_sent_whatsapp(), public.on_lesson_notes_whatsapp(), public.set_whatsapp(boolean, text)
   from public, anon, authenticated;
 grant execute on function public.queue_whatsapp(uuid, text, jsonb, text), public.queue_whatsapp_reminders(timestamptz) to service_role;
