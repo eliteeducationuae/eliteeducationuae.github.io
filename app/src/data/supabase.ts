@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
+import { brandTutorColor } from '@/components/tutor-colors';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -102,7 +103,8 @@ const toTutor = (r: Row): Tutor => ({
   phone: r.phone ?? undefined,
   hourlyPay: Number(r.hourly_pay),
   subjects: r.subjects ?? [],
-  color: r.color,
+  // Tutors created before the rebrand keep their old bright colours in the database; draw them in the brand palette.
+  color: brandTutorColor(r.color, r.id),
 });
 
 const toFamily = (r: Row): Family => ({

@@ -1,4 +1,4 @@
-import { Brand, Colors, type Palette } from '../palette';
+import { Brand, Colors, MasteryColors, type Palette } from '../palette';
 
 /** WCAG 2.x relative luminance of a #RRGGBB colour. */
 function luminance(hex: string): number {
@@ -81,4 +81,18 @@ describe('brand palette contrast (WCAG AA, 4.5:1)', () => {
       });
     });
   }
+});
+
+describe('mastery colours', () => {
+  // The rating pills pick ivory (onHero) or the hero tone, whichever reads better; one of them must reach AA.
+  for (const scheme of ['light', 'dark'] as const) {
+    const p: Palette = Colors[scheme];
+    it.each(MasteryColors)(`%s carries readable text in ${scheme} mode`, (c) => {
+      expect(Math.max(contrast(c, p.onHero), contrast(c, p.hero))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  it('stay desaturated', () => {
+    for (const c of MasteryColors) expect(saturation(c)).toBeLessThanOrEqual(0.7);
+  });
 });

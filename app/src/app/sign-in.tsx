@@ -1,6 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/icon';
 import { Logo } from '@/components/logo';
@@ -22,7 +22,6 @@ type Mode = 'sign-in' | 'sign-up' | 'verify' | 'reset';
 
 export default function SignIn() {
   const theme = useTheme();
-  const dark = useColorScheme() === 'dark';
   const { status, signIn, signUp, confirmSignUp } = useSession();
   const [mode, setMode] = useState<Mode>('sign-in');
   const [fullName, setFullName] = useState('');
@@ -102,7 +101,7 @@ export default function SignIn() {
               styles.hero,
               {
                 backgroundColor: theme.hero,
-                borderColor: dark ? `${theme.gold}40` : theme.hero,
+                borderColor: theme.heroBorder,
               },
               elevation(theme, 2),
             ]}>

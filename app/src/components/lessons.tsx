@@ -254,10 +254,12 @@ export function DayTimeline({
       <Row gap={0} style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.border }}>
         <View style={{ width: 48 }} />
         {tutorIds.map((id) => (
-          <View key={id} style={{ flex: 1, padding: Spacing.two }}>
-            <Txt variant="small" numberOfLines={1} style={{ fontWeight: '700', color: lookup.tutor(id)?.color }}>
+          <View key={id} style={{ flex: 1, padding: Spacing.two, gap: Spacing.one }}>
+            <Txt variant="small" numberOfLines={1} style={[font('sans', 'bold'), { color: theme.text }]}>
               {lookup.tutor(id)?.fullName.split(' ')[0]}
             </Txt>
+            {/* The tutor's colour is decorative only: a short rule under the name, never the text itself. */}
+            <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: lookup.tutor(id)?.color ?? theme.gold }} />
           </View>
         ))}
       </Row>

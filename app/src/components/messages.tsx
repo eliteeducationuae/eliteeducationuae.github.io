@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { font, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useMessages, useThreads } from '@/data/hooks';
 import { queryClient } from '@/data/query';
@@ -113,7 +113,7 @@ export function Conversation({ familyId }: { familyId: string }) {
               placeholderTextColor={theme.textMuted}
               multiline
               accessibilityLabel="Message"
-              style={[styles.input, { color: theme.text, backgroundColor: theme.surfaceAlt }]}
+              style={[styles.input, font('sans'), { color: theme.text, backgroundColor: theme.surfaceAlt }]}
             />
             <Pressable
               onPress={send}

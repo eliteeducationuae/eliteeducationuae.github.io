@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
+import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Icon, type IconName } from './icon';
@@ -175,7 +175,7 @@ export function Card({
   const theme = useTheme();
   const surface: ViewStyle =
     variant === 'hero'
-      ? { backgroundColor: theme.hero, borderColor: theme.hero === theme.primary ? theme.hero : theme.gold, borderWidth: StyleSheet.hairlineWidth }
+      ? { backgroundColor: theme.hero, borderColor: theme.heroBorder, borderWidth: StyleSheet.hairlineWidth }
       : variant === 'highlight'
         ? { backgroundColor: theme.champagne, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: theme.gold }
         : { backgroundColor: theme.surface, borderColor: theme.border };
@@ -536,7 +536,7 @@ export function Avatar({ name, color, size = 40 }: { name: string; color?: strin
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-      <Text style={[font('serif', 'bold'), { color: theme.onPrimary, fontSize: size * 0.38 }]}>{initials}</Text>
+      <Text style={[font('serif', 'bold'), { color: color ? Brand.white : theme.onPrimary, fontSize: size * 0.38 }]}>{initials}</Text>
     </View>
   );
 }

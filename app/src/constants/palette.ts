@@ -32,6 +32,8 @@ export const Colors = {
     onGold: Brand.noir,
     champagne: '#F5EEDC',
     hero: Brand.noir,
+    // Hairline around noir hero panels: invisible on light, a quiet gold edge on dark.
+    heroBorder: Brand.noir,
     onHero: Brand.ivory,
     // Secondary text on noir hero surfaces.
     onHeroMuted: '#B3AEA4',
@@ -61,6 +63,7 @@ export const Colors = {
     onGold: Brand.noir,
     champagne: '#262014',
     hero: '#141414',
+    heroBorder: '#C9A84C40',
     onHero: Brand.ivory,
     onHeroMuted: '#B3AEA4',
     success: '#8DBF9E',
@@ -81,7 +84,7 @@ export type Palette = { [K in keyof typeof Colors.light]: string };
 export type ThemeColor = keyof Palette;
 
 /** Topic mastery 1 → 5, in muted tones that sit with the palette. */
-export const MasteryColors = ['#B5574C', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F'] as const;
+export const MasteryColors = ['#A84E44', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F'] as const;
 
 export const Spacing = {
   half: 2,

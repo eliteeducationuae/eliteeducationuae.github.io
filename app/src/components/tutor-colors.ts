@@ -17,3 +17,25 @@ export const TUTOR_COLORS = [
 export function tutorColorFor(name: string): string {
   return TUTOR_COLORS[name.length % TUTOR_COLORS.length];
 }
+
+/**
+ * The bright colours the tutor picker offered before the 2026 rebrand (and the old column default, #2b6cb0).
+ * Live tutors may still carry one of these, so they are mapped onto the brand palette when read.
+ */
+export const LEGACY_TUTOR_COLORS = ['#2b6cb0', '#c05621', '#2f855a', '#6b46c1', '#b83280', '#2c7a7b', '#975a16', '#1a365d'] as const;
+
+/**
+ * A tutor's colour as the app should draw it: palette colours pass through, legacy colours map by position
+ * and anything else (a hand-entered value, or nothing) falls back to a stable palette colour.
+ */
+export function brandTutorColor(color: string | null | undefined, seed = ''): string {
+  const c = (color ?? '').trim().toUpperCase();
+  const own = TUTOR_COLORS.find((t) => t === c);
+  if (own) return own;
+  const legacy = LEGACY_TUTOR_COLORS.findIndex((l) => l.toUpperCase() === c);
+  if (legacy >= 0) return TUTOR_COLORS[legacy];
+  const key = c || seed;
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return TUTOR_COLORS[h % TUTOR_COLORS.length];
+}

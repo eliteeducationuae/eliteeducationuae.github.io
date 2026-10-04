@@ -9,14 +9,19 @@
  * If an official logo-noir.png is supplied, place it at assets/images/logo-noir.png
  * and it will be copied to logo-black.png instead of recolouring the white artwork.
  *
- * Requires Playwright and Chromium (paths below match the development container;
- * override with PLAYWRIGHT_MODULE and CHROMIUM_PATH).
+ * To rerun on your own machine with the official noir logo:
+ *   1. npm install --no-save playwright && npx playwright install chromium
+ *   2. copy the official black logo to assets/images/logo-noir.png (and the white one to logo-white.png)
+ *   3. node scripts/brand-assets.cjs
+ *
+ * Playwright is loaded from PLAYWRIGHT_MODULE if set, otherwise the normal `require('playwright')`.
+ * Chromium comes from CHROMIUM_PATH if set, otherwise Playwright's own downloaded browser.
  */
 const fs = require('fs');
 const path = require('path');
 
-const playwright = require(process.env.PLAYWRIGHT_MODULE || '/opt/node22/lib/node_modules/playwright');
-const executablePath = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const playwright = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const executablePath = process.env.CHROMIUM_PATH || undefined;
 
 const NOIR = '#0A0A0A';
 const IMAGES = path.join(__dirname, '..', 'assets', 'images');

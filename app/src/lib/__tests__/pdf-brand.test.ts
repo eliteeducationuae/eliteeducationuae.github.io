@@ -12,7 +12,7 @@ import { tutorInvoiceHTML } from '../tutor-invoice-pdf';
 jest.mock('expo-print', () => ({}), { virtual: true });
 jest.mock('expo-sharing', () => ({}), { virtual: true });
 jest.mock('react-native', () => ({ Platform: { OS: 'web' } }), { virtual: true });
-jest.mock('@/constants/theme', () => ({ MasteryColors: ['#B5574C', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F'] }));
+jest.mock('@/constants/theme', () => ({ MasteryColors: ['#A84E44', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F'] }));
 
 // The pre-brand navy, gold and slate colours, written without the leading hash so they never match a source sweep.
 const OLD_HEX = ['1a365d', 'd69e2e', '64748b', '1a202c', 'e2e8f0', 'f4f6fb'].map((h) => `#${h}`);

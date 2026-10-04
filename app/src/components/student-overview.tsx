@@ -106,7 +106,7 @@ export function StudentOverview({ student }: { student: Student }) {
       <StatGrid>
         <Stat label="Attendance" value={attendance === null ? '–' : `${attendance}%`} hint={`${taught.length} lessons`} />
         <Stat label="Homework" value={hwRate === null ? '–' : `${hwRate}%`} hint="completed" tone={hwRate !== null && hwRate < 60 ? 'warning' : undefined} />
-        {daysToExam !== null && daysToExam > 0 ? <Stat label="Exams in" value={`${daysToExam}d`} hint={formatDate(student.examDate!)} /> : null}
+        {daysToExam !== null && daysToExam > 0 ? <Stat label="Exams in" value={`${daysToExam} ${daysToExam === 1 ? 'day' : 'days'}`} hint={formatDate(student.examDate!)} /> : null}
       </StatGrid>
 
       <Segmented

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Radius, Spacing, elevation, font } from '@/constants/theme';
 import type { Lookup } from '@/data/hooks';
@@ -17,12 +17,11 @@ import { Row, Txt } from './ui';
  */
 export function GreetingCard({ title, subtitle, date, right }: { title: string; subtitle?: string; date?: Date; right?: ReactNode }) {
   const theme = useTheme();
-  const dark = useColorScheme() === 'dark';
   return (
     <View
       style={[
         styles.hero,
-        { backgroundColor: theme.hero, borderColor: dark ? `${theme.gold}40` : theme.hero },
+        { backgroundColor: theme.hero, borderColor: theme.heroBorder },
         elevation(theme, 1),
       ]}>
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
