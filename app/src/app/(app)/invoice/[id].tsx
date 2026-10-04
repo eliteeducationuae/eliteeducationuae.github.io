@@ -4,6 +4,14 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
+import {
+  AUTOPAY_MAY_HAVE_CHARGED,
+  AutopayBadge,
+  AutopayFailureNote,
+  AutopayNotice,
+  autopayMayHaveCharged,
+  ChargeSavedCardButton,
+} from '@/components/payments';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -11,6 +19,7 @@ import { useAction, useInvoice, useLookup, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { displayStatus, formatAED, invoiceTotals } from '@/domain/billing';
 import { formatDate } from '@/domain/dates';
+import { autopayHoldsInvoice, paymentLabel } from '@/domain/payments';
 import type { PaymentMethod } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
@@ -36,6 +45,10 @@ export default function InvoicePage() {
   const status = displayStatus(inv);
   const s = INVOICE_STATUS[status];
   const payable = (inv.status === 'sent') && totals.balance > 0;
+  // Admin: recording or voiding now could leave the family charged twice, so they are asked to check Stripe first.
+  const mayHaveCharged = autopayMayHaveCharged(inv);
+  // While autopay is about to charge (or is charging) the saved card, other ways to pay are not offered.
+  const autopayHolds = payable && autopayHoldsInvoice(inv);
 
   async function payByCard() {
     const result = await pay.mutateAsync([inv!.id]);
@@ -50,7 +63,7 @@ export default function InvoicePage() {
   return (
     <Screen
       footer={
-        payable && me.role === 'parent' ? (
+        payable && me.role === 'parent' && !autopayHolds ? (
           <Button title={`Pay ${formatAED(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
         ) : undefined
       }>
@@ -61,7 +74,10 @@ export default function InvoicePage() {
             <Txt variant="h2">{formatAED(totals.total)}</Txt>
             <Txt variant="muted">{family?.parentName ?? family?.name}</Txt>
           </View>
-          <Badge label={s.label} tone={s.tone} />
+          <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
+            <Badge label={s.label} tone={s.tone} />
+            <AutopayBadge invoice={inv} />
+          </View>
         </Row>
         <Row gap={Spacing.four}>
           <View>
@@ -118,7 +134,7 @@ export default function InvoicePage() {
             <Card key={p.id}>
               <Row style={{ justifyContent: 'space-between' }}>
                 <Txt>
-                  {formatDate(p.paidAt)} · {p.method.replace('-', ' ')}
+                  {formatDate(p.paidAt)} · {paymentLabel(p)}
                 </Txt>
                 <Txt variant="h3" color="success">
                   {formatAED(p.amount)}
@@ -129,7 +145,26 @@ export default function InvoicePage() {
         </Section>
       ) : null}
 
-      {payable && settings.data?.bankDetails ? (
+      {me.role === 'parent' ? <AutopayNotice invoice={inv} payable={payable} /> : null}
+      {me.role === 'parent' && payable && inv.autopayStatus === 'pending' ? (
+        <Button
+          title="Pay now instead"
+          variant="ghost"
+          size="sm"
+          style={{ alignSelf: 'flex-start' }}
+          loading={pay.isPending}
+          onPress={() =>
+            confirm(
+              'Pay now instead?',
+              `You will pay ${formatAED(totals.balance)} by card now, and autopay will not charge this invoice.`,
+              () => void payByCard().catch(() => undefined),
+              'Pay now',
+            )
+          }
+        />
+      ) : null}
+      {me.role === 'admin' ? <AutopayFailureNote invoice={inv} /> : null}
+      {payable && !autopayHolds && settings.data?.bankDetails ? (
         <Banner icon="money">Prefer bank transfer? {settings.data.bankDetails}. Please quote {inv.number}.</Banner>
       ) : null}
       <ErrorNote error={pay.error ?? setStatus.error} />
@@ -138,16 +173,24 @@ export default function InvoicePage() {
         title="Share invoice (PDF)"
         icon="share"
         variant="secondary"
-        onPress={() => shareInvoice(inv, family, settings.data)}
+        // An invoice autopay is paying carries no bank transfer details, in the app or on its PDF.
+        onPress={() => shareInvoice(inv, family, autopayHolds && settings.data ? { ...settings.data, bankDetails: undefined } : settings.data)}
       />
 
       {me.role === 'admin' ? (
         <>
+          <ChargeSavedCardButton invoice={inv} family={family} balance={totals.balance} />
           {payable ? (
             recording ? (
               <RecordPayment invoiceId={inv.id} balance={totals.balance} onDone={() => setRecording(false)} />
             ) : (
-              <Button title="Record a payment" icon="money" onPress={() => setRecording(true)} />
+              <Button
+                title="Record a payment"
+                icon="money"
+                onPress={() =>
+                  mayHaveCharged ? confirm('Record a payment?', AUTOPAY_MAY_HAVE_CHARGED, () => setRecording(true)) : setRecording(true)
+                }
+              />
             )
           ) : null}
           {inv.status === 'draft' ? <Button title="Send to family" onPress={() => setStatus.mutate([inv.id, 'sent'])} /> : null}
@@ -156,8 +199,11 @@ export default function InvoicePage() {
               title="Void invoice"
               variant="danger"
               onPress={() =>
-                confirm('Void this invoice?', 'Its lessons will return to “Ready to invoice” so that they can be billed again.', () =>
-                  setStatus.mutate([inv.id, 'void']),
+                confirm(
+                  'Void this invoice?',
+                  'Its lessons will return to “Ready to invoice” so that they can be billed again.' +
+                    (mayHaveCharged ? ` ${AUTOPAY_MAY_HAVE_CHARGED}` : ''),
+                  () => setStatus.mutate([inv.id, 'void']),
                 )
               }
             />

@@ -5,6 +5,8 @@ import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
 import { buildTopicLookup } from '@/domain/topics';
 import type { Enrolment, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
+import { seedClasswork } from './classwork';
+import { sampleBusyBlocks } from './calendar';
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
 import { ops } from './operations';
 
@@ -187,6 +189,8 @@ export function createSeed(now: Date = new Date()): DemoDB {
     topicLists: [],
     topics: [],
     outbox: [],
+    submissions: [],
+    resources: [],
   };
 
   // Subjects: each student's Maths enrolment from their legacy syllabus, plus their other subjects.
@@ -433,7 +437,48 @@ export function createSeed(now: Date = new Date()): DemoDB {
 
   seedEngagement(db, now);
   seedOperations(db, now);
+  seedClasswork(db, now);
+  seedCalendar(db, now);
+  seedPayments(db);
   return db;
+}
+
+// Google Calendar
+/**
+ * Sarah has connected Google Calendar and has busy times; Craig (the admin) has not, so connecting can be tried.
+ * Craig has no busy times until he connects, as in production, where only a connected calendar supplies them.
+ */
+function seedCalendar(db: DemoDB, now: Date) {
+  db.calendarConnections = [
+    {
+      profileId: 'u-tutor',
+      provider: 'google',
+      googleEmail: 'sarah.khan@gmail.com',
+      calendarId: 'primary',
+      status: 'connected',
+      lastSyncedAt: new Date(now.getTime() - 4 * 60_000).toISOString(),
+    },
+  ];
+  db.busyBlocks = sampleBusyBlocks(db, 't-sarah', now, 2, 'busy-');
+  // Craig's upcoming A-level lessons with Arjun have no video link yet: connecting his calendar adds Google Meet links.
+  for (const l of db.lessons) {
+    if (l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > now) l.meetingUrl = undefined;
+  }
+}
+
+/** Card payments: Fatima has a card on file (autopay off), and parents can top up from a few lesson packages. */
+function seedPayments(db: DemoDB) {
+  const mansoori = db.families.find((f) => f.id === 'f-mansoori');
+  if (mansoori) {
+    mansoori.savedCard = { brand: 'Visa', last4: '4242', expires: '08/29' };
+    mansoori.autopay = false;
+  }
+  db.packageOffers = [
+    { id: 'offer-ib-10', name: 'IB Maths: ten lessons', serviceId: 'svc-ib', lessons: 10, price: 4050, active: true, sort: 1 },
+    { id: 'offer-igcse-10', name: 'IGCSE Maths: ten lessons', serviceId: 'svc-igcse', lessons: 10, price: 3150, active: true, sort: 2 },
+    { id: 'offer-igcse-20', name: 'IGCSE Maths: twenty lessons', serviceId: 'svc-igcse', lessons: 20, price: 5950, active: true, sort: 3 },
+    { id: 'offer-any-5', name: 'Any lesson: five lessons', lessons: 5, price: 2000, active: false, sort: 4 },
+  ];
 }
 
 /** Roles with bids, applications, bank details, tutor invoices, a report round and expenses. */

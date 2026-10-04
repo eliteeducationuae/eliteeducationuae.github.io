@@ -15,6 +15,8 @@ import {
   type SocialProviderName,
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
+import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
+import { connectResultNotice } from '@/domain/calendar-connection';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Enrolment,
@@ -30,6 +32,8 @@ import type {
   TutorInvoice,
   Announcement,
   Availability,
+  BusyBlock,
+  CalendarConnection,
   Charge,
   Closure,
   Enquiry,
@@ -39,22 +43,25 @@ import type {
   TutorAbsence,
   Family,
   Homework,
+  HomeworkSubmission,
   Invoice,
   Lesson,
   LessonNote,
   LessonPackage,
   Profile,
+  Resource,
   Service,
   Settings,
   Student,
   Tutor,
   TopicRating,
+  PackageOffer,
 } from '@/domain/types';
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { addChildSubjects } from './rpc-mapping';
-import type { DataSource, SocialProvider, SocialSignInResult } from './source';
+import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -83,6 +90,8 @@ const toProfile = (r: Row): Profile => ({
   familyId: r.family_id ?? undefined,
   studentId: r.student_id ?? undefined,
   icsToken: r.ics_token ?? undefined,
+  whatsappOptIn: r.whatsapp_opt_in ?? false,
+  whatsappNumber: r.whatsapp_number ?? undefined,
 });
 
 const toSettings = (r: Row): Settings => ({
@@ -141,6 +150,30 @@ const toFamily = (r: Row): Family => ({
   phone: r.phone ?? undefined,
   status: r.status ?? 'active',
   createdAt: r.created_at ?? undefined,
+  ...toBilling(r.family_billing),
+});
+
+/**
+ * The embedded family_billing row (one-to-one, so PostgREST may give an object, a one-element array or null).
+ * RLS only returns it to admins and the family itself; everyone else gets no card or autopay fields at all.
+ */
+function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard'> {
+  const b = (Array.isArray(embedded) ? embedded[0] : embedded) as Row | null | undefined;
+  if (!b) return {};
+  return {
+    autopay: b.autopay ?? false,
+    savedCard: b.card_last4 ? { brand: b.card_brand ?? 'Card', last4: b.card_last4, expires: b.card_expires ?? undefined } : undefined,
+  };
+}
+
+const toOffer = (r: Row): PackageOffer => ({
+  id: r.id,
+  name: r.name,
+  serviceId: r.service_id ?? undefined,
+  lessons: r.lessons,
+  price: Number(r.price),
+  active: r.active,
+  sort: r.sort ?? 0,
 });
 
 const toEnquiry = (r: Row): Enquiry => ({
@@ -334,7 +367,61 @@ const toHomework = (r: Row): Homework => ({
   title: r.title,
   dueDate: r.due_date,
   done: r.done,
+  details: r.details ?? undefined,
+  attachments: r.attachments ?? [],
+  tutorId: r.tutor_id ?? undefined,
+  createdAt: r.created_at ?? undefined,
 });
+
+export const toSubmission = (r: Row): HomeworkSubmission => ({
+  id: r.id,
+  homeworkId: r.homework_id,
+  studentId: r.student_id,
+  submittedBy: r.submitted_by ?? undefined,
+  submittedByName: r.submitted_by_name ?? undefined,
+  note: r.note ?? undefined,
+  files: r.files ?? [],
+  submittedAt: r.submitted_at,
+  feedback: r.feedback ?? undefined,
+  mark: r.mark ?? undefined,
+  feedbackAt: r.feedback_at ?? undefined,
+  feedbackBy: r.feedback_by ?? undefined,
+  feedbackByName: r.feedback_by_name ?? undefined,
+});
+
+export const toResource = (r: Row): Resource => ({
+  id: r.id,
+  title: r.title,
+  description: r.description ?? undefined,
+  subject: r.subject ?? undefined,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  kind: r.kind,
+  path: r.path ?? undefined,
+  url: r.url ?? undefined,
+  fileName: r.file_name ?? undefined,
+  mimeType: r.mime_type ?? undefined,
+  tags: r.tags ?? [],
+  uploadedBy: r.uploaded_by ?? undefined,
+  uploadedByName: r.uploaded_by_name ?? undefined,
+  visibility: r.visibility,
+  studentIds: r.student_ids ?? [],
+  createdAt: r.created_at,
+});
+
+/** Arguments for the save_homework RPC. */
+export const saveHomeworkArgs = (input: HomeworkInput) => ({
+  p_id: input.id ?? null,
+  p_student_id: input.studentId,
+  p_title: input.title,
+  p_details: input.details ?? null,
+  p_due_date: input.dueDate,
+  p_attachments: input.attachments,
+  p_lesson_id: input.lessonId ?? null,
+});
+
+/** An RPC may return its row directly or as a one-row set. */
+const firstRow = (data: unknown): Row => (Array.isArray(data) ? data[0] : data) as Row;
 
 const toRating = (r: Row): TopicRating => ({
   id: r.id,
@@ -380,6 +467,8 @@ const toInvoice = (r: Row): Invoice => ({
   items: r.items ?? [],
   vatRate: Number(r.vat_rate),
   notes: r.notes ?? undefined,
+  autopayStatus: r.autopay_status ?? undefined,
+  autopayError: r.autopay_error ?? undefined,
   payments: (r.payments ?? []).map((p: Row) => ({
     id: p.id,
     invoiceId: p.invoice_id,
@@ -395,6 +484,53 @@ const TOPIC_PAGE = 1000;
 
 function strip(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
+}
+
+// Google Calendar
+const toBusyBlock = (r: Row): BusyBlock => ({
+  id: r.id,
+  tutorId: r.tutor_id,
+  start: new Date(r.start_at).toISOString(),
+  end: new Date(r.end_at).toISOString(),
+  source: 'google',
+});
+
+const toCalendarConnection = (r: Row): CalendarConnection => ({
+  profileId: r.profile_id,
+  provider: 'google',
+  googleEmail: r.google_email ?? undefined,
+  calendarId: r.calendar_id,
+  status: r.status,
+  lastSyncedAt: r.last_synced_at ?? undefined,
+  lastError: r.last_error ?? undefined,
+});
+
+/** Only these columns are granted to the app; the tokens are not, so select('*') would fail. */
+const CALENDAR_CONNECTION_COLUMNS = 'profile_id, provider, google_email, calendar_id, status, last_synced_at, last_error';
+
+/** The current page without any calendar=… result left by a previous connection attempt. */
+function calendarReturnTo(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete('calendar');
+  url.searchParams.delete('reason');
+  return url.toString();
+}
+
+/**
+ * Unwrap an Edge Function response. Functions reply to failures with a non-2xx status and JSON {error}; show that
+ * message (e.g. "No saved card yet. …") rather than the client's generic "non-2xx status code".
+ */
+async function invokeResult<T>(result: { data: unknown; error: unknown }): Promise<T> {
+  const error = result.error as { message?: string; context?: { json?: () => Promise<unknown> } } | null;
+  if (!error) return result.data as T;
+  let message = error.message || 'Something went wrong. Please try again.';
+  try {
+    const body = (await error.context?.json?.()) as { error?: unknown } | undefined;
+    if (body && typeof body.error === 'string' && body.error) message = body.error;
+  } catch {
+    // Not JSON (e.g. the function could not be reached); keep the client's message.
+  }
+  throw new Error(message);
 }
 
 export function createSupabaseSource(url: string, anonKey: string): DataSource {
@@ -500,6 +636,15 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     return (await completeFromCallback(provider, res.url)) === 'cancelled' ? { status: 'cancelled' } : 'done';
   }
 
+  /**
+   * An invoice just sent to an autopay family with a saved card is marked 'pending' by the database. Ask
+   * charge-invoice to take payment now; if this fails, the 15-minute schedule charges it instead.
+   */
+  function chargeIfAutopay(row: Row | null | undefined) {
+    if (!row?.id || row.autopay_status !== 'pending') return;
+    client.functions.invoke('charge-invoice', { body: { invoiceId: row.id } }).catch(() => undefined);
+  }
+
   return {
     kind: 'supabase',
 
@@ -535,6 +680,12 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async setMyName(fullName) {
       check(await client.rpc('set_my_name', { p_full_name: fullName.trim() }));
+      const profile = await loadProfile();
+      if (!profile) throw new Error(NOT_LINKED);
+      return profile;
+    },
+    async setWhatsApp(prefs) {
+      check(await client.rpc('set_whatsapp', { p_opt_in: prefs.optIn, p_number: prefs.number }));
       const profile = await loadProfile();
       if (!profile) throw new Error(NOT_LINKED);
       return profile;
@@ -586,7 +737,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return check(await client.from('tutors').select('*').order('full_name')).map(toTutor);
     },
     async listFamilies() {
-      return check(await client.from('families').select('*').order('name')).map(toFamily);
+      return check(await client.from('families').select('*, family_billing(*)').order('name')).map(toFamily);
     },
     async listStudents() {
       // student_notes is protected by RLS, so families simply get no notes back.
@@ -613,6 +764,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async listHomework(filter = {}) {
       let query = client.from('homework').select('*');
       if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      if (filter.lessonId) query = query.eq('lesson_id', filter.lessonId);
       return check(await query.order('due_date', { ascending: false })).map(toHomework);
     },
     async listRatings(filter = {}) {
@@ -656,7 +808,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async saveFamily(f) {
       const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone, status: f.status });
-      return toFamily(check(await client.from('families').upsert(row).select().single()));
+      return toFamily(check(await client.from('families').upsert(row).select('*, family_billing(*)').single()));
     },
     async saveStudent(s) {
       const row = strip({
@@ -763,9 +915,112 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_homework: input.homework,
         }),
       );
+      // complete_lesson stores the title and due date; details and attachments are added through save_homework.
+      const rich = input.homework.filter((h) => h.details?.trim() || h.attachments?.length);
+      if (rich.length === 0) return;
+      // The lesson is already recorded at this point, so a failure here must not read as if nothing was saved.
+      const unsaved: string[] = [];
+      try {
+        const created = check<Row[]>(await client.from('homework').select('id, student_id, title').eq('lesson_id', input.lessonId));
+        for (const h of rich) {
+          const match = created.find((r) => r.student_id === h.studentId && r.title.trim() === h.title.trim());
+          if (!match) {
+            unsaved.push(h.title.trim());
+            continue;
+          }
+          try {
+            check(
+              await client.rpc(
+                'save_homework',
+                saveHomeworkArgs({
+                  id: match.id,
+                  studentId: h.studentId,
+                  lessonId: input.lessonId,
+                  title: h.title.trim(),
+                  details: h.details?.trim() || undefined,
+                  dueDate: h.dueDate,
+                  attachments: h.attachments ?? [],
+                }),
+              ),
+            );
+          } catch {
+            unsaved.push(h.title.trim());
+          }
+        }
+      } catch {
+        unsaved.push(...rich.map((h) => h.title.trim()));
+      }
+      if (unsaved.length) throw new PartialSaveError(lessonHomeworkWarning(unsaved));
     },
     async setHomeworkDone(id, done) {
       check(await client.rpc('set_homework_done', { p_id: id, p_done: done }));
+    },
+
+    // Homework and resources
+    async getHomework(id) {
+      const row = check(await client.from('homework').select('*').eq('id', id).maybeSingle());
+      return row ? toHomework(row) : null;
+    },
+    async saveHomework(input) {
+      return toHomework(firstRow(check(await client.rpc('save_homework', saveHomeworkArgs(input)))));
+    },
+    async listSubmissions(filter = {}) {
+      let query = client.from('homework_submissions').select('*');
+      if (filter.homeworkId) query = query.eq('homework_id', filter.homeworkId);
+      if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      return check(await query.order('submitted_at', { ascending: false })).map(toSubmission);
+    },
+    async submitHomework(input) {
+      const data = check(
+        await client.rpc('submit_homework', { p_homework_id: input.homeworkId, p_note: input.note ?? null, p_files: input.files }),
+      );
+      return toSubmission(firstRow(data));
+    },
+    async giveFeedback(submissionId, feedback, mark) {
+      check(await client.rpc('give_homework_feedback', { p_submission_id: submissionId, p_feedback: feedback, p_mark: mark ?? null }));
+    },
+    async listResources(filter = {}) {
+      // list_resources hides which other families' children a resource is shared with.
+      const rows = check<Row[] | null>(await client.rpc('list_resources', { p_student_id: filter.studentId ?? null }));
+      return (rows ?? []).map(toResource);
+    },
+    async saveResource(input) {
+      // uploaded_by, uploaded_by_name, visibility and student_ids are set by the database.
+      const row = {
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        subject: input.subject?.trim() || null,
+        curriculum: input.curriculum?.trim() || null,
+        level: input.level?.trim() || null,
+        kind: input.kind,
+        path: input.kind === 'file' ? (input.path ?? null) : null,
+        url: input.kind === 'link' && input.url ? (normaliseLink(input.url) ?? input.url) : null,
+        file_name: input.kind === 'file' ? (input.fileName ?? null) : null,
+        mime_type: input.kind === 'file' ? (input.mimeType ?? null) : null,
+        tags: input.tags,
+      };
+      const saved = input.id
+        ? check(await client.from('resources').update(row).eq('id', input.id).select('id').single())
+        : check(await client.from('resources').insert(row).select('id').single());
+      // Read it back through list_resources, which lists only the caller's own students in student_ids.
+      const rows = check<Row[] | null>(await client.rpc('list_resources', { p_student_id: null }));
+      const found = (rows ?? []).find((r) => r.id === saved.id);
+      if (!found) throw new Error('The resource was saved but could not be read back. Please refresh.');
+      return toResource(found);
+    },
+    async deleteResource(id) {
+      // delete_resource returns the stored path only when no homework or hand-in still uses the file.
+      const path = check<string | null>(await client.rpc('delete_resource', { p_id: id }));
+      if (path) {
+        // Best effort: the library entry is gone even if the stored file cannot be removed.
+        await client.storage.from('classwork').remove([path]).then(undefined, () => undefined);
+      }
+    },
+    async shareResource(resourceId, studentId) {
+      check(await client.rpc('share_resource', { p_resource_id: resourceId, p_student_id: studentId }));
+    },
+    async unshareResource(resourceId, studentId) {
+      check(await client.rpc('unshare_resource', { p_resource_id: resourceId, p_student_id: studentId }));
     },
 
     async sellPackage(pkg) {
@@ -779,14 +1034,17 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_expires_at: pkg.expiresAt ?? null,
         }),
       );
+      chargeIfAutopay(row as Row);
       return toInvoice(row as Row);
     },
     async invoiceUnbilled(familyId) {
       const row = check(await client.rpc('invoice_unbilled', { p_family_id: familyId })) as Row | null;
+      if (row && row.id) chargeIfAutopay(row);
       return row && row.id ? toInvoice(row) : null;
     },
     async setInvoiceStatus(id, status) {
-      check(await client.from('invoices').update({ status }).eq('id', id));
+      const row = check(await client.from('invoices').update({ status }).eq('id', id).select('id, autopay_status').maybeSingle()) as Row | null;
+      if (status === 'sent') chargeIfAutopay(row);
     },
     async recordPayment(invoiceId, amount, method, reference) {
       check(await client.from('payments').insert(strip({ invoice_id: invoiceId, amount, method, reference })));
@@ -1167,8 +1425,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return path;
     },
     async fileUrl(bucket, path) {
-      const { data } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      if (error) console.warn(`Could not open ${bucket}/${path}: ${error.message}`);
       return data?.signedUrl ?? null;
+    },
+    async removeFile(bucket, path) {
+      const { error } = await client.storage.from(bucket).remove([path]);
+      if (error) console.warn(`Could not remove ${bucket}/${path}: ${error.message}`);
     },
     async aiAssist(request) {
       // The AI service is optional: any failure (not deployed, no key, offline) returns null so callers use templates.
@@ -1177,8 +1440,76 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return data;
     },
     async startCardPayment(invoiceId) {
-      const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };
+      // invokeResult shows the function's own message, e.g. when autopay is already charging this invoice.
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { invoiceId } }));
       return { url: data.url };
+    },
+
+    // Google Calendar
+    async listBusyBlocks(filter = {}) {
+      let query = client.from('busy_blocks').select('id, tutor_id, start_at, end_at, source');
+      if (filter.tutorId) query = query.eq('tutor_id', filter.tutorId);
+      if (filter.to) query = query.lt('start_at', filter.to);
+      if (filter.from) query = query.gt('end_at', filter.from);
+      return check(await query.order('start_at')).map(toBusyBlock);
+    },
+    async getCalendarConnection() {
+      const { data } = await client.auth.getUser();
+      if (!data.user) return null;
+      const row = check(
+        await client.from('calendar_connections').select(CALENDAR_CONNECTION_COLUMNS).eq('profile_id', data.user.id).maybeSingle(),
+      );
+      return row ? toCalendarConnection(row) : null;
+    },
+    async connectGoogleCalendar() {
+      if (Platform.OS === 'web') {
+        const returnTo = calendarReturnTo(window.location.href);
+        const data = check<{ url: string }>(await client.functions.invoke('google-connect', { body: { action: 'start', returnTo } }));
+        window.location.assign(data.url);
+        return 'redirecting';
+      }
+      const returnTo = AuthSession.makeRedirectUri({ scheme: 'eliteeducation', path: 'calendar-connected' });
+      const data = check<{ url: string }>(await client.functions.invoke('google-connect', { body: { action: 'start', returnTo } }));
+      const res = await WebBrowser.openAuthSessionAsync(data.url, returnTo);
+      if (res.type !== 'success') return 'cancelled';
+      const notice = connectResultNotice(res.url);
+      if (notice?.tone === 'success') return 'connected';
+      if (notice) throw new Error(notice.message);
+      return 'cancelled';
+    },
+    async disconnectGoogleCalendar() {
+      check(await client.functions.invoke('google-connect', { body: { action: 'disconnect' } }));
+    },
+    // Card payments: saved cards, autopay and top-ups
+    async listPackageOffers() {
+      // RLS returns only active offers to everyone but admins.
+      return check(await client.from('package_offers').select('*').order('sort').order('lessons')).map(toOffer);
+    },
+    async savePackageOffer(o) {
+      const row = strip({ id: o.id, name: o.name, service_id: o.serviceId ?? null, lessons: o.lessons, price: o.price, active: o.active, sort: o.sort });
+      return toOffer(check(await client.from('package_offers').upsert(row).select().single()));
+    },
+    async deletePackageOffer(id) {
+      check(await client.from('package_offers').delete().eq('id', id));
+    },
+    async setAutopay(familyId, enabled) {
+      check(await client.rpc('set_autopay', { p_family_id: familyId, p_enabled: enabled }));
+    },
+    async buyPackageOffer(offerId) {
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('create-checkout', { body: { offerId } }));
+      return { url: data.url };
+    },
+    async openBillingPortal(familyId) {
+      const body = familyId ? { familyId } : {};
+      const data = await invokeResult<{ url: string }>(await client.functions.invoke('billing-portal', { body }));
+      return { url: data.url };
+    },
+    async chargeSavedCard(invoiceId) {
+      const data = await invokeResult<{ results?: (AutopayChargeResult & { invoiceId?: string })[] }>(
+        await client.functions.invoke('charge-invoice', { body: { invoiceId } }),
+      );
+      const first = data?.results?.[0];
+      return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
     },
   };
 }

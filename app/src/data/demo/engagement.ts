@@ -158,6 +158,8 @@ export const eq = {
       absences: db.absences,
       noticeHours: db.settings.bookingNoticeHours,
       now,
+      // Google Calendar
+      busyBlocks: db.busyBlocks ?? [],
     }).map((s) => ({ start: s.start.toISOString(), end: s.end.toISOString() }));
   },
 

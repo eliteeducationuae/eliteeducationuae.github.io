@@ -12,6 +12,7 @@ import {
   useAbsences,
   useAction,
   useAvailability,
+  useBusyBlocks,
   useEnrolments,
   useLesson,
   useLessons,
@@ -25,7 +26,7 @@ import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
 import { lessonSubject, studentSubjects } from '@/domain/enrolments';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
-import { cancellationOutcome, coverOptions, findClashes, isAbsent } from '@/domain/scheduling';
+import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -212,10 +213,11 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   const absences = useAbsences();
   const day = startOfDay(new Date(lesson.start));
   const sameDay = useLessons(day, addDays(day, 1));
+  const busyBlocks = useBusyBlocks(day, addDays(day, 1));
   const reassign = useAction(source.reassignLesson);
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
-  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? []);
+  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Choose a tutor</Txt>
@@ -323,6 +325,7 @@ function ReschedulePanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<ty
   const newStart = fromDateAndTime(date, time);
   const dayStart = startOfDay(newStart ?? start);
   const nearby = useLessons(dayStart, addDays(dayStart, 1));
+  const busyBlocks = useBusyBlocks(dayStart, addDays(dayStart, 1), lesson.tutorId);
   const clashes =
     newStart && nearby.data
       ? findClashes(
@@ -330,6 +333,9 @@ function ReschedulePanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<ty
           nearby.data,
         )
       : [];
+  const busyClashes = newStart
+    ? findBusyClashes({ start: newStart, end: new Date(newStart.getTime() + duration * 60_000), tutorId: lesson.tutorId }, busyBlocks.data ?? [])
+    : [];
 
   return (
     <Card style={{ gap: Spacing.three }}>
@@ -349,11 +355,16 @@ function ReschedulePanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<ty
           {formatTime(c.lesson.start)}–{formatTime(c.lesson.end)}.
         </Banner>
       ))}
+      {busyClashes.map((b) => (
+        <Banner key={b.id} tone="warning" icon="alert">
+          Google Calendar shows {lookup.tutor(lesson.tutorId)?.fullName ?? 'the tutor'} as busy {formatTime(b.start)}–{formatTime(b.end)}.
+        </Banner>
+      ))}
       <ErrorNote error={move.error} />
       <Row gap={Spacing.two}>
         <Button title="Back" variant="secondary" style={{ flex: 1 }} onPress={onDone} />
         <Button
-          title={clashes.length ? 'Move anyway' : 'Move lesson'}
+          title={clashes.length || busyClashes.length ? 'Move anyway' : 'Move lesson'}
           style={{ flex: 1 }}
           disabled={!newStart}
           loading={move.isPending}

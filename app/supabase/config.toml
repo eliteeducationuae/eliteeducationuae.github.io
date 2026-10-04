@@ -8,3 +8,9 @@ verify_jwt = false
 # Calendar apps can't send a login; the feed is protected by each user's secret token.
 [functions.ics]
 verify_jwt = false
+
+# Google redirects back here after consent without a login, so the platform JWT check is off.
+# The 'start' and 'disconnect' actions check the caller's session themselves, and the callback is
+# protected by a single-use state value that expires after 15 minutes.
+[functions.google-connect]
+verify_jwt = false

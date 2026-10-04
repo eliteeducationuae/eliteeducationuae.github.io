@@ -8,6 +8,7 @@ import { SYLLABUSES } from './curriculum';
 
 import { source } from './index';
 import { queryClient } from './query';
+import { useSession } from './session';
 
 /** Refetch everything after a write — the data set is small and this keeps every screen consistent. */
 const invalidateAll = () => queryClient.invalidateQueries();
@@ -35,6 +36,15 @@ export const useNotes = (filter: { studentId?: string; lessonId?: string } = {})
 
 export const useHomework = (studentId?: string) =>
   useQuery({ queryKey: ['homework', studentId], queryFn: () => source.listHomework({ studentId }) });
+
+export const useHomeworkItem = (id: string | undefined) =>
+  useQuery({ queryKey: ['homework-item', id], queryFn: () => source.getHomework(id!), enabled: !!id });
+
+export const useSubmissions = (filter: { homeworkId?: string; studentId?: string } = {}) =>
+  useQuery({ queryKey: ['submissions', filter], queryFn: () => source.listSubmissions(filter) });
+
+export const useResources = (filter: { studentId?: string } = {}) =>
+  useQuery({ queryKey: ['resources', filter], queryFn: () => source.listResources(filter) });
 
 export const useRatings = (studentId?: string) =>
   useQuery({ queryKey: ['ratings', studentId], queryFn: () => source.listRatings({ studentId }) });
@@ -159,3 +169,34 @@ export function useTopicLookup(): TopicLookup & { ready: boolean } {
     };
   }, [lists.data, topics.data]);
 }
+
+// Google Calendar (tutors and admin only; families never see busy times)
+
+function useCanUseCalendar(): boolean {
+  const role = useSession((s) => s.profile?.role);
+  return role === 'admin' || role === 'tutor';
+}
+
+/** Google busy times overlapping the range, optionally for one tutor. Empty for parents and students. */
+export function useBusyBlocks(from: Date, to: Date, tutorId?: string) {
+  const enabled = useCanUseCalendar();
+  return useQuery({
+    queryKey: ['busy-blocks', from.toISOString(), to.toISOString(), tutorId ?? null],
+    queryFn: () => source.listBusyBlocks?.({ tutorId, from: from.toISOString(), to: to.toISOString() }) ?? Promise.resolve([]),
+    enabled,
+  });
+}
+
+/** The signed-in tutor's or admin's Google Calendar link, or null. */
+export function useCalendarConnection() {
+  const enabled = useCanUseCalendar();
+  return useQuery({
+    queryKey: ['calendar-connection'],
+    queryFn: () => source.getCalendarConnection?.() ?? Promise.resolve(null),
+    enabled,
+  });
+}
+
+// Card payments: saved cards, autopay and top-ups
+
+export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });

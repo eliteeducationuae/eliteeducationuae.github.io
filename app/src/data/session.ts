@@ -5,7 +5,7 @@ import type { Profile } from '@/domain/types';
 import { source } from './index';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { queryClient } from './query';
-import type { SignUpDetails, SocialProvider } from './source';
+import type { SignUpDetails, SocialProvider, WhatsAppPrefs } from './source';
 
 export type { SocialProvider, SocialSignInResult } from './source';
 
@@ -37,6 +37,8 @@ interface SessionState {
   signInWithProvider(provider: SocialProvider): Promise<'signed-in' | 'redirecting' | 'cancelled'>;
   /** A parent saves their own name; the signed-in profile is refreshed. */
   setMyName(fullName: string): Promise<void>;
+  /** Save the signed-in person's WhatsApp opt-in and number; the signed-in profile is refreshed. */
+  setWhatsApp(prefs: WhatsAppPrefs): Promise<void>;
 }
 
 export const useSession = create<SessionState>((set) => ({
@@ -68,6 +70,11 @@ export const useSession = create<SessionState>((set) => ({
     const profile = await source.setMyName(fullName);
     set({ profile });
     queryClient.invalidateQueries();
+  },
+  async setWhatsApp(prefs) {
+    if (!source.setWhatsApp) throw new Error('WhatsApp settings are not available.');
+    const profile = await source.setWhatsApp(prefs);
+    set({ profile });
   },
   async signIn(email, password) {
     const profile = await source.signIn(email, password);

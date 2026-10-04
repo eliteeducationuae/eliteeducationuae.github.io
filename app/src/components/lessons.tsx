@@ -242,12 +242,20 @@ function TimelineBlock({
   );
 }
 
+export interface TimelineBusy {
+  id: string;
+  tutorId: string;
+  start: string;
+  end: string;
+}
+
 export function DayTimeline({
   day,
   lessons,
   lookup,
   tutorIds,
   onMove,
+  busy = [],
 }: {
   day: Date;
   lessons: Lesson[];
@@ -255,13 +263,17 @@ export function DayTimeline({
   tutorIds: string[];
   /** Enables drag-to-reschedule. */
   onMove?: (lesson: Lesson, deltaMin: number) => void;
+  /** Times a tutor is busy in Google Calendar, shown as quiet bands behind the lessons. */
+  busy?: TimelineBusy[];
 }) {
   const theme = useTheme();
   const dayStart = startOfDay(day);
   const active = lessons.filter((l) => isSameDay(new Date(l.start), day));
-  // Show the working part of the day: an hour before the first lesson to an hour after the last.
-  const first = active.length ? Math.max(6, Math.min(...active.map((l) => new Date(l.start).getHours())) - 1) : 14;
-  const last = active.length ? Math.min(24, Math.max(...active.map((l) => new Date(l.end).getHours() + 1)) + 1) : 20;
+  const busyToday = busy.filter((b) => isSameDay(new Date(b.start), day));
+  const spans = [...active, ...busyToday];
+  // Show the working part of the day: an hour before the first lesson (or busy time) to an hour after the last.
+  const first = spans.length ? Math.max(6, Math.min(...spans.map((l) => new Date(l.start).getHours())) - 1) : 14;
+  const last = spans.length ? Math.min(24, Math.max(...spans.map((l) => new Date(l.end).getHours() + 1)) + 1) : 20;
   const range = Array.from({ length: last - first }, (_, i) => first + i);
 
   return (
@@ -291,6 +303,23 @@ export function DayTimeline({
             {range.map((h) => (
               <View key={h} style={{ height: HOUR_HEIGHT, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.border }} />
             ))}
+            {busyToday
+              .filter((b) => b.tutorId === tutorId)
+              .map((b) => {
+                const top = Math.max(0, (minutesBetween(dayStart, new Date(b.start)) / 60 - first) * HOUR_HEIGHT);
+                const height = Math.max(20, (minutesBetween(new Date(b.start), new Date(b.end)) / 60) * HOUR_HEIGHT - 2);
+                return (
+                  <View
+                    key={b.id}
+                    pointerEvents="none"
+                    accessibilityLabel={`Busy in Google Calendar, ${formatTime(b.start)} to ${formatTime(b.end)}`}
+                    style={[styles.busy, { top, height, backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}>
+                    <Txt variant="small" numberOfLines={2}>
+                      Busy · {formatTime(b.start)}–{formatTime(b.end)}
+                    </Txt>
+                  </View>
+                );
+              })}
             {active
               .filter((l) => l.tutorId === tutorId)
               .map((l) => {
@@ -322,6 +351,17 @@ const styles = StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 3 },
   timeline: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
   block: { position: 'absolute', left: 3, right: 3, borderRadius: 6, borderLeftWidth: 3, padding: 4, overflow: 'hidden', userSelect: 'none' },
+  busy: {
+    position: 'absolute',
+    left: 3,
+    right: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
   lifted: { transform: [{ scale: 1.03 }] },
   cardDay: { fontSize: 12, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase' },
   cardTime: { fontSize: 18, lineHeight: 24, fontVariant: ['tabular-nums'] },

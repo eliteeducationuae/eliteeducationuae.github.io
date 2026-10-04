@@ -1,6 +1,7 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -460,23 +461,39 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  disabled,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  /** Shown but not changeable (e.g. autopay before a card is saved). */
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   return (
-    <View style={[styles.segmented, { backgroundColor: theme.surfaceAlt }]} accessibilityRole="tablist">
+    <View
+      style={[
+        styles.segmented,
+        // Disabled: no trough, a dashed outline instead, so it reads as fixed without fading the labels below AA.
+        disabled ? { backgroundColor: 'transparent', borderWidth: 1, borderStyle: 'dashed', borderColor: theme.border } : { backgroundColor: theme.surfaceAlt },
+      ]}
+      accessibilityRole="tablist">
       {options.map((o) => {
         const active = o.value === value;
         return (
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
+            disabled={disabled}
             accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            style={[styles.segment, active && [{ backgroundColor: theme.surface, borderColor: theme.border }, elevation(theme)]]}>
+            accessibilityState={{ selected: active, disabled: !!disabled }}
+            aria-selected={active}
+            aria-disabled={!!disabled}
+            style={[
+              styles.segment,
+              active && [{ backgroundColor: theme.surface, borderColor: theme.border }, !disabled && elevation(theme)],
+              disabled && Platform.OS === 'web' && ({ cursor: 'not-allowed' } as object),
+            ]}>
             <Text style={[font('sans', 'bold'), { color: active ? theme.text : theme.textMuted, fontSize: 14 }]}>{o.label}</Text>
             {active ? <View style={[styles.segmentMarker, { backgroundColor: theme.gold }]} /> : null}
           </Pressable>
