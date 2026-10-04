@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { APPLICATION_STATUS } from '@/components/hiring';
-import { tutorColorFor } from '@/components/tutor-colors';
+import { tutorColorFor } from '@/lib/tutor-colors';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';

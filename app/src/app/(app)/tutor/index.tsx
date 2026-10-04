@@ -60,7 +60,7 @@ export default function TutorToday() {
       />
       <StatGrid>
         <Stat label="Today" value={String(todays.filter((l) => l.status !== 'cancelled').length)} hint={todays.length === 1 ? 'lesson' : 'lessons'} />
-        <Stat label="This week" value={`${weekHours.toFixed(1)}h`} hint={plural(week.length, 'lesson')} onPress={() => router.push('/pay')} />
+        <Stat label="This week" value={plural(Number(weekHours.toFixed(1)), 'hour')} hint={plural(week.length, 'lesson')} onPress={() => router.push('/pay')} />
       </StatGrid>
       {(() => {
         const fresh = (opportunities.data ?? []).filter((o) => o.status === 'open' && !(bids.data ?? []).some((b) => b.opportunityId === o.id && b.tutorId === me.tutorId));

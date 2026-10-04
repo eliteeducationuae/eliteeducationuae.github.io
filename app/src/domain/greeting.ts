@@ -22,11 +22,16 @@ export function countWords(n: number, word: string, many = `${word}s`): string {
   return `${num} ${n === 1 ? word : many}`;
 }
 
-/** The admin dashboard's one-line summary of the day. */
+/**
+ * The admin dashboard's one-line summary of the day. One number style per sentence: words while both counts
+ * are small, numerals for both once either reaches ten.
+ */
 export function adminSummary(lessonsToday: number, attention: number): string {
-  const lessons = `You have ${countWords(lessonsToday, 'lesson')} today`;
+  const numerals = lessonsToday >= 10 || attention >= 10;
+  const count = (n: number, word: string) => (numerals ? `${n} ${n === 1 ? word : `${word}s`}` : countWords(n, word));
+  const lessons = `You have ${count(lessonsToday, 'lesson')} today`;
   if (!attention) return `${lessons}, and nothing needs your attention.`;
-  return `${lessons} and ${countWords(attention, 'item')} that ${attention === 1 ? 'needs' : 'need'} your attention.`;
+  return `${lessons} and ${count(attention, 'item')} that ${attention === 1 ? 'needs' : 'need'} your attention.`;
 }
 
 /** Names joined for prose: `Aisha`, `Aisha and Omar`, `Aisha, Omar and Layla`. */

@@ -209,12 +209,15 @@ export function ListItem({
   subtitle,
   left,
   right,
+  below,
   onPress,
 }: {
   title: string;
   subtitle?: string;
   left?: ReactNode;
   right?: ReactNode;
+  /** Shown under the subtitle, e.g. a status badge, so it never squeezes the title on a phone. */
+  below?: ReactNode;
   onPress?: () => void;
 }) {
   const theme = useTheme();
@@ -223,7 +226,7 @@ export function ListItem({
       <Row gap={Spacing.three}>
         {left}
         <View style={{ flex: 1 }}>
-          <Txt variant="h3" numberOfLines={1}>
+          <Txt variant="h3" numberOfLines={below ? 2 : 1}>
             {title}
           </Txt>
           {subtitle ? (
@@ -231,6 +234,7 @@ export function ListItem({
               {subtitle}
             </Txt>
           ) : null}
+          {below ? <View style={{ flexDirection: 'row', marginTop: Spacing.one }}>{below}</View> : null}
         </View>
         {right}
         {onPress ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
@@ -351,6 +355,7 @@ export function Button({
   variant = 'primary',
   size = 'md',
   icon,
+  iconAfter,
   disabled,
   loading,
   style,
@@ -360,6 +365,8 @@ export function Button({
   variant?: ButtonVariant;
   size?: 'sm' | 'md';
   icon?: IconName;
+  /** An icon after the title, e.g. the forward chevron on a "Next" pager button. */
+  iconAfter?: IconName;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -367,8 +374,8 @@ export function Button({
   const theme = useTheme();
   const palette: Record<ButtonVariant, { bg: string; fg: string; border?: string }> = {
     primary: { bg: theme.primary, fg: theme.onPrimary },
-    // Gold stays an accent: an outlined button with a champagne wash rather than a block of gold.
-    gold: { bg: theme.champagne, fg: theme.text, border: theme.gold },
+    // The main call to action: noir (ivory in dark) with a Champagne Gold hairline. Gold is never a fill.
+    gold: { bg: theme.primary, fg: theme.onPrimary, border: theme.gold },
     secondary: { bg: theme.surface, fg: theme.text, border: theme.border },
     danger: { bg: theme.dangerBg, fg: theme.danger },
     ghost: { bg: 'transparent', fg: theme.accent },
@@ -379,6 +386,7 @@ export function Button({
   const onHero = useContext(HeroSurface);
   if (onHero) {
     palette.primary = { bg: theme.onHero, fg: theme.hero };
+    palette.gold = { bg: theme.onHero, fg: theme.hero, border: theme.gold };
     palette.secondary = { bg: 'transparent', fg: theme.onHero, border: theme.onHeroMuted };
     palette.outline = { bg: 'transparent', fg: theme.onHero, border: theme.gold };
     palette.ghost = { bg: 'transparent', fg: theme.onHero };
@@ -406,6 +414,7 @@ export function Button({
         <Icon name={icon} size={size === 'sm' ? 16 : 18} color={c.fg} />
       ) : null}
       <Text style={[styles.buttonText, size === 'sm' && { fontSize: 14 }, { color: c.fg }]}>{title}</Text>
+      {iconAfter && !loading ? <Icon name={iconAfter} size={size === 'sm' ? 16 : 18} color={c.fg} /> : null}
     </Pressable>
   );
 }

@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-import { brandTutorColor } from '@/components/tutor-colors';
+import { brandTutorColor } from '@/lib/tutor-colors';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,

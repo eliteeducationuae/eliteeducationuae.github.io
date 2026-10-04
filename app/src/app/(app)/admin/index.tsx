@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 
-import { GreetingCard, QuickActions } from '@/components/dashboard';
+import { GreetingCard, NextLessonCard, QuickActions } from '@/components/dashboard';
 import { LessonCard } from '@/components/lessons';
 import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -51,6 +51,8 @@ export default function AdminDashboard() {
   const atRisk = useAtRisk();
 
   const today = (lessons.data ?? []).filter((l) => isSameDay(new Date(l.start), now)).sort(byStart);
+  const activeToday = today.filter((l) => l.status !== 'cancelled' && l.status !== 'late-cancel');
+  const next = (upcoming.data ?? []).filter((l) => l.status === 'scheduled' && new Date(l.end) > now).sort(byStart)[0];
   const needsNotes = (lessons.data ?? []).filter((l) => l.status === 'scheduled' && new Date(l.end) < now);
   const lastMonthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1);
   const inRange = (from: Date, to: Date) => (charges.data ?? []).filter((c) => new Date(c.date) >= from && new Date(c.date) < to);
@@ -81,8 +83,9 @@ export default function AdminDashboard() {
       <GreetingCard
         date={now}
         title={greetingLine(now, me.fullName.split(' ')[0])}
-        subtitle={loading ? undefined : adminSummary(today.filter((l) => l.status !== 'cancelled' && l.status !== 'late-cancel').length, attention)}
+        subtitle={loading ? undefined : adminSummary(activeToday.length, attention)}
       />
+      {next ? <NextLessonCard lesson={next} lookup={lookup} perspective="admin" now={now} /> : null}
       <QuickActions
         actions={[
           { icon: 'calendar', label: 'Schedule lessons', onPress: () => router.push('/lesson/new') },
@@ -97,7 +100,7 @@ export default function AdminDashboard() {
       ) : (
         <>
           <StatGrid>
-            <Stat label="Lessons today" value={String(today.filter((l) => l.status !== 'cancelled').length)} onPress={() => router.navigate('/admin/calendar')} />
+            <Stat label="Lessons today" value={String(activeToday.length)} onPress={() => router.navigate('/admin/calendar')} />
             <Stat label="Earned this month" value={formatAED(revenue)} hint={`${formatAED(lastMonthRevenue)} last month`} tone="success" onPress={() => router.push('/manage/money')} />
             <Stat label="Outstanding" value={formatAED(outstanding)} hint={plural(open.length, 'invoice')} tone={overdue.length ? 'danger' : undefined} onPress={() => router.navigate('/admin/billing')} />
             <Stat label="Ready to invoice" value={formatAED(unbilledTotal)} hint={plural(unbilled.length, 'charge')} tone="info" onPress={() => router.navigate('/admin/billing')} />

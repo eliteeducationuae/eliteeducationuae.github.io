@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { LoginHint } from '@/components/login-hint';
-import { TUTOR_COLORS } from '@/components/tutor-colors';
+import { TUTOR_COLORS } from '@/lib/tutor-colors';
 import { Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';

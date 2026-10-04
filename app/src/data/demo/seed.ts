@@ -57,7 +57,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
     version: DEMO_DB_VERSION,
     settings,
     profiles: [],
-    // Tutor colours come from TUTOR_COLORS in src/components/tutor-colors.ts (slate, bronze, forest).
+    // Tutor colours come from TUTOR_COLORS in src/lib/tutor-colors.ts (slate, bronze, forest).
     tutors: [
       { id: 't-craig', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', hourlyPay: 300, subjects: ['IB', 'A-Level', 'IGCSE'], color: '#3F4A56' },
       { id: 't-sarah', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', hourlyPay: 200, subjects: ['IGCSE'], color: '#7A5C1E' },

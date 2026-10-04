@@ -64,7 +64,7 @@ export function NextLessonCard({
       ? `${students}${service ? ` · ${service.name}` : ''}`
       : perspective === 'family'
         ? `${students} with ${tutor?.fullName ?? 'your tutor'}${service ? ` · ${service.name}` : ''}`
-        : `${students} with ${tutor?.fullName ?? 'a tutor'}`;
+        : `${students} with ${tutor?.fullName ?? 'a tutor'}${service ? ` · ${service.name}` : ''}`;
   const online = lesson.location === 'online';
   const where = online ? (lesson.meetingUrl ? 'Online · video link ready' : 'Online · link to follow') : lesson.address || 'In person';
   return (

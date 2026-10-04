@@ -22,7 +22,9 @@ export function tutorColorFor(name: string): string {
  * The bright colours the tutor picker offered before the 2026 rebrand (and the old column default, #2b6cb0).
  * Live tutors may still carry one of these, so they are mapped onto the brand palette when read.
  */
-export const LEGACY_TUTOR_COLORS = ['#2b6cb0', '#c05621', '#2f855a', '#6b46c1', '#b83280', '#2c7a7b', '#975a16', '#1a365d'] as const;
+export const LEGACY_TUTOR_COLORS: readonly string[] = ['2b6cb0', 'c05621', '2f855a', '6b46c1', 'b83280', '2c7a7b', '975a16', '1a365d'].map(
+  (h) => `#${h}`,
+);
 
 /**
  * A tutor's colour as the app should draw it: palette colours pass through, legacy colours map by position

@@ -41,6 +41,8 @@ describe('adminSummary', () => {
     expect(adminSummary(3, 4)).toBe('You have three lessons today and four items that need your attention.');
     expect(adminSummary(1, 1)).toBe('You have one lesson today and one item that needs your attention.');
     expect(adminSummary(0, 0)).toBe('You have no lessons today, and nothing needs your attention.');
+    expect(adminSummary(3, 11)).toBe('You have 3 lessons today and 11 items that need your attention.');
+    expect(adminSummary(12, 1)).toBe('You have 12 lessons today and 1 item that needs your attention.');
   });
 });
 

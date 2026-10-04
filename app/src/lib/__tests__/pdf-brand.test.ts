@@ -12,7 +12,8 @@ import { tutorInvoiceHTML } from '../tutor-invoice-pdf';
 jest.mock('expo-print', () => ({}), { virtual: true });
 jest.mock('expo-sharing', () => ({}), { virtual: true });
 jest.mock('react-native', () => ({ Platform: { OS: 'web' } }), { virtual: true });
-jest.mock('@/constants/theme', () => ({ MasteryColors: ['#A84E44', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F'] }));
+// The real mastery palette (palette.ts is plain data), so the legibility test follows any change to it.
+jest.mock('@/constants/theme', () => ({ MasteryColors: jest.requireActual('@/constants/palette').MasteryColors }));
 
 // The pre-brand navy, gold and slate colours, written without the leading hash so they never match a source sweep.
 const OLD_HEX = ['1a365d', 'd69e2e', '64748b', '1a202c', 'e2e8f0', 'f4f6fb'].map((h) => `#${h}`);
@@ -46,7 +47,9 @@ describe('pdf-brand', () => {
   });
 
   it('keeps pill and body text legible', () => {
-    for (const bg of ['#B5574C', '#C68B4E', '#C9A84C', '#86A886', '#3D6B4F', PDF_COLORS.neutralPill]) {
+    const { MasteryColors } = jest.requireMock('@/constants/theme') as { MasteryColors: string[] };
+    expect(MasteryColors[0]).toBe('#A84E44');
+    for (const bg of [...MasteryColors, PDF_COLORS.neutralPill]) {
       expect(contrastRatio(pillTextColor(bg), bg)).toBeGreaterThanOrEqual(4.5);
     }
     expect(pdfPill('Not started')).toContain(`background:${PDF_COLORS.neutralPill}`);
