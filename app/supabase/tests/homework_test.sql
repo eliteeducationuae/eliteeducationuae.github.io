@@ -237,10 +237,12 @@ do $$ begin
 exception when check_violation then raise notice 'ok - resource files live in the library folder';
 end $$;
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
-select pg_temp.check((select count(*) from public.resources) = 1, 'every tutor sees the library');
+select pg_temp.check((select count(*) from public.list_resources()) = 1, 'every tutor sees the library');
+select pg_temp.check((select count(*) from public.resources) = 0,
+  'a tutor cannot read other tutors'' resources (and whom they are shared with) from the table directly');
 update public.resources set title = 'Hijacked';
 delete from public.resources;
-select pg_temp.check((select title from public.resources) = 'Past paper 2025', 'only the uploader can change or delete a resource');
+select pg_temp.check((select title from public.list_resources()) = 'Past paper 2025', 'only the uploader can change or delete a resource');
 do $$ begin
   perform public.share_resource('90000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001');
   raise exception 'shared with someone else''s student';
@@ -272,6 +274,10 @@ select public.share_resource('90000000-0000-0000-0000-000000000001', 'd0000000-0
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select pg_temp.check((select array_to_string(student_ids, ',') from public.list_resources()) = 'd0000000-0000-0000-0000-000000000001',
   'a tutor sees only their own students among those a resource is shared with');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+select pg_temp.check((select array_to_string(student_ids, ',') from public.list_resources()) = 'd0000000-0000-0000-0000-000000000002'
+  and not exists (select 1 from public.resources), 'another tutor sees only their own student, and never the stored list');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
 select pg_temp.check((select count(*) from public.list_resources()) = 1, 'the family sees a resource once it is shared');
 select pg_temp.check((select array_to_string(student_ids, ',') from public.list_resources()) = 'd0000000-0000-0000-0000-000000000001',
@@ -378,6 +384,19 @@ select pg_temp.check(not exists (select 1 from public.resources where id in ('90
   'both library entries are gone');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
 select pg_temp.check(public.classwork_can_read('resources/r3.pdf'), 'the family can still open the homework copy');
+
+-- Stored files still in use cannot be deleted (the classwork delete policy checks classwork_can_delete).
+select pg_temp.check(not public.classwork_can_delete('resources/r3.pdf'), 'a library file attached to homework cannot be deleted');
+select pg_temp.check(public.classwork_can_delete('resources/r4.pdf'), 'a file nothing refers to any more can be deleted');
+select pg_temp.check(not public.classwork_can_delete(null) and not public.classwork_can_delete(''), 'an empty name is never deletable');
+select pg_temp.check((select bool_and(not public.classwork_can_delete(f->>'path'))
+    from public.homework_submissions s, jsonb_array_elements(s.files) f where f->>'path' is not null)
+  and exists (select 1 from public.homework_submissions s, jsonb_array_elements(s.files) f where f->>'path' is not null),
+  'hand-in files cannot be deleted');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+insert into public.resources (id, title, kind, path, file_name) values
+  ('90000000-0000-0000-0000-000000000005', 'Kept', 'file', 'resources/r5.pdf', 'r5.pdf');
+select pg_temp.check(not public.classwork_can_delete('resources/r5.pdf'), 'a library resource''s file cannot be deleted while the resource exists');
 
 reset role;
 set role anon;

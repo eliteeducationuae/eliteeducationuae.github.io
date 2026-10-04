@@ -892,9 +892,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         tags: input.tags,
       };
       const saved = input.id
-        ? check(await client.from('resources').update(row).eq('id', input.id).select('*').single())
-        : check(await client.from('resources').insert(row).select('*').single());
-      return toResource(saved);
+        ? check(await client.from('resources').update(row).eq('id', input.id).select('id').single())
+        : check(await client.from('resources').insert(row).select('id').single());
+      // Read it back through list_resources, which lists only the caller's own students in student_ids.
+      const rows = check<Row[] | null>(await client.rpc('list_resources', { p_student_id: null }));
+      const found = (rows ?? []).find((r) => r.id === saved.id);
+      if (!found) throw new Error('The resource was saved but could not be read back. Please refresh.');
+      return toResource(found);
     },
     async deleteResource(id) {
       // delete_resource returns the stored path only when no homework or hand-in still uses the file.
