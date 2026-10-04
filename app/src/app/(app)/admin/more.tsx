@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { AccountScreen } from '@/components/account';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
-import { useApplications, useBids, useEnquiries, useOpportunities, useRequests, useTutorInvoices, useUnreadCount } from '@/data/hooks';
+import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount } from '@/data/hooks';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function AdminMore() {
@@ -23,10 +23,15 @@ export default function AdminMore() {
   const bids = useBids();
   const applications = useApplications();
   const tutorInvoices = useTutorInvoices();
+  const reportCycles = useReportCycles();
+  const reports = useStudentReports();
+  const openCycleIds = new Set((reportCycles.data ?? []).filter((c) => c.status === 'open').map((c) => c.id));
+  const toReview = (reports.data ?? []).filter((r) => r.status === 'submitted' && openCycleIds.has(r.cycleId)).length;
   const openBids = (bids.data ?? []).filter((b) => b.status === 'pending' && opportunities.data?.find((o) => o.id === b.opportunityId)?.status === 'open').length;
   const team = [
     { title: 'Roles for tutors', subtitle: 'Post new students; tutors put themselves forward', icon: 'school', href: '/manage/opportunities', badge: openBids },
     { title: 'Tutor invoices', subtitle: 'Approve monthly invoices and pay tutors', icon: 'doc', href: '/manage/tutor-invoices', badge: (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted').length },
+    { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
     { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: (applications.data ?? []).filter((a) => a.status === 'applied').length },
   ] as const;
   const links = [

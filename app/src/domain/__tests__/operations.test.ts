@@ -1,6 +1,6 @@
 import { monthFigures, revenueByCurriculum, toCSV, type FinanceData } from '../finance';
 import { AT_RISK_THRESHOLD, studentRisk, tutorUtilisation } from '../insights';
-import { reportFacts, sampleReportDraft } from '../reports';
+import { factsForAi, reportFacts, sampleReportDraft } from '../reports';
 import { formatIban, isValidIban, maskIban, tutorInvoiceLines, tutorInvoiceNumber, tutorInvoiceTotal } from '../tutor-pay';
 import type { Charge, Homework, Invoice, Lesson, Service, Student, Tutor, TutorInvoice } from '../types';
 
@@ -159,5 +159,9 @@ describe('report facts and sample drafts', () => {
     expect(draft.strengths).toContain('Calculus');
     expect(draft.nextSteps).toContain('Vectors');
     expect(draft.comment).toContain('Sami has attended 50% of lessons');
+
+    const ai = factsForAi(facts, (id) => ({ calc: 'Calculus', vec: 'Vectors' })[id] ?? id, { curriculum: 'IB', syllabus: 'IB AA SL', effort: 4, progress: 3 });
+    expect(ai).toMatchObject({ firstName: 'Sami', curriculum: 'IB AA SL', effort: 'Very good', progress: 'As expected', needsWork: ['Vectors (Emerging)'] });
+    expect(JSON.stringify(ai)).not.toContain('Ahmed');
   });
 });

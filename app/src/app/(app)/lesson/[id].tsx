@@ -97,6 +97,7 @@ export default function LessonDetail() {
               </Txt>
             ) : null}
           </Card>
+          {isStaff && note.summary && source.aiAssist ? <ParentUpdate lessonId={l.id} familyIds={[...new Set(l.studentIds.map((sid) => lookup.student(sid)?.familyId).filter((f): f is string => !!f))]} /> : null}
         </Section>
       ) : null}
 
@@ -132,6 +133,58 @@ export default function LessonDetail() {
 }
 
 /** Reassign a lesson to another tutor — e.g. cover while the usual tutor is away. */
+/** Turn the lesson notes into a short message for the family, with AI, then send it in their conversation. */
+function ParentUpdate({ lessonId, familyIds }: { lessonId: string; familyIds: string[] }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const send = useAction(source.sendMessage);
+  if (familyIds.length !== 1) return null;
+  if (message === null)
+    return (
+      <View style={{ gap: Spacing.one }}>
+        <Button
+          title="Draft a message to the family"
+          icon="sparkle"
+          variant="secondary"
+          size="sm"
+          loading={busy}
+          onPress={async () => {
+            setBusy(true);
+            setFailed(false);
+            const res = await source.aiAssist?.({ task: 'parent-update', lessonId });
+            setBusy(false);
+            if (res?.task === 'parent-update') setMessage(res.message);
+            else setFailed(true);
+          }}
+        />
+        {failed ? <Txt variant="small">AI drafting isn’t available right now.</Txt> : null}
+      </View>
+    );
+  return (
+    <Card style={{ gap: Spacing.two }}>
+      <Field label="Message to the family (edit before sending)" value={message} onChangeText={setMessage} multiline />
+      <ErrorNote error={send.error} />
+      <Row gap={Spacing.two}>
+        <Button title="Discard" variant="ghost" onPress={() => setMessage(null)} />
+        <Button
+          title="Send"
+          icon="chat"
+          variant="gold"
+          style={{ flex: 1 }}
+          disabled={!message.trim()}
+          loading={send.isPending}
+          onPress={async () => {
+            await send.mutateAsync([familyIds[0], message.trim()]);
+            setMessage(null);
+            notify('Sent', 'Your message is in the family’s conversation.');
+          }}
+        />
+      </Row>
+    </Card>
+  );
+}
+
 function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof useLesson>['data']>; onDone: () => void }) {
   const tutors = useTutors();
   const availability = useAvailability();

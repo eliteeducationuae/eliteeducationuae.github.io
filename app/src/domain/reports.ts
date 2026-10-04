@@ -73,3 +73,26 @@ export function sampleReportDraft(facts: ReportFacts, topicName: (id: string) =>
     comment: `${attendance}${homework}Across ${facts.lessonsTaught} lesson${facts.lessonsTaught === 1 ? '' : 's'} this term we have covered ${facts.topicsCovered.length} topic${facts.topicsCovered.length === 1 ? '' : 's'}. ${strong.length ? `${name} should be proud of the progress in ${strong[0]}. ` : ''}${weak.length ? `With continued work on ${weak[0]}, I'm confident ${name} will keep improving.` : `I'm confident ${name} will continue to make excellent progress.`}`,
   };
 }
+
+/** One-tap grade scales used on the writing screen and in the family's copy. */
+export const EFFORT_LABELS: Record<number, string> = { 1: 'Needs attention', 2: 'Inconsistent', 3: 'Good', 4: 'Very good', 5: 'Outstanding' };
+export const PROGRESS_LABELS: Record<number, string> = { 1: 'Below expected', 2: 'Slower than expected', 3: 'As expected', 4: 'Above expected', 5: 'Exceptional' };
+
+/** The facts in plain words, as sent to the AI drafting service (topic ids resolved to names, no surnames). */
+export function factsForAi(facts: ReportFacts, topicName: (id: string) => string, context: { curriculum: string; syllabus?: string; attainment?: string; effort?: number; progress?: number }) {
+  const named = (ms: { topicId: string; rating: number }[]) => ms.map((m) => `${topicName(m.topicId)} (${RATING_LABELS[m.rating]})`);
+  return {
+    firstName: facts.firstName,
+    curriculum: context.syllabus ?? context.curriculum,
+    workingAt: context.attainment || undefined,
+    effort: context.effort ? EFFORT_LABELS[context.effort] : undefined,
+    progress: context.progress ? PROGRESS_LABELS[context.progress] : undefined,
+    lessonsAttended: facts.lessonsTaught,
+    attendancePercent: facts.attendancePercent,
+    homeworkPercent: facts.homeworkPercent,
+    topicsCovered: named(facts.topicsCovered),
+    strongOrImproved: named(facts.improved),
+    needsWork: named(facts.needsWork),
+    recentLessonNotes: facts.recentNotes,
+  };
+}

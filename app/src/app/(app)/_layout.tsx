@@ -44,6 +44,9 @@ export default function SignedInLayout() {
       <Stack.Screen name="manage/applications" options={{ title: 'Hiring' }} />
       <Stack.Screen name="manage/application/[id]" options={{ title: 'Application' }} />
       <Stack.Screen name="manage/tutor-invoices" options={{ title: 'Tutor invoices' }} />
+      <Stack.Screen name="manage/reports" options={{ title: 'Student reports' }} />
+      <Stack.Screen name="reports/index" options={{ title: 'Reports to write' }} />
+      <Stack.Screen name="reports/[id]" options={{ title: 'Report' }} />
       <Stack.Screen name="opportunities/index" options={{ title: 'Opportunities' }} />
       <Stack.Screen name="opportunities/[id]" options={{ title: 'Opportunity' }} />
       <Stack.Screen name="tutor-invoices/index" options={{ title: 'My invoices' }} />
