@@ -70,7 +70,8 @@ export function StudentOverview({ student }: { student: Student }) {
     .filter(Boolean)
     .join(' · ');
   const badge = student.phase ?? subjects[0]?.curriculum ?? student.curriculum;
-  const selectedTitle = selected ? enrolmentTitle(selected) : legacy?.name;
+  // A course with a built-in topic tree is headed by the course's own name ('IGCSE Additional Maths (0606)').
+  const selectedTitle = selected ? (topics.builtIn(selected.syllabusId)?.name ?? enrolmentTitle(selected)) : legacy?.name;
   // Repeated subjects (Maths IGCSE and Maths A-Level) are told apart by their full titles.
   const repeated = subjects.some((e, i) => subjects.findIndex((o) => sameSubject(o.subject, e.subject)) !== i);
   const tabLabel = (e: Enrolment) => (repeated ? enrolmentTitle(e) : e.subject);

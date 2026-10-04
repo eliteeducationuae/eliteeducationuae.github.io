@@ -136,7 +136,7 @@ export default function NewLesson() {
           </Row>
           {!enrolled.length ? <Txt variant="small">No subjects are recorded for this student yet. Please choose one below.</Txt> : null}
           {showOther ? (
-            <CataloguePicker label="Other subject" options={SUBJECTS} value={subject} onChange={pickSubject} otherPlaceholder="Name the subject" collapsed={10} />
+            <CataloguePicker label="Other subject" options={SUBJECTS} value={subject} onChange={pickSubject} otherPlaceholder="For example, Latin" collapsed={10} />
           ) : null}
         </Section>
       ) : null}

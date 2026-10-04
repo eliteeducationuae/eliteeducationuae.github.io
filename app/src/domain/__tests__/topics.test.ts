@@ -35,6 +35,8 @@ describe('buildTopicLookup', () => {
     expect(lookup.name('aa-seq')).toBe('Sequences');
     expect(lookup.name('t-mole')).toBe('The mole');
     expect(lookup.name('unknown-id')).toBe('unknown-id');
+    // A stored topic that has not loaded never shows its raw id to families.
+    expect(lookup.name('0b5c8a52-2f7e-4c1a-9d3e-6a1f2b3c4d5e')).toBe('Topic');
     expect(lookup.unit('aa-diff')).toBe('Calculus');
     expect(lookup.unit('t-mole')).toBe('Stoichiometry');
     expect(lookup.unit('t-elec')).toBeUndefined();

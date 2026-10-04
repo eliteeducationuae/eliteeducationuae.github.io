@@ -218,6 +218,32 @@ describe('subjects through sign-up, enquiries and booking', () => {
     ]);
   });
 
+  it('keeps the course a parent chooses, and finds the one that fits when they do not', () => {
+    const db = createSeed(NOW);
+    const parent = who(db, 'parent');
+    const id = eq.addMyChild(db, parent, {
+      fullName: 'Test Maths',
+      subjects: [
+        { subject: 'Maths', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1' },
+        { subject: 'Chemistry', curriculum: 'IGCSE', syllabusId: 'igcse-0580' },
+        { subject: 'Maths', curriculum: 'IB DP', level: 'AA HL' },
+        { subject: 'Additional Maths', curriculum: 'IGCSE' },
+      ],
+    });
+    const rows = enr.enrolments(db, parent, id).map((e) => [e.subject, e.curriculum, e.level, e.examBoard, e.syllabusId]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        ['Maths', 'IGCSE', undefined, 'Pearson Edexcel', 'igcse-4ma1'],
+        ['Chemistry', 'IGCSE', undefined, undefined, undefined],
+        ['Maths', 'IB DP', 'AA HL', 'IB', 'ib-aa-hl'],
+        ['Additional Maths', 'IGCSE', undefined, 'Cambridge', 'igcse-0606'],
+      ]),
+    );
+    expect(rows).toHaveLength(4);
+    const unsure = eq.addMyChild(db, parent, { fullName: 'Unsure', subjects: [{ subject: 'Maths', curriculum: 'IGCSE' }] });
+    expect(enr.enrolments(db, parent, unsure)[0].syllabusId).toBeUndefined();
+  });
+
   it('stores the subject and phase of an enquiry', () => {
     const db = createSeed(NOW);
     eq.submitEnquiry(db, null, { parentName: 'Rita', email: 'r@x', subject: ' English ', phase: 'Primary', source: 'website' }, NOW);

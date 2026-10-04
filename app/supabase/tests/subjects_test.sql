@@ -272,6 +272,23 @@ insert into kid select public.add_my_child(p_full_name => 'Legacy Other', p_curr
 select pg_temp.check((select string_agg(e.subject || '|' || coalesce(e.curriculum, ''), ', ') from public.enrolments e
   join public.students s on s.id = e.student_id where s.full_name = 'Legacy Other') = 'Maths|IGCSE',
   'an older client''s child gets a Maths enrolment');
+-- A family's choice of course is kept (and fills its exam board); without one, the single course that fits is found
+insert into kid select public.add_my_child('Course Other', p_subjects =>
+  '[{"subject":"Maths","curriculum":"IGCSE","syllabus_id":"igcse-4ma1"},{"subject":"Chemistry","curriculum":"IGCSE","syllabus_id":"igcse-0580"}]');
+select pg_temp.check((select string_agg(e.subject || '|' || coalesce(e.curriculum, '') || '|' || coalesce(e.level, '') || '|' || coalesce(e.exam_board, '') || '|' || coalesce(e.syllabus_id, ''), ', ' order by e.subject)
+  from public.enrolments e join public.students s on s.id = e.student_id where s.full_name = 'Course Other')
+  = 'Chemistry|IGCSE|||, Maths|IGCSE||Pearson Edexcel|igcse-4ma1',
+  'a parent-added Maths IGCSE (Edexcel) child gets syllabus igcse-4ma1, and a course that does not fit the subject is ignored');
+insert into kid select public.add_my_child('Infer Other', p_subjects =>
+  '[{"subject":"Maths","curriculum":"IGCSE","exam_board":"Pearson Edexcel"},{"subject":"Maths","curriculum":"IB DP","level":"AA HL"},'
+  '{"subject":"Additional Maths","curriculum":"IGCSE"},{"subject":"Maths","curriculum":"A-Level","syllabus_id":"made-up"}]');
+select pg_temp.check((select string_agg(e.subject || '|' || coalesce(e.curriculum, '') || '|' || coalesce(e.level, '') || '|' || coalesce(e.exam_board, '') || '|' || coalesce(e.syllabus_id, ''), ', ' order by e.subject, e.curriculum)
+  from public.enrolments e join public.students s on s.id = e.student_id where s.full_name = 'Infer Other')
+  = 'Additional Maths|IGCSE||Cambridge|igcse-0606, Maths|A-Level|||alevel-maths, Maths|IB DP|AA HL|IB|ib-aa-hl, Maths|IGCSE||Pearson Edexcel|igcse-4ma1',
+  'without a course, the one built-in course that matches the curriculum, level and exam board is chosen; unknown ids are ignored');
+insert into kid select public.add_my_child('Unsure Other', p_subjects => '[{"subject":"Maths","curriculum":"IGCSE"}]');
+select pg_temp.check((select coalesce(e.syllabus_id, 'none') from public.enrolments e join public.students s on s.id = e.student_id
+  where s.full_name = 'Unsure Other') = 'none', 'when two courses fit, none is guessed');
 
 -- Enquiries record subject and phase -------------------------------------------
 reset role;
@@ -281,7 +298,7 @@ select public.submit_enquiry('Rita Rahman', 'rita@x', null, 'Zara', 'British', '
   p_subject => 'English', p_phase => 'Primary');
 reset role;
 select pg_temp.check((select subject || '/' || phase from public.enquiries where email = 'rita@x') = 'English/Primary', 'an enquiry from the website stores subject and phase');
-select pg_temp.check(exists (select 1 from public.notification_outbox where subject like 'New enquiry: Rita%' and body like '%Subject: English%Stage: Primary%'),
+select pg_temp.check(exists (select 1 from public.notification_outbox where subject like 'New enquiry: Rita%' and body like '%Subject: English%Phase: Primary%'),
   'the office is told the subject and phase');
 select pg_temp.check((select body from public.notification_outbox where email = 'rita@x') like 'Dear Rita,%complimentary consultation%Elite Education | eliteeducation.me',
   'the acknowledgement is formal');

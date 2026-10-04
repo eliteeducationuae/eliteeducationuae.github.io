@@ -390,13 +390,17 @@ const toInvoice = (r: Row): Invoice => ({
 });
 
 /** The add_my_child RPC's p_subjects: snake_case keys, blanks left out. */
-function addChildSubjects(subjects: NewChildSubject[]): Row[] {
+/** Rows per request when reading topics; at or below the server's response cap. */
+const TOPIC_PAGE = 1000;
+
+export function addChildSubjects(subjects: NewChildSubject[]): Row[] {
   return subjects.map((s) =>
     strip({
       subject: s.subject.trim(),
       curriculum: s.curriculum?.trim() || undefined,
       level: s.level?.trim() || undefined,
       exam_board: s.examBoard?.trim() || undefined,
+      syllabus_id: s.syllabusId?.trim() || undefined,
     }),
   );
 }
@@ -715,9 +719,16 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return check(await client.from('topic_lists').select('*').order('name')).map(toTopicList);
     },
     async listTopics(filter = {}) {
-      let q = client.from('topics').select('*');
-      if (filter.listId) q = q.eq('list_id', filter.listId);
-      return check(await q.order('list_id').order('sort')).map(toTopic);
+      // PostgREST caps a response (1000 rows by default), so read the shared lists a page at a time.
+      const rows: Row[] = [];
+      for (let from = 0; ; from += TOPIC_PAGE) {
+        let q = client.from('topics').select('*');
+        if (filter.listId) q = q.eq('list_id', filter.listId);
+        const page = check(await q.order('list_id').order('sort').order('id').range(from, from + TOPIC_PAGE - 1)) as Row[];
+        rows.push(...page);
+        if (page.length < TOPIC_PAGE) break;
+      }
+      return rows.map(toTopic);
     },
     async addTopic(input) {
       const row = check(

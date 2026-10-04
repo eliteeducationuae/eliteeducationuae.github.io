@@ -1,4 +1,5 @@
-import { CURRICULA, EXAM_BOARDS, LEVELS, OTHER, PHASES, SUBJECTS, cleanChoice, inCatalogue } from '../catalogue';
+import { CURRICULA, EXAM_BOARDS, LEVELS, OTHER, PHASES, SUBJECTS, cleanChoice, inCatalogue, levelsFor, otherPlaceholderFor } from '../catalogue';
+import { SYLLABUSES } from '@/data/curriculum';
 
 describe('catalogue', () => {
   it.each([
@@ -36,5 +37,33 @@ describe('catalogue', () => {
     expect(cleanChoice('   ')).toBeUndefined();
     expect(cleanChoice('')).toBeUndefined();
     expect(cleanChoice(undefined)).toBeUndefined();
+  });
+});
+
+describe('levels', () => {
+  it('include every level the built-in courses use, so their topic lists are shared', () => {
+    for (const s of SYLLABUSES) if (s.level) expect(inCatalogue(LEVELS, s.level)).toBe(true);
+    for (const s of SYLLABUSES) if (s.level) expect(inCatalogue(levelsFor(s.curriculum), s.level)).toBe(true);
+  });
+
+  it('offer only the levels that fit the curriculum', () => {
+    expect(levelsFor('IGCSE')).not.toContain('HL');
+    expect(levelsFor('IB DP')).toEqual(expect.arrayContaining(['HL', 'SL', 'AA HL']));
+    expect(levelsFor('IB DP')).not.toContain('Core');
+    expect(levelsFor(undefined)).toBe(LEVELS);
+    expect(levelsFor('Indian CBSE')).toBe(LEVELS);
+  });
+
+  it('keep a level already chosen on offer', () => {
+    expect(levelsFor('IGCSE', 'hl')).toContain('HL');
+    expect(levelsFor('IGCSE', 'Grade 8')).not.toContain('Grade 8');
+  });
+});
+
+describe('otherPlaceholderFor', () => {
+  it('uses the house "For example, …" form', () => {
+    expect(otherPlaceholderFor('Subject')).toBe('For example, Latin');
+    expect(otherPlaceholderFor('Phase')).toBe('For example, postgraduate');
+    expect(otherPlaceholderFor('Something')).toBe('Please type your answer');
   });
 });

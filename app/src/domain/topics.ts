@@ -2,9 +2,11 @@ import { enrolmentTitle, topicListKey } from './enrolments';
 import type { Syllabus, SyllabusUnit } from './progress';
 import type { Enrolment, Topic, TopicList } from './types';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Resolves topic ids (built-in syllabus ids and stored topic ids) to names, units, subjects and trees. */
 export interface TopicLookup {
-  /** The topic's name, or the id itself when it is unknown. */
+  /** The topic's name. An unknown stored topic (a UUID) reads 'Topic'; any other unknown id is shown as it is. */
   name(topicId: string): string;
   /** The unit name, when the topic has one. */
   unit(topicId: string): string | undefined;
@@ -43,7 +45,7 @@ export function buildTopicLookup(builtIns: Syllabus[], lists: TopicList[], topic
   const builtInById = new Map(builtIns.map((s) => [s.id, s]));
 
   return {
-    name: (id) => index.get(id)?.name ?? id,
+    name: (id) => index.get(id)?.name ?? (UUID.test(id) ? 'Topic' : id),
     unit: (id) => index.get(id)?.unit,
     subjectOf: (id) => index.get(id)?.subject,
     builtIn: (id) => (id ? builtInById.get(id) : undefined),

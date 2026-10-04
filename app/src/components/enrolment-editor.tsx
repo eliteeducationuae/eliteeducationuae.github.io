@@ -1,8 +1,8 @@
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { builtInSyllabusesFor } from '@/data/curriculum';
-import { CURRICULA, EXAM_BOARDS, LEVELS, SUBJECTS } from '@/domain/catalogue';
+import { builtInSyllabusesFor, enrolmentFieldsFor } from '@/data/curriculum';
+import { CURRICULA, EXAM_BOARDS, levelsFor, SUBJECTS } from '@/domain/catalogue';
 import { enrolmentTitle, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
 import type { Tutor } from '@/domain/types';
 
@@ -30,16 +30,19 @@ export function emptyDraft(): EnrolmentDraft {
 
 /**
  * The list of subjects a student studies: subject, curriculum, level, exam board and (for staff) the tutor.
- * Omit `tutors` for families, which hides the tutor choice.
+ * Omit `tutors` for families, which hides the tutor choice. `forFamily` words the built-in topic lists as
+ * courses and drops the staff-only 'Build as we teach' choice.
  */
 export function EnrolmentEditor({
   value,
   onChange,
   tutors,
+  forFamily,
 }: {
   value: EnrolmentDraft[];
   onChange: (v: EnrolmentDraft[]) => void;
   tutors?: Tutor[];
+  forFamily?: boolean;
 }) {
   const update = (index: number, patch: Partial<EnrolmentDraft>) => onChange(value.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   const visible = value.map((d, index) => ({ d, index })).filter(({ d }) => d.active);
@@ -52,6 +55,7 @@ export function EnrolmentEditor({
           draft={d}
           number={n + 1}
           tutors={tutors}
+          forFamily={forFamily}
           onChange={(patch) => update(index, patch)}
           onRemove={() => onChange(removeDraft(value, index))}
         />
@@ -66,12 +70,14 @@ function SubjectCard({
   draft,
   number,
   tutors,
+  forFamily,
   onChange,
   onRemove,
 }: {
   draft: EnrolmentDraft;
   number: number;
   tutors?: Tutor[];
+  forFamily?: boolean;
   onChange: (patch: Partial<EnrolmentDraft>) => void;
   onRemove: () => void;
 }) {
@@ -96,7 +102,7 @@ function SubjectCard({
           const keepList = next && draft.syllabusId && builtInSyllabusesFor(next, draft.curriculum).some((s) => s.id === draft.syllabusId);
           onChange({ subject: next, syllabusId: keepList ? draft.syllabusId : undefined });
         }}
-        otherPlaceholder="Name the subject"
+        otherPlaceholder="For example, Latin"
         collapsed={10}
       />
       <CataloguePicker
@@ -112,7 +118,7 @@ function SubjectCard({
       />
       <CataloguePicker
         label="Level"
-        options={LEVELS}
+        options={levelsFor(draft.curriculum, draft.level)}
         value={draft.level}
         onChange={(v) => onChange({ level: v })}
         otherPlaceholder="For example, Year 10 or Grade 8"
@@ -141,12 +147,20 @@ function SubjectCard({
 
       {lists.length ? (
         <View style={{ gap: Spacing.one }}>
-          <Txt variant="label">Topic list</Txt>
+          <Txt variant="label">{forFamily ? 'Course (optional)' : 'Topic list'}</Txt>
+          {forFamily ? <Txt variant="small">If you know the course your child follows, please choose it. Otherwise, we will confirm it with you.</Txt> : null}
           <Row wrap>
             {lists.map((s) => (
-              <Chip key={s.id} label={s.name} selected={draft.syllabusId === s.id} onPress={() => onChange({ syllabusId: s.id })} />
+              <Chip
+                key={s.id}
+                label={s.name}
+                selected={draft.syllabusId === s.id}
+                // Choosing a built-in list also sets its curriculum, level and exam board, so the enrolment shares
+                // its topics with every other student on the same course.
+                onPress={() => onChange(draft.syllabusId === s.id && forFamily ? { syllabusId: undefined } : enrolmentFieldsFor(s, subject))}
+              />
             ))}
-            <Chip label="Build as we teach" selected={!draft.syllabusId} onPress={() => onChange({ syllabusId: undefined })} />
+            <Chip label={forFamily ? 'Not sure' : 'Build as we teach'} selected={!draft.syllabusId} onPress={() => onChange({ syllabusId: undefined })} />
           </Row>
         </View>
       ) : null}

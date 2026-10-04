@@ -93,6 +93,21 @@ end $$;
 create trigger enrolments_write before insert or update on public.enrolments
   for each row execute function public.on_enrolment_write();
 
+/** The built-in topic trees from the app (src/data/curriculum.ts) and the enrolment each stands for. */
+create function public.builtin_syllabuses()
+returns table (id text, subject text, curriculum text, level text, exam_board text)
+language sql immutable set search_path = public as $$
+  values
+    ('ib-aa-sl', 'Maths', 'IB DP', 'AA SL', 'IB'),
+    ('ib-aa-hl', 'Maths', 'IB DP', 'AA HL', 'IB'),
+    ('ib-ai-sl', 'Maths', 'IB DP', 'AI SL', 'IB'),
+    ('ib-ai-hl', 'Maths', 'IB DP', 'AI HL', 'IB'),
+    ('igcse-4ma1', 'Maths', 'IGCSE', null, 'Pearson Edexcel'),
+    ('igcse-0580', 'Maths', 'IGCSE', null, 'Cambridge'),
+    ('igcse-0606', 'Maths', 'IGCSE', 'Additional', 'Cambridge'),
+    ('alevel-maths', 'Maths', 'A-Level', null, null)
+$$;
+
 /**
  * The enrolment a legacy maths syllabus id stands for. Every legacy syllabus is Maths, so existing lessons and
  * reports (all Maths) keep matching it; Cambridge 0606 is Maths at the 'Additional' level. Unknown ids keep the
@@ -105,17 +120,38 @@ language sql immutable set search_path = public as $$
          coalesce(m.curriculum, case when trim(p_curriculum) = 'IB' then 'IB DP' else nullif(trim(p_curriculum), '') end),
          m.level, m.exam_board
   from (select 1) one
-  left join (values
-    ('ib-aa-sl', 'Maths', 'IB DP', 'AA SL', 'IB'),
-    ('ib-aa-hl', 'Maths', 'IB DP', 'AA HL', 'IB'),
-    ('ib-ai-sl', 'Maths', 'IB DP', 'AI SL', 'IB'),
-    ('ib-ai-hl', 'Maths', 'IB DP', 'AI HL', 'IB'),
-    ('igcse-4ma1', 'Maths', 'IGCSE', null, 'Pearson Edexcel'),
-    ('igcse-0580', 'Maths', 'IGCSE', null, 'Cambridge'),
-    ('igcse-0606', 'Maths', 'IGCSE', 'Additional', 'Cambridge'),
-    ('alevel-maths', 'Maths', 'A-Level', null, null)
-  ) m(id, subject, curriculum, level, exam_board) on m.id = p_syllabus_id
+  left join public.builtin_syllabuses() m on m.id = p_syllabus_id
 $$;
+
+/**
+ * The built-in topic tree for a new enrolment (mirrors resolveBuiltInSyllabus in src/data/curriculum.ts).
+ * A requested id is kept only when it is built in and fits the subject (and the curriculum, if one is given).
+ * Otherwise the one built-in tree whose curriculum, level and exam board match is chosen: a missing exam board
+ * on either side matches any, a curriculum is required, and 'Additional Maths' as a subject is the 0606 tree.
+ * Returns null when nothing, or more than one tree, fits.
+ */
+create function public.builtin_syllabus_for(p_subject text, p_curriculum text, p_level text, p_exam_board text, p_requested text default null)
+returns text language plpgsql immutable set search_path = public as $$
+declare cur text := nullif(lower(trim(p_curriculum)), ''); subj text := lower(trim(p_subject)); found text[];
+begin
+  if cur = 'ib' then cur := 'ib dp'; end if;
+  select array_agg(m.id) into found
+  from public.builtin_syllabuses() m
+  where (lower(m.subject) = subj or (m.id = 'igcse-0606' and subj = 'additional maths'))
+    and (cur is null or lower(m.curriculum) = cur)
+    and m.id = nullif(trim(p_requested), '');
+  if cardinality(found) = 1 then return found[1]; end if;
+  if cur is null then return null; end if;
+  select array_agg(m.id) into found
+  from public.builtin_syllabuses() m
+  where lower(m.curriculum) = cur
+    and (
+      (lower(m.subject) = subj and lower(coalesce(trim(p_level), '')) = lower(coalesce(m.level, '')))
+      or (m.id = 'igcse-0606' and subj = 'additional maths'
+          and (nullif(trim(p_level), '') is null or lower(trim(p_level)) = lower(m.level))))
+    and (nullif(trim(p_exam_board), '') is null or m.exam_board is null or lower(trim(p_exam_board)) = lower(m.exam_board));
+  return case when cardinality(found) = 1 then found[1] end;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Subjects on lessons, requests, services, tutors, enquiries, roles, applications and reports
@@ -406,7 +442,7 @@ begin
   end if;
   subj := nullif(regexp_replace(trim(p_subject), '\s+', ' ', 'g'), '');
   ph := nullif(regexp_replace(trim(p_phase), '\s+', ' ', 'g'), '');
-  if length(subj) > 80 or length(ph) > 60 then raise exception 'Please choose a shorter subject or stage'; end if;
+  if length(subj) > 80 or length(ph) > 60 then raise exception 'Please choose a shorter subject or phase'; end if;
   fam := public.my_family_id();
   insert into public.enquiries (parent_name, email, phone, student_name, curriculum, year_group, message, preferred_times, source, family_id,
                                 subject, phase)
@@ -418,7 +454,7 @@ begin
   perform public.notify_admins('New enquiry: ' || trim(p_parent_name),
     trim(p_parent_name) || coalesce(' (' || nullif(trim(p_email), '') || ')', '') || coalesce(', ' || nullif(trim(p_phone), ''), '')
       || coalesce(E'\nStudent: ' || nullif(trim(p_student_name), ''), '') || coalesce(' — ' || nullif(p_curriculum, ''), '')
-      || coalesce(E'\nSubject: ' || subj, '') || coalesce(E'\nStage: ' || ph, '')
+      || coalesce(E'\nSubject: ' || subj, '') || coalesce(E'\nPhase: ' || ph, '')
       || coalesce(E'\n\n' || nullif(trim(p_message), ''), ''),
     'New enquiry', trim(p_parent_name), '/admin/enquiries');
   if nullif(trim(p_email), '') is not null then
@@ -444,7 +480,7 @@ begin
   if (select count(*) from public.tutor_applications where lower(email) = lower(trim(p_email)) and created_at > now() - interval '30 days') >= 2 then
     raise exception 'We already have your application — we''ll be in touch soon';
   end if;
-  if cardinality(p_phases) > 10 then raise exception 'Please choose up to ten stages'; end if;
+  if cardinality(p_phases) > 10 then raise exception 'Please choose up to ten phases'; end if;
   insert into public.tutor_applications (full_name, email, phone, curricula, subjects, experience, qualifications, availability, cv_path, phases)
   values (trim(p_full_name), lower(trim(p_email)), nullif(trim(p_phone), ''), coalesce(p_curricula, '{}'), nullif(trim(p_subjects), ''),
           nullif(trim(p_experience), ''), nullif(trim(p_qualifications), ''), nullif(trim(p_availability), ''), nullif(p_cv_path, ''),
@@ -453,7 +489,7 @@ begin
   perform public.notify_admins('Tutor application: ' || trim(p_full_name),
     trim(p_full_name) || ' (' || lower(trim(p_email)) || ') applied to teach '
       || coalesce(nullif(trim(p_subjects), '') || ' — ', '') || coalesce(array_to_string(p_curricula, ', '), '')
-      || coalesce(E'\nStages: ' || nullif(array_to_string(p_phases, ', '), ''), '')
+      || coalesce(E'\nPhases: ' || nullif(array_to_string(p_phases, ', '), ''), '')
       || coalesce(E'\n\n' || nullif(trim(p_experience), ''), ''),
     'New tutor application', trim(p_full_name), '/manage/applications');
   perform public.notify(null, lower(trim(p_email)), 'Thank you for applying to Elite Education',
@@ -481,7 +517,7 @@ $$;
 create function public.add_my_child(
   p_full_name text, p_subjects jsonb, p_school text default null, p_year_group text default null, p_phase text default null
 ) returns uuid language plpgsql security definer set search_path = public as $$
-declare fam uuid; sid uuid; s jsonb; subj text; cur text; lvl text; board text; f public.families; list text;
+declare fam uuid; sid uuid; s jsonb; subj text; cur text; lvl text; board text; syl text; m record; f public.families; list text;
 begin
   fam := public.my_family_id();
   if fam is null then raise exception 'Only parents can add children' using errcode = '42501'; end if;
@@ -490,7 +526,7 @@ begin
   if jsonb_typeof(coalesce(p_subjects, '[]')) <> 'array' or jsonb_array_length(coalesce(p_subjects, '[]')) not between 1 and 10 then
     raise exception 'Please choose between one and ten subjects';
   end if;
-  if length(trim(p_phase)) > 60 then raise exception 'Please choose a shorter stage'; end if;
+  if length(trim(p_phase)) > 60 then raise exception 'Please choose a shorter phase'; end if;
   insert into public.students (family_id, full_name, school, year_group, phase)
   values (fam, trim(p_full_name), nullif(trim(p_school), ''), nullif(trim(p_year_group), ''), nullif(trim(p_phase), ''))
   returning id into sid;
@@ -501,11 +537,20 @@ begin
     board := nullif(trim(s->>'exam_board'), '');
     if subj is null or length(subj) > 80 then raise exception 'Please choose a subject for every row'; end if;
     if length(cur) > 80 or length(lvl) > 80 or length(board) > 80 then raise exception 'Please shorten the curriculum, level or exam board'; end if;
+    -- Keep the family's choice of course if it is built in and fits, or find the one course that does, so the
+    -- tutor's topic tree and the progress heatmap are ready from the first lesson.
+    syl := public.builtin_syllabus_for(subj, cur, lvl, board, s->>'syllabus_id');
+    if syl is not null then
+      select * into m from public.builtin_syllabuses() b where b.id = syl;
+      cur := coalesce(cur, m.curriculum);
+      board := coalesce(board, m.exam_board);
+      if lower(subj) = lower(m.subject) then lvl := coalesce(lvl, m.level); end if;
+    end if;
     if exists (select 1 from public.enrolments e where e.student_id = sid and e.active and lower(e.subject) = lower(subj)
                and lower(coalesce(e.curriculum, '')) = lower(coalesce(cur, '')) and lower(coalesce(e.level, '')) = lower(coalesce(lvl, ''))) then
       raise exception '% is listed twice. Please remove one.', subj;
     end if;
-    insert into public.enrolments (student_id, subject, curriculum, level, exam_board) values (sid, subj, cur, lvl, board);
+    insert into public.enrolments (student_id, subject, curriculum, level, exam_board, syllabus_id) values (sid, subj, cur, lvl, board, syl);
   end loop;
   -- The parent is told we will confirm a tutor within one working day, so the office must hear about it.
   select * into f from public.families where id = fam;

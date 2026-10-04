@@ -312,6 +312,8 @@ export interface NewChildSubject {
   curriculum?: string;
   level?: string;
   examBoard?: string;
+  /** A built-in course the family chose; the server keeps it only if it is built in and fits the subject. */
+  syllabusId?: string;
 }
 
 export interface NewChild {

@@ -145,6 +145,9 @@
         .enquiry input:focus, .enquiry select:focus, .enquiry textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.2); }
         .enquiry input::placeholder, .enquiry textarea::placeholder { color: var(--muted); opacity: 0.85; }
         .enquiry textarea { min-height: 112px; resize: vertical; }
+        /* Selects match the text fields beside them: same height, no native chrome, a gold chevron. */
+        .enquiry input, .enquiry select { box-sizing: border-box; height: 3.25rem; line-height: 1.4; }
+        .enquiry select { -webkit-appearance: none; -moz-appearance: none; appearance: none; padding-right: 2.5rem; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23C9A84C' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.95rem center; background-size: 12px 8px; }
         .enquiry button { margin-top: 1.5rem; width: 100%; }
         .enquiry .note { font-size: 0.9375rem; color: var(--muted); margin-top: 1rem; }
         .enquiry .note a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--gold); }

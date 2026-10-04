@@ -7,7 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useEnrolments, useLessons, useLookup, useOpenSlots, useServices, useStudents } from '@/data/hooks';
 import { addDays, formatDay, formatTime, startOfDay, toDateKey } from '@/domain/dates';
-import { activeEnrolments, enrolmentFor, lessonSubject, sameSubject } from '@/domain/enrolments';
+import { activeEnrolments, enrolmentFor, enrolmentTitle, lessonSubject, sameSubject } from '@/domain/enrolments';
 import { byStart } from '@/domain/scheduling';
 
 const today = startOfDay(new Date());
@@ -29,7 +29,7 @@ export default function Book() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  const [pickedSubject, setPickedSubject] = useState<string | null>(null);
+  const [pickedEnrolmentId, setPickedEnrolmentId] = useState<string | null>(null);
 
   const all = lessons.data ?? [];
   const moving = lessonId ? all.find((l) => l.id === lessonId) : undefined;
@@ -40,14 +40,16 @@ export default function Book() {
   const studentEnrolments = student ? activeEnrolments(allEnrolments, student.id) : [];
   const recent = [...theirs].reverse().filter((l) => l.status === 'completed' || l.status === 'scheduled');
   const usual = recent[0];
+  // The family picks an enrolment rather than a subject name, since one subject can be studied twice (IGCSE and A-Level).
+  const picked = kind === 'new-lesson' ? studentEnrolments.find((e) => e.id === pickedEnrolmentId) : undefined;
   // A move keeps the lesson's own subject; a new lesson uses the chosen subject, the only one, or the usual lesson's.
   const subject =
     kind === 'reschedule'
       ? moving
         ? lessonSubject(moving, allEnrolments)
         : undefined
-      : (pickedSubject ?? (studentEnrolments.length === 1 ? studentEnrolments[0].subject : usual ? lessonSubject(usual, allEnrolments) : undefined));
-  const enrolment = student && subject ? enrolmentFor(allEnrolments, student.id, subject) : undefined;
+      : (picked?.subject ?? (studentEnrolments.length === 1 ? studentEnrolments[0].subject : usual ? lessonSubject(usual, allEnrolments) : undefined));
+  const enrolment = picked ?? (student && subject ? enrolmentFor(allEnrolments, student.id, subject) : undefined);
   // Older lessons may carry no subject; then the most recent lesson is still the best guide.
   const subjectKnown = recent.some((l) => lessonSubject(l, allEnrolments));
   const usualForSubject = subject && subjectKnown ? recent.find((l) => sameSubject(lessonSubject(l, allEnrolments), subject)) : usual;
@@ -102,7 +104,7 @@ export default function Book() {
         <Section title="Which child?">
           <Row gap={Spacing.one} wrap>
             {kids.map((k) => (
-              <Chip key={k.id} label={k.fullName.split(' ')[0]} selected={student?.id === k.id} onPress={() => { setStudentId(k.id); setLessonId(null); setChosen(null); setPickedSubject(null); }} />
+              <Chip key={k.id} label={k.fullName.split(' ')[0]} selected={student?.id === k.id} onPress={() => { setStudentId(k.id); setLessonId(null); setChosen(null); setPickedEnrolmentId(null); }} />
             ))}
           </Row>
         </Section>
@@ -136,9 +138,9 @@ export default function Book() {
                 {studentEnrolments.map((e) => (
                   <Chip
                     key={e.id}
-                    label={e.subject}
-                    selected={sameSubject(subject, e.subject)}
-                    onPress={() => { setPickedSubject(e.subject); setChosen(null); }}
+                    label={studentEnrolments.filter((o) => sameSubject(o.subject, e.subject)).length > 1 ? enrolmentTitle(e) : e.subject}
+                    selected={enrolment?.id === e.id}
+                    onPress={() => { setPickedEnrolmentId(e.id); setChosen(null); }}
                   />
                 ))}
               </Row>

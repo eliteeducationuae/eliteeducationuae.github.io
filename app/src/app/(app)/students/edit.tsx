@@ -131,7 +131,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
           <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="Year 12" />
         </View>
         <View style={{ flex: 1 }}>
-          <Field label="Exam date" value={examDate} onChangeText={setExamDate} placeholder="YYYY-MM-DD" />
+          <Field label="Exam date" value={examDate} onChangeText={setExamDate} placeholder="For example, 2027-05-14" />
         </View>
       </Row>
       <Row gap={Spacing.two}>
@@ -142,7 +142,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
           <Field label="Target grade" value={targetGrade} onChangeText={setTargetGrade} placeholder="7" />
         </View>
       </Row>
-      <Field label="Tutor notes (staff only)" value={notes} onChangeText={setNotes} multiline placeholder="Learning style, goals, anything tutors should know" />
+      <Field label="Tutor notes (staff only)" value={notes} onChangeText={setNotes} multiline placeholder="For example, learning style, goals, or anything tutors should know" />
       <ErrorNote error={error} />
     </Screen>
   );

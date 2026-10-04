@@ -1,4 +1,4 @@
-import { builtInSyllabusesFor, getSyllabus, SYLLABUSES } from '../curriculum';
+import { builtInSyllabusesFor, enrolmentFieldsFor, getSyllabus, resolveBuiltInSyllabus, SYLLABUSES } from '../curriculum';
 
 describe('built-in syllabuses', () => {
   it('describe their subject, curriculum, level and exam board', () => {
@@ -22,5 +22,34 @@ describe('built-in syllabuses', () => {
     expect(builtInSyllabusesFor('Maths', 'IB').map((s) => s.id)).toEqual(['ib-aa-sl', 'ib-aa-hl', 'ib-ai-sl', 'ib-ai-hl']);
     expect(builtInSyllabusesFor('Maths', 'IB DP')).toHaveLength(4);
     expect(builtInSyllabusesFor('Maths', 'British')).toEqual([]);
+  });
+});
+
+describe('resolveBuiltInSyllabus', () => {
+  const id = (e: Parameters<typeof resolveBuiltInSyllabus>[0]) => resolveBuiltInSyllabus(e)?.id;
+
+  it('keeps a requested course only when it fits the subject and curriculum', () => {
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1' })).toBe('igcse-4ma1');
+    expect(id({ subject: 'Maths', syllabusId: 'ib-aa-hl' })).toBe('ib-aa-hl');
+    expect(id({ subject: 'Chemistry', curriculum: 'IGCSE', syllabusId: 'igcse-0580' })).toBeUndefined();
+    expect(id({ subject: 'Maths', curriculum: 'A-Level', syllabusId: 'igcse-0580' })).toBe('alevel-maths');
+  });
+
+  it('finds the single course that matches, and guesses nothing when two fit', () => {
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel' })).toBe('igcse-4ma1');
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Cambridge' })).toBe('igcse-0580');
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE', level: 'Additional' })).toBe('igcse-0606');
+    expect(id({ subject: 'Additional Maths', curriculum: 'IGCSE' })).toBe('igcse-0606');
+    expect(id({ subject: 'maths', curriculum: 'IB', level: 'aa hl' })).toBe('ib-aa-hl');
+    expect(id({ subject: 'Maths', curriculum: 'A-Level', examBoard: 'AQA' })).toBe('alevel-maths');
+    expect(id({ subject: 'Maths', curriculum: 'IGCSE' })).toBeUndefined();
+    expect(id({ subject: 'Maths' })).toBeUndefined();
+  });
+
+  it('gives a chosen course the curriculum, level and exam board the backfill uses', () => {
+    const aaHl = SYLLABUSES.find((s) => s.id === 'ib-aa-hl')!;
+    expect(enrolmentFieldsFor(aaHl, 'Maths')).toEqual({ curriculum: 'IB DP', level: 'AA HL', examBoard: 'IB', syllabusId: 'ib-aa-hl' });
+    const add = SYLLABUSES.find((s) => s.id === 'igcse-0606')!;
+    expect(enrolmentFieldsFor(add, 'Additional Maths')).toEqual({ curriculum: 'IGCSE', level: undefined, examBoard: 'Cambridge', syllabusId: 'igcse-0606' });
   });
 });

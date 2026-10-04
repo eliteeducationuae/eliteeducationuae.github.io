@@ -3,6 +3,7 @@ import { findClashes, openSlots } from '@/domain/scheduling';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
+import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
 import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
@@ -45,8 +46,15 @@ export const eq = {
     const subjects = child.subjects ?? [];
     if (subjects.length < 1 || subjects.length > 10) throw new Error('Please choose between one and ten subjects');
     const phase = tidy(child.phase);
-    if ((phase?.length ?? 0) > 60) throw new Error('Please choose a shorter stage');
-    const rows = subjects.map((s) => ({ subject: tidy(s.subject), curriculum: tidy(s.curriculum), level: tidy(s.level), examBoard: tidy(s.examBoard) }));
+    if ((phase?.length ?? 0) > 60) throw new Error('Please choose a shorter phase');
+    const rows = subjects.map((s) => {
+      const row = { subject: tidy(s.subject), curriculum: tidy(s.curriculum), level: tidy(s.level), examBoard: tidy(s.examBoard) };
+      // Mirrors public.builtin_syllabus_for: keep the family's choice of course, or find the one that fits.
+      const built = row.subject ? resolveBuiltInSyllabus({ ...row, subject: row.subject, syllabusId: s.syllabusId }) : undefined;
+      if (!built) return { ...row, syllabusId: undefined };
+      const fill = enrolmentFieldsFor(built, row.subject!);
+      return { ...row, curriculum: row.curriculum ?? fill.curriculum, level: row.level ?? fill.level, examBoard: row.examBoard ?? fill.examBoard, syllabusId: built.id };
+    });
     const seen = new Set<string>();
     for (const r of rows) {
       if (!r.subject || r.subject.length > 80) throw new Error('Please choose a subject for every row');
@@ -59,7 +67,7 @@ export const eq = {
     db.students.push({ id: studentId, familyId: viewer.familyId, fullName, school: tidy(child.school), yearGroup: tidy(child.yearGroup), phase });
     for (const r of rows) {
       db.enrolments.push(
-        linkList(db, { id: newId('enr'), studentId, subject: r.subject!, curriculum: r.curriculum, level: r.level, examBoard: r.examBoard, active: true, createdAt: now.toISOString() }),
+        linkList(db, { id: newId('enr'), studentId, subject: r.subject!, curriculum: r.curriculum, level: r.level, examBoard: r.examBoard, syllabusId: r.syllabusId, active: true, createdAt: now.toISOString() }),
       );
     }
     // The parent is told we will confirm a tutor within one working day, so the office must hear about it.

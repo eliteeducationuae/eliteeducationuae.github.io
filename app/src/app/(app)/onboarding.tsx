@@ -37,8 +37,9 @@ export default function Onboarding() {
   if (students.isLoading || families.isLoading) return <Loading />;
   const kids = students.data ?? [];
   const family = (families.data ?? []).find((f) => f.id === me.familyId);
-  // Families default to active; only prospects are still waiting for their consultation.
-  const enrolled = !family || family.status === undefined || family.status === 'active';
+  // Families default to active; only prospects are still waiting for their consultation. A family we cannot see
+  // (the query failed, or the row is not visible yet) takes the prospect path, so a new enquiry is never skipped.
+  const enrolled = !!family && (family.status === undefined || family.status === 'active');
   const firstSubjects = kids[0] ? activeEnrolments(enrolments.data ?? [], kids[0].id) : [];
   const firstName = isPlaceholderName(me.fullName, me.email) ? '' : me.fullName.split(' ')[0];
   const parentName = askName ? name.trim().replace(/\s+/g, ' ') : me.fullName;
@@ -70,6 +71,12 @@ export default function Onboarding() {
             : 'Two short steps, and we will be in touch within one working day to arrange a complimentary consultation.'}
         </Txt>
       </View>
+      {families.isError ? (
+        <View style={{ gap: Spacing.two }}>
+          <ErrorNote error={families.error} />
+          <Button title="Try again" variant="outline" size="sm" onPress={() => families.refetch()} />
+        </View>
+      ) : null}
       {enrolled ? null : (
         <Row gap={Spacing.two}>
           {(['children', 'help'] as const).map((s, i) => (
@@ -175,6 +182,7 @@ function AddChildForm({ first }: { first: boolean }) {
           curriculum: d.curriculum,
           level: d.level,
           examBoard: d.examBoard,
+          syllabusId: d.syllabusId,
         })),
       },
     ]);
@@ -184,18 +192,18 @@ function AddChildForm({ first }: { first: boolean }) {
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">{first ? 'Add your child' : 'Add another child'}</Txt>
       <Field label="Child’s full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-      <CataloguePicker label="Stage of education" options={PHASES} value={phase} onChange={setPhase} optional />
+      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <View style={{ gap: Spacing.two }}>
         <Txt variant="label">Subjects</Txt>
         <Txt variant="muted">If you are unsure of the curriculum or level, please leave it blank and we will confirm it with you.</Txt>
-        <EnrolmentEditor value={drafts} onChange={setDrafts} />
+        <EnrolmentEditor value={drafts} onChange={setDrafts} forFamily />
       </View>
       <Row gap={Spacing.two}>
         <View style={{ flex: 1 }}>
           <Field label="School" value={school} onChangeText={setSchool} />
         </View>
         <View style={{ flex: 1 }}>
-          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="Year 10" />
+          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example, Year 10" />
         </View>
       </Row>
       <ErrorNote error={problem ? new Error(problem) : add.error} />

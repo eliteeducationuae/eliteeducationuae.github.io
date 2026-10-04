@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { font, Radius, Spacing } from '@/constants/theme';
-import { OTHER } from '@/domain/catalogue';
+import { OTHER, otherPlaceholderFor } from '@/domain/catalogue';
 import { useTheme } from '@/hooks/use-theme';
 
 import { addOther, choiceState, freeTextValues, hasMore, includesChoice, toggleMulti, visibleOptions } from './catalogue-choice';
@@ -116,7 +116,7 @@ export function CataloguePicker({
             setOtherOpen(true);
             onChange(t.length ? t : undefined);
           }}
-          placeholder={otherPlaceholder ?? 'Please specify'}
+          placeholder={otherPlaceholder ?? otherPlaceholderFor(label)}
           autoCapitalize="sentences"
         />
       ) : null}
@@ -183,7 +183,7 @@ export function CatalogueMultiPicker({
               label={`Add to ${label.toLowerCase()}`}
               value={draft}
               onChangeText={setDraft}
-              placeholder={otherPlaceholder ?? 'Please specify'}
+              placeholder={otherPlaceholder ?? otherPlaceholderFor(label)}
               onSubmitEditing={add}
               returnKeyType="done"
             />

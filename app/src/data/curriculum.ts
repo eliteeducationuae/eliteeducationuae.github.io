@@ -175,3 +175,42 @@ export function builtInSyllabusesFor(subject?: string, curriculum?: string): Syl
       (!wanted || normaliseCurriculum(s.curriculum).toLowerCase() === wanted),
   );
 }
+
+const same = (a?: string, b?: string) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+
+/**
+ * The built-in topic tree for a new enrolment. Mirrors public.builtin_syllabus_for: a requested id is kept only
+ * when it is built in and fits the subject (and curriculum, if given). Otherwise the one built-in tree whose
+ * curriculum, level and exam board match is chosen; a missing exam board on either side matches any, and a
+ * curriculum is required. Returns undefined when nothing, or more than one tree, fits.
+ */
+export function resolveBuiltInSyllabus(e: { subject: string; curriculum?: string; level?: string; examBoard?: string; syllabusId?: string }): Syllabus | undefined {
+  const requested = e.syllabusId?.trim();
+  if (requested) {
+    const hit = builtInSyllabusesFor(e.subject, e.curriculum).find((s) => s.id === requested);
+    if (hit) return hit;
+  }
+  if (!e.curriculum?.trim()) return undefined;
+  const fits = builtInSyllabusesFor(e.subject, e.curriculum).filter((s) => {
+    // 'Additional Maths' as a subject is the 0606 tree whatever level is given beside it.
+    const viaAdditional = s.id === 'igcse-0606' && sameSubject('Additional Maths', e.subject);
+    const levelFits = viaAdditional ? !e.level?.trim() || same(e.level, s.level) : same(e.level, s.level);
+    const boardFits = !e.examBoard?.trim() || !s.examBoard || same(e.examBoard, s.examBoard);
+    return levelFits && boardFits;
+  });
+  return fits.length === 1 ? fits[0] : undefined;
+}
+
+/**
+ * What choosing a built-in list sets on an enrolment, so its subject, curriculum and level key match the
+ * backfilled enrolments that share the same topics. The level is only set when the subject is the tree's own
+ * ('Additional Maths' already says what 'Additional' would).
+ */
+export function enrolmentFieldsFor(s: Syllabus, subject: string): { curriculum: string; level?: string; examBoard?: string; syllabusId: string } {
+  return {
+    curriculum: s.curriculum,
+    level: sameSubject(s.subject, subject) ? s.level : undefined,
+    examBoard: s.examBoard,
+    syllabusId: s.id,
+  };
+}
