@@ -52,7 +52,7 @@ export default function SignIn() {
     <>
       <SocialSignIn disabled={busy} onStart={clearFeedback} onError={setError} />
       <Txt variant="small" style={{ textAlign: 'center' }}>
-        We use only your name and email address to set up your account.
+        We use only your name and email address.
       </Txt>
     </>
   );
@@ -140,7 +140,7 @@ export default function SignIn() {
 
           {demo && mode === 'sign-in' ? (
             <View style={{ gap: Spacing.two }}>
-              <Banner tone="warning" icon="sparkle">
+              <Banner icon="sparkle">
                 Demo mode: explore the app with realistic sample data. Continue with Apple or Google to sign in as the sample parent, or
                 choose a role below. Nothing you do here is sent anywhere.
               </Banner>

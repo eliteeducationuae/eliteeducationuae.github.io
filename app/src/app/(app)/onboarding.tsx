@@ -9,24 +9,49 @@ import { Spacing } from '@/constants/theme';
 import { SYLLABUSES } from '@/data/curriculum';
 import { source } from '@/data';
 import { useAction, useStudents } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useSession } from '@/data/session';
 import type { Curriculum } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
+import { isPlaceholderName } from '@/lib/social-auth';
 
 /** First-run for parents who signed up themselves: add children, then tell us what they need. */
 export default function Onboarding() {
   const me = useMe();
   const theme = useTheme();
   const students = useStudents();
+  const setMyName = useSession((s) => s.setMyName);
   const [step, setStep] = useState<'children' | 'help'>('children');
+  const placeholder = isPlaceholderName(me.fullName, me.email);
+  // An Apple sign-in may share no name; ask for it rather than greeting a family as 'New parent'.
+  const [name, setName] = useState(() => (placeholder ? '' : me.fullName));
+  const [saving, setSaving] = useState(false);
+  const [nameError, setNameError] = useState<unknown>(null);
   if (students.isLoading) return <Loading />;
   const kids = students.data ?? [];
+  const firstName = placeholder ? '' : me.fullName.split(' ')[0];
+
+  async function next() {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    setNameError(null);
+    if (clean !== me.fullName) {
+      setSaving(true);
+      try {
+        await setMyName(clean);
+      } catch (err) {
+        setNameError(err);
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    setStep('help');
+  }
 
   return (
     <Screen>
       <Stack.Screen options={{ title: 'Welcome' }} />
       <View style={{ gap: Spacing.one }}>
-        <Txt variant="title">Welcome, {me.fullName.split(' ')[0]}</Txt>
+        <Txt variant="title">{firstName ? `Welcome, ${firstName}` : 'Welcome'}</Txt>
         <Txt variant="muted">Two short steps, and we will be in touch within one working day to arrange a complimentary consultation.</Txt>
       </View>
       <Row gap={Spacing.two}>
@@ -42,6 +67,19 @@ export default function Onboarding() {
 
       {step === 'children' ? (
         <>
+          <Card style={{ gap: Spacing.three }}>
+            <Txt variant="h3">Your name</Txt>
+            <Field
+              label="Your full name"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
+              maxLength={120}
+              placeholder="As you would like us to address you"
+            />
+          </Card>
           {kids.length ? (
             <Section title="Added">
               {kids.map((k) => (
@@ -55,13 +93,14 @@ export default function Onboarding() {
             </Section>
           ) : null}
           <AddChildForm key={kids.length} first={kids.length === 0} />
-          <Button title="Next: what you need" variant="gold" disabled={kids.length === 0} onPress={() => setStep('help')} />
+          <ErrorNote error={nameError} />
+          <Button title="Next: what you need" variant="gold" loading={saving} disabled={kids.length === 0 || !name.trim()} onPress={next} />
         </>
       ) : (
         <>
           <EnquiryForm
             hideContact
-            defaults={{ parentName: me.fullName, email: me.email, studentName: kids.map((k) => k.fullName.split(' ')[0]).join(', '), curriculum: kids[0]?.curriculum, yearGroup: kids[0]?.yearGroup }}
+            defaults={{ parentName: name.trim() || (placeholder ? '' : me.fullName), email: me.email, studentName: kids.map((k) => k.fullName.split(' ')[0]).join(', '), curriculum: kids[0]?.curriculum, yearGroup: kids[0]?.yearGroup }}
             submitLabel="Request a complimentary consultation"
           />
           <Button title="Go to my home screen" variant="secondary" onPress={() => router.replace('/parent')} />

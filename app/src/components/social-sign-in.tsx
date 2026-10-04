@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, View, type ImageSourcePropType, type TextStyle } from 'react-native';
 
-import { Spacing, font } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useSession, type SocialProvider } from '@/data/session';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -12,8 +12,15 @@ const APPLE_LOGO = require('../../assets/images/social/apple-logo.png');
 const GOOGLE_G = require('../../assets/images/social/google-g.png');
 const LOGO_SIZE = 18;
 
-/** Apple asks custom "Continue with Apple" buttons to use the system font. */
-const APPLE_FONT = Platform.OS === 'web' ? '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif' : undefined;
+/**
+ * Both provider labels share one system sans-serif, so they match each other and stay outside the Elite
+ * typeface pair (they are the providers' marks, not ours). Apple asks for the system font on its buttons.
+ */
+const PROVIDER_LABEL: TextStyle = {
+  fontFamily:
+    Platform.OS === 'web' ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' : undefined,
+  fontWeight: '600',
+};
 
 /**
  * "Continue with Apple" and "Continue with Google", equal in size, Apple first.
@@ -55,8 +62,13 @@ export function SocialSignIn({
         <View
           pointerEvents={inactive ? 'none' : 'auto'}
           accessibilityState={{ disabled: inactive, busy: busy === 'apple' }}
-          style={inactive && { opacity: 0.5 }}>
+          style={inactive && busy !== 'apple' && { opacity: 0.5 }}>
           <AppleNativeButton dark={scheme === 'dark'} onPress={() => start('apple')} />
+          {busy === 'apple' ? (
+            <View style={[styles.busyOverlay, { backgroundColor: colours.apple.bg }]} accessibilityLabel="Signing you in">
+              <ActivityIndicator size="small" color={colours.apple.fg} />
+            </View>
+          ) : null}
         </View>
       ) : (
         <ProviderButton
@@ -64,7 +76,7 @@ export function SocialSignIn({
           logo={APPLE_LOGO}
           tint
           colours={colours.apple}
-          textStyle={{ fontFamily: APPLE_FONT, fontWeight: '600' }}
+          textStyle={PROVIDER_LABEL}
           busy={busy === 'apple'}
           disabled={inactive}
           onPress={() => start('apple')}
@@ -74,7 +86,7 @@ export function SocialSignIn({
         title="Continue with Google"
         logo={GOOGLE_G}
         colours={colours.google}
-        textStyle={font('sans', 'bold')}
+        textStyle={PROVIDER_LABEL}
         busy={busy === 'google'}
         disabled={inactive}
         onPress={() => start('google')}
@@ -151,4 +163,14 @@ const styles = StyleSheet.create({
   logoSlot: { width: LOGO_SIZE, height: LOGO_SIZE, alignItems: 'center', justifyContent: 'center' },
   logo: { width: LOGO_SIZE, height: LOGO_SIZE },
   label: { fontSize: 16, lineHeight: 20 },
+  busyOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: SOCIAL_BUTTON_RADIUS,
+  },
 });

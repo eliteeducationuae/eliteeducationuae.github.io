@@ -12,7 +12,18 @@
 -- family it was given has no children. Nothing is ever deleted; the empty prospect family is archived.
 --
 -- Apple sends the person's name only to the device, and only the first time, so the app saves it
--- afterwards with set_my_name().
+-- afterwards with set_my_name(). A parent who signed in with no name gives it during onboarding.
+
+/** The family name from a full name, keeping an Arabic particle with it: 'Fatima Al Mansoori' gives 'Al Mansoori'. */
+create or replace function public.surname_of(p_name text)
+returns text language sql immutable set search_path = public as $$
+  select case
+    when n >= 2 and lower(w[n - 1]) in ('al', 'el', 'bin', 'bint', 'ibn', 'abu') then w[n - 1] || ' ' || w[n]
+    else w[n]
+  end
+  from (select w, coalesce(array_length(w, 1), 0) as n
+          from (select regexp_split_to_array(trim(coalesce(p_name, '')), '\s+') as w) a) b
+$$;
 
 create or replace function public.link_login(p_user_id uuid, p_email text, p_meta jsonb default '{}')
 returns void language plpgsql security definer set search_path = public as $$
@@ -56,7 +67,7 @@ begin
     end if;
 
     insert into public.families (name, parent_name, email, phone, status)
-    values (coalesce(family_name, regexp_replace(parent_name, '^.*\s', '')),
+    values (coalesce(family_name, public.surname_of(parent_name)),
             parent_name, p_email, nullif(trim(p_meta->>'phone'), ''), 'prospect')
     returning id into fam_id;
     -- Creating the family fires the families_link_login trigger, which may already have linked this login.
@@ -77,14 +88,21 @@ begin
 end $$;
 revoke all on function public.link_login(uuid, text, jsonb) from public, anon, authenticated;
 
--- The provider is added last so that it overrides anything a person put in their own metadata.
+-- The provider is added last so that it overrides anything a person put in their own metadata. The
+-- 'provider' field is only the first provider, so a login that began as an email sign-up and was then
+-- continued with Apple or Google is recognised from 'providers'. Both are set by the auth server.
 create or replace function public.on_auth_user_confirmed() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare app jsonb := coalesce(new.raw_app_meta_data, '{}'::jsonb); provider text := app->>'provider';
 begin
   if new.email_confirmed_at is not null and new.email is not null then
+    if coalesce(provider, '') not in ('apple', 'google') and jsonb_typeof(app->'providers') = 'array' then
+      if app->'providers' ? 'apple' then provider := 'apple';
+      elsif app->'providers' ? 'google' then provider := 'google';
+      end if;
+    end if;
     perform public.link_login(new.id, new.email,
-      coalesce(new.raw_user_meta_data, '{}'::jsonb)
-        || jsonb_build_object('auth_provider', new.raw_app_meta_data->>'provider'));
+      coalesce(new.raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('auth_provider', provider));
   end if;
   return new;
 end $$;
@@ -117,20 +135,24 @@ begin
 end $$;
 -- The tutors_link_login and families_link_login triggers are unchanged.
 
-/** A parent saves their own name (Apple only sends it to the device, and only the first time). */
+-- A parent saves their own name (Apple only sends it to the device, and only the first time; a parent who
+-- signed in with none gives it during onboarding). Only a parent whose family is still a prospect is renamed,
+-- so a name the office has recorded for an active family is never overwritten.
 create or replace function public.set_my_name(p_full_name text)
 returns void language plpgsql security definer set search_path = public as $$
-declare me public.profiles; clean text := trim(coalesce(p_full_name, ''));
+declare me public.profiles; fam public.families; clean text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
 begin
   if auth.uid() is null then raise exception 'Please sign in first.' using errcode = '42501'; end if;
   if clean = '' or length(clean) > 120 then raise exception 'Please enter your name.'; end if;
   select * into me from public.profiles where id = auth.uid();
   if me.id is null or me.role <> 'parent' then return; end if;
-  update public.profiles set full_name = clean where id = me.id;
   if me.family_id is not null then
-    update public.families
-       set parent_name = clean, name = regexp_replace(clean, '^.*\s', '')
-     where id = me.family_id and status = 'prospect' and parent_name = me.full_name;
+    select * into fam from public.families where id = me.family_id;
+    if fam.id is not null and fam.status <> 'prospect' then return; end if;
+  end if;
+  update public.profiles set full_name = clean where id = me.id;
+  if fam.id is not null and fam.parent_name = me.full_name then
+    update public.families set parent_name = clean, name = public.surname_of(clean) where id = fam.id;
   end if;
 end $$;
 revoke all on function public.set_my_name(text) from public, anon;

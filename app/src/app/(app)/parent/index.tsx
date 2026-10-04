@@ -12,6 +12,7 @@ import { formatAED, invoiceTotals } from '@/domain/billing';
 import { addDays, relativeDay, startOfDay } from '@/domain/dates';
 import { greetingLine, joinNames } from '@/domain/greeting';
 import { byStart } from '@/domain/scheduling';
+import { isPlaceholderName } from '@/lib/social-auth';
 
 const today = startOfDay(new Date());
 
@@ -40,7 +41,7 @@ export default function ParentHome() {
     <Screen onRefresh={() => lessons.refetch()} refreshing={lessons.isRefetching}>
       <GreetingCard
         date={now}
-        title={greetingLine(now, me.fullName)}
+        title={greetingLine(now, isPlaceholderName(me.fullName, me.email) ? undefined : me.fullName)}
         subtitle={kids.length ? `Here is the latest for ${joinNames(kids.map((s) => s.fullName.split(' ')[0]))}.` : 'Welcome to Elite Education.'}
       />
       {upcoming[0] ? <NextLessonCard lesson={upcoming[0]} lookup={lookup} perspective="family" now={now} /> : null}

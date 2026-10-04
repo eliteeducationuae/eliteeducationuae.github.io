@@ -98,6 +98,11 @@ export interface DataSource {
    * NOT_LINKED if the login has no profile, and a friendly message if the provider is not switched on.
    */
   signInWithProvider?(provider: SocialProvider): Promise<SocialSignInResult>;
+  /**
+   * A parent saves their own name, e.g. after an Apple sign-in that shared none. Renames a prospect family too;
+   * a name the office has recorded for an active family is left alone. Returns the refreshed profile.
+   */
+  setMyName?(fullName: string): Promise<Profile>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */

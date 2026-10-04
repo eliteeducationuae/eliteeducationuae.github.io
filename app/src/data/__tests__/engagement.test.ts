@@ -91,3 +91,28 @@ describe('sign-up and enquiries', () => {
     expect(eq.enquiries(db, parent)).toEqual([]);
   });
 });
+
+describe('setMyName (mirrors set_my_name)', () => {
+  it('names a parent whose prospect family was created without one', () => {
+    const db = createSeed(NOW);
+    db.families.push({ id: 'f-new', name: 'New family', parentName: 'New parent', email: 'x@privaterelay.appleid.com', status: 'prospect', createdAt: NOW.toISOString() });
+    const me = { id: 'u-new', role: 'parent' as const, fullName: 'New parent', email: 'x@privaterelay.appleid.com', familyId: 'f-new' };
+    db.profiles.push(me);
+    const updated = eq.setMyName(db, me, '  Fatima   Al Mansoori ');
+    expect(updated.fullName).toBe('Fatima Al Mansoori');
+    expect(db.families.find((f) => f.id === 'f-new')).toMatchObject({ parentName: 'Fatima Al Mansoori', name: 'Al Mansoori' });
+    expect(() => eq.setMyName(db, me, '   ')).toThrow('Please enter your name.');
+  });
+
+  it('never overwrites the name recorded for an active family, and ignores other roles', () => {
+    const db = createSeed(NOW);
+    const parent = who(db, 'parent');
+    const family = db.families.find((f) => f.id === parent.familyId)!;
+    expect(family.status).not.toBe('prospect');
+    const before = parent.fullName;
+    expect(eq.setMyName(db, parent, 'Someone Else').fullName).toBe(before);
+    expect(family.parentName).not.toBe('Someone Else');
+    const tutor = who(db, 'tutor');
+    expect(eq.setMyName(db, tutor, 'Someone Else').fullName).toBe(tutor.fullName);
+  });
+});

@@ -3,8 +3,11 @@ import {
   friendlySocialError,
   redirectErrorNotice,
   isAppleRelayEmail,
+  isPlaceholderName,
   NATIVE_AUTH_PATH,
+  nameFromEmail,
   parseAuthCallback,
+  surnameOf,
   webRedirectTo,
 } from '../social-auth';
 
@@ -131,9 +134,55 @@ describe('redirectErrorNotice', () => {
     );
   });
 
+  it('explains an expired email link instead of blaming Apple or Google', () => {
+    const url =
+      'https://eliteeducation.me/app/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired';
+    const { error, errorCode } = parseAuthCallback(url);
+    expect(errorCode).toBe('otp_expired');
+    const expired = 'This link has expired. Please request a new one from the sign-in screen.';
+    expect(redirectErrorNotice(null, error, errorCode)).toBe(expired);
+    expect(redirectErrorNotice('google', error, errorCode)).toBe(expired);
+    expect(redirectErrorNotice('apple', 'Email link is invalid or has expired')).toBe(expired);
+  });
+
   it('gives a neutral message when the provider is unknown', () => {
     expect(redirectErrorNotice(null, 'Something went wrong')).toBe(
       'We could not complete your sign-in. Please try again, or use your email address and password.',
     );
+  });
+});
+
+describe('isPlaceholderName', () => {
+  it('treats blank, New parent and email-derived single words as placeholders', () => {
+    expect(isPlaceholderName('')).toBe(true);
+    expect(isPlaceholderName('  ')).toBe(true);
+    expect(isPlaceholderName(undefined)).toBe(true);
+    expect(isPlaceholderName('New parent')).toBe(true);
+    expect(isPlaceholderName('new PARENT')).toBe(true);
+    expect(isPlaceholderName('Jsmith1984', 'jsmith1984@icloud.com')).toBe(true);
+    expect(isPlaceholderName('Jsmith', 'jsmith@icloud.com')).toBe(true);
+  });
+
+  it('accepts real names', () => {
+    expect(isPlaceholderName('Mona Ahmed', 'known@x')).toBe(false);
+    expect(isPlaceholderName('Sara Lee', 'sara.lee@x')).toBe(false);
+    expect(isPlaceholderName('Fatima Al Mansoori')).toBe(false);
+    expect(isPlaceholderName('Cher', 'someone@x')).toBe(false);
+  });
+
+  it('derives names from emails as the database does', () => {
+    expect(nameFromEmail('sara.lee@x')).toBe('Sara Lee');
+    expect(nameFromEmail('JSMITH_1984@icloud.com')).toBe('Jsmith 1984');
+  });
+});
+
+describe('surnameOf', () => {
+  it('keeps Arabic particles with the surname', () => {
+    expect(surnameOf('Fatima Al Mansoori')).toBe('Al Mansoori');
+    expect(surnameOf('Mohammed bin Rashid Al Maktoum')).toBe('Al Maktoum');
+    expect(surnameOf('Noor bint Saeed')).toBe('bint Saeed');
+    expect(surnameOf('  Layla   Haddad ')).toBe('Haddad');
+    expect(surnameOf('Cher')).toBe('Cher');
+    expect(surnameOf('')).toBe('');
   });
 });

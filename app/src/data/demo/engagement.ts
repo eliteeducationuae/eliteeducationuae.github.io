@@ -1,7 +1,9 @@
 import { findClashes, openSlots } from '@/domain/scheduling';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
+import { surnameOf } from '@/lib/social-auth';
 
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
+
 import { AccessError, newId, requireAdmin, type DemoDB } from './db';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
@@ -17,6 +19,21 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
 }
 
 export const eq = {
+  /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
+  setMyName(db: DemoDB, viewer: Profile, fullName: string): Profile {
+    const clean = fullName.trim().replace(/\s+/g, ' ');
+    if (!clean || clean.length > 120) throw new Error('Please enter your name.');
+    const me = db.profiles.find((p) => p.id === viewer.id);
+    if (!me || me.role !== 'parent') return viewer;
+    const family = db.families.find((f) => f.id === me.familyId);
+    if (family && family.status !== 'prospect') return me;
+    if (family && family.parentName === me.fullName) {
+      family.parentName = clean;
+      family.name = surnameOf(clean);
+    }
+    me.fullName = clean;
+    return me;
+  },
   addMyChild(db: DemoDB, viewer: Profile, child: NewChild) {
     if (viewer.role !== 'parent' || !viewer.familyId) throw new AccessError('Only parents can add children');
     if (!child.fullName.trim()) throw new Error('Enter your child’s name');

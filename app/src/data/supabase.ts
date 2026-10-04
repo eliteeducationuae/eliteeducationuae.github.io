@@ -365,8 +365,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     callbackChecked = true;
     const pending = await AsyncStorage.getItem(PENDING_PROVIDER_KEY).catch(() => null);
     if (pending) await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
-    const { error } = parseAuthCallback(initialUrl);
-    if (!error) return null;
+    const { error, errorCode } = parseAuthCallback(initialUrl);
+    if (!error && !errorCode) return null;
     try {
       // Tidy the error out of the address bar so a refresh does not repeat it.
       window.history.replaceState(window.history.state, '', window.location.pathname);
@@ -374,7 +374,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       // Not fatal.
     }
     const provider = pending === 'apple' || pending === 'google' ? pending : null;
-    return redirectErrorNotice(provider, error);
+    return redirectErrorNotice(provider, error, errorCode);
   }
 
   /** Finish a native browser sign-in from the URL the browser returned to. */
@@ -419,7 +419,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       if (!apple) return { status: 'cancelled' };
       check(await client.auth.signInWithIdToken({ provider: 'apple', token: apple.identityToken, nonce: apple.rawNonce }));
       if (apple.fullName) {
-        // Apple shares the name only once; keep it if the profile was created without one.
+        // Apple shares the name only once. set_my_name records it only for a parent whose family is still a
+        // prospect, so a name the office has recorded for an active family is never overwritten.
         await client.rpc('set_my_name', { p_full_name: apple.fullName }).then(undefined, () => undefined);
       }
       return 'done';
@@ -474,6 +475,12 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         throw new Error(NOT_LINKED);
       }
       return { status: 'signed-in', profile };
+    },
+    async setMyName(fullName) {
+      check(await client.rpc('set_my_name', { p_full_name: fullName.trim() }));
+      const profile = await loadProfile();
+      if (!profile) throw new Error(NOT_LINKED);
+      return profile;
     },
     async signIn(email, password) {
       check(await client.auth.signInWithPassword({ email: email.trim(), password }));

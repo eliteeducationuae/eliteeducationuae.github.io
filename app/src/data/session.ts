@@ -35,6 +35,8 @@ interface SessionState {
   confirmSignUp(email: string, code: string): Promise<void>;
   /** Sign in with Apple or Google. On the web this leaves the page ('redirecting'). */
   signInWithProvider(provider: SocialProvider): Promise<'signed-in' | 'redirecting' | 'cancelled'>;
+  /** A parent saves their own name; the signed-in profile is refreshed. */
+  setMyName(fullName: string): Promise<void>;
 }
 
 export const useSession = create<SessionState>((set) => ({
@@ -60,6 +62,12 @@ export const useSession = create<SessionState>((set) => ({
       set({ profile: result.profile, status: 'signed-in', authNotice: null });
     }
     return result.status;
+  },
+  async setMyName(fullName) {
+    if (!source.setMyName) throw new Error('Saving your name is not available.');
+    const profile = await source.setMyName(fullName);
+    set({ profile });
+    queryClient.invalidateQueries();
   },
   async signIn(email, password) {
     const profile = await source.signIn(email, password);

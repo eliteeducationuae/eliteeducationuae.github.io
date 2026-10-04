@@ -12,6 +12,8 @@ export interface AuthCallback {
   accessToken?: string;
   refreshToken?: string;
   error?: string;
+  /** e.g. otp_expired for an email link that is out of date. */
+  errorCode?: string;
 }
 
 function decode(value: string): string {
@@ -55,7 +57,9 @@ export function parseAuthCallback(url: string): AuthCallback {
   if (code) result.code = code;
   if (accessToken) result.accessToken = accessToken;
   if (refreshToken) result.refreshToken = refreshToken;
+  const errorCode = params.get('error_code');
   if (error) result.error = error;
+  if (errorCode) result.errorCode = errorCode;
   return result;
 }
 
@@ -110,11 +114,25 @@ export function friendlySocialError(provider: SocialProviderName, message: strin
   return `We could not sign you in with ${label(provider)}. Please try again, or use your email address.`;
 }
 
+export const EXPIRED_LINK = 'This link has expired. Please request a new one from the sign-in screen.';
+
+/** An emailed password-reset or confirmation link that is out of date, rather than a failed Apple or Google sign-in. */
+export function isExpiredLink(message: string | null | undefined, errorCode?: string | null): boolean {
+  if ((errorCode ?? '').toLowerCase() === 'otp_expired') return true;
+  return /link is invalid or has expired/i.test(message ?? '');
+}
+
 /**
  * The banner for a web sign-in redirect that came back with an error, or null when the person simply
  * cancelled. Without a remembered provider (e.g. the tab was reopened) the message names neither.
  */
-export function redirectErrorNotice(provider: SocialProviderName | null, message: string | null | undefined): string | null {
+export function redirectErrorNotice(
+  provider: SocialProviderName | null,
+  message: string | null | undefined,
+  errorCode?: string | null,
+): string | null {
+  if (!message && !errorCode) return null;
+  if (isExpiredLink(message, errorCode)) return EXPIRED_LINK;
   if (!message) return null;
   if (provider) {
     const friendly = friendlySocialError(provider, message);
@@ -123,4 +141,42 @@ export function redirectErrorNotice(provider: SocialProviderName | null, message
   const m = message.toLowerCase();
   if (m.includes('cancel') || m.includes('user denied')) return null;
   return 'We could not complete your sign-in. Please try again, or use your email address and password.';
+}
+
+
+/** The name the database gives a parent when Apple shares neither a name nor a real email address. */
+export const PLACEHOLDER_PARENT_NAME = 'New parent';
+
+/** The name the database derives from an email address when a provider shares no name (mirrors link_login). */
+export function nameFromEmail(email: string | null | undefined): string {
+  const local = (email ?? '').trim().split('@')[0] ?? '';
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * True when a parent's name is a stand-in rather than their real name: blank, 'New parent', or a single word
+ * taken from their email address (e.g. 'Jsmith1984'). Such names are never used to greet a family.
+ */
+export function isPlaceholderName(name: string | null | undefined, email?: string | null): boolean {
+  const clean = (name ?? '').trim();
+  if (!clean) return true;
+  if (clean.toLowerCase() === PLACEHOLDER_PARENT_NAME.toLowerCase()) return true;
+  if (/\d/.test(clean)) return true;
+  return !!email && !/\s/.test(clean) && clean.toLowerCase() === nameFromEmail(email).toLowerCase();
+}
+
+/** Particles that belong with an Arabic surname: 'Al Mansoori', 'Bin Rashid'. */
+const SURNAME_PARTICLES = new Set(['al', 'el', 'bin', 'bint', 'ibn', 'abu']);
+
+/** The family name from a full name, keeping an Arabic particle (mirrors public.surname_of). */
+export function surnameOf(fullName: string): string {
+  const words = fullName.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  const last = words[words.length - 1];
+  const before = words[words.length - 2];
+  return before && SURNAME_PARTICLES.has(before.toLowerCase()) ? `${before} ${last}` : last;
 }

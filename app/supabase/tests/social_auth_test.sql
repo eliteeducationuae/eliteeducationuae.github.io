@@ -25,7 +25,10 @@ insert into auth.users (id, email, email_confirmed_at, raw_app_meta_data, raw_us
   ('a0000000-0000-0000-0000-000000000102', 'noor@x', now(), '{"provider":"google"}', '{"name":"Noor Aziz"}'),
   ('a0000000-0000-0000-0000-000000000103', 'given@x', now(), '{"provider":"google"}', '{"given_name":"Hana","family_name":"Yousef"}'),
   ('a0000000-0000-0000-0000-000000000104', 'x1y2@privaterelay.appleid.com', now(), '{"provider":"apple"}', '{}'),
-  ('a0000000-0000-0000-0000-000000000105', 'sara.lee@x', now(), '{"provider":"google"}', null);
+  ('a0000000-0000-0000-0000-000000000105', 'sara.lee@x', now(), '{"provider":"google"}', null),
+  ('a0000000-0000-0000-0000-000000000106', 'fatima@x', now(), '{"provider":"google"}', '{"full_name":"Fatima Al Mansoori"}'),
+  ('a0000000-0000-0000-0000-000000000107', 'mbr@x', now(), '{"provider":"google"}', '{"name":"Mohammed bin Rashid Al Maktoum"}'),
+  ('a0000000-0000-0000-0000-000000000108', 'later@x', now(), '{"provider":"email","providers":["email","google"]}', '{"full_name":"Huda Karim"}');
 
 select pg_temp.check((select p.role || '/' || p.full_name || '/' || f.status || '/' || f.name || '/' || f.parent_name
   from public.profiles p join public.families f on f.id = p.family_id where p.id = 'a0000000-0000-0000-0000-000000000101')
@@ -44,6 +47,16 @@ select pg_temp.check(exists (select 1 from public.notification_outbox
   where subject = 'New parent sign-up (Apple): New parent' and body like '%with Apple.'), 'the admin is told about an Apple sign-up');
 select pg_temp.check((select full_name from public.profiles where id = 'a0000000-0000-0000-0000-000000000105') = 'Sara Lee'
   and (pg_temp.family_of('a0000000-0000-0000-0000-000000000105')).name = 'Lee', 'a nameless login is named from the email');
+select pg_temp.check((pg_temp.family_of('a0000000-0000-0000-0000-000000000106')).name = 'Al Mansoori',
+  'an Arabic surname keeps its particle: Fatima Al Mansoori is the Al Mansoori family');
+select pg_temp.check((pg_temp.family_of('a0000000-0000-0000-0000-000000000107')).name = 'Al Maktoum',
+  'Mohammed bin Rashid Al Maktoum is the Al Maktoum family');
+select pg_temp.check((select p.full_name || '/' || f.status from public.profiles p join public.families f on f.id = p.family_id
+  where p.id = 'a0000000-0000-0000-0000-000000000108') = 'Huda Karim/prospect'
+  and exists (select 1 from public.notification_outbox where subject = 'New parent sign-up (Google): Huda Karim'),
+  'an email sign-up later continued with Google is treated as a Google login');
+select pg_temp.check(public.surname_of('Layla Haddad') = 'Haddad' and public.surname_of('Al Hashimi') = 'Al Hashimi'
+  and public.surname_of('Noor bint Saeed') = 'bint Saeed' and public.surname_of('Cher') = 'Cher', 'surname_of handles common shapes');
 select pg_temp.check(not exists (select 1 from public.notification_outbox where body ilike '%bank%'), 'sign-up notifications never mention bank details');
 
 -- Known emails still link as before -----------------------------------------
@@ -78,11 +91,11 @@ select pg_temp.check((select count(*) from public.families) = :fams and (select 
 -- set_my_name ---------------------------------------------------------------
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000104');
-select public.set_my_name('  Omar Saleh ');
+select public.set_my_name('  Omar   Al Hashimi ');
 reset role;
 select pg_temp.check((select p.full_name || '/' || f.parent_name || '/' || f.name
   from public.profiles p join public.families f on f.id = p.family_id where p.id = 'a0000000-0000-0000-0000-000000000104')
-  = 'Omar Saleh/Omar Saleh/Saleh', 'set_my_name renames the parent and their prospect family');
+  = 'Omar Al Hashimi/Omar Al Hashimi/Al Hashimi', 'set_my_name renames the parent and their prospect family');
 
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000201');
@@ -115,11 +128,11 @@ exception when insufficient_privilege then raise notice 'ok - set_my_name needs 
 end $$;
 
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000202');
-select public.set_my_name('Mona A. Ahmed');
+select public.set_my_name('Someone Else');
 reset role;
-select pg_temp.check((select full_name from public.profiles where id = 'a0000000-0000-0000-0000-000000000202') = 'Mona A. Ahmed'
+select pg_temp.check((select full_name from public.profiles where id = 'a0000000-0000-0000-0000-000000000202') = 'Mona Ahmed'
   and (select parent_name || '/' || name from public.families where id = 'c0000000-0000-0000-0000-000000000001') = 'Mona Ahmed/Ahmed',
-  'a parent of an active family renames only their profile');
+  'set_my_name never overwrites the name the office recorded for an active family');
 set role anon;
 do $$ begin
   perform public.set_my_name('Anon');

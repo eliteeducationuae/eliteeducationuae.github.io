@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { invoiceTotals } from '@/domain/billing';
 import type { Profile } from '@/domain/types';
+import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
 import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
@@ -89,6 +90,11 @@ export function createDemoSource(): DataSource {
       await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
       return { status: 'signed-in' as const, profile: found };
     },
+    async setMyName(fullName) {
+      const updated = await write((d, v) => eq.setMyName(d, v, fullName));
+      viewer = updated;
+      return updated;
+    },
     async signOut() {
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
@@ -101,7 +107,7 @@ export function createDemoSource(): DataSource {
       const familyId = newId('fam');
       d.families.push({
         id: familyId,
-        name: details.fullName.trim().split(' ').pop() ?? details.fullName,
+        name: surnameOf(details.fullName),
         parentName: details.fullName.trim(),
         email: e,
         phone: details.phone,
