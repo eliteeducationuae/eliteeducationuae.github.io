@@ -16,6 +16,7 @@ import {
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
+import { connectResultNotice } from '@/domain/calendar-connection';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -28,6 +29,8 @@ import type {
   TutorInvoice,
   Announcement,
   Availability,
+  BusyBlock,
+  CalendarConnection,
   Charge,
   Closure,
   Enquiry,
@@ -395,6 +398,36 @@ const toInvoice = (r: Row): Invoice => ({
 
 function strip(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
+}
+
+// Google Calendar
+const toBusyBlock = (r: Row): BusyBlock => ({
+  id: r.id,
+  tutorId: r.tutor_id,
+  start: new Date(r.start_at).toISOString(),
+  end: new Date(r.end_at).toISOString(),
+  source: 'google',
+});
+
+const toCalendarConnection = (r: Row): CalendarConnection => ({
+  profileId: r.profile_id,
+  provider: 'google',
+  googleEmail: r.google_email ?? undefined,
+  calendarId: r.calendar_id,
+  status: r.status,
+  lastSyncedAt: r.last_synced_at ?? undefined,
+  lastError: r.last_error ?? undefined,
+});
+
+/** Only these columns are granted to the app; the tokens are not, so select('*') would fail. */
+const CALENDAR_CONNECTION_COLUMNS = 'profile_id, provider, google_email, calendar_id, status, last_synced_at, last_error';
+
+/** The current page without any calendar=… result left by a previous connection attempt. */
+function calendarReturnTo(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete('calendar');
+  url.searchParams.delete('reason');
+  return url.toString();
 }
 
 export function createSupabaseSource(url: string, anonKey: string): DataSource {
@@ -1224,6 +1257,42 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async startCardPayment(invoiceId) {
       const data = check(await client.functions.invoke('create-checkout', { body: { invoiceId } })) as { url: string };
       return { url: data.url };
+    },
+
+    // Google Calendar
+    async listBusyBlocks(filter = {}) {
+      let query = client.from('busy_blocks').select('id, tutor_id, start_at, end_at, source');
+      if (filter.tutorId) query = query.eq('tutor_id', filter.tutorId);
+      if (filter.to) query = query.lt('start_at', filter.to);
+      if (filter.from) query = query.gt('end_at', filter.from);
+      return check(await query.order('start_at')).map(toBusyBlock);
+    },
+    async getCalendarConnection() {
+      const { data } = await client.auth.getUser();
+      if (!data.user) return null;
+      const row = check(
+        await client.from('calendar_connections').select(CALENDAR_CONNECTION_COLUMNS).eq('profile_id', data.user.id).maybeSingle(),
+      );
+      return row ? toCalendarConnection(row) : null;
+    },
+    async connectGoogleCalendar() {
+      if (Platform.OS === 'web') {
+        const returnTo = calendarReturnTo(window.location.href);
+        const data = check<{ url: string }>(await client.functions.invoke('google-connect', { body: { action: 'start', returnTo } }));
+        window.location.assign(data.url);
+        return 'redirecting';
+      }
+      const returnTo = AuthSession.makeRedirectUri({ scheme: 'eliteeducation', path: 'calendar-connected' });
+      const data = check<{ url: string }>(await client.functions.invoke('google-connect', { body: { action: 'start', returnTo } }));
+      const res = await WebBrowser.openAuthSessionAsync(data.url, returnTo);
+      if (res.type !== 'success') return 'cancelled';
+      const notice = connectResultNotice(res.url);
+      if (notice?.tone === 'success') return 'connected';
+      if (notice) throw new Error(notice.message);
+      return 'cancelled';
+    },
+    async disconnectGoogleCalendar() {
+      check(await client.functions.invoke('google-connect', { body: { action: 'disconnect' } }));
     },
   };
 }

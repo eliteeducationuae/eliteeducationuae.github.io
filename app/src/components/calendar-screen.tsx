@@ -4,14 +4,29 @@ import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
+import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
 import { addDays, formatDay, formatMonth, formatTime, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
-import { byStart, findClashes, isClosed } from '@/domain/scheduling';
-import type { Lesson } from '@/domain/types';
+import { byStart, findBusyClashes, findClashes, isClosed } from '@/domain/scheduling';
+import type { BusyBlock, Lesson } from '@/domain/types';
+import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 
+import { Icon } from './icon';
 import { DayTimeline, LessonCard, WeekStrip } from './lessons';
 import { Banner, Button, Chip, EmptyState, ErrorNote, Loading, Row, Screen, Segmented, Txt } from './ui';
+
+/** A quiet line for a time the tutor is busy in Google Calendar (times only, never the event itself). */
+function BusyLine({ block, tutorName }: { block: BusyBlock; tutorName?: string }) {
+  const theme = useTheme();
+  return (
+    <Row gap={Spacing.one} style={{ alignItems: 'center' }}>
+      <Icon name="calendar" size={14} color={theme.textMuted} />
+      <Txt variant="small" style={{ flex: 1 }}>
+        {formatTime(block.start)}–{formatTime(block.end)} · Busy in Google Calendar{tutorName ? ` · ${tutorName}` : ''}
+      </Txt>
+    </Row>
+  );
+}
 
 /**
  * Week strip + day agenda / tutor timeline / week list. Used by admins (all tutors, can schedule)
@@ -26,6 +41,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const weekStart = startOfWeek(selected);
   const lessons = useLessons(weekStart, addDays(weekStart, 7));
   const closures = useClosures();
+  // Google Calendar: busy times only warn here; they never stop the office moving a lesson.
+  const busyBlocks = useBusyBlocks(weekStart, addDays(weekStart, 7));
   const move = useAction(source.rescheduleLesson);
   const closed = (closures.data ?? []).find((c) => isClosed(selected, [c]));
 
@@ -34,9 +51,12 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     const start = new Date(new Date(lesson.start).getTime() + deltaMin * 60_000);
     const end = new Date(new Date(lesson.end).getTime() + deltaMin * 60_000);
     const clashes = findClashes({ start, end, tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id }, lessons.data ?? []);
+    const busy = findBusyClashes({ start, end, tutorId: lesson.tutorId }, busyBlocks.data ?? []);
     confirm(
       `Move ${lookup.studentNames(lesson.studentIds)}’s lesson?`,
-      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}`,
+      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}${
+        busy.length ? '\n\nPlease note that Google Calendar shows the tutor as busy at this time.' : ''
+      }`,
       () => move.mutate([lesson.id, start.toISOString(), end.toISOString()]),
       'Move',
     );
@@ -50,6 +70,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const dayLessons = all.filter((l) => isSameDay(new Date(l.start), selected));
+  const weekBusy = (busyBlocks.data ?? []).filter((b) => !tutorFilter || b.tutorId === tutorFilter);
+  const dayBusy = weekBusy.filter((b) => isSameDay(new Date(b.start), selected));
   const tutorIds =
     perspective === 'tutor'
       ? [...new Set(all.map((l) => l.tutorId))]
@@ -110,11 +132,21 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
       ) : view === 'timeline' ? (
         <View style={{ gap: Spacing.two }}>
           {canSchedule ? <Txt variant="small">Tip: press and hold a lesson, then drag to move it.</Txt> : null}
-          <DayTimeline day={selected} lessons={dayLessons} lookup={lookup} tutorIds={tutorIds} onMove={canSchedule ? moveLesson : undefined} />
+          <DayTimeline
+            day={selected}
+            lessons={dayLessons}
+            lookup={lookup}
+            tutorIds={tutorIds}
+            busy={dayBusy}
+            onMove={canSchedule ? moveLesson : undefined}
+          />
         </View>
       ) : view === 'day' ? (
         <View style={{ gap: Spacing.two }}>
           <Txt variant="label">{formatDay(selected)}</Txt>
+          {dayBusy.map((b) => (
+            <BusyLine key={b.id} block={b} tutorName={perspective === 'admin' ? lookup.tutor(b.tutorId)?.fullName ?? 'Tutor' : undefined} />
+          ))}
           {dayLessons.length ? (
             dayLessons.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />)
           ) : (
@@ -125,10 +157,14 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
         <View style={{ gap: Spacing.three }}>
           {Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map((d) => {
             const items = all.filter((l) => isSameDay(new Date(l.start), d));
-            if (!items.length) return null;
+            const busy = weekBusy.filter((b) => isSameDay(new Date(b.start), d));
+            if (!items.length && !busy.length) return null;
             return (
               <View key={d.toDateString()} style={{ gap: Spacing.two }}>
                 <Txt variant="label">{formatDay(d)}</Txt>
+                {busy.map((b) => (
+                  <BusyLine key={b.id} block={b} tutorName={perspective === 'admin' ? lookup.tutor(b.tutorId)?.fullName ?? 'Tutor' : undefined} />
+                ))}
                 {items.map((l) => (
                   <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />
                 ))}

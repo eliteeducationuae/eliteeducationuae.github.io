@@ -6,6 +6,7 @@ import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
 import { cw } from './classwork';
+import { cal } from './calendar';
 import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
@@ -257,5 +258,14 @@ export function createDemoSource(): DataSource {
       });
       return { paid: true };
     },
+
+    // Google Calendar
+    listBusyBlocks: (filter) => read((d, v) => cal.busyBlocks(d, v, filter)),
+    getCalendarConnection: () => read((d, v) => cal.connection(d, v)),
+    async connectGoogleCalendar() {
+      await write((d, v) => cal.connect(d, v));
+      return 'connected' as const;
+    },
+    disconnectGoogleCalendar: () => write((d, v) => cal.disconnect(d, v)),
   };
 }

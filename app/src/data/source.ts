@@ -18,6 +18,8 @@ import type {
   Audience,
   Availability,
   AttendanceMark,
+  BusyBlock,
+  CalendarConnection,
   Closure,
   Enquiry,
   FamilyStatus,
@@ -289,6 +291,15 @@ export interface DataSource {
 
   /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
   aiAssist?(request: AiRequest): Promise<AiResult | null>;
+
+  // Google Calendar (tutors and admin)
+  /** Google busy times. Admins see every tutor's, tutors their own, families none. */
+  listBusyBlocks?(filter?: { tutorId?: string; from?: string; to?: string }): Promise<BusyBlock[]>;
+  /** The signed-in tutor's or admin's Google Calendar link, or null. */
+  getCalendarConnection?(): Promise<CalendarConnection | null>;
+  /** Start connecting Google Calendar. Production returns once the browser flow finishes; the demo connects at once. */
+  connectGoogleCalendar?(): Promise<'connected' | 'cancelled' | 'redirecting'>;
+  disconnectGoogleCalendar?(): Promise<void>;
 }
 
 export interface PickedFile {

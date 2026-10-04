@@ -5,10 +5,11 @@ import { View } from 'react-native';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useClosures, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
+import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { slotWarning } from '@/domain/calendar-connection';
 import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey } from '@/domain/dates';
-import { expandWeeklySkipping, findClashes } from '@/domain/scheduling';
+import { expandWeeklySkipping, findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
 import { uuid } from '@/lib/id';
 
@@ -49,6 +50,16 @@ export default function NewLesson() {
   const clashes = tutorId
     ? slots.flatMap((slot) => findClashes({ ...slot, tutorId, studentIds }, existing.data ?? []).map((c) => ({ slot, c })))
     : [];
+  // Google Calendar busy times are a warning only.
+  const busyBlocks = useBusyBlocks(rangeStart, rangeEnd, tutorId ?? undefined);
+  const busyClashes = tutorId
+    ? slots.flatMap((slot) => findBusyClashes({ ...slot, tutorId }, busyBlocks.data ?? []).map((b) => ({ slot, b })))
+    : [];
+  // Count dates, not clashes: one date may clash with a lesson and fall in a busy time.
+  const clashSlots = new Set(clashes.map((x) => x.slot));
+  const busySlots = new Set(busyClashes.map((x) => x.slot));
+  const clashCount = new Set([...clashSlots, ...busySlots]).size;
+  const warning = slotWarning({ affected: clashCount, lessonClashes: clashSlots.size, googleBusy: busySlots.size });
 
   const ready = studentIds.length > 0 && tutorId && service && start;
   const toggleStudent = (id: string) => setStudentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
@@ -80,7 +91,7 @@ export default function NewLesson() {
     <Screen
       footer={
         <Button
-          title={clashes.length ? `Schedule ${slots.length} anyway` : `Schedule ${slots.length || ''} lesson${slots.length === 1 ? '' : 's'}`}
+          title={clashCount ? `Schedule ${slots.length} anyway` : `Schedule ${slots.length || ''} lesson${slots.length === 1 ? '' : 's'}`}
           variant="gold"
           style={{ flex: 1 }}
           disabled={!ready}
@@ -161,9 +172,9 @@ export default function NewLesson() {
               Skipping {skipped.map((d) => formatDay(d)).join(', ')} (holiday{skipped.length === 1 ? '' : 's'}).
             </Banner>
           ) : null}
-          {clashes.length ? (
+          {clashCount ? (
             <Banner tone="warning" icon="alert">
-              {clashes.length} clash{clashes.length === 1 ? '' : 'es'} found. Check the dates below before scheduling.
+              {warning}
             </Banner>
           ) : tutorId ? (
             <Banner tone="success" icon="check">
@@ -173,12 +184,14 @@ export default function NewLesson() {
           <View style={{ gap: 4 }}>
             {slots.slice(0, 12).map((s) => {
               const clash = clashes.find((x) => x.slot === s);
+              const googleBusy = busyClashes.some((x) => x.slot === s);
               return (
-                <Txt key={s.start.toISOString()} variant="muted" color={clash ? 'warning' : undefined}>
+                <Txt key={s.start.toISOString()} variant="muted" color={clash || googleBusy ? 'warning' : undefined}>
                   {formatDay(s.start)} · {formatTime(s.start)}–{formatTime(s.end)}
                   {clash
                     ? ` · Clash: ${clash.c.reason === 'tutor' ? 'the tutor is busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
                     : ''}
+                  {googleBusy ? ' · Google Calendar shows the tutor as busy' : ''}
                 </Txt>
               );
             })}

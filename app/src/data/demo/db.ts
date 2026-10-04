@@ -12,6 +12,8 @@ import type {
   TutorInvoice,
   Announcement,
   Availability,
+  BusyBlock,
+  CalendarConnection,
   Charge,
   Closure,
   Enquiry,
@@ -73,9 +75,12 @@ export interface DemoDB {
   expenses: Expense[];
   submissions: HomeworkSubmission[];
   resources: Resource[];
+  // Google Calendar. Optional because demo databases saved before this feature lack them: read with `?? []`.
+  busyBlocks?: BusyBlock[];
+  calendarConnections?: CalendarConnection[];
 }
 
-export const DEMO_DB_VERSION = 5;
+export const DEMO_DB_VERSION = 6;
 
 let counter = 0;
 export function newId(prefix: string): string {

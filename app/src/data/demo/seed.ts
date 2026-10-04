@@ -4,6 +4,7 @@ import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import type { Invoice, Lesson, Message, Profile, Settings, TopicRating } from '@/domain/types';
 
 import { seedClasswork } from './classwork';
+import { sampleBusyBlocks } from './calendar';
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
 import { ops } from './operations';
 
@@ -283,7 +284,31 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedEngagement(db, now);
   seedOperations(db, now);
   seedClasswork(db, now);
+  seedCalendar(db, now);
   return db;
+}
+
+// Google Calendar
+/**
+ * Sarah has connected Google Calendar and has busy times; Craig (the admin) has not, so connecting can be tried.
+ * Craig has no busy times until he connects, as in production, where only a connected calendar supplies them.
+ */
+function seedCalendar(db: DemoDB, now: Date) {
+  db.calendarConnections = [
+    {
+      profileId: 'u-tutor',
+      provider: 'google',
+      googleEmail: 'sarah.khan@gmail.com',
+      calendarId: 'primary',
+      status: 'connected',
+      lastSyncedAt: new Date(now.getTime() - 4 * 60_000).toISOString(),
+    },
+  ];
+  db.busyBlocks = sampleBusyBlocks(db, 't-sarah', now, 2, 'busy-');
+  // Craig's upcoming A-level lessons with Arjun have no video link yet: connecting his calendar adds Google Meet links.
+  for (const l of db.lessons) {
+    if (l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > now) l.meetingUrl = undefined;
+  }
 }
 
 /** Roles with bids, applications, bank details, tutor invoices, a report round and expenses. */

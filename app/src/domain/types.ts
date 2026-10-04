@@ -299,6 +299,30 @@ export interface TutorAbsence {
   reason?: string;
 }
 
+/** A time the tutor is busy in their own Google Calendar, copied by calendar-sync. Times only, never event details. */
+export interface BusyBlock {
+  id: string;
+  tutorId: string;
+  /** ISO date-time. */
+  start: string;
+  /** ISO date-time. */
+  end: string;
+  source: 'google';
+}
+
+export type CalendarConnectionStatus = 'connected' | 'error';
+
+/** A tutor's or admin's link to their Google Calendar. Tokens never reach the app. */
+export interface CalendarConnection {
+  profileId: string;
+  provider: 'google';
+  googleEmail?: string;
+  calendarId: string;
+  status: CalendarConnectionStatus;
+  lastSyncedAt?: string;
+  lastError?: string;
+}
+
 export type EnquiryStatus = 'new' | 'contacted' | 'trial-booked' | 'enrolled' | 'lost';
 export type EnquirySource = 'app' | 'website' | 'referral' | 'phone' | 'other';
 

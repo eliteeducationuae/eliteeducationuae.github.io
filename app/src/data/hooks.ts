@@ -5,6 +5,7 @@ import type { Family, Service, Student, Tutor } from '@/domain/types';
 
 import { source } from './index';
 import { queryClient } from './query';
+import { useSession } from './session';
 
 /** Refetch everything after a write — the data set is small and this keeps every screen consistent. */
 const invalidateAll = () => queryClient.invalidateQueries();
@@ -141,3 +142,30 @@ export const useTutorInvoices = () => useQuery({ queryKey: ['tutor-invoices'], q
 export const useReportCycles = () => useQuery({ queryKey: ['report-cycles'], queryFn: () => source.listReportCycles() });
 export const useStudentReports = () => useQuery({ queryKey: ['student-reports'], queryFn: () => source.listStudentReports() });
 export const useExpenses = () => useQuery({ queryKey: ['expenses'], queryFn: () => source.listExpenses() });
+
+// Google Calendar (tutors and admin only; families never see busy times)
+
+function useCanUseCalendar(): boolean {
+  const role = useSession((s) => s.profile?.role);
+  return role === 'admin' || role === 'tutor';
+}
+
+/** Google busy times overlapping the range, optionally for one tutor. Empty for parents and students. */
+export function useBusyBlocks(from: Date, to: Date, tutorId?: string) {
+  const enabled = useCanUseCalendar();
+  return useQuery({
+    queryKey: ['busy-blocks', from.toISOString(), to.toISOString(), tutorId ?? null],
+    queryFn: () => source.listBusyBlocks?.({ tutorId, from: from.toISOString(), to: to.toISOString() }) ?? Promise.resolve([]),
+    enabled,
+  });
+}
+
+/** The signed-in tutor's or admin's Google Calendar link, or null. */
+export function useCalendarConnection() {
+  const enabled = useCanUseCalendar();
+  return useQuery({
+    queryKey: ['calendar-connection'],
+    queryFn: () => source.getCalendarConnection?.() ?? Promise.resolve(null),
+    enabled,
+  });
+}
