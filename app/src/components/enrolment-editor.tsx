@@ -78,6 +78,7 @@ function SubjectCard({
   const subject = draft.subject.trim();
   const lists = subject ? builtInSyllabusesFor(subject, draft.curriculum) : [];
   const title = subject ? enrolmentTitle({ ...draft, subject }) : 'New subject';
+  const ordered = tutors ? orderTutorsForSubject(tutors, subject) : [];
 
   return (
     <Card style={{ gap: Spacing.three }}>
@@ -114,7 +115,7 @@ function SubjectCard({
         options={LEVELS}
         value={draft.level}
         onChange={(v) => onChange({ level: v })}
-        otherPlaceholder="For example Year 10 or Grade 8"
+        otherPlaceholder="For example, Year 10 or Grade 8"
         optional
         collapsed={8}
       />
@@ -125,17 +126,16 @@ function SubjectCard({
           <Txt variant="label">Tutor</Txt>
           <Row wrap>
             <Chip label="Not yet assigned" selected={!draft.tutorId} onPress={() => onChange({ tutorId: undefined })} />
-            {orderTutorsForSubject(tutors, subject).map(({ tutor, teaches }) => (
-              <View key={tutor.id} style={{ gap: 2 }}>
-                <Chip label={tutor.fullName} selected={draft.tutorId === tutor.id} onPress={() => onChange({ tutorId: tutor.id })} />
-                {teaches ? (
-                  <Txt variant="small" style={{ paddingLeft: Spacing.two }}>
-                    Teaches {subject}
-                  </Txt>
-                ) : null}
-              </View>
+            {ordered.map(({ tutor, teaches }) => (
+              <Chip
+                key={tutor.id}
+                label={teaches ? `${tutor.fullName} ✓` : tutor.fullName}
+                selected={draft.tutorId === tutor.id}
+                onPress={() => onChange({ tutorId: tutor.id })}
+              />
             ))}
           </Row>
+          {subject && ordered.some((t) => t.teaches) ? <Txt variant="small">✓ Teaches {subject}</Txt> : null}
         </View>
       ) : null}
 

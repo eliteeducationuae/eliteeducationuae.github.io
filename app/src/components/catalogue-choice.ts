@@ -113,7 +113,19 @@ export function teachesCurriculum(curricula: readonly string[] | undefined, curr
   return (curricula ?? []).some((c) => norm(modernCurriculum(c)) === norm(want));
 }
 
-/** Subject, phase and curriculum for a subtitle: 'Chemistry · GCSE and IGCSE · IGCSE'. */
+/** Whether the phase already names the curriculum ('GCSE and IGCSE' names 'IGCSE'), so repeating it adds nothing. */
+function phaseNames(phase: string | undefined, curriculum: string | undefined): boolean {
+  const c = modernCurriculum(curriculum)?.replace(/\s+DP$/i, '');
+  if (!phase || !c) return false;
+  const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w-])${escaped}($|[^\\w-])`, 'i').test(phase);
+}
+
+/**
+ * Subject, phase and curriculum for a subtitle: 'Chemistry · Primary · British', or 'Chemistry · IGCSE' when the
+ * phase ('GCSE and IGCSE') is implied by the curriculum.
+ */
 export function subjectLine(x: { subject?: string; phase?: string; curriculum?: string }, sep = ' · '): string {
-  return [x.subject, x.phase, x.curriculum].map((v) => v?.trim()).filter(Boolean).join(sep);
+  const phase = phaseNames(x.phase, x.curriculum) ? undefined : x.phase;
+  return [x.subject, phase, x.curriculum].map((v) => v?.trim()).filter(Boolean).join(sep);
 }

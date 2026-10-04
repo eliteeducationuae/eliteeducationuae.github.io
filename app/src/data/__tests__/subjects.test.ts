@@ -19,7 +19,10 @@ describe('seeded subjects', () => {
     expect(subjects('s-omar')).toEqual(['Arabic', 'Maths']);
     expect(subjects('s-layla')).toEqual(['Chemistry', 'Maths']);
     expect(subjects('s-yasmin')).toEqual(['English Literature', 'Maths']);
-    expect(subjects('s-karim')).toEqual(['Additional Maths']);
+    expect(subjects('s-karim')).toEqual(['Maths']);
+    // Cambridge 0606 is Maths at the Additional level, so Karim's Maths lessons match his enrolment.
+    expect(db.enrolments.find((e) => e.id === 'enr-karim-maths')).toMatchObject({ subject: 'Maths', curriculum: 'IGCSE', level: 'Additional', syllabusId: 'igcse-0606' });
+    expect(db.lessons.filter((l) => l.studentIds.includes('s-karim')).every((l) => l.subject === 'Maths')).toBe(true);
     expect(subjects('s-noor')).toEqual(['English', 'Maths']);
     expect(db.enrolments.find((e) => e.id === 'enr-omar-maths')).toMatchObject({
       subject: 'Maths', curriculum: 'IB DP', level: 'AA HL', examBoard: 'IB', syllabusId: 'ib-aa-hl', tutorId: 't-craig',
@@ -140,7 +143,13 @@ describe('adding topics (mirrors add_topic)', () => {
     expect(() => enr.addTopic(db, who(db, 'student'), { enrolmentId: 'enr-omar-arabic', name: 'Poetry' })).toThrow(AccessError);
     expect(() => enr.addTopic(db, who(db, 'tutor'), { enrolmentId: 'enr-layla-chemistry', name: '   ' })).toThrow('topic name');
     expect(() => enr.addTopic(db, who(db, 'admin'), { enrolmentId: 'missing', name: 'X' })).toThrow(AccessError);
-    // Craig has taught Omar, so he may add to Omar's Arabic list too.
+    // Craig teaches Omar Maths only, so he may not write into the shared Arabic list.
+    expect(() => enr.addTopic(db, tutor('t-craig'), { enrolmentId: 'enr-omar-arabic', name: 'Poetry', unit: 'Identities' })).toThrow(AccessError);
+    // A cancelled lesson does not count either.
+    db.lessons.push({ ...db.lessons.find((l) => l.studentIds.includes('s-omar') && l.tutorId === 't-craig')!, id: 'les-cancelled-arabic', subject: 'Arabic', status: 'cancelled' });
+    expect(() => enr.addTopic(db, tutor('t-craig'), { enrolmentId: 'enr-omar-arabic', name: 'Poetry' })).toThrow(AccessError);
+    // Once he teaches Omar an Arabic lesson, he may.
+    db.lessons.push({ ...db.lessons.find((l) => l.id === 'les-cancelled-arabic')!, id: 'les-arabic', status: 'completed' });
     expect(enr.addTopic(db, tutor('t-craig'), { enrolmentId: 'enr-omar-arabic', name: 'Poetry', unit: 'Identities' }).listId).toBe('tl-ibdp-arabic-hl');
   });
 });
@@ -163,8 +172,20 @@ describe('reports per enrolment (mirrors open_report_cycle)', () => {
       ['Maths', 't-craig', 'enr-omar-maths'],
     ]);
     expect(mine('s-noor').map((r) => r[0])).toEqual(['English', 'Maths']);
-    // Karim's group lessons are Maths but he studies Additional Maths: he still gets a report, as before.
-    expect(mine('s-karim')).toEqual([['Maths', 't-sarah', undefined]]);
+    // Karim studies Additional Maths (Maths at the Additional level), so his Maths group lessons count for his enrolment.
+    expect(mine('s-karim')).toEqual([['Maths', 't-sarah', 'enr-karim-maths']]);
+  });
+
+  it('gives the same subject in two curricula a report each', () => {
+    const db = createSeed(NOW);
+    db.enrolments.push({ id: 'enr-layla-maths-al', studentId: 's-layla', subject: 'Maths', curriculum: 'A-Level', tutorId: 't-james', active: true });
+    ops.openReportCycle(db, who(db, 'admin'), 'Spring', '2026-09-01', '2026-10-30', NOW);
+    const cycle = db.reportCycles[db.reportCycles.length - 1];
+    expect(db.reports.filter((r) => r.cycleId === cycle.id && r.studentId === 's-layla').map((r) => [r.subject, r.tutorId, r.enrolmentId]).sort()).toEqual([
+      ['Chemistry', 't-sarah', 'enr-layla-chemistry'],
+      ['Maths', 't-james', 'enr-layla-maths-al'],
+      ['Maths', 't-sarah', 'enr-layla-maths'],
+    ]);
   });
 });
 
@@ -186,6 +207,15 @@ describe('subjects through sign-up, enquiries and booking', () => {
     expect(() => eq.addMyChild(db, parent, { fullName: 'Nobody', subjects: [] })).toThrow('between one and ten subjects');
     expect(() => eq.addMyChild(db, parent, { fullName: 'Twice', subjects: [{ subject: 'Maths' }, { subject: 'maths' }] })).toThrow('listed twice');
     expect(db.students.some((s) => s.fullName === 'Nobody' || s.fullName === 'Twice')).toBe(false);
+    // The office is told, since the family is promised a tutor within one working day.
+    expect(db.outbox).toEqual([
+      expect.objectContaining({
+        audience: 'admins',
+        subject: 'New child added: Zain Al Mansoori',
+        body: expect.stringMatching(/added Zain Al Mansoori \(Year 5\)\.\n\nSubjects: British English, IB DP Maths \(AA HL\)\n\n.*within one working day\.$/),
+        url: `/students/${zain.id}`,
+      }),
+    ]);
   });
 
   it('stores the subject and phase of an enquiry', () => {

@@ -144,16 +144,19 @@ How it behaves:
 
 **Round 4, step 3: every subject.** The app now supports every subject, phase and curriculum, not only mathematics.
 
-1. Run `supabase/migrations/20261007000000_subjects.sql` in the Supabase SQL editor, after the earlier migrations.
+1. Run `supabase/migrations/20261007000000_subjects.sql` in the Supabase SQL editor, after the earlier migrations. **Run it before merging**, because the web app deploys automatically on merge and its lesson, overview, report and onboarding screens read the new subject tables straight away. (Only the website has a fallback.)
 2. Redeploy the Edge Functions whose wording now uses the lesson's subject:
    `npx supabase functions deploy ai-assist`, `npx supabase functions deploy ics --no-verify-jwt` and `npx supabase functions deploy send-reminders`.
+3. Then review each tutor's subjects, curricula and phases under *More → Tutors*. The backfill gives every existing tutor the subject Maths, so until you add their other subjects, role matching will show them as not usually teaching, say, Chemistry.
 
 What the migration does:
 
 - **Enrolments.** Each student now has a list of subjects (an *enrolment* per subject, with its curriculum, level, exam board, tutor and topic list). Students gain an optional phase, and their old single curriculum and syllabus are kept only for older versions of the app.
-- **Backfill.** Every existing student receives one Maths enrolment that matches their current syllabus and tutor, so nothing is lost and progress history stays in place.
+- **Backfill.** Every existing student receives one Maths enrolment that matches their current syllabus and tutor, so nothing is lost and progress history stays in place. Cambridge Additional Maths (0606) students receive Maths at the *Additional* level, so their existing Maths lessons and reports still match it.
+- **New children.** When a family that is already with us adds a child, the office is notified with the child's subjects, since the family is told we will confirm a tutor within one working day.
 - **Shared topic lists.** Topics are stored in shared lists for each subject, curriculum and level. A list one tutor builds is reused for every student who studies the same course, and tutors can add topics for the subjects they teach.
-- **Reports per subject.** A report round creates one report per active enrolment, written by that enrolment's tutor, so a student with Chemistry and English receives two reports.
+- **Reports per subject.** A report round creates one report per active enrolment, written by that enrolment's tutor, so a student with Chemistry and English receives two reports (and Maths IGCSE and Maths A-Level are reported separately). The family's notice names the subject.
+- **Test change.** The enquiry acknowledgement email now opens 'Thank you for contacting Elite Education' (formerly 'Thanks…'), so `engagement_test.sql` now checks for a subject beginning 'Thank'.
 - **Everything else.** Lessons, services, enquiries and roles record a subject (and phase); tutors list their subjects, curricula and phases; tutor applications record phases; insights split revenue by subject.
 
 The website forms send the new subject and phase fields. If the site goes live before the migration is run, the forms fall back automatically and add the subject and phase to the message, so no enquiry is lost.

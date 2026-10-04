@@ -172,9 +172,13 @@ export const ops = {
     db.reportCycles.push({ id: cycleId, createdAt: now.toISOString(), name: name.trim(), startsOn, dueDate, status: 'open' });
     const taught = db.lessons.filter((l) => l.start >= startsOn && ['completed', 'no-show', 'scheduled'].includes(l.status));
     const created: StudentReport[] = [];
+    // One report per enrolment (Maths IGCSE and Maths A-Level each get one); unlinked reports one per student and subject.
     const add = (r: Omit<StudentReport, 'id' | 'cycleId' | 'status' | 'aiAssisted' | 'updatedAt'>) => {
       const key = (r.subject ?? '').trim().toLowerCase();
-      if (created.some((x) => x.studentId === r.studentId && (x.subject ?? '').trim().toLowerCase() === key)) return;
+      const clash = r.enrolmentId
+        ? created.some((x) => x.enrolmentId === r.enrolmentId)
+        : created.some((x) => !x.enrolmentId && x.studentId === r.studentId && (x.subject ?? '').trim().toLowerCase() === key);
+      if (clash) return;
       created.push({ id: newId('rep'), cycleId, ...r, status: 'draft', aiAssisted: false, updatedAt: now.toISOString() });
     };
     const enrolments = db.enrolments.filter((e) => e.active).sort((a, b) => a.subject.localeCompare(b.subject));

@@ -106,6 +106,9 @@ describe('curriculum helpers', () => {
   it('builds a subject line', () => {
     expect(subjectLine({ subject: 'Chemistry', curriculum: 'IGCSE' })).toBe('Chemistry · IGCSE');
     expect(subjectLine({})).toBe('');
+    expect(subjectLine({ subject: 'Physics', phase: 'GCSE and IGCSE', curriculum: 'IGCSE' })).toBe('Physics · IGCSE');
+    expect(subjectLine({ subject: 'Maths', phase: 'GCSE and IGCSE', curriculum: 'A-Level' })).toBe('Maths · GCSE and IGCSE · A-Level');
+    expect(subjectLine({ subject: 'English', phase: 'Primary', curriculum: 'British' })).toBe('English · Primary · British');
   });
 });
 

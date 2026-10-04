@@ -156,6 +156,8 @@
         .enquiry .checks input { width: auto; accent-color: var(--noir); }
         @media (prefers-color-scheme: dark) { .enquiry .checks input { accent-color: var(--gold); } }
         .hp { position: absolute; left: -9999px; }
+        .enquiry input.other { margin-top: 0.5rem; }
+        .enquiry input.other[hidden] { display: none; }
 
         /* Footer */
         footer { background: var(--noir); color: #BDB8AD; padding: 3.5rem 0; border-top: 1px solid rgba(201, 168, 76, 0.35); }
@@ -331,12 +333,14 @@
             <div class="row">
                 <div><label for="e-subject">Subject</label><input id="e-subject" name="subject" list="subjects-list" placeholder="For example, Chemistry" autocomplete="off"></div>
                 <div><label for="e-phase">Phase</label>
-                    <select id="e-phase" name="phase"><option value="">Please choose</option><option>Early Years</option><option>Primary</option><option>Lower Secondary</option><option>GCSE and IGCSE</option><option>Sixth Form and IB Diploma</option><option>University</option><option>Adult learner</option><option>Other</option></select></div>
+                    <select id="e-phase" name="phase"><option value="">Please choose</option><option>Early Years</option><option>Primary</option><option>Lower Secondary</option><option>GCSE and IGCSE</option><option>Sixth Form and IB Diploma</option><option>University</option><option>Adult learner</option><option>Other</option></select>
+                    <input id="e-phase-other" name="phaseOther" class="other" placeholder="Please specify the phase" maxlength="60" aria-label="Please specify the phase" hidden></div>
             </div>
             <datalist id="subjects-list"><option value="Maths"></option><option value="Additional Maths"></option><option value="Further Maths"></option><option value="English"></option><option value="English Language"></option><option value="English Literature"></option><option value="Physics"></option><option value="Chemistry"></option><option value="Biology"></option><option value="Combined Science"></option><option value="Arabic"></option><option value="Islamic Studies"></option><option value="French"></option><option value="Spanish"></option><option value="German"></option><option value="Mandarin"></option><option value="History"></option><option value="Geography"></option><option value="Economics"></option><option value="Business"></option><option value="Accounting"></option><option value="Psychology"></option><option value="Computer Science"></option><option value="Global Perspectives"></option><option value="Theory of Knowledge"></option><option value="Extended Essay"></option><option value="Primary (all subjects)"></option><option value="Phonics and reading"></option><option value="11+ and entrance exams"></option><option value="SAT and ACT"></option><option value="University admissions"></option></datalist>
             <div class="row">
                 <div><label for="e-curriculum">Curriculum</label>
-                    <select id="e-curriculum" name="curriculum"><option value="">Please choose</option><option>British</option><option>IGCSE</option><option>GCSE</option><option>A-Level</option><option>BTEC</option><option>IB PYP</option><option>IB MYP</option><option>IB DP</option><option>American</option><option>AP</option><option>Indian CBSE</option><option>Indian ICSE</option><option>French</option><option>UAE MoE</option><option>Other</option></select></div>
+                    <select id="e-curriculum" name="curriculum"><option value="">Please choose</option><option>British</option><option>IGCSE</option><option>GCSE</option><option>A-Level</option><option>BTEC</option><option>IB PYP</option><option>IB MYP</option><option>IB DP</option><option>American</option><option>AP</option><option>Indian CBSE</option><option>Indian ICSE</option><option>French</option><option>UAE MoE</option><option>Other</option></select>
+                    <input id="e-curriculum-other" name="curriculumOther" class="other" placeholder="Please specify the curriculum" maxlength="80" aria-label="Please specify the curriculum" hidden></div>
                 <div><label for="e-year">Year group</label><input id="e-year" name="year" placeholder="For example, Year 11"></div>
             </div>
             <label for="e-times">Preferred times</label><input id="e-times" name="times" placeholder="For example, weekday evenings">
@@ -380,7 +384,9 @@
                 <label><input type="checkbox" name="curricula" value="Indian ICSE"> Indian ICSE</label>
                 <label><input type="checkbox" name="curricula" value="French"> French</label>
                 <label><input type="checkbox" name="curricula" value="UAE MoE"> UAE MoE</label>
+                <label><input type="checkbox" name="curricula" value="Other" data-other="a-curricula-other"> Other</label>
             </div>
+            <input id="a-curricula-other" name="curriculaOther" class="other" placeholder="Please specify the other curricula you teach" maxlength="200" aria-label="Please specify the other curricula you teach" hidden>
             <label>Phases you teach</label>
             <div class="checks">
                 <label><input type="checkbox" name="phases" value="Early Years"> Early Years</label>
@@ -390,7 +396,9 @@
                 <label><input type="checkbox" name="phases" value="Sixth Form and IB Diploma"> Sixth Form and IB Diploma</label>
                 <label><input type="checkbox" name="phases" value="University"> University</label>
                 <label><input type="checkbox" name="phases" value="Adult learner"> Adult learner</label>
+                <label><input type="checkbox" name="phases" value="Other" data-other="a-phases-other"> Other</label>
             </div>
+            <input id="a-phases-other" name="phasesOther" class="other" placeholder="Please specify the other phases you teach" maxlength="200" aria-label="Please specify the other phases you teach" hidden>
             <label for="a-subjects">Subjects and levels</label><input id="a-subjects" name="subjects" placeholder="For example, Chemistry, English Literature, Arabic">
             <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="Schools, years of teaching and examination results"></textarea>
             <label for="a-qualifications">Qualifications</label><input id="a-qualifications" name="qualifications" placeholder="For example, degree, PGCE, examiner experience">
@@ -439,12 +447,33 @@
     function checked(scope, name) {
         return Array.prototype.filter.call(scope.querySelectorAll('input[name=' + name + ']'), function (c) { return c.checked; }).map(function (c) { return c.value; });
     }
+    // 'Other' reveals a 'Please specify' field; its text replaces 'Other' in what is sent.
+    function revealOther(control, field) {
+        function sync() {
+            var on = control.type === 'checkbox' ? control.checked : control.value === 'Other';
+            field.hidden = !on;
+            if (!on) field.value = '';
+        }
+        control.addEventListener('change', sync);
+        sync();
+    }
+    function specified(list, other) {
+        var extra = other.split(/[,;]/).map(function (v) { return v.trim(); }).filter(Boolean);
+        var rest = list.filter(function (v) { return v !== 'Other'; });
+        return list.indexOf('Other') >= 0 ? rest.concat(extra.length ? extra : ['Other']) : rest;
+    }
+    function oneSpecified(value, other) {
+        return value === 'Other' && other.trim() ? other.trim() : value;
+    }
     function failure(err) {
         var detail = err && err.message ? err.message.replace(/[.\s]+$/, '') + '. ' : '';
         return 'We could not send this just now. ' + detail + FALLBACK;
     }
     var form = document.getElementById('enquiry');
     var status = document.getElementById('enquiry-status');
+    revealOther(form.elements.phase, form.elements.phaseOther);
+    revealOther(form.elements.curriculum, form.elements.curriculumOther);
+    form.addEventListener('reset', function () { setTimeout(function () { form.elements.phaseOther.hidden = true; form.elements.curriculumOther.hidden = true; }); });
     function show(ok, text) { status.className = 'status ' + (ok ? 'ok' : 'err'); status.textContent = text; }
     form.addEventListener('submit', function (e) {
         e.preventDefault();
@@ -454,10 +483,11 @@
         if (!f.email.value.trim() && !f.phone.value.trim()) return show(false, 'Please provide an email address or telephone number so that we can reply.');
         var button = form.querySelector('button');
         button.disabled = true; button.textContent = 'Sending…';
-        var subject = f.subject.value.trim(), phase = f.phase.value;
+        var subject = f.subject.value.trim(), phase = oneSpecified(f.phase.value, f.phaseOther.value);
+        var curriculum = oneSpecified(f.curriculum.value, f.curriculumOther.value);
         var body = {
             p_parent_name: f.name.value, p_email: f.email.value || null, p_phone: f.phone.value || null,
-            p_student_name: f.student.value || null, p_curriculum: f.curriculum.value || null, p_year_group: f.year.value || null,
+            p_student_name: f.student.value || null, p_curriculum: curriculum || null, p_year_group: f.year.value || null,
             p_message: f.message.value || null, p_preferred_times: f.times.value || null, p_source: 'website',
             p_subject: subject || null, p_phase: phase || null
         };
@@ -476,6 +506,8 @@
     // Tutor applications go straight into the app's hiring pipeline.
     var apply = document.getElementById('apply');
     var applyStatus = document.getElementById('apply-status');
+    Array.prototype.forEach.call(apply.querySelectorAll('input[data-other]'), function (c) { revealOther(c, document.getElementById(c.getAttribute('data-other'))); });
+    apply.addEventListener('reset', function () { setTimeout(function () { apply.elements.curriculaOther.hidden = true; apply.elements.phasesOther.hidden = true; }); });
     function showApply(ok, text) { applyStatus.className = 'status ' + (ok ? 'ok' : 'err'); applyStatus.textContent = text; }
     apply.addEventListener('submit', function (e) {
         e.preventDefault();
@@ -483,7 +515,7 @@
         if (f.website.value) return;
         if (!f.name.value.trim()) return showApply(false, 'Please enter your name.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.value.trim())) return showApply(false, 'Please enter a valid email address.');
-        var curricula = checked(apply, 'curricula'), phases = checked(apply, 'phases');
+        var curricula = specified(checked(apply, 'curricula'), f.curriculaOther.value), phases = specified(checked(apply, 'phases'), f.phasesOther.value);
         var button = apply.querySelector('button');
         button.disabled = true; button.textContent = 'Sending…';
         var body = {

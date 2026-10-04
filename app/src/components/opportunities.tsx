@@ -29,14 +29,14 @@ export function tutorFits(t: Pick<Tutor, 'subjects' | 'curricula'>, o: Pick<Oppo
   return tutorTeaches(t, o.subject) && teachesCurriculum(t.curricula, o.curriculum);
 }
 
-/** 'teaches Chemistry and IGCSE', 'does not usually teach Chemistry', or '' when the role names nothing. */
+/** 'teaches IGCSE Chemistry', 'does not usually teach Chemistry', or '' when the role names nothing. */
 export function fitNote(t: Pick<Tutor, 'subjects' | 'curricula'>, o: Pick<Opportunity, 'subject' | 'curriculum'>): string {
   const subject = o.subject?.trim();
   const curriculum = o.curriculum?.trim();
   if (!subject && !curriculum) return '';
   const subjectOk = tutorTeaches(t, subject);
   const curriculumOk = teachesCurriculum(t.curricula, curriculum);
-  if (subjectOk && curriculumOk) return `teaches ${[subject, curriculum].filter(Boolean).join(' and ')}`;
+  if (subjectOk && curriculumOk) return `teaches ${[curriculum, subject].filter(Boolean).join(' ')}`;
   if (!subjectOk && subject) return `does not usually teach ${subject}`;
   return `${subject ? `teaches ${subject}, ` : ''}not usually ${curriculum}`;
 }

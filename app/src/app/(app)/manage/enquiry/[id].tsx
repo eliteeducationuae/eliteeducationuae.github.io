@@ -91,7 +91,7 @@ function Detail({ e }: { e: Enquiry }) {
         {e.status === 'lost' ? (
           <Row gap={Spacing.two}>
             <View style={{ flex: 1 }}>
-              <Field label="Reason lost" value={lostReason} onChangeText={setLostReason} placeholder="For example price, timing or another provider" />
+              <Field label="Reason lost" value={lostReason} onChangeText={setLostReason} placeholder="For example, price, timing or another provider" />
             </View>
             <Button title="Save" size="sm" style={{ marginTop: 18 }} onPress={() => update.mutate([e.id, { lostReason: lostReason.trim() || undefined }])} />
           </Row>
@@ -167,6 +167,8 @@ function ConvertCard({ e }: { e: Enquiry }) {
   const [tutorId, setTutorId] = useState<string | undefined>();
   const [syllabusId, setSyllabusId] = useState<string | undefined>();
   const [problem, setProblem] = useState<string | null>(null);
+  // What has been created so far, so a retry after a failure carries on rather than creating duplicates.
+  const [made, setMade] = useState<{ familyId?: string; studentId?: string; enrolmentId?: string }>({});
   const existing = e.familyId ? families.data?.find((f) => f.id === e.familyId) : undefined;
   const lastName = e.parentName.trim().split(' ').pop() ?? e.parentName;
   const lists = builtInSyllabusesFor(subject, curriculum);
@@ -189,14 +191,22 @@ function ConvertCard({ e }: { e: Enquiry }) {
     const invalid = validateEnrolments([draft]);
     setProblem(invalid);
     if (invalid) return;
-    const family =
-      existing ??
-      (await saveFamily.mutateAsync([{ name: lastName, parentName: e.parentName, email: e.email ?? '', phone: e.phone, status: 'prospect' }]));
-    const student = await saveStudent.mutateAsync([
-      { familyId: family.id, fullName: studentName.trim(), yearGroup: yearGroup.trim() || undefined, phase: cleanChoice(phase) },
-    ]);
-    await saveEnrolment.mutateAsync([{ ...draft, studentId: student.id }]);
-    await update.mutateAsync([e.id, { familyId: family.id, studentId: student.id, status: e.status === 'new' ? 'contacted' : e.status }]);
+    let { familyId, studentId, enrolmentId } = { familyId: existing?.id, ...made };
+    if (!familyId) {
+      familyId = (
+        await saveFamily.mutateAsync([{ name: lastName, parentName: e.parentName, email: e.email ?? '', phone: e.phone, status: 'prospect' }])
+      ).id;
+      setMade((m) => ({ ...m, familyId }));
+    }
+    studentId = (
+      await saveStudent.mutateAsync([
+        { id: studentId, familyId, fullName: studentName.trim(), yearGroup: yearGroup.trim() || undefined, phase: cleanChoice(phase) },
+      ])
+    ).id;
+    setMade((m) => ({ ...m, studentId }));
+    enrolmentId = (await saveEnrolment.mutateAsync([{ ...draft, id: enrolmentId, studentId }])).id;
+    setMade((m) => ({ ...m, enrolmentId }));
+    await update.mutateAsync([e.id, { familyId, studentId, status: e.status === 'new' ? 'contacted' : e.status }]);
   }
 
   return (
@@ -206,8 +216,8 @@ function ConvertCard({ e }: { e: Enquiry }) {
         {existing ? `Adds the student to the ${existing.name} family` : `Creates the ${lastName} family and the student`} so you can book a trial lesson.
         {e.email ? ' They will be able to sign up with the same email address.' : ''} You can add further subjects from the student’s profile.
       </Txt>
-      <Field label="Student’s full name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" placeholder={`For example ${e.studentName ?? 'Zara'} ${lastName}`} />
-      <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example Year 11" />
+      <Field label="Student’s full name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" placeholder={`For example, ${e.studentName ?? 'Zara'} ${lastName}`} />
+      <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example, Year 11" />
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} collapsed={10} />
       <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />

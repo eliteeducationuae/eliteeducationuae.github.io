@@ -185,7 +185,7 @@ exception when insufficient_privilege then raise notice 'ok - the public cannot 
 end $$;
 reset role;
 select pg_temp.check((select source from public.enquiries) = 'website', 'website enquiry saved');
-select pg_temp.check(exists (select 1 from public.notification_outbox where email = 'rita@x' and subject like 'Thank you%'), 'enquirer gets a confirmation email');
+select pg_temp.check(exists (select 1 from public.notification_outbox where email = 'rita@x' and subject like 'Thank%'), 'enquirer gets a confirmation email');
 
 -- Self sign-up creates a prospect family; parents can then add children
 insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data)

@@ -1,11 +1,11 @@
-import { topicListKey } from '@/domain/enrolments';
+import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
-import { AccessError, linkList, newId, requireAdmin, tidy, type DemoDB } from './db';
+import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
 
@@ -62,6 +62,18 @@ export const eq = {
         linkList(db, { id: newId('enr'), studentId, subject: r.subject!, curriculum: r.curriculum, level: r.level, examBoard: r.examBoard, active: true, createdAt: now.toISOString() }),
       );
     }
+    // The parent is told we will confirm a tutor within one working day, so the office must hear about it.
+    const family = db.families.find((f) => f.id === viewer.familyId);
+    const list = rows.map((r) => enrolmentTitle({ subject: r.subject!, curriculum: r.curriculum, level: r.level })).join(', ');
+    const yearGroup = tidy(child.yearGroup);
+    notifyAdmins(
+      db,
+      `New child added: ${fullName}`,
+      `${family?.parentName ?? family?.name ?? 'A family'} added ${fullName}${yearGroup ? ` (${yearGroup})` : ''}.\n\nSubjects: ${list}\n\n` +
+        'Please arrange a tutor and confirm with the family within one working day.',
+      `/students/${studentId}`,
+      now,
+    );
     return studentId;
   },
   setFamilyStatus(db: DemoDB, viewer: Profile, familyId: string, status: FamilyStatus) {

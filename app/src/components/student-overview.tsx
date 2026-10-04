@@ -71,6 +71,9 @@ export function StudentOverview({ student }: { student: Student }) {
     .join(' · ');
   const badge = student.phase ?? subjects[0]?.curriculum ?? student.curriculum;
   const selectedTitle = selected ? enrolmentTitle(selected) : legacy?.name;
+  // Repeated subjects (Maths IGCSE and Maths A-Level) are told apart by their full titles.
+  const repeated = subjects.some((e, i) => subjects.findIndex((o) => sameSubject(o.subject, e.subject)) !== i);
+  const tabLabel = (e: Enrolment) => (repeated ? enrolmentTitle(e) : e.subject);
   const selectedDetail = selected ? enrolmentDetail(selected, selected.tutorId ? lookup.tutor(selected.tutorId)?.fullName : undefined) : '';
 
   async function share() {
@@ -159,11 +162,11 @@ export function StudentOverview({ student }: { student: Student }) {
         ) : tree ? (
           <View style={{ gap: Spacing.three }}>
             {subjects.length > 1 && subjects.length <= 3 ? (
-              <Segmented value={selected!.id} onChange={setSubjectId} options={subjects.map((e) => ({ value: e.id, label: e.subject }))} />
+              <Segmented value={selected!.id} onChange={setSubjectId} options={subjects.map((e) => ({ value: e.id, label: tabLabel(e) }))} />
             ) : subjects.length > 3 ? (
               <Row gap={Spacing.one} wrap>
                 {subjects.map((e) => (
-                  <Chip key={e.id} label={e.subject} selected={selected?.id === e.id} onPress={() => setSubjectId(e.id)} />
+                  <Chip key={e.id} label={tabLabel(e)} selected={selected?.id === e.id} onPress={() => setSubjectId(e.id)} />
                 ))}
               </Row>
             ) : null}
@@ -175,7 +178,11 @@ export function StudentOverview({ student }: { student: Student }) {
             ) : null}
             {tree.units.length ? (
               <>
-                <ProgressSummary syllabus={tree} mastery={mastery} />
+                <ProgressSummary
+                  syllabus={tree}
+                  mastery={mastery}
+                  hideTitle={!!selectedTitle && tree.name.trim().toLowerCase() === selectedTitle.trim().toLowerCase()}
+                />
                 <Section title="Topic mastery">
                   <MasteryHeatmap syllabus={tree} mastery={mastery} />
                 </Section>
@@ -186,7 +193,7 @@ export function StudentOverview({ student }: { student: Student }) {
             )}
           </View>
         ) : (
-          <EmptyState title="No subjects yet" message={`Topics will appear here as ${firstName}’s tutor records lessons.`} />
+          <EmptyState title="No subjects yet" message="Subjects will appear here once they have been arranged with our office." />
         )
       ) : null}
 

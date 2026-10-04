@@ -77,9 +77,25 @@ export interface DemoDB {
   enrolments: Enrolment[];
   topicLists: TopicList[];
   topics: Topic[];
+  /** Messages the office would receive (mirrors public.notify_admins writing to notification_outbox). */
+  outbox: OutboxMessage[];
 }
 
-export const DEMO_DB_VERSION = 6;
+export interface OutboxMessage {
+  id: string;
+  createdAt: string;
+  audience: 'admins';
+  subject: string;
+  body: string;
+  url?: string;
+}
+
+/** Mirrors public.notify_admins: queue a message for the office. */
+export function notifyAdmins(db: DemoDB, subject: string, body: string, url?: string, now = new Date()) {
+  (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'admins', subject, body, url });
+}
+
+export const DEMO_DB_VERSION = 7;
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -466,7 +482,14 @@ export const enr = {
       (viewer.role === 'admin' ||
         (viewer.role === 'tutor' &&
           !!me &&
-          (e.tutorId === me || db.lessons.some((l) => l.tutorId === me && l.studentIds.includes(e.studentId)))));
+          (e.tutorId === me ||
+            db.lessons.some(
+              (l) =>
+                l.tutorId === me &&
+                l.studentIds.includes(e.studentId) &&
+                l.status !== 'cancelled' &&
+                (!l.subject?.trim() || sameSubject(l.subject, e.subject)),
+            ))));
     if (!e || !allowed) throw new AccessError('You can add topics only for students you teach');
     const name = tidy(input.name) ?? '';
     const unit = tidy(input.unit);

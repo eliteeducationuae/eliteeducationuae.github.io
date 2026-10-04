@@ -94,8 +94,9 @@ create trigger enrolments_write before insert or update on public.enrolments
   for each row execute function public.on_enrolment_write();
 
 /**
- * The enrolment a legacy maths syllabus id stands for. Unknown ids keep the student's own curriculum,
- * with the old 'IB' read as 'IB DP'.
+ * The enrolment a legacy maths syllabus id stands for. Every legacy syllabus is Maths, so existing lessons and
+ * reports (all Maths) keep matching it; Cambridge 0606 is Maths at the 'Additional' level. Unknown ids keep the
+ * student's own curriculum, with the old 'IB' read as 'IB DP'.
  */
 create function public.syllabus_enrolment(p_syllabus_id text, p_curriculum text)
 returns table (subject text, curriculum text, level text, exam_board text)
@@ -111,7 +112,7 @@ language sql immutable set search_path = public as $$
     ('ib-ai-hl', 'Maths', 'IB DP', 'AI HL', 'IB'),
     ('igcse-4ma1', 'Maths', 'IGCSE', null, 'Pearson Edexcel'),
     ('igcse-0580', 'Maths', 'IGCSE', null, 'Cambridge'),
-    ('igcse-0606', 'Additional Maths', 'IGCSE', null, 'Cambridge'),
+    ('igcse-0606', 'Maths', 'IGCSE', 'Additional', 'Cambridge'),
     ('alevel-maths', 'Maths', 'A-Level', null, null)
   ) m(id, subject, curriculum, level, exam_board) on m.id = p_syllabus_id
 $$;
@@ -134,9 +135,13 @@ alter table public.tutor_applications add column if not exists phases text[] not
 alter table public.student_reports add column if not exists subject text check (length(subject) <= 80);
 alter table public.student_reports add column if not exists enrolment_id uuid references public.enrolments(id) on delete set null;
 
--- Reports are now one per cycle, student and subject.
+-- Reports are now one per cycle and enrolment (so Maths IGCSE and Maths A-Level each get one). Reports not linked to an
+-- enrolment stay one per cycle, student and subject.
 alter table public.student_reports drop constraint if exists student_reports_cycle_id_student_id_key;
-create unique index if not exists student_reports_subject_idx on public.student_reports (cycle_id, student_id, lower(coalesce(subject, '')));
+create unique index if not exists student_reports_enrolment_idx on public.student_reports (cycle_id, enrolment_id)
+  where enrolment_id is not null;
+create unique index if not exists student_reports_subject_idx on public.student_reports (cycle_id, student_id, lower(coalesce(subject, '')))
+  where enrolment_id is null;
 
 -- ---------------------------------------------------------------------------
 -- Backfill (owner only; idempotent)
@@ -161,9 +166,13 @@ begin
 
   update public.lessons set subject = 'Maths' where subject is null;
   update public.student_reports set subject = 'Maths' where subject is null;
-  update public.student_reports r set enrolment_id = e.id
-  from public.enrolments e
-  where r.enrolment_id is null and e.student_id = r.student_id and e.active and lower(e.subject) = lower(r.subject);
+  update public.student_reports r set enrolment_id = (
+    select e.id from public.enrolments e
+    where e.student_id = r.student_id and e.active and lower(e.subject) = lower(r.subject)
+      and not exists (select 1 from public.student_reports o where o.cycle_id = r.cycle_id and o.enrolment_id = e.id)
+    order by e.created_at limit 1)
+  where r.enrolment_id is null
+    and exists (select 1 from public.enrolments e where e.student_id = r.student_id and e.active and lower(e.subject) = lower(r.subject));
   update public.opportunities set subject = 'Maths' where subject is null and syllabus_id is not null;
   update public.tutors
   set curricula = array(select case when c = 'IB' then 'IB DP' else c end from unnest(subjects) c), subjects = '{Maths}'
@@ -352,6 +361,28 @@ begin
   return cid;
 end $$;
 
+/** Publishing a report tells the family, naming the subject now that each subject has its own report. */
+create or replace function public.set_report_status(p_id uuid, p_status text) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.student_reports; c public.report_cycles; st public.students; who text; subj text;
+begin
+  if not public.is_admin() then raise exception 'Admins only' using errcode = '42501'; end if;
+  if p_status not in ('draft', 'approved', 'published') then raise exception 'Invalid status'; end if;
+  select * into r from public.student_reports where id = p_id for update;
+  if r is null then raise exception 'Report not found'; end if;
+  if p_status = 'published' and r.status not in ('submitted', 'approved') then raise exception 'Only finished reports can be published'; end if;
+  update public.student_reports set status = p_status, published_at = case when p_status = 'published' then now() end where id = p_id;
+  if p_status = 'published' then
+    select * into c from public.report_cycles where id = r.cycle_id;
+    select * into st from public.students where id = r.student_id;
+    who := split_part(st.full_name, ' ', 1);
+    subj := nullif(trim(r.subject), '');
+    perform public.notify_family(st.family_id, c.name || ' report for ' || who || coalesce(' · ' || subj, ''),
+      who || '''s ' || c.name || coalesce(' ' || subj, '') || ' report is ready to read in the Elite Education app.',
+      'New report', who || coalesce(' · ' || subj, '') || ' — ' || c.name, '/parent/progress', true);
+  end if;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Enquiries and applications record the subject and phase
 -- ---------------------------------------------------------------------------
@@ -437,6 +468,12 @@ grant execute on function public.submit_tutor_application(text, text, text, text
 -- Parents add a child with their subjects
 -- ---------------------------------------------------------------------------
 
+/** 'IGCSE Chemistry', 'IB DP Maths (AA HL)' or 'Arabic', as the app's enrolmentTitle. */
+create function public.enrolment_title(p_subject text, p_curriculum text, p_level text) returns text
+language sql immutable set search_path = public as $$
+  select concat_ws(' ', nullif(trim(p_curriculum), ''), trim(p_subject)) || coalesce(' (' || nullif(trim(p_level), '') || ')', '')
+$$;
+
 -- The older add_my_child(name, curriculum, syllabus_id, school, year_group) stays for app clients
 -- that have not updated yet: its syllabus_id gives the child a Maths enrolment through on_student_created.
 -- The new signature puts p_subjects second, so calls with the older arguments still resolve to the old function.
@@ -444,7 +481,7 @@ grant execute on function public.submit_tutor_application(text, text, text, text
 create function public.add_my_child(
   p_full_name text, p_subjects jsonb, p_school text default null, p_year_group text default null, p_phase text default null
 ) returns uuid language plpgsql security definer set search_path = public as $$
-declare fam uuid; sid uuid; s jsonb; subj text; cur text; lvl text; board text;
+declare fam uuid; sid uuid; s jsonb; subj text; cur text; lvl text; board text; f public.families; list text;
 begin
   fam := public.my_family_id();
   if fam is null then raise exception 'Only parents can add children' using errcode = '42501'; end if;
@@ -470,6 +507,14 @@ begin
     end if;
     insert into public.enrolments (student_id, subject, curriculum, level, exam_board) values (sid, subj, cur, lvl, board);
   end loop;
+  -- The parent is told we will confirm a tutor within one working day, so the office must hear about it.
+  select * into f from public.families where id = fam;
+  select string_agg(public.enrolment_title(e.subject, e.curriculum, e.level), ', ' order by e.created_at, e.subject) into list
+  from public.enrolments e where e.student_id = sid;
+  perform public.notify_admins('New child added: ' || trim(p_full_name),
+    coalesce(f.parent_name, f.name, 'A family') || ' added ' || trim(p_full_name) || coalesce(' (' || nullif(trim(p_year_group), '') || ')', '')
+      || E'.\n\nSubjects: ' || list || E'\n\nPlease arrange a tutor and confirm with the family within one working day.',
+    'New child', trim(p_full_name) || ' — ' || list, '/students/' || sid);
   return sid;
 end $$;
 revoke all on function public.add_my_child(text, jsonb, text, text, text) from public, anon;
@@ -481,7 +526,7 @@ grant execute on function public.add_my_child(text, jsonb, text, text, text) to 
 
 /**
  * Add a topic to the shared list for an enrolment's subject, curriculum and level. Admins, the enrolment's tutor
- * and tutors who have taught the student may add. The list is created on first use and linked to every matching
+ * and tutors who have taught the student that subject (a lesson in it, or without a subject, not cancelled) may add. The list is created on first use and linked to every matching
  * enrolment. The same name in the same unit returns the existing topic.
  */
 create function public.add_topic(p_enrolment_id uuid, p_name text, p_unit text default null)
@@ -493,7 +538,9 @@ begin
   if e.id is null or not (
       public.is_admin()
       or (me is not null and (e.tutor_id = me
-          or exists (select 1 from public.lessons l where l.tutor_id = me and e.student_id = any (l.student_ids))))) then
+          or exists (select 1 from public.lessons l
+                     where l.tutor_id = me and e.student_id = any (l.student_ids) and l.status <> 'cancelled'
+                       and (l.subject is null or lower(trim(l.subject)) = lower(e.subject)))))) then
     raise exception 'You can add topics only for students you teach' using errcode = '42501';
   end if;
   v_name := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');

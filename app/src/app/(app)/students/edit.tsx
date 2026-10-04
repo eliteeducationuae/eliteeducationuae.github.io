@@ -46,13 +46,15 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
   const [targetGrade, setTargetGrade] = useState(existing?.targetGrade ?? '');
   const [examDate, setExamDate] = useState(existing?.examDate ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
+  // Remembered after the first write, so retrying after a failed subject save updates rather than duplicates.
+  const [savedId, setSavedId] = useState<string | undefined>(existing?.id);
 
   const valid = fullName.trim() && familyId && (!examDate || /^\d{4}-\d{2}-\d{2}$/.test(examDate));
 
   const submit = async () => {
     setError(null);
     const active = drafts.filter((d) => d.active);
-    if (!existing && !active.length) {
+    if (!savedId && !active.length) {
       setError(new Error('Please add at least one subject.'));
       return;
     }
@@ -64,7 +66,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
     setSaving(true);
     try {
       const saved = await source.saveStudent({
-        id: existing?.id,
+        id: savedId,
         fullName: fullName.trim(),
         familyId,
         // Legacy single-course fields are left exactly as they were; new students use subjects instead.
@@ -78,9 +80,13 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
         examDate: examDate.trim() || undefined,
         notes: notes.trim() || undefined,
       });
-      for (const d of drafts) {
+      setSavedId(saved.id);
+      const next = [...drafts];
+      for (const [i, d] of next.entries()) {
         if (!d.id && !d.active) continue;
-        await source.saveEnrolment({ ...d, subject: d.subject.trim(), studentId: saved.id });
+        const e = await source.saveEnrolment({ ...d, subject: d.subject.trim(), studentId: saved.id });
+        next[i] = { ...d, id: e.id };
+        setDrafts([...next]);
       }
       await queryClient.invalidateQueries();
       router.back();

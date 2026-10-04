@@ -79,7 +79,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
       <Section title="Teaches">
         <View style={{ gap: Spacing.three }}>
-          <CatalogueMultiPicker label="Subjects" options={SUBJECTS} values={subjects} onChange={setSubjects} collapsed={12} otherPlaceholder="For example Latin" />
+          <CatalogueMultiPicker label="Subjects" options={SUBJECTS} values={subjects} onChange={setSubjects} collapsed={12} otherPlaceholder="For example, Latin" />
           <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} />
           <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} />
         </View>

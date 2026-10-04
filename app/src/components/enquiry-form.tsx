@@ -97,7 +97,7 @@ export function EnquiryForm({
           <Field label="Student’s first name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" />
         </View>
         <View style={{ flex: 1 }}>
-          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example Year 11" />
+          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example, Year 11" />
         </View>
       </Row>
       <CataloguePicker
@@ -107,7 +107,7 @@ export function EnquiryForm({
         onChange={setSubject}
         collapsed={10}
         optional
-        otherPlaceholder="For example Latin or Music theory"
+        otherPlaceholder="For example, Latin or Music theory"
       />
       <Txt variant="small">One subject is enough here; please mention any others in your message below.</Txt>
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />

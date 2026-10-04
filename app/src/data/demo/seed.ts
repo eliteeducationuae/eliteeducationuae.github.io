@@ -186,6 +186,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
     enrolments: [],
     topicLists: [],
     topics: [],
+    outbox: [],
   };
 
   // Subjects: each student's Maths enrolment from their legacy syllabus, plus their other subjects.

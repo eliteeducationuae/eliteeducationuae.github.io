@@ -81,15 +81,15 @@ export default function Apply() {
                   values={subjects}
                   onChange={setSubjects}
                   collapsed={12}
-                  otherPlaceholder="For example Chemistry, English Literature, Arabic"
+                  otherPlaceholder="For example, Chemistry, English Literature, Arabic"
                 />
-                <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} otherPlaceholder="For example Australian or German Abitur" />
-                <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} otherPlaceholder="For example postgraduate" />
+                <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} otherPlaceholder="For example, Australian or German Abitur" />
+                <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} otherPlaceholder="For example, postgraduate" />
               </View>
             </Section>
             <Field label="Teaching experience" value={experience} onChangeText={setExperience} multiline placeholder="Schools, years of experience, results and any examining work" />
-            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="For example MSc, PGCE, QTS" />
-            <Field label="Availability" value={availability} onChangeText={setAvailability} placeholder="For example weekday evenings and Saturday mornings" />
+            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="For example, MSc, PGCE, QTS" />
+            <Field label="Availability" value={availability} onChangeText={setAvailability} placeholder="For example, weekday evenings and Saturday mornings" />
             <Row gap={Spacing.two} style={{ justifyContent: 'space-between' }}>
               <Txt variant="muted" style={{ flex: 1 }} numberOfLines={1}>
                 {cv ? `CV: ${cv.name}` : 'CV (optional, PDF or Word)'}

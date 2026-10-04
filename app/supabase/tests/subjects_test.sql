@@ -36,15 +36,17 @@ alter table public.students disable trigger students_enrol;
 insert into public.students (id, family_id, full_name, curriculum, syllabus_id) values
   ('d0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'Sami Ahmed', 'IB', 'ib-aa-hl'),
   ('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002', 'Ollie Other', 'IGCSE', 'igcse-0580'),
-  ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000002', 'Zed Other', 'IB', 'retired-syllabus');
+  ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000002', 'Zed Other', 'IB', 'retired-syllabus'),
+  ('d0000000-0000-0000-0000-000000000008', 'c0000000-0000-0000-0000-000000000002', 'Kai Other', 'IGCSE', 'igcse-0606');
 alter table public.students enable trigger students_enrol;
--- Sami: Tia twice, Tom once. Ollie: Tom once.
+-- Sami: Tia twice, Tom once. Ollie: Tom once. Kai (Additional Maths): Tom once.
 insert into public.lessons (tutor_id, student_ids, service_id, start_at, end_at, location, status)
 select tutor, students, 'e0000000-0000-0000-0000-000000000001', s, s + interval '1 hour', 'online', 'completed' from (values
   ('b0000000-0000-0000-0000-000000000001'::uuid, '{d0000000-0000-0000-0000-000000000001}'::uuid[], now() - interval '20 days'),
   ('b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}', now() - interval '13 days'),
   ('b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000001}', now() - interval '6 days'),
-  ('b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000002}', now() - interval '6 days')
+  ('b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000002}', now() - interval '6 days'),
+  ('b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000008}', now() - interval '5 days')
 ) v(tutor, students, s);
 select pg_temp.check(not exists (select 1 from public.enrolments), 'legacy students start without enrolments');
 select public.backfill_enrolments();
@@ -56,19 +58,23 @@ select pg_temp.check((select subject || '/' || curriculum || '/' || exam_board |
 select pg_temp.check((select subject || '/' || curriculum || '/' || coalesce(tutor_id::text, 'none') from public.enrolments
   where student_id = 'd0000000-0000-0000-0000-000000000003') = 'Maths/IB DP/none', 'an unknown syllabus keeps the curriculum, with IB read as IB DP');
 select pg_temp.check(not exists (select 1 from public.lessons where subject is distinct from 'Maths'), 'existing lessons become Maths');
+select pg_temp.check((select e.subject || '/' || e.curriculum || '/' || e.level || '/' || e.exam_board || '/' || e.syllabus_id from public.enrolments e
+  where e.student_id = 'd0000000-0000-0000-0000-000000000008') = 'Maths/IGCSE/Additional/Cambridge/igcse-0606', 'Cambridge 0606 maps to IGCSE Maths at the Additional level');
+select pg_temp.check((select bool_and(l.subject = e.subject) from public.lessons l join public.enrolments e on e.student_id = any (l.student_ids)),
+  'every backfilled lesson''s subject matches its student''s enrolment, including Additional Maths');
 select pg_temp.check((select subjects::text || ' ' || curricula::text from public.tutors where id = 'b0000000-0000-0000-0000-000000000001')
   = '{Maths} {"IB DP",IGCSE}', 'a legacy tutor''s curricula move out of subjects');
 select pg_temp.check((select subjects::text || ' ' || curricula::text from public.tutors where id = 'b0000000-0000-0000-0000-000000000003')
   = '{Chemistry} {}', 'real subjects are left alone');
 select public.backfill_enrolments();
-select pg_temp.check((select count(*) from public.enrolments) = 3, 'running the backfill twice creates no duplicates');
+select pg_temp.check((select count(*) from public.enrolments) = 4, 'running the backfill twice creates no duplicates');
 select pg_temp.check((select subjects::text from public.tutors where id = 'b0000000-0000-0000-0000-000000000001') = '{Maths}', 'the tutor move is idempotent');
 
 -- Students created by older app versions still get their Maths enrolment.
 insert into public.students (id, family_id, full_name, curriculum, syllabus_id) values
   ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000002', 'Ava Other', 'IGCSE', 'igcse-0606');
-select pg_temp.check((select subject || '/' || curriculum || '/' || exam_board || '/' || coalesce(tutor_id::text, 'none') from public.enrolments
-  where student_id = 'd0000000-0000-0000-0000-000000000004') = 'Additional Maths/IGCSE/Cambridge/none', 'the legacy insert trigger creates an enrolment');
+select pg_temp.check((select subject || '/' || curriculum || '/' || level || '/' || exam_board || '/' || coalesce(tutor_id::text, 'none') from public.enrolments
+  where student_id = 'd0000000-0000-0000-0000-000000000004') = 'Maths/IGCSE/Additional/Cambridge/none', 'the legacy insert trigger creates an enrolment');
 
 -- New-style students: Lina (Mona's) studies Chemistry with Una (no lessons yet); Rami (Mona's) studies Maths with Tia,
 -- Chemistry with Una and, no longer, Physics with Tom.
@@ -115,7 +121,7 @@ select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b4');
 select pg_temp.check((select count(*) from public.enrolments) = 0 and (select count(*) from public.students) = 0, 'an unrelated tutor sees no enrolments');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 select pg_temp.check((select level from public.enrolments where id = '70000000-0000-0000-0000-000000000005') is null, 'tutors cannot change enrolments directly');
-select pg_temp.check((select count(*) from public.enrolments) = 9, 'admins see every enrolment');
+select pg_temp.check((select count(*) from public.enrolments) = 10, 'admins see every enrolment');
 reset role;
 set role anon;
 select pg_temp.as_user('');
@@ -202,7 +208,33 @@ select pg_temp.check(not exists (select 1 from public.student_reports where stud
 reset role;
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Reports to write: Autumn term' and body like 'You have % report% to write for Autumn term%') >= 2,
   'tutors are told about their reports');
+select pg_temp.check((select subject || ':' || enrolment_id from public.student_reports where student_id = 'd0000000-0000-0000-0000-000000000008')
+  = 'Maths:' || (select id from public.enrolments where student_id = 'd0000000-0000-0000-0000-000000000008'),
+  'an Additional Maths student''s report is linked to their enrolment');
+-- Publishing names the subject, since a family may receive several reports in one round.
+update public.student_reports set status = 'submitted' where student_id = 'd0000000-0000-0000-0000-000000000006' and subject = 'Chemistry';
 set role authenticated;
+select public.set_report_status((select id from public.student_reports where student_id = 'd0000000-0000-0000-0000-000000000006' and subject = 'Chemistry'), 'published');
+reset role;
+select pg_temp.check(exists (select 1 from public.notification_outbox where subject = 'Autumn term report for Rami · Chemistry'
+  and body = 'Rami''s Autumn term Chemistry report is ready to read in the Elite Education app.'), 'the publication notice names the subject');
+-- The same subject in two curricula gets two reports.
+insert into public.enrolments (student_id, subject, curriculum, tutor_id) values
+  ('d0000000-0000-0000-0000-000000000006', 'Maths', 'A-Level', 'b0000000-0000-0000-0000-000000000002');
+set role authenticated;
+select public.open_report_cycle('Spring term', (now() - interval '30 days')::date, (now() + interval '14 days')::date);
+select pg_temp.check((select string_agg(r.subject || ':' || coalesce(e.curriculum, '') || ':' || t.full_name, ', ' order by r.subject, e.curriculum)
+  from public.student_reports r join public.tutors t on t.id = r.tutor_id join public.enrolments e on e.id = r.enrolment_id
+  join public.report_cycles c on c.id = r.cycle_id
+  where c.name = 'Spring term' and r.student_id = 'd0000000-0000-0000-0000-000000000006')
+  = 'Chemistry:A-Level:Una Three, Maths:A-Level:Tom Two, Maths:IGCSE:Tia One', 'Maths IGCSE and Maths A-Level each get their own report');
+-- Tia teaches Rami Maths only, so she cannot write into the shared Chemistry list.
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+do $$ begin
+  perform public.add_topic('70000000-0000-0000-0000-000000000062', 'Organic synthesis');
+  raise exception 'other-subject tutor added';
+exception when insufficient_privilege then raise notice 'ok - a tutor of another subject cannot add topics';
+end $$;
 
 -- Parents add a child with subjects --------------------------------------------
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000e');
@@ -214,6 +246,11 @@ select pg_temp.check((select phase || '/' || coalesce(curriculum, 'none') || '/'
   = 'Primary/none/none', 'the child is saved with a phase and no legacy curriculum');
 select pg_temp.check((select string_agg(subject || '|' || curriculum || '|' || coalesce(level, '') || '|' || coalesce(exam_board, '') || '|' || coalesce(tutor_id::text, ''), ', ' order by subject)
   from public.enrolments where student_id = (select id from kid)) = 'English|British|||, Maths|British|Higher|AQA|', 'the child''s two subjects become enrolments');
+reset role;
+select pg_temp.check(exists (select 1 from public.notification_outbox where subject = 'New child added: Nina Other'
+  and body like 'Otto added Nina Other (Year 4).%Subjects: British English, British Maths (Higher)%within one working day.'
+  and url = '/students/' || (select id from kid)), 'the office is told about the new child and their subjects');
+set role authenticated;
 do $$ begin
   perform public.add_my_child('Empty Other', p_subjects => '[]');
   raise exception 'no subjects accepted';

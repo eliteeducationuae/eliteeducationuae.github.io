@@ -50,7 +50,7 @@ function ServiceForm({ existing, onDone }: { existing?: Service; onDone: () => v
   const valid = name.trim() && Number(duration) > 0 && Number(rate) >= 0 && rate !== '';
   return (
     <Card style={{ gap: Spacing.three }}>
-      <Field label="Name" value={name} onChangeText={setName} placeholder="For example IGCSE and GCSE 1:1" />
+      <Field label="Name" value={name} onChangeText={setName} placeholder="For example, IGCSE and GCSE 1:1" />
       <Row gap={Spacing.two}>
         <View style={{ flex: 1 }}>
           <Field label="Minutes" value={duration} onChangeText={setDuration} keyboardType="number-pad" />

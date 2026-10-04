@@ -31,21 +31,21 @@ export function masteryColor(rating: number | undefined, fallback: string): stri
   return rating ? MasteryColors[Math.round(rating) - 1] : fallback;
 }
 
-/** Headline numbers + "work on next" for a student. */
-export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mastery: Map<string, TopicMastery> }) {
+/** Headline numbers + "work on next" for a student. `hideTitle` when a heading above already names the list. */
+export function ProgressSummary({ syllabus, mastery, hideTitle }: { syllabus: Syllabus; mastery: Map<string, TopicMastery>; hideTitle?: boolean }) {
   const theme = useTheme();
   const topics = useTopicLookup();
   const summary = summariseSyllabus(syllabus, mastery);
   const focus = focusTopics(mastery);
   return (
     <Card style={{ gap: Spacing.three }}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="h3">{syllabus.name}</Txt>
+      <Row style={{ justifyContent: hideTitle ? 'flex-end' : 'space-between' }}>
+        {hideTitle ? null : <Txt variant="h3">{syllabus.name}</Txt>}
         <Badge label={`${summary.covered}/${summary.total} topics`} tone="info" />
       </Row>
       <View style={{ gap: Spacing.one }}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt variant="muted">Syllabus covered</Txt>
+          <Txt variant="muted">Topics covered</Txt>
           <Txt variant="h3">{summary.coveragePercent}%</Txt>
         </Row>
         <ProgressBar value={summary.coveragePercent} color={theme.accent} />

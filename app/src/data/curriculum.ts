@@ -123,7 +123,17 @@ export const SYLLABUSES: Syllabus[] = [
   { id: 'ib-ai-hl', name: 'IB Maths AI HL', subject: 'Maths', curriculum: 'IB DP', level: 'AI HL', examBoard: 'IB', units: build('ib-ai', extend(IB_AI_SL, IB_AI_HL_EXTRA)) },
   { id: 'igcse-4ma1', name: 'IGCSE Maths (Edexcel 4MA1)', subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel', units: build('4ma1', IGCSE_4MA1) },
   { id: 'igcse-0580', name: 'IGCSE Maths (Cambridge 0580)', subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Cambridge', units: build('0580', CAMBRIDGE_0580) },
-  { id: 'igcse-0606', name: 'IGCSE Additional Maths (0606)', subject: 'Additional Maths', curriculum: 'IGCSE', examBoard: 'Cambridge', units: build('0606', CAMBRIDGE_0606) },
+  // Maths at the 'Additional' level, so legacy 0606 students' Maths lessons and reports match their enrolment.
+  // It is also offered when a tutor chooses the subject 'Additional Maths'.
+  {
+    id: 'igcse-0606',
+    name: 'IGCSE Additional Maths (0606)',
+    subject: 'Maths',
+    level: 'Additional',
+    curriculum: 'IGCSE',
+    examBoard: 'Cambridge',
+    units: build('0606', CAMBRIDGE_0606),
+  },
   {
     id: 'alevel-maths',
     name: 'A-Level Maths (Pure, Stats, Mechanics)',
@@ -160,6 +170,8 @@ function normaliseCurriculum(curriculum: string): string {
 export function builtInSyllabusesFor(subject?: string, curriculum?: string): Syllabus[] {
   const wanted = curriculum?.trim() ? normaliseCurriculum(curriculum).toLowerCase() : undefined;
   return SYLLABUSES.filter(
-    (s) => sameSubject(s.subject, subject) && (!wanted || normaliseCurriculum(s.curriculum).toLowerCase() === wanted),
+    (s) =>
+      (sameSubject(s.subject, subject) || (s.id === 'igcse-0606' && sameSubject('Additional Maths', subject))) &&
+      (!wanted || normaliseCurriculum(s.curriculum).toLowerCase() === wanted),
   );
 }

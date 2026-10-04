@@ -98,7 +98,7 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
         />
       }>
       <Stack.Screen options={{ title: existing ? 'Edit role' : 'Post a role' }} />
-      <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example Year 10 IGCSE Chemistry — Tuesdays" />
+      <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Year 10 IGCSE Chemistry — Tuesdays" />
       <Field
         label="About the student (shared with tutors)"
         value={description}
