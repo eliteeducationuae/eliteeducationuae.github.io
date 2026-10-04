@@ -202,8 +202,9 @@ export function OfferCard({
         </View>
         {saving ? <Badge label={`Save ${saving}%`} tone="gold" /> : null}
       </Row>
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={Spacing.three} wrap>
-        <View style={{ gap: 2 }}>
+      {/* The price note wraps in its own column, so Buy always stays on the right, with or without VAT. */}
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={Spacing.three}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
           <Txt variant="h2">{formatAED(offerTotal(offer, vatRate))}</Txt>
           <Txt variant="small">
             {vatRate > 0 ? 'including VAT · ' : ''}
@@ -215,6 +216,7 @@ export function OfferCard({
           icon="card"
           variant="gold"
           size="sm"
+          style={{ alignSelf: 'flex-end' }}
           loading={loading}
           disabled={disabled}
           onPress={onBuy}
@@ -427,6 +429,17 @@ export function OfferForm({
 // Invoices: autopay state
 // ---------------------------------------------------------------------------
 
+/**
+ * Admin: while an autopay charge is under way or its outcome is unknown, recording a payment or voiding the invoice may
+ * leave the family charged twice (or charged for a void invoice), so the office is asked to look at Stripe first.
+ */
+export const AUTOPAY_MAY_HAVE_CHARGED = "Autopay may already have charged the family's card for this invoice; check the Stripe Dashboard first.";
+
+/** Whether an autopay charge on this invoice may already have taken the money (under way, or outcome unknown). */
+export function autopayMayHaveCharged(invoice: Invoice): boolean {
+  return invoice.autopayStatus === 'unknown' || invoice.autopayStatus === 'processing';
+}
+
 const AUTOPAY_TONE: Record<AutopayStatus, Tone> = {
   pending: 'info',
   processing: 'neutral',
@@ -474,7 +487,7 @@ export function AutopayFailureNote({ invoice }: { invoice: Invoice }) {
       <Banner tone="warning" icon="alert">
         Outcome unknown: the card processor could not be reached during the last autopay charge, so it is not yet known whether the
         family&apos;s card was charged. The app checks again automatically; please check the Stripe Dashboard before charging the card
-        again. The family has not been asked to pay.
+        again, recording a payment or voiding this invoice. The family has not been asked to pay.
       </Banner>
     );
   }
@@ -488,8 +501,9 @@ export function AutopayFailureNote({ invoice }: { invoice: Invoice }) {
 
 /**
  * Admin: charge an autopay family's saved card now, for a sent invoice that is still owed. When the last charge's outcome
- * is unknown (or it has been processing for a while), the button only asks Stripe what happened to that charge (it resends the same request, which can never
- * charge twice), so a second charge is never offered while the first may have gone through.
+ * is unknown (or it has been processing for a while), the button only asks Stripe what happened to that charge (it resends the
+ * same request only while the invoice still wants exactly that charge, and otherwise just looks the payment up), so a second
+ * charge is never offered while the first may have gone through.
  */
 export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: Invoice; family?: Family; balance: number }) {
   const charge = useAction(chargeSavedCardNow);

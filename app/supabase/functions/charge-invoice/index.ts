@@ -9,12 +9,17 @@
 // Never charging twice: each attempt has its own idempotency key, and exactly what was sent is kept in autopay_requests.
 // When Stripe cannot be reached mid-charge the invoice becomes 'unknown' (still held from the family), and the next run
 // resends that same request with that same key: Stripe answers with the original result, or makes the charge once if
-// the first request never arrived. Keys last at least 24 hours; after that the payment intent is looked up instead.
+// the first request never arrived. It is resent only while the invoice still wants exactly that charge (still sent,
+// autopay still on, the balance still at least that amount, the key under 23 hours old: autopayReplayAllowed);
+// otherwise the payment intent is only looked up, never charged again. Only an answer about the card counts as a
+// decline (classifyAutopayResponse); any other error keeps the invoice 'unknown' and held from the family.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import {
   autopayIdempotencyKey,
-  autopayIntentSearchQuery,
-  describeStripeError,
+  autopayIntentListPath,
+  autopayReplayAllowed,
+  classifyAutopayResponse,
+  findAutopayIntent,
   invoiceBalanceFils,
   offSessionIntentForm,
 } from '../_shared/stripe.ts';
@@ -29,8 +34,12 @@ const BATCH = 20;
 const TIME_BUDGET_MS = 90_000;
 /** A charge still 'processing' after this long is checked again with Stripe (a missed webhook, or a run that stopped). */
 const STALE_MINUTES = 30;
-/** Resend with the same idempotency key within this many hours of the first request; look the payment up after it. */
-const REPLAY_HOURS = 23;
+/** Wait before resending after a network error, so a request still running at Stripe has usually finished. */
+const RETRY_DELAY_MS = 2_000;
+/** A request this recent may still be running at Stripe, so not finding its payment intent proves nothing yet. */
+const SETTLE_MINUTES = 10;
+/** Pages of a customer's payment intents read when looking an attempt up (100 each). */
+const LOOKUP_PAGES = 5;
 
 const NO_CARD = 'No saved card is available';
 /** Stripe could not be reached during a charge. */
@@ -81,6 +90,7 @@ async function release(db: Db, invoiceId: string, attempt: number, to: 'pending'
 /** Sends an autopay request. A network error is retried once with the same key; null means Stripe could not be reached. */
 async function send(form: URLSearchParams, idempotencyKey: string): Promise<StripeResult | null> {
   for (let i = 0; i < 2; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     try {
       return await stripe('/payment_intents', { form, idempotencyKey });
     } catch {
@@ -90,27 +100,50 @@ async function send(form: URLSearchParams, idempotencyKey: string): Promise<Stri
   return null;
 }
 
-/** Turns Stripe's answer for an attempt into the invoice's new state. */
+/** Turns Stripe's answer for an attempt into the invoice's new state. Only an answer about the card is a decline. */
 async function settle(db: Db, id: string, attempt: number, res: StripeResult | null, balanceFils: number): Promise<Result> {
-  // Outages, rate limits and key mix-ups say nothing about the card.
-  if (!res || (!res.ok && (res.status >= 500 || res.status === 429 || res.body?.error?.type === 'idempotency_error'))) {
-    return await unknown(db, id, attempt);
+  const answer = classifyAutopayResponse(res);
+  if (answer.outcome === 'unknown') return await unknown(db, id, attempt);
+  if (answer.outcome === 'declined') return await failed(db, id, attempt, answer.message);
+  const pi = answer.intent;
+  if (answer.outcome === 'processing') {
+    // Stripe has answered: the charge is under way, no longer unknown. The webhook settles it; a stale one is checked again.
+    await db
+      .from('invoices')
+      .update({ autopay_status: 'processing', autopay_error: null, autopay_claimed_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('autopay_attempts', attempt)
+      .eq('autopay_status', 'unknown');
+    return { invoiceId: id, status: 'processing' };
   }
-  const pi = res.ok ? res.body : res.body?.error?.payment_intent;
-  if (res.ok && pi?.status === 'succeeded') {
-    const { error } = await db.rpc('record_stripe_payment', {
-      p_invoice_id: id,
-      p_amount: Number(pi.amount_received ?? pi.amount ?? balanceFils) / 100,
-      p_payment_intent: pi.id,
-      p_session_id: null,
-      p_autopay: true,
-    });
-    // The webhook (payment_intent.succeeded) records it too, so a database hiccup here is not lost.
-    return error ? { invoiceId: id, status: 'processing', error: error.message } : { invoiceId: id, status: 'succeeded' };
+  const { error } = await db.rpc('record_stripe_payment', {
+    p_invoice_id: id,
+    p_amount: Number(pi.amount_received ?? pi.amount ?? balanceFils) / 100,
+    p_payment_intent: pi.id,
+    p_session_id: null,
+    p_autopay: true,
+  });
+  // The webhook (payment_intent.succeeded) records it too, so a database hiccup here is not lost.
+  return error ? { invoiceId: id, status: 'processing', error: error.message } : { invoiceId: id, status: 'succeeded' };
+}
+
+/**
+ * Finds the payment intent of one attempt among the customer's payment intents created since it was sent. The list
+ * endpoint is strongly consistent, so null means the request never reached Stripe. Throws when Stripe cannot answer.
+ */
+async function lookUp(customerId: string, invoiceId: string, attempt: number, sentAt: string): Promise<Record<string, unknown> | null> {
+  let after: string | undefined;
+  for (let page = 0; page < LOOKUP_PAGES; page++) {
+    const res = await stripe(autopayIntentListPath(customerId, sentAt, after));
+    if (!res.ok) throw new Error(`Stripe could not list payment intents (${res.status})`);
+    const pi = findAutopayIntent(res.body, invoiceId, attempt);
+    if (pi) return pi;
+    const data = Array.isArray(res.body?.data) ? res.body.data : [];
+    if (!res.body?.has_more || !data.length) return null;
+    after = data[data.length - 1]?.id;
   }
-  if (res.ok && pi?.status === 'processing') return { invoiceId: id, status: 'processing' };
-  if (res.ok && pi?.status === 'requires_action') return await failed(db, id, attempt, describeStripeError({ code: 'authentication_required' }));
-  return await failed(db, id, attempt, describeStripeError(res.ok ? pi?.last_payment_error : res.body?.error));
+  // More payment intents than expected for one family: do not guess.
+  throw new Error('Too many payment intents to search');
 }
 
 /** The payment intent as it is now (a replayed request returns it as it was then). Falls back to what was given. */
@@ -206,27 +239,54 @@ async function resolve(db: Db, inv: any): Promise<Result> {
 
   const { data: sent } = await db.from('autopay_requests').select('request, sent_at').eq('invoice_id', id).eq('attempt', attempt).maybeSingle();
   if (!sent) {
-    // The run stopped before anything was sent to Stripe, so nothing was charged: queue a fresh attempt.
+    // The run stopped before anything was sent to Stripe, so nothing was charged: queue a fresh attempt (charge()
+    // checks the invoice and autopay again before it charges anything).
     return await release(db, id, attempt, 'pending', 'Nothing was sent to the card processor; autopay will try again shortly.');
   }
-  const balance = Number(sent.request?.amount ?? 0);
+  const amount = Number(sent.request?.amount ?? 0);
 
-  if (Date.now() - Date.parse(sent.sent_at) < REPLAY_HOURS * 3_600_000) {
+  // The invoice as it is now: the office may have voided it or recorded a payment, or the family switched autopay off,
+  // since the charge was sent. Resending is only safe while it still wants exactly that charge.
+  const { data: now } = await db.from('invoices').select('status, family_id, items, vat_rate, payments(amount)').eq('id', id).maybeSingle();
+  if (!now) return { invoiceId: id, status: 'skipped', error: 'This invoice no longer exists.' };
+  const { data: billing } = await db.from('family_billing').select('stripe_customer_id, autopay').eq('family_id', now.family_id).maybeSingle();
+  const chargeable = now.status === 'sent' && billing?.autopay === true;
+  const replay = autopayReplayAllowed({
+    invoiceStatus: now.status,
+    autopay: billing?.autopay,
+    balanceFils: invoiceBalanceFils(now.items, now.vat_rate, now.payments ?? []),
+    requestAmountFils: amount,
+    sentAt: sent.sent_at,
+    now: Date.now(),
+  });
+  if (replay) {
     const res = await send(new URLSearchParams(sent.request), autopayIdempotencyKey(id, attempt));
-    return await settle(db, id, attempt, res && (await latest(res)), balance);
+    return await settle(db, id, attempt, res && (await latest(res)), amount);
   }
 
-  // Too old to resend safely: look the payment up instead. Stripe's search can lag by a minute, never by a day.
-  let found: StripeResult;
+  // Look the payment up only; never send the charge again.
+  const customer = typeof sent.request?.customer === 'string' ? sent.request.customer : billing?.stripe_customer_id;
+  if (!customer) return await unknown(db, id, attempt);
+  let pi: Record<string, unknown> | null;
   try {
-    found = await stripe(`/payment_intents/search?query=${encodeURIComponent(autopayIntentSearchQuery(id, attempt))}&limit=1`);
+    pi = await lookUp(customer, id, attempt, sent.sent_at);
   } catch {
     return await unknown(db, id, attempt);
   }
-  if (!found.ok) return await settle(db, id, attempt, found, balance);
-  const pi = found.body?.data?.[0];
-  if (!pi) return await release(db, id, attempt, 'pending', 'The earlier charge never reached the card processor; autopay will try again shortly.');
-  return await settle(db, id, attempt, { ok: true, status: 200, body: pi }, balance);
+  if (pi) return await settle(db, id, attempt, { ok: true, status: 200, body: pi }, amount);
+  if (Date.now() - Date.parse(sent.sent_at) < SETTLE_MINUTES * 60_000) return await unknown(db, id, attempt);
+  if (chargeable) {
+    // Never charged, and the invoice still wants paying: a fresh attempt charges the balance as it is now.
+    return await release(db, id, attempt, 'pending', 'The earlier charge never reached the card processor; autopay will try again shortly.');
+  }
+  // Never charged, and the invoice no longer wants autopay (voided, paid another way, or autopay switched off).
+  await db
+    .from('invoices')
+    .update({ autopay_status: null, autopay_error: null })
+    .eq('id', id)
+    .eq('autopay_attempts', attempt)
+    .in('autopay_status', ['processing', 'unknown']);
+  return { invoiceId: id, status: 'skipped', error: 'No charge was made, and this invoice no longer needs autopay.' };
 }
 
 Deno.serve(async (req) => {

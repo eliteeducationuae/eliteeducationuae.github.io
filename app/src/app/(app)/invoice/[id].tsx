@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
-import { AutopayBadge, AutopayFailureNote, AutopayNotice, ChargeSavedCardButton } from '@/components/payments';
+import {
+  AUTOPAY_MAY_HAVE_CHARGED,
+  AutopayBadge,
+  AutopayFailureNote,
+  AutopayNotice,
+  autopayMayHaveCharged,
+  ChargeSavedCardButton,
+} from '@/components/payments';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -38,6 +45,8 @@ export default function InvoicePage() {
   const status = displayStatus(inv);
   const s = INVOICE_STATUS[status];
   const payable = (inv.status === 'sent') && totals.balance > 0;
+  // Admin: recording or voiding now could leave the family charged twice, so they are asked to check Stripe first.
+  const mayHaveCharged = autopayMayHaveCharged(inv);
   // While autopay is about to charge (or is charging) the saved card, other ways to pay are not offered.
   const autopayHolds = payable && autopayHoldsInvoice(inv);
 
@@ -174,7 +183,13 @@ export default function InvoicePage() {
             recording ? (
               <RecordPayment invoiceId={inv.id} balance={totals.balance} onDone={() => setRecording(false)} />
             ) : (
-              <Button title="Record a payment" icon="money" onPress={() => setRecording(true)} />
+              <Button
+                title="Record a payment"
+                icon="money"
+                onPress={() =>
+                  mayHaveCharged ? confirm('Record a payment?', AUTOPAY_MAY_HAVE_CHARGED, () => setRecording(true)) : setRecording(true)
+                }
+              />
             )
           ) : null}
           {inv.status === 'draft' ? <Button title="Send to family" onPress={() => setStatus.mutate([inv.id, 'sent'])} /> : null}
@@ -183,8 +198,11 @@ export default function InvoicePage() {
               title="Void invoice"
               variant="danger"
               onPress={() =>
-                confirm('Void this invoice?', 'Its lessons will return to “Ready to invoice” so that they can be billed again.', () =>
-                  setStatus.mutate([inv.id, 'void']),
+                confirm(
+                  'Void this invoice?',
+                  'Its lessons will return to “Ready to invoice” so that they can be billed again.' +
+                    (mayHaveCharged ? ` ${AUTOPAY_MAY_HAVE_CHARGED}` : ''),
+                  () => setStatus.mutate([inv.id, 'void']),
                 )
               }
             />

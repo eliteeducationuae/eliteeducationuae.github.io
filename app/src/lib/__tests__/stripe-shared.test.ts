@@ -1,6 +1,9 @@
 import {
   autopayIdempotencyKey,
-  autopayIntentSearchQuery,
+  autopayIntentListPath,
+  autopayReplayAllowed,
+  classifyAutopayResponse,
+  findAutopayIntent,
   cardSummary,
   checkoutInvoiceForm,
   checkoutOfferForm,
@@ -160,9 +163,23 @@ describe('autopay and customer forms', () => {
     expect(autopayIdempotencyKey('inv-1', 1)).toBe('autopay-inv-1-1');
     expect(autopayIdempotencyKey('inv-1', 2)).not.toBe(autopayIdempotencyKey('inv-1', 1));
   });
-  it('looks up the payment intent of one autopay attempt by its metadata', () => {
-    expect(autopayIntentSearchQuery('inv-1', 3)).toBe("metadata['invoice_id']:'inv-1' AND metadata['autopay_attempt']:'3'");
-    expect(autopayIntentSearchQuery("inv'1", 3)).toBe("metadata['invoice_id']:'inv1' AND metadata['autopay_attempt']:'3'");
+  it('lists the customer\'s payment intents since the request was sent, less five minutes', () => {
+    const path = autopayIntentListPath('cus_1', '2026-10-01T10:00:00Z');
+    const since = Date.parse('2026-10-01T10:00:00Z') / 1000 - 300;
+    expect(path).toBe(`/payment_intents?customer=cus_1&created%5Bgte%5D=${since}&limit=100`);
+    expect(autopayIntentListPath('cus_1', '2026-10-01T10:00:00Z', 'pi_9')).toContain('starting_after=pi_9');
+  });
+  it('finds the payment intent of one autopay attempt by its metadata', () => {
+    const list = {
+      data: [
+        { id: 'pi_a', metadata: { invoice_id: 'inv-1', autopay_attempt: '2' } },
+        { id: 'pi_b', metadata: { invoice_id: 'inv-2', autopay_attempt: '3' } },
+        { id: 'pi_c', metadata: { invoice_id: 'inv-1', autopay_attempt: '3' } },
+      ],
+    };
+    expect(findAutopayIntent(list, 'inv-1', 3)?.id).toBe('pi_c');
+    expect(findAutopayIntent(list, 'inv-1', 4)).toBeNull();
+    expect(findAutopayIntent(null, 'inv-1', 3)).toBeNull();
   });
   it('creates a customer tagged with the family', () => {
     expect(Object.fromEntries(customerForm({ familyId: 'fam-1', email: 'mum@x', name: 'Mona Ahmed' }))).toEqual({
@@ -340,5 +357,74 @@ describe('classifyEvent', () => {
     expect(classifyEvent(ev('invoice.paid', { id: 'in_1' }))).toEqual({ kind: 'ignore' });
     expect(classifyEvent(null)).toEqual({ kind: 'ignore' });
     expect(classifyEvent({ type: 'customer.updated' })).toEqual({ kind: 'ignore' });
+  });
+});
+
+describe('classifyAutopayResponse', () => {
+  const err = (status: number, error: Record<string, unknown>) => ({ ok: false, status, body: { error } });
+  it('treats only answers about the card as declines', () => {
+    expect(classifyAutopayResponse(err(402, { type: 'card_error', code: 'card_declined', decline_code: 'insufficient_funds' }))).toEqual({
+      outcome: 'declined',
+      message: 'Your card has insufficient funds.',
+    });
+    expect(classifyAutopayResponse(err(400, { type: 'card_error', code: 'expired_card' }))).toEqual({
+      outcome: 'declined',
+      message: 'Your card has expired.',
+    });
+    expect(classifyAutopayResponse({ ok: true, status: 200, body: { status: 'requires_payment_method', last_payment_error: { code: 'card_declined' } } })).toEqual({
+      outcome: 'declined',
+      message: 'Your card was declined by your bank.',
+    });
+    expect(classifyAutopayResponse({ ok: true, status: 200, body: { status: 'requires_action' } })).toMatchObject({ outcome: 'declined' });
+  });
+  it('never treats errors that say nothing about the card as declines', () => {
+    expect(classifyAutopayResponse(err(409, { type: 'invalid_request_error', code: 'idempotency_key_in_use' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(409, { type: 'invalid_request_error', code: 'lock_timeout' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(400, { type: 'idempotency_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(400, { type: 'invalid_request_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(401, { type: 'invalid_request_error', message: 'Invalid API Key provided' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(403, { type: 'invalid_request_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(404, { type: 'invalid_request_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(429, { type: 'rate_limit_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(err(500, { type: 'api_error' }))).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse({ ok: false, status: 502, body: null })).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse(null)).toEqual({ outcome: 'unknown' });
+    expect(classifyAutopayResponse({ ok: true, status: 200, body: { status: 'requires_confirmation' } })).toEqual({ outcome: 'unknown' });
+  });
+  it('passes successes and charges under way through with the payment intent', () => {
+    const pi = { id: 'pi_1', status: 'succeeded', amount_received: 45000 };
+    expect(classifyAutopayResponse({ ok: true, status: 200, body: pi })).toEqual({ outcome: 'succeeded', intent: pi });
+    expect(classifyAutopayResponse({ ok: true, status: 200, body: { id: 'pi_1', status: 'processing' } })).toMatchObject({ outcome: 'processing' });
+  });
+});
+
+describe('autopayReplayAllowed', () => {
+  const now = Date.parse('2026-10-02T10:00:00Z');
+  const base = {
+    invoiceStatus: 'sent',
+    autopay: true,
+    balanceFils: 45000,
+    requestAmountFils: 45000,
+    sentAt: '2026-10-02T09:00:00Z',
+    now,
+  };
+  it('resends while the invoice still wants exactly that charge', () => {
+    expect(autopayReplayAllowed(base)).toBe(true);
+  });
+  it('never resends an unknown charge on a voided, paid or draft invoice', () => {
+    expect(autopayReplayAllowed({ ...base, invoiceStatus: 'void' })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, invoiceStatus: 'paid' })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, invoiceStatus: 'draft' })).toBe(false);
+  });
+  it('never resends once autopay is switched off or a payment has been recorded since', () => {
+    expect(autopayReplayAllowed({ ...base, autopay: false })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, autopay: null })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, balanceFils: 20000 })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, requestAmountFils: 0, balanceFils: 0 })).toBe(false);
+  });
+  it('never resends once the idempotency key may have expired', () => {
+    expect(autopayReplayAllowed({ ...base, sentAt: '2026-10-01T11:00:01Z' })).toBe(true);
+    expect(autopayReplayAllowed({ ...base, sentAt: '2026-10-01T11:00:00Z' })).toBe(false);
+    expect(autopayReplayAllowed({ ...base, sentAt: 'not a date' })).toBe(false);
   });
 });

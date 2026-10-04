@@ -192,10 +192,84 @@ export function autopayIdempotencyKey(invoiceId: string, attempt: number): strin
   return `autopay-${invoiceId}-${attempt}`;
 }
 
-/** Stripe search query for the payment intent of one autopay attempt (used once its idempotency key may have expired). */
-export function autopayIntentSearchQuery(invoiceId: string, attempt: number): string {
-  const quote = (v: string) => v.replace(/['\\]/g, '');
-  return `metadata['invoice_id']:'${quote(invoiceId)}' AND metadata['autopay_attempt']:'${quote(String(attempt))}'`;
+/** Resend an unknown autopay request with its idempotency key only within this many hours of the first send. */
+export const AUTOPAY_REPLAY_HOURS = 23;
+
+/**
+ * Whether an autopay request whose outcome is unknown may be sent again (same body, same idempotency key). Sending it
+ * again makes a brand-new charge when the first request never reached Stripe, so it is allowed only while the invoice
+ * still wants exactly that charge: still sent (not voided or paid), autopay still on, the balance still at least the
+ * amount requested, and the idempotency key still fresh. Otherwise the payment intent is only looked up.
+ */
+export function autopayReplayAllowed(o: {
+  invoiceStatus: string | null | undefined;
+  autopay: boolean | null | undefined;
+  balanceFils: number;
+  requestAmountFils: number;
+  sentAt: string;
+  now: number;
+}): boolean {
+  const sent = Date.parse(o.sentAt);
+  return (
+    o.invoiceStatus === 'sent' &&
+    o.autopay === true &&
+    Number.isInteger(o.requestAmountFils) &&
+    o.requestAmountFils > 0 &&
+    o.balanceFils >= o.requestAmountFils &&
+    Number.isFinite(sent) &&
+    o.now - sent < AUTOPAY_REPLAY_HOURS * 3_600_000
+  );
+}
+
+/**
+ * GET path listing a customer's payment intents created since an autopay request was sent (less five minutes for
+ * clock drift). The list endpoint is strongly consistent, unlike Search, so "not found" means it was never made.
+ */
+export function autopayIntentListPath(customerId: string, sentAt: string, startingAfter?: string): string {
+  const since = Math.floor(Date.parse(sentAt) / 1000) - 300;
+  const params = new URLSearchParams({ customer: customerId, 'created[gte]': String(since), limit: '100' });
+  if (startingAfter) params.set('starting_after', startingAfter);
+  return `/payment_intents?${params.toString()}`;
+}
+
+/** The payment intent of one autopay attempt in a page of payment intents, or null. */
+export function findAutopayIntent(list: unknown, invoiceId: string, attempt: number): Record<string, unknown> | null {
+  const data = isObj(list) && Array.isArray(list.data) ? list.data : [];
+  for (const pi of data) {
+    const md = isObj(pi) && isObj(pi.metadata) ? pi.metadata : {};
+    if (md.invoice_id === invoiceId && md.autopay_attempt === String(attempt)) return pi as Record<string, unknown>;
+  }
+  return null;
+}
+
+export type AutopayOutcome =
+  | { outcome: 'succeeded'; intent: Record<string, unknown> }
+  | { outcome: 'processing'; intent: Record<string, unknown> }
+  /** Stripe said something about the card: a real decline the family is told about. */
+  | { outcome: 'declined'; message: string }
+  /** Nothing is known about the card: an outage, a rate limit, a key problem, a request still in flight. */
+  | { outcome: 'unknown' };
+
+/**
+ * Turns Stripe's answer to an autopay charge (or a lookup of one) into what it means for the invoice. Only HTTP 402,
+ * a card_error, or a payment intent that needs a new card or the cardholder counts as a decline. Everything else that
+ * is not a success (any 409 such as idempotency_key_in_use, 400, 401, 403, 404, 429, 5xx, no answer at all) is unknown,
+ * so the family is never told a payment failed, and offered another way to pay, while the charge may still go through.
+ */
+export function classifyAutopayResponse(res: { ok: boolean; status: number; body: unknown } | null): AutopayOutcome {
+  if (!res) return { outcome: 'unknown' };
+  const body = isObj(res.body) ? res.body : {};
+  if (res.ok) {
+    const status = str(body.status);
+    if (status === 'succeeded') return { outcome: 'succeeded', intent: body };
+    if (status === 'processing') return { outcome: 'processing', intent: body };
+    if (status === 'requires_action') return { outcome: 'declined', message: describeStripeError({ code: 'authentication_required' }) };
+    if (status === 'requires_payment_method') return { outcome: 'declined', message: describeStripeError(body.last_payment_error) };
+    return { outcome: 'unknown' };
+  }
+  const error = isObj(body.error) ? body.error : {};
+  if (res.status === 402 || error.type === 'card_error') return { outcome: 'declined', message: describeStripeError(error) };
+  return { outcome: 'unknown' };
 }
 
 export function customerForm(o: { familyId: string; email?: string | null; name?: string | null }): URLSearchParams {
