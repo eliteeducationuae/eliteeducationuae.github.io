@@ -4,7 +4,7 @@
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
 // WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
-// TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
+// TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
 

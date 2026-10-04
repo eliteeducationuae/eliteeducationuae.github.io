@@ -5,7 +5,13 @@
 // Every body below must match the template approved in Twilio's Content Template Builder exactly,
 // and the database preview of the same template. Bank details are never sent.
 
-export type WhatsAppTemplate = 'lesson_reminder' | 'lesson_notes' | 'invoice_sent' | 'invoice_overdue' | 'homework_due';
+export type WhatsAppTemplate =
+  | 'lesson_reminder'
+  | 'lesson_notes'
+  | 'invoice_sent'
+  | 'invoice_autopay'
+  | 'invoice_overdue'
+  | 'homework_due';
 
 export interface WhatsAppTemplateInfo {
   /** Human name, also used in the README. */
@@ -43,6 +49,15 @@ export const WHATSAPP_TEMPLATES: Record<WhatsAppTemplate, WhatsAppTemplateInfo> 
     body: `Dear {{1}}, invoice {{2}} for {{3}} is now available in the Elite Education app and is due by {{4}}. ${FOOTER}`,
     variables: ['Recipient first name', 'Invoice number', 'Amount', 'Due date'],
     sample: { '1': 'Mona', '2': 'INV-0042', '3': 'AED 1,050.00', '4': '15 Oct 2026' },
+  },
+  invoice_autopay: {
+    label: 'Invoice sent (autopay)',
+    envVar: 'TWILIO_TEMPLATE_INVOICE_AUTOPAY',
+    body:
+      `Dear {{1}}, invoice {{2}} for {{3}} is now available in the Elite Education app. ` +
+      `As autopay is on, it will be paid automatically from your saved {{4}}. ${FOOTER}`,
+    variables: ['Recipient first name', 'Invoice number', 'Amount', 'Saved card, e.g. "Visa ending 4242"'],
+    sample: { '1': 'Mona', '2': 'INV-0042', '3': 'AED 1,050.00', '4': 'Visa ending 4242' },
   },
   invoice_overdue: {
     label: 'Invoice overdue',

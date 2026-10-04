@@ -22,6 +22,7 @@ const ENV: Record<string, string> = {
   TWILIO_TEMPLATE_LESSON_NOTES: 'HX0002',
   TWILIO_TEMPLATE_INVOICE_SENT: 'HX0003',
   TWILIO_TEMPLATE_INVOICE_OVERDUE: 'HX0004',
+  TWILIO_TEMPLATE_INVOICE_AUTOPAY: 'HX0006',
   TWILIO_TEMPLATE_HOMEWORK_DUE: 'HX0005',
 };
 const config = twilioConfigFromEnv((k) => ENV[k]) as TwilioConfig;
@@ -34,8 +35,8 @@ function decodeBasic(header: string): string {
 const invoiceVars = { '1': 'Mona', '2': 'INV-0042', '3': 'AED 1,050.00', '4': '15 Oct 2026' };
 
 describe('WhatsApp templates', () => {
-  it('lists exactly the five approved templates', () => {
-    expect(KEYS.sort()).toEqual(['homework_due', 'invoice_overdue', 'invoice_sent', 'lesson_notes', 'lesson_reminder']);
+  it('lists exactly the six approved templates', () => {
+    expect(KEYS.sort()).toEqual(['homework_due', 'invoice_autopay', 'invoice_overdue', 'invoice_sent', 'lesson_notes', 'lesson_reminder']);
     expect(isWhatsAppTemplate('invoice_sent')).toBe(true);
     expect(isWhatsAppTemplate('marketing')).toBe(false);
     expect(isWhatsAppTemplate('toString')).toBe(false);
@@ -55,6 +56,10 @@ describe('WhatsApp templates', () => {
     );
     expect(renderWhatsApp('invoice_sent', invoiceVars)).toBe(
       'Dear Mona, invoice INV-0042 for AED 1,050.00 is now available in the Elite Education app and is due by 15 Oct 2026. Elite Education | eliteeducation.me',
+    );
+    // Autopay families: paid from the saved card, so no due date and no call to pay.
+    expect(renderWhatsApp('invoice_autopay', { ...invoiceVars, '4': 'Visa ending 4242' })).toBe(
+      'Dear Mona, invoice INV-0042 for AED 1,050.00 is now available in the Elite Education app. As autopay is on, it will be paid automatically from your saved Visa ending 4242. Elite Education | eliteeducation.me',
     );
     expect(renderWhatsApp('invoice_overdue', invoiceVars)).toBe(
       'Dear Mona, invoice INV-0042 for AED 1,050.00 was due on 15 Oct 2026 and remains unpaid. You may view and pay it in the Elite Education app. If you have already paid, please disregard this message. Elite Education | eliteeducation.me',
@@ -113,7 +118,14 @@ describe('twilioConfigFromEnv', () => {
       accountSid: ENV.TWILIO_ACCOUNT_SID,
       authToken: 'test-token',
       from: '+971500000000',
-      contentSids: { lesson_reminder: 'HX0001', lesson_notes: 'HX0002', invoice_sent: 'HX0003', invoice_overdue: 'HX0004', homework_due: 'HX0005' },
+      contentSids: {
+        lesson_reminder: 'HX0001',
+        lesson_notes: 'HX0002',
+        invoice_sent: 'HX0003',
+        invoice_overdue: 'HX0004',
+        homework_due: 'HX0005',
+        invoice_autopay: 'HX0006',
+      },
     });
     expect(twilioConfigFromEnv((k) => ({ ...ENV, TWILIO_WHATSAPP_FROM: '+971500000001' })[k])?.from).toBe('+971500000001');
   });

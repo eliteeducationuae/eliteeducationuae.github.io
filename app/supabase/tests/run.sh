@@ -11,7 +11,7 @@ run "$bin/initdb -D $dir/data -A trust -U postgres >/dev/null"
 run "$bin/pg_ctl -D $dir/data -o '-p $port -k $dir' -l $dir/log -w start >/dev/null"
 trap 'run "$bin/pg_ctl -D $dir/data -m immediate stop >/dev/null"; rm -rf "$dir"' EXIT
 psql=(psql -h "$dir" -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d postgres)
-for t in rls engagement operations social_auth homework calendar whatsapp payments; do
+for t in rls engagement operations social_auth homework calendar whatsapp payments invoice_notifications; do
   # Each test file starts from a freshly migrated database.
   "${psql[@]}" -c "drop database if exists t_$t" -c "create database t_$t" >/dev/null 2>&1
   db=(psql -h "$dir" -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d "t_$t")

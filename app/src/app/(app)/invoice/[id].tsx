@@ -173,7 +173,8 @@ export default function InvoicePage() {
         title="Share invoice (PDF)"
         icon="share"
         variant="secondary"
-        onPress={() => shareInvoice(inv, family, settings.data)}
+        // An invoice autopay is paying carries no bank transfer details, in the app or on its PDF.
+        onPress={() => shareInvoice(inv, family, autopayHolds && settings.data ? { ...settings.data, bankDetails: undefined } : settings.data)}
       />
 
       {me.role === 'admin' ? (
