@@ -271,6 +271,20 @@ Complete these once, in this order. The function names come from the round 4 pla
 6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
+## Per-student rates
+
+Tutor pay and family prices may be the same for every student or set individually. Run `supabase/migrations/20261014000000_rates.sql` once in the Supabase SQL editor (or `npx supabase db push`).
+
+- **Defaults.** Unless an override is set, a tutor is paid their usual hourly rate (set on the tutor) and a family is charged the price of the lesson's service.
+- **Custom overrides.** An admin may set, for one student's subject (an enrolment), a custom hourly pay for that subject's tutor and a custom hourly price for the family. Either may be cleared at any time to return to the default. Tutor pay can only be set once the subject has a tutor. A custom family price is charged per hour, so a 90-minute lesson at AED 600 an hour is charged AED 900. Package credits are still used first, because a package is lessons the family has already paid for.
+- **Who can see what.** Admins see everything. A tutor sees only the custom pay for subjects they teach, and never sees family prices. A parent sees their own family's custom prices, and never sees tutor pay. Students see neither.
+- **Group lessons.** Each family pays its own price for its own child. The tutor is paid the highest effective rate among the students in the lesson.
+- **Cover tutors.** Custom pay belongs to the student, the subject and the tutor together. A tutor covering a lesson is paid their own usual rate, and changing a subject's tutor removes the previous tutor's custom pay.
+- **Snapshots.** Each charge records the price used when it was created, and submitted, approved and paid tutor invoices keep the rates they were submitted with. Changing a rate therefore affects only lessons charged afterwards and tutor invoices still in draft, which are rebuilt with the current rates.
+- **Awarding a role.** When a role for a named student is awarded, the student's enrolment in that subject (created if it does not yet exist) is given the chosen tutor, and the role's pay becomes that tutor's custom pay for the subject.
+
+Please note that each tutor's usual hourly rate, held on `public.tutors`, remains readable by any signed-in user. This predates per-student rates and is flagged for a later tightening.
+
 ## Checks
 
 ```bash
