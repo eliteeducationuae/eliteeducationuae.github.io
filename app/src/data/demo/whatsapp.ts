@@ -1,4 +1,4 @@
-import { canUseWhatsApp, WHATSAPP_NUMBER_RE } from '@/domain/whatsapp';
+import { WHATSAPP_NUMBER_RE } from '@/domain/whatsapp';
 import type { Profile } from '@/domain/types';
 
 import type { WhatsAppPrefs } from '../source';
@@ -7,7 +7,8 @@ import type { DemoDB } from './db';
 /** Mirrors public.set_whatsapp: parents and tutors only, E.164 numbers, and opting out keeps the number. */
 export function setWhatsAppPrefs(db: DemoDB, viewer: Profile, prefs: WhatsAppPrefs): Profile {
   const me = db.profiles.find((p) => p.id === viewer.id);
-  if (!me || !canUseWhatsApp(me.role)) throw new Error('WhatsApp reminders are available to parents and tutors.');
+  // As set_whatsapp: everyone but students may save settings (the card itself hides for office accounts that do not teach).
+  if (!me || me.role === 'student') throw new Error('WhatsApp reminders are available to parents, tutors and the office.');
   const number = prefs.number?.trim() || null;
   if (number && !WHATSAPP_NUMBER_RE.test(number)) {
     throw new Error('Please enter your WhatsApp number with its country code, for example +971 50 123 4567.');

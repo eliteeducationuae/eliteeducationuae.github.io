@@ -38,17 +38,23 @@ Deno.serve(async () => {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const twilio = twilioConfigFromEnv((k) => Deno.env.get(k));
 
+  // WhatsApp rows held for quiet hours (whatsapp_not_before, UAE time) stay out of the batch until the morning,
+  // so they neither count an attempt nor crowd out other notifications overnight.
+  const now = new Date().toISOString();
   const { data: queue, error } = await db
     .from('notification_outbox')
     .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number)')
     .is('sent_at', null)
     .lt('attempts', MAX_ATTEMPTS)
+    .or(`whatsapp_not_before.is.null,whatsapp_not_before.lte."${now}"`)
     .order('created_at')
     .limit(100);
   if (error) return new Response(error.message, { status: 500 });
 
   let sent = 0;
   for (const n of queue ?? []) {
+    // Belt and braces: never send a held WhatsApp early, and leave the row untouched (still pending, no attempt counted).
+    if (n.whatsapp && n.whatsapp_status === 'pending' && n.whatsapp_not_before && n.whatsapp_not_before > now) continue;
     const problems: string[] = [];
     const token = n.profiles?.push_token as string | null;
     if (n.push_title && token) {

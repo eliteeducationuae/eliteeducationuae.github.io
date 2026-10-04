@@ -31,7 +31,7 @@ describe('setWhatsAppPrefs (mirrors set_whatsapp)', () => {
   it('turns students away', () => {
     const db = createSeed();
     expect(() => setWhatsAppPrefs(db, who(db, 'student'), { optIn: true, number: '+971501234567' })).toThrow(
-      'WhatsApp reminders are available to parents and tutors.',
+      'WhatsApp reminders are available to parents, tutors and the office.',
     );
   });
 

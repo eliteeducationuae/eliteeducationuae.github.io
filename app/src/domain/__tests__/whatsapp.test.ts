@@ -1,4 +1,11 @@
-import { canUseWhatsApp, formatWhatsAppNumber, normaliseWhatsAppNumber, WHATSAPP_NUMBER_RE, whatsAppMessageKinds } from '../whatsapp';
+import {
+  canUseWhatsApp,
+  formatWhatsAppNumber,
+  isLikelyWhatsAppMobile,
+  normaliseWhatsAppNumber,
+  WHATSAPP_NUMBER_RE,
+  whatsAppMessageKinds,
+} from '../whatsapp';
 
 describe('normaliseWhatsAppNumber', () => {
   it.each([
@@ -40,11 +47,18 @@ describe('formatWhatsAppNumber', () => {
 });
 
 describe('role helpers', () => {
-  it('lets parents, tutors and admins use WhatsApp, but not students', () => {
+  it('lets parents, tutors and teaching admins use WhatsApp, but not students', () => {
     expect(canUseWhatsApp('parent')).toBe(true);
     expect(canUseWhatsApp('tutor')).toBe(true);
-    expect(canUseWhatsApp('admin')).toBe(true);
+    expect(canUseWhatsApp('admin', 't-craig')).toBe(true);
+    expect(canUseWhatsApp('admin')).toBe(false);
     expect(canUseWhatsApp('student')).toBe(false);
+  });
+
+  it('pre-fills only numbers that can take WhatsApp', () => {
+    expect(isLikelyWhatsAppMobile('+971501234567')).toBe(true);
+    expect(isLikelyWhatsAppMobile('+97141234567')).toBe(false);
+    expect(isLikelyWhatsAppMobile('+447700900123')).toBe(true);
   });
   it('lists the messages each role receives', () => {
     expect(whatsAppMessageKinds('parent')).toHaveLength(4);

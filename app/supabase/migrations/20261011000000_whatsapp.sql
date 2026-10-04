@@ -20,6 +20,8 @@ alter table public.notification_outbox
   add column whatsapp_status text check (whatsapp_status in ('pending', 'sent', 'skipped', 'failed')),
   add column whatsapp_sent_at timestamptz,
   add column whatsapp_sid text,
+  -- Held until this time (quiet hours, UAE time); null means send straight away.
+  add column whatsapp_not_before timestamptz,
   add constraint outbox_whatsapp_complete
     check (not whatsapp or (whatsapp_to is not null and whatsapp_template is not null and whatsapp_status is not null));
 create index notification_outbox_whatsapp_pending_idx on public.notification_outbox (created_at)
@@ -78,6 +80,24 @@ language sql immutable set search_path = public as $$
     '^((mr|mrs|ms|miss|mx|dr|prof|sheikh|sheikha|sheikhah)\.?\s+)+', '', 'i'), ' ', 1)
 $$;
 
+/**
+ * Quiet hours, UAE time. Lesson reminders and lesson notes may go out from 08:00 to 20:59; invoices, overdue chases and
+ * homework reminders from 09:00 to 19:59. Returns null inside the window, otherwise the start of the next window
+ * (later today if it is early morning, else tomorrow), so event-driven messages are held overnight rather than sent.
+ */
+create function public.whatsapp_not_before(p_template text, p_at timestamptz) returns timestamptz
+language plpgsql stable set search_path = public as $$
+declare
+  local_ts timestamp := p_at at time zone 'Asia/Dubai';
+  local_hour int := extract(hour from local_ts)::int;
+  opens int := case when p_template in ('lesson_reminder', 'lesson_notes') then 8 else 9 end;
+  closes int := case when p_template in ('lesson_reminder', 'lesson_notes') then 20 else 19 end;
+begin
+  if local_hour between opens and closes then return null; end if;
+  return ((local_ts::date + case when local_hour < opens then 0 else 1 end) + make_interval(hours => opens))
+    at time zone 'Asia/Dubai';
+end $$;
+
 /** The message as the recipient will read it: the template body with each {{n}} replaced by p_vars->>n. */
 create function public.whatsapp_preview(p_template text, p_vars jsonb) returns text
 language plpgsql immutable set search_path = public as $$
@@ -98,7 +118,8 @@ end $$;
  * {{1}} is always the recipient's first name. When the profile has no name, the family's or tutor's record is used if it is
  * clearly the same person; failing that nothing is queued, since a message without a name would be refused anyway.
  */
-create function public.queue_whatsapp(p_profile_id uuid, p_template text, p_vars jsonb, p_url text default null)
+create function public.queue_whatsapp(p_profile_id uuid, p_template text, p_vars jsonb, p_url text default null,
+  p_now timestamptz default now())
 returns boolean language plpgsql security definer set search_path = public as $$
 declare p public.profiles; vars jsonb; first_name text;
 begin
@@ -118,7 +139,7 @@ begin
   select coalesce(jsonb_object_agg(key, coalesce(public.whatsapp_clean(value), '')), '{}') into vars
     from jsonb_each_text(coalesce(p_vars, '{}') || jsonb_build_object('1', first_name));
   insert into public.notification_outbox (profile_id, email, subject, body, push_title, push_body, url, send_email,
-    whatsapp, whatsapp_to, whatsapp_template, whatsapp_vars, whatsapp_status)
+    whatsapp, whatsapp_to, whatsapp_template, whatsapp_vars, whatsapp_status, whatsapp_not_before)
   values (p.id, null,
     case p_template
       when 'lesson_reminder' then 'WhatsApp: lesson reminder'
@@ -128,17 +149,18 @@ begin
       when 'homework_due' then 'WhatsApp: homework due'
     end,
     public.whatsapp_preview(p_template, vars), null, null, p_url, false,
-    true, p.whatsapp_number, p_template, vars, 'pending');
+    true, p.whatsapp_number, p_template, vars, 'pending', public.whatsapp_not_before(p_template, p_now));
   return true;
 end $$;
 
 /** Queue a WhatsApp message for every opted-in parent of a family. Returns how many were queued. */
-create function public.queue_whatsapp_family(p_family_id uuid, p_template text, p_vars jsonb, p_url text default null)
+create function public.queue_whatsapp_family(p_family_id uuid, p_template text, p_vars jsonb, p_url text default null,
+  p_now timestamptz default now())
 returns int language plpgsql security definer set search_path = public as $$
 declare p record; n int := 0;
 begin
   for p in select id from public.profiles where family_id = p_family_id and role = 'parent' order by id loop
-    if public.queue_whatsapp(p.id, p_template, p_vars, p_url) then n := n + 1; end if;
+    if public.queue_whatsapp(p.id, p_template, p_vars, p_url, p_now) then n := n + 1; end if;
   end loop;
   return n;
 end $$;
@@ -152,11 +174,12 @@ language sql stable set search_path = public as $$
   select jsonb_build_object('2', inv.number,
     '3', 'AED ' || to_char(greatest(public.invoice_total(inv)
       - case when p_outstanding then (select coalesce(sum(pm.amount), 0) from public.payments pm where pm.invoice_id = inv.id) else 0 end,
-      0), 'FM999,999,990.00'),
+      0), 'FM999,999,999,990.00'),
     '4', to_char(inv.due_date, 'FMDD Mon YYYY'))
 $$;
 
 -- Invoices: a WhatsApp alongside the email when one is sent. Separate from on_invoice_sent on purpose.
+-- An invoice sent in the evening is held until 09:00 UAE time (see whatsapp_not_before).
 create function public.on_invoice_sent_whatsapp() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -169,6 +192,7 @@ create trigger invoices_whatsapp after insert or update of status on public.invo
   for each row execute function public.on_invoice_sent_whatsapp();
 
 -- Lesson notes: tell each family's opted-in parents once a completed lesson is written up.
+-- Notes recorded after 20:59 UAE time are held until 08:00 the next morning (see whatsapp_not_before).
 create function public.on_lesson_notes_whatsapp() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare l public.lessons; fam uuid; names text;
@@ -214,7 +238,7 @@ begin
         from public.students st where st.id = any (l.student_ids);
       for p in select id from public.profiles where tutor_id = l.tutor_id and role in ('tutor', 'admin') order by id loop
         if public.queue_whatsapp(p.id, 'lesson_reminder', jsonb_build_object('2', names, '3', 'you',
-             '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id) then
+             '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id, p_now) then
           n := n + 1;
         end if;
       end loop;
@@ -222,7 +246,7 @@ begin
         select public.whatsapp_join_names(array_agg(split_part(st.full_name, ' ', 1) order by array_position(l.student_ids, st.id))) into names
           from public.students st where st.id = any (l.student_ids) and st.family_id = fam;
         n := n + public.queue_whatsapp_family(fam, 'lesson_reminder', jsonb_build_object('2', names, '3', l.tutor_name,
-          '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id);
+          '4', to_char(l.start_at at time zone 'Asia/Dubai', 'Dy FMDD Mon, HH24:MI')), '/lesson/' || l.id, p_now);
       end loop;
       update public.lessons set whatsapp_reminded_at = p_now where id = l.id;
     end loop;
@@ -238,7 +262,7 @@ begin
     order by due_date
     for update
   loop
-    n := n + public.queue_whatsapp_family(inv.family_id, 'invoice_overdue', public.whatsapp_invoice_vars(inv, true), '/invoice/' || inv.id);
+    n := n + public.queue_whatsapp_family(inv.family_id, 'invoice_overdue', public.whatsapp_invoice_vars(inv, true), '/invoice/' || inv.id, p_now);
     update public.invoices set overdue_whatsapp_at = p_now where id = inv.id;
   end loop;
 
@@ -251,7 +275,7 @@ begin
     for update of hw
   loop
     n := n + public.queue_whatsapp_family(h.family_id, 'homework_due', jsonb_build_object('2', split_part(h.student_name, ' ', 1),
-      '3', to_char(h.due_date, 'Dy FMDD Mon'), '4', h.title), null);
+      '3', to_char(h.due_date, 'Dy FMDD Mon'), '4', h.title), null, p_now);
     update public.homework set due_whatsapp_at = p_now where id = h.id;
   end loop;
 
@@ -262,7 +286,7 @@ end $$;
 -- Self-service opt-in
 -- ---------------------------------------------------------------------------
 
-/** Parents and tutors turn WhatsApp reminders on or off for themselves. Opting out skips anything not yet sent. */
+/** Parents, tutors and the office turn WhatsApp reminders on or off for themselves. Opting out skips anything not yet sent. */
 create function public.set_whatsapp(p_opt_in boolean, p_number text)
 returns void language plpgsql security definer set search_path = public as $$
 declare me public.profiles; num text := nullif(regexp_replace(coalesce(p_number, ''), '[\s().-]', '', 'g'), '');
@@ -270,7 +294,7 @@ begin
   if auth.uid() is null then raise exception 'Please sign in first.' using errcode = '42501'; end if;
   select * into me from public.profiles where id = auth.uid();
   if me.id is null then raise exception 'Your account is not set up yet.' using errcode = '42501'; end if;
-  if me.role = 'student' then raise exception 'WhatsApp reminders are available to parents and tutors.'; end if;
+  if me.role = 'student' then raise exception 'WhatsApp reminders are available to parents, tutors and the office.'; end if;
   if num is not null and num !~ '^\+[1-9][0-9]{7,14}$' then
     raise exception 'Please enter your WhatsApp number with its country code, for example +971 50 123 4567.';
   end if;
@@ -298,9 +322,10 @@ end $$;
 
 revoke all on function public.whatsapp_template_body(text), public.whatsapp_clean(text), public.whatsapp_preview(text, jsonb),
   public.whatsapp_join_names(text[]), public.whatsapp_first_name(text),
-  public.queue_whatsapp(uuid, text, jsonb, text), public.queue_whatsapp_family(uuid, text, jsonb, text),
+  public.whatsapp_not_before(text, timestamptz),
+  public.queue_whatsapp(uuid, text, jsonb, text, timestamptz), public.queue_whatsapp_family(uuid, text, jsonb, text, timestamptz),
   public.whatsapp_invoice_vars(public.invoices, boolean), public.queue_whatsapp_reminders(timestamptz),
   public.on_invoice_sent_whatsapp(), public.on_lesson_notes_whatsapp(), public.set_whatsapp(boolean, text)
   from public, anon, authenticated;
-grant execute on function public.queue_whatsapp(uuid, text, jsonb, text), public.queue_whatsapp_reminders(timestamptz) to service_role;
+grant execute on function public.queue_whatsapp(uuid, text, jsonb, text, timestamptz), public.queue_whatsapp_reminders(timestamptz) to service_role;
 grant execute on function public.set_whatsapp(boolean, text) to authenticated;

@@ -92,7 +92,7 @@ do $$ begin
   perform public.set_whatsapp(true, '+971500000009');
   raise exception 'a student opted in';
 exception when raise_exception then
-  if sqlerrm <> 'WhatsApp reminders are available to parents and tutors.' then raise; end if;
+  if sqlerrm <> 'WhatsApp reminders are available to parents, tutors and the office.' then raise; end if;
   raise notice 'ok - students cannot opt in';
 end $$;
 select pg_temp.as_user('');
@@ -340,4 +340,41 @@ update public.families set parent_name = 'Mr Karim Ahmed', email = 'DAD@x' where
 select pg_temp.check(public.queue_whatsapp('a0000000-0000-0000-0000-00000000000d', 'lesson_notes', '{"2":"Sami","3":"1 Oct"}')
   and (select whatsapp_vars->>'1' = 'Karim' and body like 'Dear Karim, %'
     from pg_temp.wa('a0000000-0000-0000-0000-00000000000d', 'lesson_notes')), 'a nameless parent is greeted by the family record name');
+
+-- Quiet hours for event-driven messages ------------------------------------------------------
+select pg_temp.check(public.whatsapp_not_before('invoice_sent', '2026-10-06 23:00+04') = '2026-10-07 09:00+04'
+  and public.whatsapp_not_before('lesson_notes', '2026-10-06 22:30+04') = '2026-10-07 08:00+04'
+  and public.whatsapp_not_before('invoice_sent', '2026-10-06 14:00+04') is null
+  and public.whatsapp_not_before('lesson_notes', '2026-10-06 14:00+04') is null
+  and public.whatsapp_not_before('invoice_sent', '2026-10-06 05:00+04') = '2026-10-06 09:00+04'
+  and public.whatsapp_not_before('lesson_notes', '2026-10-06 07:59+04') = '2026-10-06 08:00+04'
+  and public.whatsapp_not_before('lesson_notes', '2026-10-06 20:59+04') is null
+  and public.whatsapp_not_before('invoice_sent', '2026-10-06 20:00+04') = '2026-10-07 09:00+04',
+  'quiet hours hold messages until 08:00 (lessons) or 09:00 (invoices) UAE time');
+select pg_temp.check(public.queue_whatsapp('a0000000-0000-0000-0000-00000000000c', 'invoice_sent',
+    '{"2":"INV-0099","3":"AED 10.00","4":"15 Oct 2026"}', '/invoice/late', '2026-10-06 23:00+04')
+  and public.queue_whatsapp('a0000000-0000-0000-0000-00000000000c', 'lesson_notes', '{"2":"Sami","3":"6 Oct"}', '/lesson/late',
+    '2026-10-06 22:30+04')
+  and public.queue_whatsapp('a0000000-0000-0000-0000-00000000000c', 'invoice_sent',
+    '{"2":"INV-0098","3":"AED 10.00","4":"15 Oct 2026"}', '/invoice/day', '2026-10-06 14:00+04'),
+  'messages are queued at any hour');
+select pg_temp.check((select whatsapp_not_before = '2026-10-07 09:00+04' and whatsapp_status = 'pending'
+    from public.notification_outbox where url = '/invoice/late')
+  and (select whatsapp_not_before = '2026-10-07 08:00+04' from public.notification_outbox where url = '/lesson/late')
+  and (select whatsapp_not_before is null from public.notification_outbox where url = '/invoice/day'),
+  'an invoice sent at 23:00 and notes recorded at 22:30 wait for the morning; one sent at 14:00 goes straight away');
+select pg_temp.check(not exists (select 1 from public.notification_outbox where whatsapp
+    and whatsapp_template in ('lesson_reminder', 'invoice_overdue', 'homework_due') and whatsapp_not_before is not null),
+  'reminders queued inside their window are not held');
+select pg_temp.check(not exists (select 1 from public.notification_outbox where whatsapp
+    and whatsapp_template in ('invoice_sent', 'lesson_notes') and url not in ('/invoice/late', '/lesson/late', '/invoice/day')
+    and whatsapp_not_before is distinct from public.whatsapp_not_before(whatsapp_template, created_at)),
+  'the invoice and lesson-notes triggers apply the same quiet hours');
+
+-- Large amounts -----------------------------------------------------------------------------
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items) values
+  ('10000000-0000-0000-0000-000000000046', 'INV-0046', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-15', 'draft',
+   '[{"description":"Annual tuition","quantity":1,"unitPrice":1250000}]');
+select pg_temp.check((select public.whatsapp_invoice_vars(i)->>'3' from public.invoices i where number = 'INV-0046') = 'AED 1,250,000.00',
+  'amounts of a million dirhams or more are formatted in full');
 \echo 'All WhatsApp tests passed'

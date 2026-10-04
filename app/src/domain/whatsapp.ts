@@ -50,9 +50,17 @@ export function formatWhatsAppNumber(e164: string): string {
   return `+${digits.slice(0, ccLength)} ${[...groups, national.slice(-4)].join(' ')}`;
 }
 
-/** Parents, tutors and the office may receive WhatsApp reminders; students may not. */
-export function canUseWhatsApp(role: Role): boolean {
-  return role === 'parent' || role === 'tutor' || role === 'admin';
+/**
+ * Parents, tutors and teaching office accounts may receive WhatsApp reminders; students may not.
+ * An office account receives lesson reminders only for its own lessons, so one with no tutor record has nothing to receive.
+ */
+export function canUseWhatsApp(role: Role, tutorId?: string): boolean {
+  return role === 'parent' || role === 'tutor' || (role === 'admin' && !!tutorId);
+}
+
+/** Whether a UAE number is a mobile (+9715…). Landlines cannot receive WhatsApp; numbers elsewhere are given the benefit of the doubt. */
+export function isLikelyWhatsAppMobile(e164: string): boolean {
+  return !e164.startsWith('+971') || /^\+9715\d{8}$/.test(e164);
 }
 
 /** The messages someone in this role will receive on WhatsApp, in plain words. */

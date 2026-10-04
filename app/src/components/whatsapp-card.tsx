@@ -4,7 +4,13 @@ import { Switch, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useMe, useSession } from '@/data/session';
-import { canUseWhatsApp, formatWhatsAppNumber, normaliseWhatsAppNumber, whatsAppMessageKinds } from '@/domain/whatsapp';
+import {
+  canUseWhatsApp,
+  formatWhatsAppNumber,
+  isLikelyWhatsAppMobile,
+  normaliseWhatsAppNumber,
+  whatsAppMessageKinds,
+} from '@/domain/whatsapp';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -12,14 +18,17 @@ import { Badge, Button, Card, ErrorNote, Field, Row, Section, Txt } from './ui';
 
 const INVALID_NUMBER = 'Please enter your WhatsApp number with its country code, for example +971 50 123 4567.';
 
-/** The number to show in the field: the saved WhatsApp number, else the profile phone, formatted when possible. */
+/**
+ * The number to show in the field: the saved WhatsApp number, else the profile phone when it could take WhatsApp
+ * (a UAE mobile or any number abroad, never a UAE landline), else empty.
+ */
 function initialNumber(saved: string | undefined, phone: string | undefined): string {
   if (saved) return formatWhatsAppNumber(saved);
   const fromPhone = phone ? normaliseWhatsAppNumber(phone) : null;
-  return fromPhone ? formatWhatsAppNumber(fromPhone) : (phone ?? '');
+  return fromPhone && isLikelyWhatsAppMobile(fromPhone) ? formatWhatsAppNumber(fromPhone) : '';
 }
 
-/** Opt in to WhatsApp reminders (parents and tutors). Hidden for students and when the backend lacks it. */
+/** Opt in to WhatsApp reminders (parents, tutors and teaching office accounts). Hidden otherwise, and when the backend lacks it. */
 export function WhatsAppCard() {
   const me = useMe();
   const theme = useTheme();
@@ -33,7 +42,7 @@ export function WhatsAppCard() {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
 
-  if (!canUseWhatsApp(me.role) || !source.setWhatsApp) return null;
+  if (!canUseWhatsApp(me.role, me.tutorId) || !source.setWhatsApp) return null;
 
   const changed = optIn !== savedOn || number.trim() !== baseline.trim();
   const showNumber = optIn || !!me.whatsappNumber;
@@ -42,7 +51,8 @@ export function WhatsAppCard() {
     setError(null);
     setInvalid(false);
     const normalised = normaliseWhatsAppNumber(number);
-    if (optIn && !normalised) {
+    // Any text that is not a usable number is an error, whether the switch is on or off, so nothing is silently dropped.
+    if ((optIn || number.trim()) && !normalised) {
       setInvalid(true);
       return;
     }
@@ -72,11 +82,12 @@ export function WhatsAppCard() {
               setOptIn(v);
               setInvalid(false);
             }}
-            // Off: a surface-coloured thumb on a muted track; on: a noir thumb on gold. Both clear 3:1 against the card.
-            trackColor={{ true: theme.gold, false: theme.textMuted }}
-            thumbColor={optIn ? theme.onGold : theme.surface}
+            // The thumb is the text colour in both states (noir in light, ivory in dark), so it always stands out from the card;
+            // the track shows the state: deep gold (the accent, which clears 3:1 on white) when on, muted when off.
+            trackColor={{ true: theme.accent, false: theme.textMuted }}
+            thumbColor={theme.text}
             // react-native-web paints the "on" thumb teal unless told otherwise.
-            {...({ activeThumbColor: theme.onGold } as object)}
+            {...({ activeThumbColor: theme.text } as object)}
             accessibilityLabel="WhatsApp reminders"
           />
         </Row>
