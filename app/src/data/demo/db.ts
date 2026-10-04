@@ -71,7 +71,7 @@ export interface DemoDB {
   expenses: Expense[];
 }
 
-export const DEMO_DB_VERSION = 3;
+export const DEMO_DB_VERSION = 4;
 
 let counter = 0;
 export function newId(prefix: string): string {

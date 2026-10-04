@@ -34,6 +34,10 @@ export default function AdminMore() {
     { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
     { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: (applications.data ?? []).filter((a) => a.status === 'applied').length },
   ] as const;
+  const business = [
+    { title: 'Money', subtitle: 'Profit, expenses, pay run and exports', icon: 'money', href: '/manage/money' },
+    { title: 'Insights', subtitle: 'Trends, tutor capacity and students to check on', icon: 'trend', href: '/manage/insights' },
+  ] as const;
   const links = [
     { title: 'Tutors', subtitle: 'Profiles, pay rates and calendar colours', icon: 'school', href: '/manage/tutors' },
     { title: 'Families', subtitle: 'Parents, contact details and children', icon: 'people', href: '/manage/families' },
@@ -44,6 +48,11 @@ export default function AdminMore() {
   ] as const;
   return (
     <AccountScreen>
+      <Section title="Business">
+        {business.map((l) => (
+          <ListItem key={l.href} title={l.title} subtitle={l.subtitle} left={<Icon name={l.icon} size={22} color={theme.accent} />} onPress={() => router.push(l.href)} />
+        ))}
+      </Section>
       <Section title="Families">
         {engage.map((l) => (
           <ListItem

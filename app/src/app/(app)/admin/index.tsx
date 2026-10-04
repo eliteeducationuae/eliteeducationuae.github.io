@@ -5,7 +5,22 @@ import { LessonCard } from '@/components/lessons';
 import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { Icon } from '@/components/icon';
-import { useAbsences, useCharges, useEnquiries, useInvoices, useLessons, useLookup, usePackages, useRequests } from '@/data/hooks';
+import { RiskRow, useAtRisk } from '@/components/insights';
+import {
+  useAbsences,
+  useApplications,
+  useBids,
+  useCharges,
+  useEnquiries,
+  useInvoices,
+  useLessons,
+  useLookup,
+  useOpportunities,
+  usePackages,
+  useRequests,
+  useStudentReports,
+  useTutorInvoices,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { chargeRevenue, displayStatus, formatAED, invoiceTotals, packageRemaining } from '@/domain/billing';
 import { addDays, formatDay, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
@@ -27,6 +42,12 @@ export default function AdminDashboard() {
   const requests = useRequests();
   const absences = useAbsences();
   const upcoming = useLessons(startOfDay(now), addDays(startOfDay(now), 60));
+  const opportunities = useOpportunities();
+  const bids = useBids();
+  const tutorInvoices = useTutorInvoices();
+  const reports = useStudentReports();
+  const applications = useApplications();
+  const atRisk = useAtRisk();
 
   const today = (lessons.data ?? []).filter((l) => isSameDay(new Date(l.start), now)).sort(byStart);
   const needsNotes = (lessons.data ?? []).filter((l) => l.status === 'scheduled' && new Date(l.end) < now);
@@ -46,7 +67,11 @@ export default function AdminDashboard() {
   );
   const pending = (requests.data ?? []).filter((r) => r.status === 'pending');
   const needCover = (absences.data ?? []).flatMap((a) => lessonsDuringAbsence(a, upcoming.data ?? []));
-  const attention = needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
+  const rolesWithBids = (opportunities.data ?? []).filter((o) => o.status === 'open' && (bids.data ?? []).some((b) => b.opportunityId === o.id && b.status === 'pending'));
+  const invoicesToApprove = (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted');
+  const reportsToReview = (reports.data ?? []).filter((r) => r.status === 'submitted');
+  const newApplications = (applications.data ?? []).filter((a) => a.status === 'applied');
+  const attention = rolesWithBids.length + invoicesToApprove.length + reportsToReview.length + newApplications.length + atRisk.list.length + needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
 
   const loading = lessons.isLoading || charges.isLoading || invoices.isLoading || !lookup.ready;
 
@@ -63,7 +88,7 @@ export default function AdminDashboard() {
         <>
           <StatGrid>
             <Stat label="Lessons today" value={String(today.filter((l) => l.status !== 'cancelled').length)} onPress={() => router.navigate('/admin/calendar')} />
-            <Stat label="Earned this month" value={formatAED(revenue)} hint={`${formatAED(lastMonthRevenue)} last month`} tone="success" />
+            <Stat label="Earned this month" value={formatAED(revenue)} hint={`${formatAED(lastMonthRevenue)} last month`} tone="success" onPress={() => router.push('/manage/money')} />
             <Stat label="Outstanding" value={formatAED(outstanding)} hint={plural(open.length, 'invoice')} tone={overdue.length ? 'danger' : undefined} onPress={() => router.navigate('/admin/billing')} />
             <Stat label="Ready to invoice" value={formatAED(unbilledTotal)} hint={plural(unbilled.length, 'charge')} tone="info" onPress={() => router.navigate('/admin/billing')} />
           </StatGrid>
@@ -76,6 +101,38 @@ export default function AdminDashboard() {
                   subtitle="Families asking for extra lessons or changes"
                   left={<Icon name="calendar" size={22} color={theme.warning} />}
                   onPress={() => router.push('/manage/requests')}
+                />
+              ) : null}
+              {invoicesToApprove.length ? (
+                <ListItem
+                  title={`${plural(invoicesToApprove.length, 'tutor invoice')} to approve`}
+                  subtitle={invoicesToApprove.map((i) => lookup.tutor(i.tutorId)?.fullName.split(' ')[0]).join(', ')}
+                  left={<Icon name="doc" size={22} color={theme.warning} />}
+                  onPress={() => router.push('/manage/tutor-invoices')}
+                />
+              ) : null}
+              {rolesWithBids.length ? (
+                <ListItem
+                  title={`${plural(rolesWithBids.length, 'role')} with tutors interested`}
+                  subtitle={rolesWithBids.map((o) => o.title).join(', ')}
+                  left={<Icon name="school" size={22} color={theme.gold} />}
+                  onPress={() => router.push('/manage/opportunities')}
+                />
+              ) : null}
+              {reportsToReview.length ? (
+                <ListItem
+                  title={`${plural(reportsToReview.length, 'report')} to review`}
+                  subtitle="Approve and send to families"
+                  left={<Icon name="book" size={22} color={theme.accent} />}
+                  onPress={() => router.push('/manage/reports')}
+                />
+              ) : null}
+              {newApplications.length ? (
+                <ListItem
+                  title={`${plural(newApplications.length, 'tutor application')}`}
+                  subtitle={newApplications.map((a) => a.fullName).join(', ')}
+                  left={<Icon name="person" size={22} color={theme.accent} />}
+                  onPress={() => router.push('/manage/applications')}
                 />
               ) : null}
               {newEnquiries.length ? (
@@ -125,6 +182,10 @@ export default function AdminDashboard() {
                   onPress={() => router.push({ pathname: '/manage/package-new', params: { familyId: p.familyId } })}
                 />
               ))}
+              {atRisk.list.slice(0, 3).map((r) => (
+                <RiskRow key={r.studentId} risk={r} />
+              ))}
+              {atRisk.list.length > 3 ? <Button title={`See all ${atRisk.list.length} students to check on`} variant="ghost" size="sm" onPress={() => router.push('/manage/insights')} /> : null}
             </Section>
           ) : (
             <Banner tone="success" icon="check">

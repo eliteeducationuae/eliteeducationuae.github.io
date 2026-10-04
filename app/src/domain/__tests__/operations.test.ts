@@ -1,5 +1,5 @@
 import { monthFigures, revenueByCurriculum, toCSV, type FinanceData } from '../finance';
-import { AT_RISK_THRESHOLD, studentRisk, tutorUtilisation } from '../insights';
+import { AT_RISK_THRESHOLD, enquiryConversion, familyActivity, studentRisk, tutorUtilisation } from '../insights';
 import { factsForAi, reportFacts, sampleReportDraft } from '../reports';
 import { formatIban, isValidIban, maskIban, tutorInvoiceLines, tutorInvoiceNumber, tutorInvoiceTotal } from '../tutor-pay';
 import type { Charge, Homework, Invoice, Lesson, Service, Student, Tutor, TutorInvoice } from '../types';
@@ -132,6 +132,31 @@ describe('tutor utilisation', () => {
     const u = tutorUtilisation(tutor.id, [lesson({ start: at(8, 7).toISOString(), end: at(8, 7, 17).toISOString() })], [{ id: 'a', tutorId: tutor.id, weekday: 0, start: '15:00', end: '18:00' }], at(8, 7, 0), at(8, 8, 0));
     expect(u).toMatchObject({ taughtHours: 1, availableHours: 3 });
     expect(u.rate).toBeCloseTo(1 / 3);
+  });
+});
+
+describe('families and enquiries', () => {
+  const now = at(9, 4, 12);
+  const kids: Student[] = [
+    { ...student, id: 'a1', familyId: 'fa' },
+    { ...student, id: 'b1', familyId: 'fb' },
+    { ...student, id: 'c1', familyId: 'fc' },
+  ];
+  it('counts active, new and lapsed families', () => {
+    const lessons = [
+      lesson({ id: '1', studentIds: ['a1'], start: at(3, 1).toISOString() }),
+      lesson({ id: '2', studentIds: ['a1'], start: at(8, 25).toISOString() }),
+      lesson({ id: '3', studentIds: ['b1'], start: at(9, 1).toISOString() }),
+      lesson({ id: '4', studentIds: ['c1'], start: at(6, 1).toISOString() }),
+      lesson({ id: '5', studentIds: ['c1'], start: at(9, 20).toISOString(), status: 'cancelled' }),
+    ];
+    expect(familyActivity(kids, lessons, now)).toEqual({ active: 2, new: 1, lapsed: 1, lapsedFamilyIds: ['fc'] });
+  });
+  it('measures enquiry conversion on decided enquiries', () => {
+    const e = (createdAt: string, status: 'new' | 'enrolled' | 'lost') => ({ createdAt, status });
+    expect(enquiryConversion([e('2026-09-01', 'enrolled'), e('2026-09-02', 'lost'), e('2026-09-03', 'enrolled'), e('2026-09-04', 'new'), e('2026-01-01', 'lost')], '2026-08-01')).toEqual({
+      total: 4, enrolled: 2, lost: 1, open: 1, rate: 2 / 3,
+    });
   });
 });
 

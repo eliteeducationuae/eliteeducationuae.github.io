@@ -182,6 +182,11 @@ export function createSeed(now: Date = new Date()): DemoDB {
       applyCharges(db, lesson);
       continue;
     }
+    if (lesson.id === 'les-charlotte-4') {
+      lesson.status = 'no-show';
+      applyCharges(db, lesson);
+      continue;
+    }
     if (lesson.id === 'les-layla-2' || lesson.id === 'les-haddad-1') {
       lesson.status = 'cancelled';
       lesson.cancelReason = 'School trip';
@@ -228,6 +233,9 @@ export function createSeed(now: Date = new Date()): DemoDB {
     });
     applyCharges(db, lesson, attendance);
   }
+
+  // Charlotte is drifting: two missed lessons and most homework not done, so she shows up as "worth a conversation".
+  db.homework.filter((h) => h.studentId === 's-charlotte').forEach((h, i) => (h.done = i % 3 === 0));
 
   // Bill everything up to a fortnight ago; recent lessons stay "ready to invoice" for the admin.
   const issued = addDays(todayStart, -14);
@@ -346,8 +354,8 @@ function seedOperations(db: DemoDB, now: Date) {
   });
   ops.submitReport(db, admin, layla.id, daysAgo(1));
 
-  // Expenses over the last few months.
-  const months = [0, 1, 2, 3, 4, 5].map((n) => new Date(now.getFullYear(), now.getMonth() - n, 1));
+  // Expenses for the months the demo has lessons in.
+  const months = [0, 1].map((n) => new Date(now.getFullYear(), now.getMonth() - n, 1));
   for (const m of months) {
     db.expenses.push({ id: `exp-rent-${toDateKey(m)}`, date: toDateKey(m), category: 'Rent', description: 'Al Barsha centre room', amount: 2500, vatAmount: 125 });
     db.expenses.push({ id: `exp-sw-${toDateKey(m)}`, date: toDateKey(addDays(m, 4)), category: 'Software', description: 'Zoom, Google Workspace', amount: 180, vatAmount: 0 });

@@ -2,7 +2,7 @@ import { displayStatus } from './billing';
 import { addDays, minutesBetween } from './dates';
 import { masteryByTopic } from './progress';
 import { weekdayIndex } from './scheduling';
-import type { Availability, Homework, Invoice, Lesson, Student, TopicRating } from './types';
+import type { Availability, Enquiry, Homework, Invoice, Lesson, Student, TopicRating } from './types';
 
 export interface RiskSignal {
   key: 'attendance' | 'homework' | 'mastery' | 'no-lessons' | 'overdue';
@@ -85,4 +85,52 @@ export function tutorUtilisation(tutorId: string, lessons: Lesson[], availabilit
       .filter((l) => l.tutorId === tutorId && (l.status === 'completed' || l.status === 'scheduled') && l.start >= from.toISOString() && l.start < to.toISOString())
       .reduce((s, l) => s + minutesBetween(new Date(l.start), new Date(l.end)), 0) / 60;
   return { tutorId, taughtHours: Math.round(taught * 10) / 10, availableHours: Math.round(available * 10) / 10, rate: available ? Math.min(1, taught / available) : 0 };
+}
+
+export interface FamilyActivity {
+  /** A lesson in the last 30 days or one booked. */
+  active: number;
+  /** First ever lesson within the last 60 days. */
+  new: number;
+  /** Had lessons before, none in the last 30 days and nothing booked. */
+  lapsed: number;
+  lapsedFamilyIds: string[];
+}
+
+export function familyActivity(students: Student[], lessons: Lesson[], now: Date = new Date()): FamilyActivity {
+  const recent = addDays(now, -30).toISOString();
+  const newSince = addDays(now, -60).toISOString();
+  const byFamily = new Map<string, { first: string; last: string; booked: boolean }>();
+  const familyOf = new Map(students.map((s) => [s.id, s.familyId]));
+  for (const l of lessons) {
+    if (l.status === 'cancelled') continue;
+    for (const sid of l.studentIds) {
+      const f = familyOf.get(sid);
+      if (!f) continue;
+      const e = byFamily.get(f) ?? { first: l.start, last: '', booked: false };
+      if (l.start < e.first) e.first = l.start;
+      if (l.status === 'scheduled' && l.start > now.toISOString()) e.booked = true;
+      else if (l.start <= now.toISOString() && l.start > e.last) e.last = l.start;
+      byFamily.set(f, e);
+    }
+  }
+  const out: FamilyActivity = { active: 0, new: 0, lapsed: 0, lapsedFamilyIds: [] };
+  for (const [f, e] of byFamily) {
+    if (e.booked || e.last >= recent) out.active++;
+    else {
+      out.lapsed++;
+      out.lapsedFamilyIds.push(f);
+    }
+    if (e.first >= newSince) out.new++;
+  }
+  return out;
+}
+
+/** Of the enquiries received since `since`, how many enrolled (and how many were lost). */
+export function enquiryConversion(enquiries: Pick<Enquiry, 'createdAt' | 'status'>[], since: string) {
+  const list = enquiries.filter((e) => e.createdAt >= since);
+  const enrolled = list.filter((e) => e.status === 'enrolled').length;
+  const lost = list.filter((e) => e.status === 'lost').length;
+  const decided = enrolled + lost;
+  return { total: list.length, enrolled, lost, open: list.length - decided, rate: decided ? enrolled / decided : 0 };
 }

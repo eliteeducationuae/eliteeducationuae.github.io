@@ -13,7 +13,7 @@ describe('seeded operations data', () => {
     expect(db.opportunities.filter((o) => o.status === 'open')).toHaveLength(2);
     expect(new Set(db.tutorInvoices.map((i) => i.status))).toEqual(new Set(['paid', 'submitted']));
     expect(db.reports.length).toBeGreaterThan(3);
-    expect(db.expenses.length).toBeGreaterThan(5);
+    expect(db.expenses.length).toBeGreaterThanOrEqual(5);
   });
   it('never double-claims a lesson across invoices', () => {
     const ids = db.tutorInvoices.flatMap((i) => i.items.map((x) => x.lessonId).filter(Boolean));
