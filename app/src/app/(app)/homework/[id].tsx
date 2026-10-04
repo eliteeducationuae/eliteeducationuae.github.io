@@ -22,6 +22,7 @@ export default function HomeworkDetail() {
   const save = useAction(source.saveHomework);
   const [draft, setDraft] = useState<HomeworkDraft | null>(null);
   const [handingIn, setHandingIn] = useState(false);
+  const [now] = useState(() => new Date());
 
   if (item.isLoading) return <Loading />;
   const h = item.data;
@@ -84,7 +85,7 @@ export default function HomeworkDetail() {
             <View style={{ flex: 1, minWidth: 180, gap: 2 }}>
               <Txt variant="h2">{h.title}</Txt>
               {(staff || me.role === 'parent') && student ? <Txt variant="muted">{student.fullName}</Txt> : null}
-              <Txt variant="small">{dueLabel(h.dueDate)}</Txt>
+              <Txt variant="small">{dueLabel(h.dueDate, now)}</Txt>
             </View>
             <HomeworkStatusBadge homework={h} submissions={subs} />
           </Row>

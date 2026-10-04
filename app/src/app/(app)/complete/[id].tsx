@@ -229,7 +229,7 @@ export default function CompleteLesson() {
             return (
               <View key={s.id} style={{ gap: Spacing.two }}>
                 <Field
-                  label={presentStudents.length > 1 ? s.fullName : 'Homework'}
+                  label={presentStudents.length > 1 ? s.fullName : 'Title'}
                   value={homework[s.id] ?? ''}
                   onChangeText={(t) => setHomework((h) => ({ ...h, [s.id]: t }))}
                   placeholder="e.g. Exercise 7C Q1–12"

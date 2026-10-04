@@ -7,8 +7,8 @@ import { getSyllabus, topicName } from '@/data/curriculum';
 import { useAction, useHomework, useLessons, useLookup, useNotes, useRatings, useSettings, useSubmissions } from '@/data/hooks';
 import { source } from '@/data';
 import { useMe } from '@/data/session';
-import { addDays, daysUntil, formatDate, relativeDay } from '@/domain/dates';
-import { dueLabel } from '@/domain/homework';
+import { addDays, daysUntil, formatDate, relativeDay, toDateKey } from '@/domain/dates';
+import { dueLabel, HOMEWORK_STATUS_LABEL, homeworkStatus } from '@/domain/homework';
 import { masteryByTopic } from '@/domain/progress';
 import type { Homework, Lesson, LessonNote, Student } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -211,14 +211,17 @@ export function HomeworkList({
   const theme = useTheme();
   const toggle = useAction(source.setHomeworkDone);
   const submissions = useSubmissions(studentId ? { studentId } : {});
+  const [now] = useState(() => new Date());
   if (loading) return <Loading />;
   if (items.length === 0) return <EmptyState icon="book" title="No homework set" message="Homework will appear here as soon as it is set." />;
   const subs = submissions.data ?? [];
+  const today = toDateKey(now);
   const sorted = [...items].sort((a, b) => Number(a.done) - Number(b.done) || b.dueDate.localeCompare(a.dueDate));
   return (
     <View style={{ gap: Spacing.two }}>
       {sorted.map((h) => {
         const attachments = (h.attachments ?? []).length;
+        const status = homeworkStatus(h, subs, today);
         const tick = <Icon name={h.done ? 'check' : 'circle'} size={24} color={h.done ? theme.success : theme.textMuted} />;
         return (
           <Card key={h.id}>
@@ -239,11 +242,11 @@ export function HomeworkList({
               <Pressable
                 onPress={() => router.push(`/homework/${h.id}`)}
                 accessibilityRole="link"
-                accessibilityLabel={`${h.title}, ${dueLabel(h.dueDate).replace(/^Due/, 'due')}`}
+                accessibilityLabel={`${h.title}, ${dueLabel(h.dueDate, now).replace(/^Due/, 'due')}, ${HOMEWORK_STATUS_LABEL[status].label}`}
                 style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.three }, pressed && { opacity: 0.7 }]}>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Txt style={h.done && { textDecorationLine: 'line-through', color: theme.textMuted }}>{h.title}</Txt>
-                  <Txt variant="small">{dueLabel(h.dueDate)}</Txt>
+                  <Txt style={status === 'done' && { textDecorationLine: 'line-through', color: theme.textMuted }}>{h.title}</Txt>
+                  <Txt variant="small">{dueLabel(h.dueDate, now)}</Txt>
                   {attachments ? <Txt variant="small">{attachments === 1 ? '1 attachment' : `${attachments} attachments`}</Txt> : null}
                   <View style={{ flexDirection: 'row', marginTop: 2 }}>
                     <HomeworkStatusBadge homework={h} submissions={subs} />

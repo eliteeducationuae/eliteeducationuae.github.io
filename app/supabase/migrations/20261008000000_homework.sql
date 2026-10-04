@@ -178,14 +178,14 @@ declare st public.students; first_name text; body text;
 begin
   select * into st from public.students where id = new.student_id;
   first_name := split_part(st.full_name, ' ', 1);
-  body := 'Due ' || to_char(new.due_date, 'DD Mon') || '.' || coalesce(E'\n\n' || nullif(trim(new.details), ''), '');
+  body := 'Due ' || to_char(new.due_date, 'FMDay FMDD FMMonth') || '.' || coalesce(E'\n\n' || nullif(trim(new.details), ''), '');
   perform public.notify_student(new.student_id, 'New homework: ' || new.title, body,
-    'New homework', new.title || ' — due ' || to_char(new.due_date, 'DD Mon'), '/homework/' || new.id, new.lesson_id is null);
+    'New homework', new.title || ' — due ' || to_char(new.due_date, 'FMDy FMDD Mon'), '/homework/' || new.id, new.lesson_id is null);
   if new.lesson_id is null then
     perform public.notify_family(st.family_id, 'New homework for ' || first_name || ': ' || new.title,
       first_name || ' has been set "' || new.title || '". ' || body
         || E'\n\nYou can view the details and any attached materials in the Elite Education app.',
-      'New homework for ' || first_name, new.title || ' — due ' || to_char(new.due_date, 'DD Mon'), '/homework/' || new.id);
+      'New homework for ' || first_name, new.title || ' — due ' || to_char(new.due_date, 'FMDy FMDD Mon'), '/homework/' || new.id);
   end if;
   return new;
 end $$;

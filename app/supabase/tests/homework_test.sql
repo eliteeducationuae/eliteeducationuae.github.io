@@ -87,8 +87,8 @@ select pg_temp.check((select count(*) from public.notification_outbox where subj
   'the student is told about homework set outside a lesson, by push and email');
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'New homework for Sami: Essay plan'
   and profile_id = 'a0000000-0000-0000-0000-00000000000c') = 1, 'the family is told about homework set outside a lesson');
-select pg_temp.check((select body from public.notification_outbox where subject = 'New homework: Essay plan') like 'Due % ___.%Write 300 words.',
-  'the homework notice gives the due date and details');
+select pg_temp.check((select body from public.notification_outbox where subject = 'New homework: Essay plan') = 'Due ' || to_char(current_date + 7, 'FMDay FMDD FMMonth') || E'.\n\nWrite 300 words.',
+  'the homework notice gives the due date in full and the details');
 set role authenticated;
 
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
