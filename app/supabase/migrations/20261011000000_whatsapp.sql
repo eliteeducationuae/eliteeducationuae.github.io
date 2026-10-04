@@ -41,7 +41,7 @@ create function public.whatsapp_template_body(p_template text) returns text
 language sql immutable set search_path = public as $$
   select case p_template
     when 'lesson_reminder' then
-      'Dear {{1}}, this is a reminder that {{2}} has a lesson with {{3}} on {{4}} (UAE time). Elite Education | eliteeducation.me'
+      'Dear {{1}}, this is a reminder of the lesson for {{2}} with {{3}} on {{4}} (UAE time). Elite Education | eliteeducation.me'
     when 'lesson_notes' then
       'Dear {{1}}, the lesson notes for {{2}} from {{3}} are now ready in the Elite Education app. Elite Education | eliteeducation.me'
     when 'invoice_sent' then
@@ -317,6 +317,64 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- Keeping queued messages current
+-- ---------------------------------------------------------------------------
+
+/**
+ * A message held for quiet hours must not go out once its subject has changed. When an invoice is paid or voided its
+ * pending invoice_sent and invoice_overdue messages are skipped; when a lesson is cancelled (or no longer scheduled) or
+ * moved, its pending reminder is skipped, and a moved lesson is reminded afresh at its new time.
+ */
+create function public.on_invoice_settled_whatsapp() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.status = 'sent' and new.status is distinct from 'sent' then
+    update public.notification_outbox set whatsapp_status = 'skipped'
+    where whatsapp and whatsapp_status = 'pending' and whatsapp_template in ('invoice_sent', 'invoice_overdue')
+      and url = '/invoice/' || new.id;
+  end if;
+  return new;
+end $$;
+create trigger invoices_whatsapp_settled after update of status on public.invoices
+  for each row execute function public.on_invoice_settled_whatsapp();
+
+create function public.on_lesson_changed_whatsapp() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if (old.status = 'scheduled' and new.status is distinct from 'scheduled') or old.start_at is distinct from new.start_at then
+    update public.notification_outbox set whatsapp_status = 'skipped'
+    where whatsapp and whatsapp_status = 'pending' and whatsapp_template = 'lesson_reminder' and url = '/lesson/' || new.id;
+    if old.start_at is distinct from new.start_at then new.whatsapp_reminded_at := null; end if;
+  end if;
+  return new;
+end $$;
+create trigger lessons_whatsapp_changed before update of status, start_at on public.lessons
+  for each row execute function public.on_lesson_changed_whatsapp();
+
+-- ---------------------------------------------------------------------------
+-- Consent
+-- ---------------------------------------------------------------------------
+
+/**
+ * Only the person can opt in, change their WhatsApp number or opt out (through set_whatsapp, which records the time
+ * they agreed to the wording on the card), so whatsapp_opted_in_at stands as their consent. A signed-in caller, the
+ * office included, cannot write these columns on anyone else's profile; the service role and migrations can.
+ */
+create function public.guard_whatsapp_consent() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if current_user in ('anon', 'authenticated') and auth.uid() is distinct from new.id
+     and (tg_op = 'INSERT' and (new.whatsapp_opt_in or new.whatsapp_number is not null or new.whatsapp_opted_in_at is not null)
+       or tg_op = 'UPDATE' and (new.whatsapp_opt_in, new.whatsapp_number, new.whatsapp_opted_in_at)
+         is distinct from (old.whatsapp_opt_in, old.whatsapp_number, old.whatsapp_opted_in_at)) then
+    raise exception 'Only the person can change their WhatsApp reminders.' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+create trigger profiles_whatsapp_consent before insert or update on public.profiles
+  for each row execute function public.guard_whatsapp_consent();
+
+-- ---------------------------------------------------------------------------
 -- Privileges
 -- ---------------------------------------------------------------------------
 
@@ -325,7 +383,8 @@ revoke all on function public.whatsapp_template_body(text), public.whatsapp_clea
   public.whatsapp_not_before(text, timestamptz),
   public.queue_whatsapp(uuid, text, jsonb, text, timestamptz), public.queue_whatsapp_family(uuid, text, jsonb, text, timestamptz),
   public.whatsapp_invoice_vars(public.invoices, boolean), public.queue_whatsapp_reminders(timestamptz),
-  public.on_invoice_sent_whatsapp(), public.on_lesson_notes_whatsapp(), public.set_whatsapp(boolean, text)
+  public.on_invoice_sent_whatsapp(), public.on_lesson_notes_whatsapp(), public.set_whatsapp(boolean, text),
+  public.on_invoice_settled_whatsapp(), public.on_lesson_changed_whatsapp(), public.guard_whatsapp_consent()
   from public, anon, authenticated;
 grant execute on function public.queue_whatsapp(uuid, text, jsonb, text, timestamptz), public.queue_whatsapp_reminders(timestamptz) to service_role;
 grant execute on function public.set_whatsapp(boolean, text) to authenticated;

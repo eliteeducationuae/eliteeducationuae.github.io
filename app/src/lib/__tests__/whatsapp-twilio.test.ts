@@ -44,7 +44,11 @@ describe('WhatsApp templates', () => {
 
   it('renders each sample to the exact approved wording', () => {
     expect(renderWhatsApp('lesson_reminder', { '1': 'Mona', '2': 'Omar', '3': 'Ms Sarah Khan', '4': 'Tue 7 Oct, 16:00' })).toBe(
-      'Dear Mona, this is a reminder that Omar has a lesson with Ms Sarah Khan on Tue 7 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me',
+      'Dear Mona, this is a reminder of the lesson for Omar with Ms Sarah Khan on Tue 7 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me',
+    );
+    // Siblings and group lessons: the wording must not depend on how many students there are.
+    expect(renderWhatsApp('lesson_reminder', { '1': 'Tia', '2': 'Sami and Lina', '3': 'you', '4': 'Wed 8 Oct, 17:30' })).toBe(
+      'Dear Tia, this is a reminder of the lesson for Sami and Lina with you on Wed 8 Oct, 17:30 (UAE time). Elite Education | eliteeducation.me',
     );
     expect(renderWhatsApp('lesson_notes', { '1': 'Mona', '2': 'Omar', '3': '7 Oct' })).toBe(
       'Dear Mona, the lesson notes for Omar from 7 Oct are now ready in the Elite Education app. Elite Education | eliteeducation.me',

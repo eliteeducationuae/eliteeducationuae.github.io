@@ -9,6 +9,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
+/** Written to a WhatsApp row while it is claimed for sending (see below). */
+const WHATSAPP_CLAIM_NOTE = 'WhatsApp send in progress';
 
 function esc(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -86,7 +88,10 @@ Deno.serve(async () => {
     // WhatsApp: only rows still pending, so a retry for another channel never sends the message twice.
     const wa: Record<string, unknown> = {};
     const notes: string[] = [];
-    if (n.whatsapp && n.whatsapp_status === 'pending') {
+    if (n.whatsapp && n.whatsapp_status === 'failed' && n.error === WHATSAPP_CLAIM_NOTE) {
+      // An earlier run claimed this row and stopped before recording Twilio's answer. Keep a trace for the office.
+      notes.push('WhatsApp outcome unknown: the send was interrupted, so it was not retried');
+    } else if (n.whatsapp && n.whatsapp_status === 'pending') {
       const optedIn = n.profiles?.whatsapp_opt_in === true;
       const number = n.profiles?.whatsapp_number as string | null;
       if (!optedIn || !number) {
@@ -104,7 +109,7 @@ Deno.serve(async () => {
           // While claimed it reads 'failed'; it only returns to 'pending' when Twilio asks us to retry.
           const { data: claimed } = await db
             .from('notification_outbox')
-            .update({ whatsapp_status: 'failed', error: 'WhatsApp send in progress' })
+            .update({ whatsapp_status: 'failed', error: WHATSAPP_CLAIM_NOTE })
             .eq('id', n.id)
             .eq('whatsapp_status', 'pending')
             .select('id');

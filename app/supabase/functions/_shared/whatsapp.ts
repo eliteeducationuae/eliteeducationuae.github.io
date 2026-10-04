@@ -26,7 +26,7 @@ export const WHATSAPP_TEMPLATES: Record<WhatsAppTemplate, WhatsAppTemplateInfo> 
   lesson_reminder: {
     label: 'Lesson reminder',
     envVar: 'TWILIO_TEMPLATE_LESSON_REMINDER',
-    body: `Dear {{1}}, this is a reminder that {{2}} has a lesson with {{3}} on {{4}} (UAE time). ${FOOTER}`,
+    body: `Dear {{1}}, this is a reminder of the lesson for {{2}} with {{3}} on {{4}} (UAE time). ${FOOTER}`,
     variables: ['Recipient first name', 'Student first names', 'Tutor name (or "you" for the tutor)', 'Lesson day and time'],
     sample: { '1': 'Mona', '2': 'Omar', '3': 'Ms Sarah Khan', '4': 'Tue 7 Oct, 16:00' },
   },

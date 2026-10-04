@@ -40,7 +40,7 @@ insert into public.services (id, name, duration_min, rate) values ('e0000000-000
 -- Templates ------------------------------------------------------------------
 select pg_temp.check(public.whatsapp_clean(E'  Ex 13A:\n vectors\t\tq1-5  ') = 'Ex 13A: vectors q1-5', 'variables are cleaned to a single line');
 select pg_temp.check(public.whatsapp_preview('lesson_reminder', '{"1":"Mona","2":"Sami","3":"Tia Tutor","4":"Tue 6 Oct, 16:00"}')
-  = 'Dear Mona, this is a reminder that Sami has a lesson with Tia Tutor on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me',
+  = 'Dear Mona, this is a reminder of the lesson for Sami with Tia Tutor on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me',
   'the lesson reminder preview fills every placeholder');
 select pg_temp.check((select bool_and(public.whatsapp_template_body(t) is not null and position('''' in public.whatsapp_template_body(t)) = 0
     and public.whatsapp_template_body(t) like '%Elite Education | eliteeducation.me')
@@ -260,11 +260,11 @@ reset role;
 select pg_temp.check(:day_run = 2, 'the 09:30 run queues the overdue chase and the homework reminder (got ' || :day_run || ')');
 select pg_temp.check((select count(*) from public.notification_outbox) = :before_rows + 5, 'and the outbox grows by five in all');
 select pg_temp.check((select whatsapp_vars = '{"1":"Tia","2":"Sami and Ollie","3":"you","4":"Tue 6 Oct, 16:00"}'::jsonb
-    and body = 'Dear Tia, this is a reminder that Sami and Ollie has a lesson with you on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
+    and body = 'Dear Tia, this is a reminder of the lesson for Sami and Ollie with you on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
     and whatsapp_to = '+971500000001' and url = '/lesson/f0000000-0000-0000-0000-000000000002'
   from pg_temp.wa('a0000000-0000-0000-0000-00000000000b', 'lesson_reminder')), 'the tutor is reminded of their lesson');
 select pg_temp.check((select whatsapp_vars = '{"1":"Mona","2":"Sami","3":"Tia Tutor","4":"Tue 6 Oct, 16:00"}'::jsonb
-    and body = 'Dear Mona, this is a reminder that Sami has a lesson with Tia Tutor on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
+    and body = 'Dear Mona, this is a reminder of the lesson for Sami with Tia Tutor on Tue 6 Oct, 16:00 (UAE time). Elite Education | eliteeducation.me'
   from pg_temp.wa('a0000000-0000-0000-0000-00000000000c', 'lesson_reminder')), 'the parent is reminded with the tutor name and Dubai time');
 select pg_temp.check((select whatsapp_vars->>'1' = 'Otto' and whatsapp_vars->>'2' = 'Ollie' and whatsapp_to = '+447700900123'
   from pg_temp.wa('a0000000-0000-0000-0000-00000000000e', 'lesson_reminder')), 'each family hears only about its own children, greeted without an honorific');
@@ -377,4 +377,84 @@ insert into public.invoices (id, number, family_id, issue_date, due_date, status
    '[{"description":"Annual tuition","quantity":1,"unitPrice":1250000}]');
 select pg_temp.check((select public.whatsapp_invoice_vars(i)->>'3' from public.invoices i where number = 'INV-0046') = 'AED 1,250,000.00',
   'amounts of a million dirhams or more are formatted in full');
+-- Held messages stay current ------------------------------------------------------------------
+-- Two invoices sent late in the evening are held for the morning; overnight one is voided and the other is paid.
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items) values
+  ('10000000-0000-0000-0000-000000000047', 'INV-0047', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-15', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450}]'),
+  ('10000000-0000-0000-0000-000000000048', 'INV-0048', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-15', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450}]'),
+  ('10000000-0000-0000-0000-000000000049', 'INV-0049', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-15', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450}]');
+select pg_temp.check(public.queue_whatsapp('a0000000-0000-0000-0000-00000000000c', 'invoice_overdue',
+    public.whatsapp_invoice_vars(i, true), '/invoice/' || i.id, '2026-10-06 23:00+04'), 'an overdue chase is queued for INV-0047')
+  from public.invoices i where number = 'INV-0047';
+select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+  and url = '/invoice/10000000-0000-0000-0000-000000000047') >= 2, 'INV-0047 has pending WhatsApp messages');
+update public.invoices set status = 'void' where number = 'INV-0047';
+update public.invoices set status = 'paid' where number = 'INV-0048';
+select pg_temp.check(not exists (select 1 from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+    and url in ('/invoice/10000000-0000-0000-0000-000000000047', '/invoice/10000000-0000-0000-0000-000000000048'))
+  and exists (select 1 from public.notification_outbox where whatsapp and whatsapp_status = 'skipped'
+    and whatsapp_template = 'invoice_overdue' and url = '/invoice/10000000-0000-0000-0000-000000000047'),
+  'voiding or paying an invoice skips its unsent WhatsApp messages');
+select pg_temp.check(exists (select 1 from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+    and whatsapp_template = 'invoice_sent' and url = '/invoice/10000000-0000-0000-0000-000000000049'),
+  'other invoices keep theirs');
+
+-- A lesson reminder is skipped when the lesson moves (and is reminded afresh) or is cancelled.
+insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location) values
+  ('f0000000-0000-0000-0000-000000000005', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}',
+   'e0000000-0000-0000-0000-000000000001', '2026-10-08 16:00+04', '2026-10-08 17:00+04', 'online'),
+  ('f0000000-0000-0000-0000-000000000006', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000001}',
+   'e0000000-0000-0000-0000-000000000001', '2026-10-08 18:00+04', '2026-10-08 19:00+04', 'online');
+set role service_role;
+select public.queue_whatsapp_reminders('2026-10-07 17:00+04') as moved_run \gset
+reset role;
+select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+    and whatsapp_template = 'lesson_reminder' and url = '/lesson/f0000000-0000-0000-0000-000000000005') >= 2,
+  'the lesson on Thursday is reminded on Wednesday (got ' || :moved_run || ')');
+update public.lessons set start_at = '2026-10-09 16:00+04', end_at = '2026-10-09 17:00+04'
+  where id = 'f0000000-0000-0000-0000-000000000005';
+update public.lessons set status = 'cancelled' where id = 'f0000000-0000-0000-0000-000000000006';
+select pg_temp.check(not exists (select 1 from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+    and url in ('/lesson/f0000000-0000-0000-0000-000000000005', '/lesson/f0000000-0000-0000-0000-000000000006'))
+  and (select whatsapp_reminded_at is null from public.lessons where id = 'f0000000-0000-0000-0000-000000000005')
+  and (select whatsapp_reminded_at is not null from public.lessons where id = 'f0000000-0000-0000-0000-000000000006'),
+  'moving or cancelling a lesson skips its unsent reminder, and a moved lesson can be reminded again');
+set role service_role;
+select public.queue_whatsapp_reminders('2026-10-08 17:00+04') as again_run \gset
+reset role;
+select pg_temp.check((select body like '%on Fri 9 Oct, 16:00 (UAE time)%' from pg_temp.wa('a0000000-0000-0000-0000-00000000000c', 'lesson_reminder')
+    where url = '/lesson/f0000000-0000-0000-0000-000000000005' and whatsapp_status = 'pending')
+  and not exists (select 1 from public.notification_outbox where whatsapp and whatsapp_status = 'pending'
+    and url = '/lesson/f0000000-0000-0000-0000-000000000006'),
+  'the moved lesson is reminded at its new time; the cancelled one is not');
+
+-- Consent ----------------------------------------------------------------------------------------
+-- The office can manage profiles, but cannot opt a parent in, change their number or opt them out.
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+do $$ begin
+  update public.profiles set whatsapp_opt_in = true, whatsapp_number = '+971500000055', whatsapp_opted_in_at = now()
+    where id = 'a0000000-0000-0000-0000-00000000000e';
+  raise exception 'FAILED: the office opted a parent in';
+exception when insufficient_privilege then
+  if sqlerrm not like 'Only the person%' then raise; end if;
+  raise notice 'ok - the office cannot opt a parent in';
+end $$;
+do $$ begin
+  update public.profiles set whatsapp_opt_in = false where id = 'a0000000-0000-0000-0000-00000000000c';
+  raise exception 'FAILED: the office opted a parent out';
+exception when insufficient_privilege then
+  if sqlerrm not like 'Only the person%' then raise; end if;
+  raise notice 'ok - the office cannot opt a parent out';
+end $$;
+update public.profiles set full_name = 'Mona Ahmed' where id = 'a0000000-0000-0000-0000-00000000000c';
+select pg_temp.check(true, 'the office can still edit other profile fields');
+select public.set_whatsapp(true, '+971500000066');
+reset role;
+select pg_temp.check((select whatsapp_opt_in and whatsapp_number = '+971500000066' from public.profiles
+  where id = 'a0000000-0000-0000-0000-00000000000a'), 'office staff can opt themselves in through the card');
+
 \echo 'All WhatsApp tests passed'
