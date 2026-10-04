@@ -56,7 +56,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       <LoginHint email={email} who="tutor" name={fullName} />
       {existing ? (
         <Button
-          title="Availability & time off"
+          title="Availability and time off"
           icon="clock"
           variant="secondary"
           onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}

@@ -39,7 +39,7 @@ export default function Payroll() {
               <View style={{ flex: 1 }}>
                 <Txt variant="h3">{r.tutor.fullName}</Txt>
                 <Txt variant="muted">
-                  {plural(r.lessons, 'lesson')} · {plural(r.hours, 'hour')} × {formatAED(r.tutor.hourlyPay)}
+                  {plural(r.lessons, 'lesson')} · {plural(r.hours, 'hour')} × {formatAED(r.tutor.hourlyPay).replace(' ', '\u00A0')}
                 </Txt>
               </View>
               <Txt variant="h3">{formatAED(r.amount)}</Txt>

@@ -72,7 +72,7 @@ export function LessonCard({
             style={[styles.cardTitle, font('sans', 'bold'), { color: theme.text }, inactive && { textDecorationLine: 'line-through' }]}>
             {title}
           </Text>
-          <Txt variant="muted" numberOfLines={1}>
+          <Txt variant="muted" numberOfLines={2}>
             {subtitle}
           </Txt>
           <Row gap={Spacing.one} style={{ marginTop: 4 }}>
