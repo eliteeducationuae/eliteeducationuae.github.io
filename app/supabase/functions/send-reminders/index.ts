@@ -1,10 +1,13 @@
 // Push reminders ~24 hours before each lesson, to the tutor and the family.
+// Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
 // Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
 import { adminClient } from '../_shared/supabase.ts';
+import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  if (!isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) return refuseCronCall();
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);

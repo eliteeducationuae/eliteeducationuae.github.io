@@ -165,6 +165,13 @@ describe('lessonToEvent', () => {
     expect(lessonToEvent(lesson, 'admin', { requestMeet: false }).summary).toBe('Sami & Layla with Tia One');
   });
 
+  it('names the subject when the lesson has one', () => {
+    const maths = { ...lesson, studentNames: ['Omar Ahmed'], subject: 'Maths' };
+    expect(lessonToEvent(maths, 'tutor', { requestMeet: false }).summary).toBe('Elite Education: Maths with Omar');
+    expect(lessonToEvent({ ...maths, tutorName: 'Craig' }, 'admin', { requestMeet: false }).summary).toBe('Maths: Omar with Craig');
+    expect(lessonToEvent({ ...maths, subject: '  ' }, 'tutor', { requestMeet: false }).summary).toBe('Elite Education: Omar');
+  });
+
   it('describes the lesson with the join link and the brand footer', () => {
     const e = lessonToEvent({ ...lesson, meetingUrl: 'https://meet.google.com/abc-defg-hij' }, 'tutor', { requestMeet: false });
     expect(e.description).toBe('IB Maths 1:1\nTutor: Tia One\nJoin: https://meet.google.com/abc-defg-hij\n\nElite Education | eliteeducation.me');

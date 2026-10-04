@@ -99,7 +99,9 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <View style={{ gap: Spacing.two + Spacing.one }}>
       <Row style={{ justifyContent: 'space-between' }}>
-        <SectionLabel>{title}</SectionLabel>
+        <View style={{ flexShrink: 1 }}>
+          <SectionLabel>{title}</SectionLabel>
+        </View>
         {action}
       </Row>
       {children}

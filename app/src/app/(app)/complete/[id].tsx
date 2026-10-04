@@ -320,7 +320,7 @@ export default function CompleteLesson() {
                       multiline
                       value={extras.details}
                       onChangeText={(details) => setExtras({ details })}
-                      placeholder="Instructions for the student, for example, show all working."
+                      placeholder="Instructions for the student. For example, show all working and check each answer against the mark scheme."
                     />
                     <AttachmentEditor
                       value={extras.attachments}

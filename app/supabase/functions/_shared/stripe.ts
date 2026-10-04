@@ -442,3 +442,17 @@ export function classifyEvent(event: unknown): ClassifiedEvent {
       return IGNORE;
   }
 }
+
+/** SQLSTATEs that will fail the same way however often Stripe retries: missing rows, nulls, checks and malformed ids. */
+const PERMANENT_SQLSTATES = new Set(['23503', '23502', '23514', '22P02']);
+
+/**
+ * True when a database error from a webhook handler is permanent (for example the invoice in the metadata has been
+ * deleted, or the family no longer exists). The webhook acknowledges these with 200 and logs them, so Stripe does
+ * not retry for days; transient errors still return 500 so Stripe tries again.
+ */
+export function isPermanentWebhookError(err: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!err) return false;
+  if (err.code && PERMANENT_SQLSTATES.has(err.code)) return true;
+  return /\bnot found\b|\bis required\b/i.test(err.message ?? '');
+}

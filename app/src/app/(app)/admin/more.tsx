@@ -42,8 +42,8 @@ export default function AdminMore() {
   const links = [
     { title: 'Tutors', subtitle: 'Profiles, pay rates and calendar colours', icon: 'school', href: '/manage/tutors' },
     { title: 'Families', subtitle: 'Parents, contact details and children', icon: 'people', href: '/manage/families' },
-    { title: 'Services & rates', subtitle: 'Lesson types, durations and prices', icon: 'tag', href: '/manage/services' },
-    { title: 'Holidays & term breaks', subtitle: 'Dates with no lessons', icon: 'sun', href: '/manage/closures' },
+    { title: 'Services and rates', subtitle: 'Lesson types, durations and prices', icon: 'tag', href: '/manage/services' },
+    { title: 'Holidays and term breaks', subtitle: 'Dates with no lessons', icon: 'sun', href: '/manage/closures' },
     { title: 'Tutor pay', subtitle: 'Hours taught and pay owed by month', icon: 'money', href: '/manage/payroll' },
     { title: 'Business settings', subtitle: 'Cancellation policy, VAT, invoicing', icon: 'settings', href: '/manage/settings' },
   ] as const;

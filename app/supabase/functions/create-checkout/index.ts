@@ -13,7 +13,7 @@ const CHARGING = 'Your saved card is being charged for this invoice. Please wait
 
 const OFFER_GONE = 'This lesson package is no longer available.';
 
-/** The app's address, e.g. https://eliteeducationuae.github.io/app. Never guessed: Stripe must return parents to the app. */
+/** The app's address, e.g. https://eliteeducation.me/app. Never guessed: Stripe must return parents to the app. */
 const appUrl = () => (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
 const NO_APP_URL = 'Card payments are not set up yet (APP_URL is missing).';
 

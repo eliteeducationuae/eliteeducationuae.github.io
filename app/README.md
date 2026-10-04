@@ -59,7 +59,7 @@ app/
    - Create your login under Authentication → Users, then run `supabase/bootstrap.sql` (edit the email first).
    - The project URL and publishable key are in `src/config.ts`.
 2. **Stripe** (UAE account, for card payments in AED).
-   - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://…`
+   - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://eliteeducation.me/app`
    - `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal ics send-reminders send-notifications`
    - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for these six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`.
    - Saved cards, autopay, Apple Pay, Google Pay and lesson top-ups need a few more steps: see *Card payments: saved cards, autopay and top-ups* below.
@@ -89,7 +89,7 @@ Run these once in the Supabase SQL editor, in order, if you haven't already:
 **Emails and push notifications.** Messages, lesson notes, invoices, enquiries and booking decisions are queued in the database and delivered by the `send-notifications` Edge Function:
 
 1. Create a free [Resend](https://resend.com) account and verify the `eliteeducation.me` domain.
-2. `npx supabase secrets set RESEND_API_KEY=re_… EMAIL_FROM="Elite Education <hello@eliteeducation.me>" APP_URL=https://eliteeducation.me`
+2. `npx supabase secrets set RESEND_API_KEY=re_… EMAIL_FROM="Elite Education <hello@eliteeducation.me>" APP_URL=https://eliteeducation.me/app` (the same `APP_URL` as everywhere else in this guide; see *Web app at `/app`*)
 3. `npx supabase functions deploy send-notifications`, then schedule it every minute (Supabase → Edge Functions → Schedules).
 
 Until this is set up, everything still works in the app; the emails simply wait in the queue.
@@ -98,7 +98,7 @@ Until this is set up, everything still works in the app; the emails simply wait 
 
 **Roles, hiring, tutor invoices, reports and money (round 3).** Run `supabase/migrations/20261005000000_operations.sql` in the SQL editor. It also creates the private `applications` (CVs) and `receipts` storage buckets with their access rules.
 
-**Homework and resources (round 4).** Run `supabase/migrations/20261008000000_homework.sql` in the SQL editor. It adds details and attachments to homework, hand-ins with tutor feedback and marks, the resource library, and the private `classwork` storage bucket with its access rules: families and students may reach only their own child's folder, and library files only once they have been shared with them or attached to their homework. Each file may be up to 25 MB and must be a PDF, a photo or an Office document. Deleting a library resource keeps its stored file while any homework still uses it, and everyone except admins and a resource's uploader reads the library through `list_resources`, which never reveals which other students a resource is shared with. Then run `supabase/migrations/20261012010000_classwork_security.sql`: it stops tutors reading other tutors' resources from the table directly, and refuses to delete a stored file while a hand-in, homework or library resource still refers to it. Notices about new homework, hand-ins, feedback and shared resources are delivered by the existing `send-notifications` function, so no further set-up is required. Please rebuild the iPhone and Android apps with EAS so that the new photo-library and camera permissions (from `expo-image-picker`) are included. In demo mode, attached files are kept by name only and are not uploaded. Library resources use the same subject, curriculum and level pickers as a student's subjects (step 3), and the library opens on the lesson's subject when a tutor attaches a resource to homework. A tutor can set homework for any student they teach, including a student assigned to them for a subject before the first lesson. **Run order:** apply the migrations in timestamp order (`20261007000000_subjects.sql` first, then homework, calendar, payments, WhatsApp, invoice notifications and classwork security).
+**Homework and resources (round 4).** Run `supabase/migrations/20261008000000_homework.sql` in the SQL editor. It adds details and attachments to homework, hand-ins with tutor feedback and marks, the resource library, and the private `classwork` storage bucket with its access rules: families and students may reach only their own child's folder, and library files only once they have been shared with them or attached to their homework. Each file may be up to 25 MB and must be a PDF, a photo or an Office document. Deleting a library resource keeps its stored file while any homework still uses it, and everyone except admins and a resource's uploader reads the library through `list_resources`, which never reveals which other students a resource is shared with. Then run `supabase/migrations/20261012010000_classwork_security.sql`: it stops tutors reading other tutors' resources from the table directly, and refuses to delete a stored file while a hand-in, homework or library resource still refers to it. Notices about new homework, hand-ins, feedback and shared resources are delivered by the existing `send-notifications` function, so no further set-up is required. Please rebuild the iPhone and Android apps with EAS so that the new photo-library and camera permissions (from `expo-image-picker`) are included. In demo mode, attached files are kept by name only and are not uploaded. Library resources use the same subject, curriculum and level pickers as a student's subjects (step 3), and the library opens on the lesson's subject when a tutor attaches a resource to homework. A tutor can set homework for any student they teach, including a student assigned to them for a subject before the first lesson. **Run order:** apply the migrations in timestamp order (`20261007000000_subjects.sql` first, then homework, calendar, payments, WhatsApp, invoice notifications, classwork security and review fixes). `20261013000000_review_fixes.sql` makes sure homework set from a lesson belongs to that lesson and its tutor, and that hand-ins cite only files in the student's own folder.
 
 **AI drafting (optional).** Report drafts, parent updates and the insights summary use Claude through the `ai-assist` Edge Function. Without it, tutors still get a template draft.
 
@@ -110,8 +110,8 @@ The function reads data as the signed-in person, so the AI only sees what that p
 
 **Web app at `/app`.** `.github/workflows/deploy.yml` publishes the website and the web app on every push to `main`. One-off setup: in GitHub, go to repo **Settings → Pages → Source** and choose **GitHub Actions**. Then:
 
-- Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app.
-- Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs.
+- Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app. `APP_URL` is one value shared by email links, Stripe returns and Google Calendar returns; set it once, to the app's public web address with no trailing slash: `https://eliteeducation.me/app`. (If the `eliteeducation.me` domain is ever not connected to GitHub Pages under *Settings → Pages → Custom domain*, use `https://eliteeducationuae.github.io/app` in every place instead.)
+- Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs. If the app is also reached at `https://eliteeducationuae.github.io/app`, add `https://eliteeducationuae.github.io/app/` and `https://eliteeducationuae.github.io/app/**` as well.
 
 **Sign in with Apple and Google.** Families and tutors can choose "Continue with Apple" or "Continue with Google" instead of a password. Set it up once, in this order:
 
@@ -121,6 +121,8 @@ The function reads data as the signed-in person, so the AI only sees what that p
    - `https://eliteeducation.me/app/**`
    - `eliteeducation://auth-callback`
    - `http://localhost:8081/**`
+
+   If the app is also reached at `https://eliteeducationuae.github.io/app`, add `https://eliteeducationuae.github.io/app/` and `https://eliteeducationuae.github.io/app/**` too, so that sign-in never falls back to the Site URL.
 3. **Google.**
    1. In the [Google Cloud Console](https://console.cloud.google.com), create a project (for example "Elite Education").
    2. Under *APIs & Services → OAuth consent screen*, set the app name to **Elite Education**, add your support email, and add the authorised domain **eliteeducation.me**. Publish the app when you are ready for families to use it.
@@ -176,7 +178,7 @@ The website forms send the new subject and phase fields. If the site goes live b
    npx supabase secrets set GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=…
    # Required: calendar-sync refuses every call that does not carry this value.
    npx supabase secrets set CALENDAR_SYNC_SECRET=<random value>
-   # If not already set: where the app lives, so people return to it after connecting.
+   # If not already set: where the app lives, so people return to it after connecting (one value for the whole project).
    npx supabase secrets set APP_URL=https://eliteeducation.me/app
    # Optional: further comma-separated prefixes that may receive the result, for example a staging site.
    npx supabase secrets set CALENDAR_RETURN_URLS=http://localhost:8081
@@ -210,7 +212,7 @@ How it behaves:
 
 **Device checklist (Craig, with real Google accounts):** connect a tutor's calendar and the office calendar, then check that (1) a new online lesson receives a Meet link within five minutes and appears in both calendars without any email being sent; (2) a student signed in with a personal Gmail account can join the Meet straight away, or is admitted by the tutor, for a lesson whose tutor is connected; (3) for a lesson whose tutor has not connected, no Meet is created on the office calendar; (4) reassigning an online lesson to another connected tutor replaces the link with one the new tutor hosts; (5) a personal appointment in a tutor's calendar disappears from the Book screen, while other tutors' lessons in the office calendar do not block Craig's own slots.
 
-**WhatsApp reminders.** Families and tutors who choose to can receive short WhatsApp messages: a lesson reminder the day before, a note when lesson notes are ready, a message when an invoice is sent, a reminder when an invoice is overdue, and a reminder when homework is due. Nothing is ever sent unless the person has switched WhatsApp on and entered their number under *Account*; students cannot opt in. Every WhatsApp message is delivered during the day, UAE time: lesson reminders and lesson-notes messages between 08:00 and 21:00, and invoice, overdue-invoice and homework messages between 09:00 and 20:00, so nobody is messaged at night. Lesson notes recorded after an evening lesson, or an invoice sent late, are held and delivered at the start of the next window. A message still waiting is withdrawn if its invoice is paid or voided, or its lesson is moved or cancelled, in the meantime; a moved lesson is reminded again for its new time. Only the person can switch WhatsApp on or off or change their number (the office cannot do it for them), so the recorded opt-in time stands as their consent to the wording on the card. Overdue reminders quote the balance still owed after any part payments. Messages use only the five approved templates below, and bank details are never sent (the sender refuses any message that looks like an IBAN or account number). Set it up once, in this order:
+**WhatsApp reminders.** Families and tutors who choose to can receive short WhatsApp messages: a lesson reminder the day before, a note when lesson notes are ready, a message when an invoice is sent, a reminder when an invoice is overdue, and a reminder when homework is due. Nothing is ever sent unless the person has switched WhatsApp on and entered their number under *Account*; students cannot opt in. Every WhatsApp message is delivered during the day, UAE time: lesson reminders and lesson-notes messages between 08:00 and 21:00, and invoice, overdue-invoice and homework messages between 09:00 and 20:00, so nobody is messaged at night. Lesson notes recorded after an evening lesson, or an invoice sent late, are held and delivered at the start of the next window. A message still waiting is withdrawn if its invoice is paid or voided, or its lesson is moved or cancelled, in the meantime; a moved lesson is reminded again for its new time. Only the person can switch WhatsApp on or off or change their number (the office cannot do it for them), so the recorded opt-in time stands as their consent to the wording on the card. Overdue reminders quote the balance still owed after any part payments. Messages use only the six approved templates below, and bank details are never sent (the sender refuses any message that looks like an IBAN or account number). Set it up once, in this order:
 
 1. Create a [Twilio](https://www.twilio.com) account and upgrade it from trial.
 2. Register the business number as a WhatsApp sender through Twilio's WhatsApp self sign-up (*Messaging → Senders → WhatsApp senders*). This includes verifying Elite Education in Meta Business Manager.
@@ -241,11 +243,24 @@ Until Twilio is configured, WhatsApp messages are marked `skipped` and push noti
 **Card payments: saved cards, autopay and top-ups.** Families can keep a card on file, let invoices pay themselves, and buy more lessons in one tap. The card itself stays with Stripe; the app only stores the brand, the last four digits and the expiry date. Set it up once, in this order:
 
 1. **Database.** Run `supabase/migrations/20261010000000_payments.sql` in the Supabase SQL editor.
-2. **Secrets.** `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://eliteeducationuae.github.io/app`. `APP_URL` must be the app's public web address (no trailing slash), because Stripe sends parents back there after paying.
+2. **Secrets.** `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://eliteeducation.me/app`. `APP_URL` must be the app's public web address (no trailing slash), because Stripe sends parents back there after paying. It is the same single value used for email links and Google Calendar; if it is already set, leave it.
 3. **Functions.** `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal`, and make sure the Stripe webhook lists the six events in *Going live* above.
 4. **Apple Pay and Google Pay.** In the Stripe Dashboard, go to *Settings → Payments → Payment methods* and switch on **Apple Pay** and **Google Pay**. Stripe-hosted Checkout then shows them automatically on supported phones and browsers; no domain file is needed. Only if card fields are ever embedded in the website itself, register the domain under *Settings → Payments → Payment method domains*.
 5. **Customer portal ("Manage cards").** In the Stripe Dashboard, go to *Settings → Billing → Customer portal*. Allow customers to **update payment methods**, set the business name to **Elite Education**, add the privacy policy and terms of service links, and save.
-6. **Autopay schedule.** In the Supabase Dashboard, go to *Integrations → Cron* (switch on the Cron and pg_net integrations if asked), create a job that calls the Supabase Edge Function `charge-invoice` with method POST and body `{}`, and run it **every 15 minutes** (`*/15 * * * *`). The schedule authenticates with the service role key (`Authorization: Bearer <service role key>`); never put that key in the app.
+6. **Autopay schedule.** Schedule `charge-invoice` every 15 minutes with pg_cron and pg_net (enable both under *Database → Extensions*), keeping the key in Vault as for `calendar-sync`. The function only accepts the **legacy `service_role` key** (a long `eyJ…` token from *Project Settings → API Keys → Legacy API keys*); a newer `sb_secret_…` key will not match, and every run would be refused. Never put this key in the app or the repository.
+   ```sql
+   select vault.create_secret('<legacy service_role key, eyJ…>', 'service_role_key');
+   select cron.schedule('charge-invoice', '*/15 * * * *', $$
+     select net.http_post(
+       url := 'https://<project-ref>.supabase.co/functions/v1/charge-invoice',
+       headers := jsonb_build_object(
+         'Content-Type', 'application/json',
+         'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
+       ),
+       body := '{}'::jsonb
+     )
+   $$);
+   ```
 
 How it works for families:
 
@@ -261,15 +276,34 @@ How it works for families:
 
 ## Round 4 setup checklist
 
-Complete these once, in this order. The function names come from the round 4 plan; each feature's section above carries the detail.
+**Urgent: the web app deploys on merge and reads the new tables straight away. Run `20261008000000_homework.sql` through `20261013000000_review_fixes.sql` in the SQL editor now, before anything else.** Until they run, family lists, the parent home, admin billing, homework, the resource library and the Account screen's calendar and WhatsApp cards fail for every role.
 
-1. **Database.** Run every migration newer than `20261006000000_social_sign_in.sql` in filename order in the Supabase SQL editor, or run `npx supabase db push`.
-2. **Google.** Reuse the OAuth client from *Sign in with Apple and Google*. In the Google Cloud Console, enable the **Google Calendar API**, add the `calendar.events` and `calendar.freebusy` scopes to the OAuth consent screen, and add `https://<project-ref>.supabase.co/functions/v1/google-connect` as an authorised redirect URI. Then `npx supabase secrets set GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=…`.
-3. **Apple.** Follow the Apple steps under *Sign in with Apple and Google*.
-4. **Stripe.** In the Stripe dashboard, enable **Apple Pay** and **Google Pay** under *Settings → Payment methods*, verify the domain `eliteeducation.me`, switch on and configure the **Customer billing portal**, and add `payment_intent.succeeded` and `payment_intent.payment_failed` to the webhook's events.
-5. **Twilio.** Follow *WhatsApp reminders* above.
-6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
-7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
+Complete these once, in this order. Each feature's section above carries the detail.
+
+1. **Database.** In the Supabase SQL editor, run each migration newer than `20261007000000_subjects.sql`, one file at a time in filename order: `20261008000000_homework.sql`, `20261009000000_calendar.sql`, `20261010000000_payments.sql`, `20261011000000_whatsapp.sql`, `20261012000000_invoice_notifications.sql`, `20261012010000_classwork_security.sql` and `20261013000000_review_fixes.sql`. Do not use `npx supabase db push`: the earlier migrations were applied in the SQL editor, so the project has no migration history and `db push` would try to run `20261002000000_init.sql` again and fail. (If you ever want to switch to `db push`, first mark the applied files with `npx supabase migration repair --status applied <version>` for each one.)
+2. **App address.** Set `APP_URL` once to `https://eliteeducation.me/app` (see *Web app at `/app`*). Email links, Stripe returns and Google Calendar returns all use this one value.
+3. **Google.** Reuse the OAuth client from *Sign in with Apple and Google*. In the Google Cloud Console, enable the **Google Calendar API**, add the `calendar.events` and `calendar.freebusy` scopes to the OAuth consent screen, and add `https://<project-ref>.supabase.co/functions/v1/google-connect` as an authorised redirect URI. Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SYNC_SECRET` (a long random value), and schedule `calendar-sync` with the Vault and `x-sync-secret` snippet under *Google Calendar*. Without `CALENDAR_SYNC_SECRET`, `calendar-sync` refuses every call.
+4. **Apple.** Follow the Apple steps under *Sign in with Apple and Google*.
+5. **Stripe.** In the Stripe Dashboard, switch on **Apple Pay** and **Google Pay** under *Settings → Payments → Payment methods* (hosted Checkout needs no domain registration), switch on and configure the **Customer portal**, and make sure the webhook lists all six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`. Without `payment_method.detached`, removing the last card never switches autopay off; without `customer.updated`, a change of default card is not shown.
+6. **Twilio.** Follow *WhatsApp reminders* above.
+7. **Deploy.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders ai-assist ics`. `ics`, `stripe-webhook` and `google-connect` must accept calls without a Supabase login; `supabase/config.toml` already sets `verify_jwt = false` for them, so deploy from this folder (or deploy those three separately with `--no-verify-jwt`).
+8. **Schedule.** `calendar-sync` every 5 minutes (Vault snippet under *Google Calendar*), `charge-invoice` every 15 minutes (Vault snippet under *Card payments*, legacy `service_role` key), `send-notifications` every minute and `send-reminders` hourly.
+9. **Lock the schedules (recommended).** `send-notifications` and `send-reminders` otherwise accept any caller holding the public anon key. First add an `x-cron-secret` header to both schedules, then set the same value with `npx supabase secrets set CRON_SECRET=<random value>` (`openssl rand -hex 32` produces one). Once `CRON_SECRET` is set, calls without the header are refused, so add the header first. With pg_cron:
+   ```sql
+   select vault.create_secret('<the same random value>', 'cron_secret');
+   select cron.schedule('send-notifications', '* * * * *', $$
+     select net.http_post(
+       url := 'https://<project-ref>.supabase.co/functions/v1/send-notifications',
+       headers := jsonb_build_object(
+         'Authorization', 'Bearer <anon key>',
+         'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+       )
+     )
+   $$);
+   -- The same for send-reminders, hourly ('0 * * * *'). Remove any older dashboard schedule for these two functions.
+   ```
+10. **WhatsApp opt-outs.** A family who replies STOP on WhatsApp is not yet switched off automatically. Until an inbound handler is added, the office should switch WhatsApp off for them by asking them to do so under *Account*, or by clearing `whatsapp_opt_in` for that profile in the table editor.
+11. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
 ## Checks
 

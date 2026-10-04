@@ -184,6 +184,7 @@ async function loadSyncLesson(db: Db, lessonId: string) {
     studentNames: (l.student_ids as string[]).map((id) => byId.get(id)).filter((n): n is string => !!n),
     tutorName: tutor?.full_name ?? 'Elite Education',
     serviceName: service?.name ?? 'Lesson',
+    subject: l.subject ?? null,
     start: l.start_at,
     end: l.end_at,
     location: l.location,

@@ -1,11 +1,13 @@
 // Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend,
 // and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account).
+// Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
 // Schedule every minute (Supabase → Edge Functions → Schedules).
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
 // WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
 // TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
+import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
@@ -33,9 +35,10 @@ function emailHtml(subject: string, body: string, link?: string) {
   </div></body></html>`;
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  if (!isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) return refuseCronCall();
   const db = adminClient();
-  const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me';
+  const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me/app';
   const from = Deno.env.get('EMAIL_FROM') ?? 'Elite Education <hello@eliteeducation.me>';
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const twilio = twilioConfigFromEnv((k) => Deno.env.get(k));

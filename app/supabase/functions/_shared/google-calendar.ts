@@ -142,6 +142,8 @@ export interface SyncLesson {
   studentNames: string[];
   tutorName: string;
   serviceName: string;
+  /** The lesson's subject, when set (for example "Maths"). */
+  subject?: string | null;
   /** ISO start time. */
   start: string;
   /** ISO end time. */
@@ -171,7 +173,11 @@ export function lessonToEvent(
   opts: { requestMeet: boolean; requestId?: string },
 ): CalendarEventBody {
   const names = lesson.studentNames.map(firstName).filter(Boolean).join(' & ') || 'Lesson';
-  const summary = audience === 'tutor' ? `Elite Education: ${names}` : `${names} with ${lesson.tutorName}`;
+  const subject = lesson.subject?.trim();
+  const summary =
+    audience === 'tutor'
+      ? subject ? `Elite Education: ${subject} with ${names}` : `Elite Education: ${names}`
+      : `${subject ? `${subject}: ` : ''}${names} with ${lesson.tutorName}`;
   const lines = [lesson.serviceName, `Tutor: ${lesson.tutorName}`];
   if (lesson.meetingUrl) lines.push(`Join: ${lesson.meetingUrl}`);
   else if (lesson.address) lines.push(`Address: ${lesson.address}`);
