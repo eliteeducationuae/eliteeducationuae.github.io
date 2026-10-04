@@ -7,7 +7,7 @@ import {
   newInvoiceDraft,
   tutorEarnings,
 } from '../billing';
-import type { Charge, Invoice, Lesson, LessonPackage, Service, Student, Tutor } from '../types';
+import type { Charge, Enrolment, Invoice, Lesson, LessonPackage, Service, Student, Tutor } from '../types';
 
 const service: Service = { id: 'svc', name: 'IB AA HL 1:1', durationMin: 60, rate: 450 };
 const students: Student[] = [
@@ -136,7 +136,76 @@ describe('tutorEarnings', () => {
       lesson({ id: 'c', status: 'cancelled' }),
       lesson({ id: 'd', tutorId: 'other' }),
     ];
-    expect(tutorEarnings(tutor, lessons, { payTutorForLateCancel: true })).toEqual({ lessons: 2, hours: 3, amount: 600 });
-    expect(tutorEarnings(tutor, lessons, { payTutorForLateCancel: false })).toEqual({ lessons: 1, hours: 1.5, amount: 300 });
+    expect(tutorEarnings(tutor, lessons, { payTutorForLateCancel: true })).toEqual({ lessons: 2, hours: 3, amount: 600, customLessons: 0 });
+    expect(tutorEarnings(tutor, lessons, { payTutorForLateCancel: false })).toEqual({ lessons: 1, hours: 1.5, amount: 300, customLessons: 0 });
+  });
+});
+
+const enrol = (over: Partial<Enrolment> & Pick<Enrolment, 'id' | 'studentId'>): Enrolment => ({ subject: 'Maths', active: true, ...over });
+
+describe('chargesForLesson with per-student family prices', () => {
+  // The lesson is 90 minutes: 1.5 hours.
+  const maths = (studentIds: string[] = ['s1'], over: Partial<Lesson> = {}) => lesson({ studentIds, subject: 'Maths', ...over });
+
+  it('charges the custom price per hour for the lesson length', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 400 })];
+    const { charges } = chargesForLesson(maths(), service, students, [], settings, {}, enrolments);
+    expect(charges[0]).toMatchObject({ amount: 600, status: 'unbilled', priceSource: 'custom', hourlyPrice: 400 });
+  });
+
+  it('charges a late-cancel fee as a fraction of the custom price', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 333.33 })];
+    const { charges } = chargesForLesson(maths(['s1'], { status: 'late-cancel' }), service, students, [], { lateCancelFee: 0.5, noShowFee: 1 }, {}, enrolments);
+    // Half of the rounded full fee (333.33 × 1.5 hours), rounded to fils.
+    expect(charges[0]).toMatchObject({ amount: 250, priceSource: 'custom', hourlyPrice: 333.33 });
+  });
+
+  it('charges each student in a group their own price', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 300 }), enrol({ id: 'e2', studentId: 's2' })];
+    const { charges } = chargesForLesson(maths(['s1', 's2']), service, students, [], settings, {}, enrolments);
+    expect(charges.map((c) => [c.studentId, c.amount, c.priceSource, c.hourlyPrice])).toEqual([
+      ['s1', 450, 'custom', 300],
+      ['s2', 450, 'service', undefined],
+    ]);
+  });
+
+  it('still draws a package credit when there is a custom price', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 400 })];
+    const { charges, packageDraws } = chargesForLesson(maths(), service, students, [pkg()], settings, {}, enrolments);
+    expect(packageDraws).toEqual(['p1']);
+    expect(charges[0]).toMatchObject({ amount: 0, status: 'package', priceSource: 'service' });
+  });
+
+  it('is unchanged when enrolments are omitted', () => {
+    const { charges } = chargesForLesson(maths(), service, students, [], settings);
+    expect(charges[0]).toMatchObject({ amount: 450, priceSource: 'service' });
+    expect(charges[0].hourlyPrice).toBeUndefined();
+  });
+});
+
+describe('tutorEarnings with per-student pay', () => {
+  const tutor: Tutor = { id: 't1', fullName: 'T', email: 't@x', hourlyPay: 200, subjects: [], curricula: [], phases: [], color: '#000' };
+  const settingsPay = { payTutorForLateCancel: true };
+
+  it('pays a custom rate for the student and counts custom lessons', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', tutorId: 't1', tutorPay: 260 })];
+    const lessons = [lesson({ id: 'a', subject: 'Maths' }), lesson({ id: 'b', studentIds: ['s2'], subject: 'Maths' })];
+    // 1.5h × 260 + 1.5h × 200
+    expect(tutorEarnings(tutor, lessons, settingsPay, enrolments)).toEqual({ lessons: 2, hours: 3, amount: 690, customLessons: 1 });
+  });
+
+  it('pays the highest rate in a group', () => {
+    const enrolments = [
+      enrol({ id: 'e1', studentId: 's1', tutorId: 't1', tutorPay: 240 }),
+      enrol({ id: 'e2', studentId: 's2', tutorId: 't1', tutorPay: 180 }),
+    ];
+    const e = tutorEarnings(tutor, [lesson({ studentIds: ['s1', 's2'], subject: 'Maths' })], settingsPay, enrolments);
+    expect(e).toEqual({ lessons: 1, hours: 1.5, amount: 360, customLessons: 1 });
+  });
+
+  it('pays a cover tutor their usual rate', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', tutorId: 'someone-else', tutorPay: 400 })];
+    const e = tutorEarnings(tutor, [lesson({ subject: 'Maths' })], settingsPay, enrolments);
+    expect(e).toEqual({ lessons: 1, hours: 1.5, amount: 300, customLessons: 0 });
   });
 });

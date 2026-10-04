@@ -1,9 +1,10 @@
 import { toDateKey } from '@/domain/dates';
+import { enrolmentFor } from '@/domain/enrolments';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
 import type { NewOpportunity, NewTutorApplication, ReportFields } from '../source';
-import { AccessError, lessonCountsFor, newId, requireAdmin, type DemoDB } from './db';
+import { AccessError, lessonCountsFor, linkList, newId, requireAdmin, type DemoDB } from './db';
 
 /** Demo versions of roles, hiring, tutor pay, reports and expenses. Each mirrors a database function or policy. */
 
@@ -74,6 +75,35 @@ export const ops = {
     Object.assign(o, { status: 'awarded', awardedTutorId: b.tutorId, awardedAt: now.toISOString() });
     b.status = 'awarded';
     for (const other of db.bids) if (other.opportunityId === o.id && other.id !== b.id && other.status === 'pending') other.status = 'declined';
+
+    // The winning tutor teaches the student's enrolment in this subject (created if missing), at the role's pay.
+    if (o.studentId) {
+      const subject = o.subject?.trim();
+      let e = enrolmentFor(db.enrolments, o.studentId, subject);
+      if (!e && subject) {
+        e = linkList(db, {
+          id: newId('enr'),
+          studentId: o.studentId,
+          subject: subject.slice(0, 80),
+          curriculum: o.curriculum?.trim().slice(0, 80) || undefined,
+          active: true,
+          createdAt: now.toISOString(),
+        });
+        db.enrolments.push(e);
+      }
+      if (e) {
+        // A new tutor starts afresh: their pay replaces any earlier tutor's.
+        if (e.tutorId !== b.tutorId) {
+          delete e.tutorPay;
+          delete e.tutorPaySource;
+        }
+        e.tutorId = b.tutorId;
+        if (o.payRate < 100000) {
+          e.tutorPay = o.payRate;
+          e.tutorPaySource = 'opportunity';
+        }
+      }
+    }
   },
 
   submitApplication(db: DemoDB, a: NewTutorApplication, now = new Date()) {
@@ -120,7 +150,7 @@ export const ops = {
     const onOther = new Set(
       db.tutorInvoices.filter((i) => i.id !== inv!.id).flatMap((i) => i.items.map((x) => x.lessonId).filter((x): x is string => !!x)),
     );
-    const lines = tutorInvoiceLines(tutor, db.lessons, db.services, db.students, m, db.settings, onOther);
+    const lines = tutorInvoiceLines(tutor, db.lessons, db.services, db.students, m, db.settings, onOther, db.enrolments);
     inv.items = [...lines, ...inv.items.filter((i) => !i.lessonId)];
     inv.status = 'draft';
     return inv.id;

@@ -223,6 +223,16 @@ export function createSeed(now: Date = new Date()): DemoDB {
     // No list yet: tutors add the first topics from the lesson screen.
     enrolment('enr-noor-maths', 's-noor', { subject: 'Maths', curriculum: 'British', tutorId: 't-nour' }),
   ];
+  // Per-student rates, set before the past lessons are charged so charges and tutor invoices use them.
+  // Omar's Arabic: a custom family price (the IB service is AED 450 an hour).
+  // Karim's Maths: Sarah was awarded the group at AED 240 an hour (her usual is 200), so the Haddad group pays 240.
+  // Yasmin's English Literature: a custom family price (the IGCSE service is AED 350 an hour).
+  // Layla's Chemistry is left on the defaults on purpose.
+  const setRates = (id: string, rates: Pick<Enrolment, 'tutorPay' | 'tutorPaySource' | 'familyPrice'>) =>
+    Object.assign(db.enrolments.find((e) => e.id === id)!, rates);
+  setRates('enr-omar-arabic', { familyPrice: 480 });
+  setRates('enr-karim-maths', { tutorPay: 240, tutorPaySource: 'opportunity' });
+  setRates('enr-yasmin-english-literature', { familyPrice: 320 });
   const lookup = buildTopicLookup(SYLLABUSES, db.topicLists, db.topics);
 
   const profiles: Profile[] = [

@@ -1,6 +1,7 @@
 import { minutesBetween, toDateKey } from './dates';
 import { roundMoney } from './billing';
-import type { Lesson, Service, Settings, Student, Tutor, TutorInvoiceItem } from './types';
+import { lessonTutorRate } from './rates';
+import type { Enrolment, Lesson, Service, Settings, Student, Tutor, TutorInvoiceItem } from './types';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -17,7 +18,9 @@ export function isPaidLesson(l: Pick<Lesson, 'status'>, settings: Pick<Settings,
 }
 
 /**
- * Invoice lines for a tutor's month: one per paid lesson, billed by the hour.
+ * Invoice lines for a tutor's month: one per paid lesson, billed by the hour at the lesson's rate —
+ * the tutor's usual pay, or a per-student custom pay (the highest among a group's students; see
+ * lessonTutorRate). Each line records its rateSource.
  * Mirrors public.create_tutor_invoice(). Lessons already on another invoice are skipped.
  */
 export function tutorInvoiceLines(
@@ -28,6 +31,7 @@ export function tutorInvoiceLines(
   month: Date,
   settings: Pick<Settings, 'payTutorForLateCancel'>,
   alreadyInvoiced: Set<string> = new Set(),
+  enrolments: Enrolment[] = [],
 ): TutorInvoiceItem[] {
   const { start, end } = monthBounds(month);
   return lessons
@@ -41,11 +45,13 @@ export function tutorInvoiceLines(
       const d = new Date(l.start);
       const names = l.studentIds.map((id) => students.find((s) => s.id === id)?.fullName.split(' ')[0] ?? 'Student').join(' & ');
       const service = services.find((s) => s.id === l.serviceId)?.name ?? 'Lesson';
+      const rate = lessonTutorRate(l, tutor, enrolments);
       return {
         description: `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} — ${service} — ${names}${l.status === 'completed' ? '' : ` (${l.status})`}`,
         quantity: roundMoney(minutesBetween(d, new Date(l.end)) / 60),
-        unitPrice: tutor.hourlyPay,
+        unitPrice: rate.rate,
         lessonId: l.id,
+        rateSource: rate.source,
       };
     });
 }

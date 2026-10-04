@@ -2,7 +2,7 @@ import { chargeRevenue, invoiceTotals, roundMoney, tutorEarnings } from './billi
 import { OTHER } from './catalogue';
 import { toDateKey } from './dates';
 import { tutorInvoiceTotal } from './tutor-pay';
-import type { Charge, Expense, Invoice, Lesson, LessonPackage, Settings, Tutor, TutorInvoice } from './types';
+import type { Charge, Enrolment, Expense, Invoice, Lesson, LessonPackage, Settings, Tutor, TutorInvoice } from './types';
 
 export interface MonthFigures {
   /** `YYYY-MM` */
@@ -29,6 +29,8 @@ export interface FinanceData {
   tutorInvoices: TutorInvoice[];
   expenses: Expense[];
   settings: Pick<Settings, 'payTutorForLateCancel'>;
+  /** Enrolments with their custom tutor pay, for estimating tutor costs. */
+  enrolments?: Enrolment[];
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -56,7 +58,7 @@ export function monthFigures(month: Date, data: FinanceData): MonthFigures {
       tutorCosts += tutorInvoiceTotal(invoice.items);
     } else {
       const taught = data.lessons.filter((l) => inMonth(toDateKey(new Date(l.start)), key));
-      const est = tutorEarnings(tutor, taught, data.settings).amount;
+      const est = tutorEarnings(tutor, taught, data.settings, data.enrolments ?? []).amount;
       if (est > 0) estimated = true;
       tutorCosts += est;
     }

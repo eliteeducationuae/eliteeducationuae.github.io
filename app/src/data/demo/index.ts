@@ -169,6 +169,7 @@ export function createDemoSource(): DataSource {
 
     listEnrolments: (filter) => read((d, v) => enr.enrolments(d, v, filter?.studentId)),
     saveEnrolment: (e) => write((d, v) => enr.saveEnrolment(d, v, e)),
+    setEnrolmentRates: (input) => write((d, v) => enr.setEnrolmentRates(d, v, input)),
     listTopicLists: () => read((d) => enr.topicLists(d)),
     listTopics: (filter) => read((d) => enr.topics(d, filter?.listId)),
     addTopic: (input) => write((d, v) => enr.addTopic(d, v, input)),

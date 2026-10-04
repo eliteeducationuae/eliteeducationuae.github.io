@@ -10,6 +10,10 @@ export interface EnrolmentDraft {
   tutorId?: string;
   syllabusId?: string;
   active: boolean;
+  /** Custom AED per hour for the tutor; undefined uses their usual rate. */
+  tutorPay?: number;
+  /** Custom AED per hour for the family; undefined uses the service price. */
+  familyPrice?: number;
 }
 
 const norm = (v?: string) => (v ?? '').trim().toLowerCase();
@@ -120,5 +124,12 @@ export function draftFromEnrolment(e: Enrolment): EnrolmentDraft {
     tutorId: e.tutorId,
     syllabusId: e.syllabusId,
     active: e.active,
+    tutorPay: e.tutorPay,
+    familyPrice: e.familyPrice,
   };
+}
+
+/** True when the draft's rates differ from the saved enrolment's (or, for a new one, when either is set). */
+export function ratesChanged(draft: EnrolmentDraft, saved?: Enrolment): boolean {
+  return (draft.tutorPay ?? null) !== (saved?.tutorPay ?? null) || (draft.familyPrice ?? null) !== (saved?.familyPrice ?? null);
 }

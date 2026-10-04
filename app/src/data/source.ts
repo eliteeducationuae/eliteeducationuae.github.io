@@ -194,10 +194,15 @@ export interface DataSource {
   saveService(service: Omit<Service, 'id'> & { id?: string }): Promise<Service>;
 
   // Subjects: enrolments and shared topic lists
-  /** Enrolments of the students the caller can see. */
+  /**
+   * Enrolments of the students the caller can see. The custom rates are present only where the caller
+   * may see them: tutorPay for admins and the enrolment's own tutor, familyPrice for admins and the family.
+   */
   listEnrolments(filter?: { studentId?: string }): Promise<Enrolment[]>;
   /** Admins only. `active: false` removes the subject from use but keeps its history. */
   saveEnrolment(e: EnrolmentDraft & { studentId: string }): Promise<Enrolment>;
+  /** Admins only. Sets or clears (null) the custom tutor pay and family price per hour for one enrolment. */
+  setEnrolmentRates(input: { enrolmentId: string; tutorPay: number | null; familyPrice: number | null }): Promise<void>;
   listTopicLists(): Promise<TopicList[]>;
   listTopics(filter?: { listId?: string }): Promise<Topic[]>;
   /**

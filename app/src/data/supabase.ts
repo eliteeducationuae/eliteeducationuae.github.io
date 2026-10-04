@@ -60,7 +60,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import { addChildSubjects } from './rpc-mapping';
+import { addChildSubjects, enrolmentRatesFromRow, setEnrolmentRatesArgs } from './rpc-mapping';
 import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
 /**
@@ -249,7 +249,7 @@ const toTutorInvoice = (r: Row): TutorInvoice => ({
   periodStart: r.period_start,
   periodEnd: r.period_end,
   status: r.status,
-  items: (r.items ?? []).map((i: Row) => ({ description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), lessonId: i.lessonId ?? undefined })),
+  items: (r.items ?? []).map((i: Row) => ({ description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), lessonId: i.lessonId ?? undefined, rateSource: i.rateSource ?? undefined })),
   notes: r.notes ?? undefined,
   adminComment: r.admin_comment ?? undefined,
   submittedAt: r.submitted_at ?? undefined,
@@ -455,6 +455,8 @@ const toCharge = (r: Row): Charge => ({
   invoiceId: r.invoice_id ?? undefined,
   packageId: r.package_id ?? undefined,
   date: r.date,
+  priceSource: r.price_source ?? undefined,
+  hourlyPrice: r.hourly_price === null || r.hourly_price === undefined ? undefined : Number(r.hourly_price),
 });
 
 const toInvoice = (r: Row): Invoice => ({
@@ -836,9 +838,9 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
 
     async listEnrolments(filter = {}) {
-      let q = client.from('enrolments').select('*');
+      let q = client.from('enrolments').select('*, enrolment_tutor_pay(hourly_pay, source), enrolment_family_price(hourly_price)');
       if (filter.studentId) q = q.eq('student_id', filter.studentId);
-      return check(await q.order('subject')).map(toEnrolment);
+      return check(await q.order('subject')).map((r: Row) => ({ ...toEnrolment(r), ...enrolmentRatesFromRow(r) }));
     },
     async saveEnrolment(e) {
       // topic_list_id is never sent: the server links each enrolment to its shared list.
@@ -854,6 +856,9 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         active: e.active,
       });
       return toEnrolment(check(await client.from('enrolments').upsert(row).select().single()));
+    },
+    async setEnrolmentRates(input) {
+      check(await client.rpc('set_enrolment_rates', setEnrolmentRatesArgs(input)));
     },
     async listTopicLists() {
       return check(await client.from('topic_lists').select('*').order('name')).map(toTopicList);
