@@ -26,7 +26,7 @@ export default function Families() {
                 title={`${f.name} family`}
                 subtitle={`${f.status === 'prospect' ? 'Prospect · ' : f.status === 'archived' ? 'Archived · ' : ''}${f.parentName} · ${kids.join(', ') || 'no students yet'}${credits ? ` · ${credits} lesson credits` : ''}`}
                 left={<Avatar name={f.parentName} />}
-                right={<Badge label={logins.has(f.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />}
+                below={<Badge label={logins.has(f.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />}
                 onPress={() => router.push({ pathname: '/manage/family-edit', params: { id: f.id } })}
               />
             );

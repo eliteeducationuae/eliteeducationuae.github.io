@@ -7,7 +7,7 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | | Teachworks | Elite Education app |
 |---|---|---|
 | Mobile | Mostly web pages | A native app for every role, with home-screen tabs and dark mode |
-| Progress tracking | Free-text notes | Curriculum-aware: IB AA/AI, IGCSE 4MA1/0580/0606 and A-Level syllabus topic trees, with 1–5 mastery ratings over time, heatmaps and "work on next" |
+| Progress tracking | Free-text notes | Every subject, phase and curriculum: each student has a list of subjects, each with its own topic list (built-in IB, IGCSE and A-Level maths trees, plus shared lists tutors build as they teach), with 1–5 mastery ratings over time, heatmaps and "work on next" |
 | Recording a lesson | Several screens | One pass: attendance, topics with suggestions, ratings, family summary, homework and private notes. Billing happens automatically. |
 | Parents | Invoices and a portal | Upcoming lessons, lesson notes, child progress, PDF progress reports and invoices paid by card in AED |
 | Cancellations | Manual | Your 24-hour policy is applied automatically. Parents see the fee before confirming; tutor cancellations never charge families; admins can waive fees. |
@@ -108,6 +108,58 @@ The function reads data as the signed-in person, so the AI only sees what that p
 
 - Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app.
 - Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs.
+
+**Sign in with Apple and Google.** Families and tutors can choose "Continue with Apple" or "Continue with Google" instead of a password. Set it up once, in this order:
+
+1. **Database.** Run `supabase/migrations/20261006000000_social_sign_in.sql` in the Supabase SQL editor.
+2. **Redirect URLs.** In Supabase → Authentication → URL configuration → Redirect URLs, add all four of these:
+   - `https://eliteeducation.me/app/`
+   - `https://eliteeducation.me/app/**`
+   - `eliteeducation://auth-callback`
+   - `http://localhost:8081/**`
+3. **Google.**
+   1. In the [Google Cloud Console](https://console.cloud.google.com), create a project (for example "Elite Education").
+   2. Under *APIs & Services → OAuth consent screen*, set the app name to **Elite Education**, add your support email, and add the authorised domain **eliteeducation.me**. Publish the app when you are ready for families to use it.
+   3. Under *APIs & Services → Credentials*, choose *Create credentials → OAuth client ID*, type **Web application**. Under *Authorised redirect URIs*, add `https://<project-ref>.supabase.co/auth/v1/callback` (your project reference is in the Supabase URL).
+   4. Copy the client ID and client secret into Supabase → Authentication → Providers → Google, and switch Google on.
+   5. Keep this Google project: the Google Calendar step will reuse the same OAuth client later.
+4. **Apple.** In [Apple Developer](https://developer.apple.com/account) → *Certificates, Identifiers & Profiles*:
+   1. Under *Identifiers*, open the App ID `me.eliteeducation.app` and enable **Sign in with Apple**.
+   2. Create a **Services ID** (for example `me.eliteeducation.signin`). Enable Sign in with Apple on it, with the domain `eliteeducation.me` and the return URL `https://<project-ref>.supabase.co/auth/v1/callback`.
+   3. Under *Keys*, create a key with **Sign in with Apple** enabled and download the `.p8` file. Note the Key ID and your Team ID.
+   4. In Supabase → Authentication → Providers → Apple, switch Apple on. Set the Client IDs to `me.eliteeducation.signin,me.eliteeducation.app`, and paste the secret generated from the `.p8` key (Supabase links to a generator on that page).
+   5. The Apple secret expires every six months. Put a reminder in your calendar to generate a new one and paste it in again, or Apple sign-in on the web and Android will stop working.
+5. **Rebuild the iPhone app** with EAS (`npx eas build --platform ios`). The new `usesAppleSignIn` setting adds the Sign in with Apple entitlement, so an older build will not show the native Apple sheet.
+
+How it behaves:
+
+- **Unknown emails** become new prospect families, exactly as if the parent had signed up with a password. They appear in *More → Families*.
+- **Known emails link automatically.** If the Apple or Google email matches a tutor or a family already on file, that person signs straight into their own account.
+- **Apple "Hide My Email".** If a parent chooses to hide their email, Apple gives a relay address ending `@privaterelay.appleid.com`, which will not match the family's email on file, so they arrive as a new prospect family. Either ask the parent to sign in again and choose **Share My Email**, or open the family in *More → Families* and change its email to the relay address. That moves the login to the correct family and archives the empty prospect family.
+- **Email first, Apple or Google later.** A login is linked to its family when its email is confirmed. If someone confirmed a password account long ago and only later links Apple or Google to it, they are not re-linked automatically; the sign-in screen shows a banner asking them to contact us.
+- **Parents without a name.** If Apple shares no name, onboarding asks the parent for it once. Parents who already have a name never see that field.
+- **Demo mode:** both buttons sign in as the sample parent, Fatima Al Mansoori.
+
+**Device checklist (Craig, on a real iPhone):** sign in with Apple in both light and dark mode, and check that the busy spinner shown over the Apple button while signing in matches the button (black on light, white on dark) and is clearly visible.
+
+**Round 4, step 3: every subject.** The app now supports every subject, phase and curriculum, not only mathematics.
+
+1. Run `supabase/migrations/20261007000000_subjects.sql` in the Supabase SQL editor, after the earlier migrations. **Run it before merging**, because the web app deploys automatically on merge and its lesson, overview, report and onboarding screens read the new subject tables straight away. (Only the website has a fallback.)
+2. Redeploy the Edge Functions whose wording now uses the lesson's subject:
+   `npx supabase functions deploy ai-assist`, `npx supabase functions deploy ics --no-verify-jwt` and `npx supabase functions deploy send-reminders`.
+3. Then review each tutor's subjects, curricula and phases under *More → Tutors*. The backfill gives every existing tutor the subject Maths, so until you add their other subjects, role matching will show them as not usually teaching, say, Chemistry.
+
+What the migration does:
+
+- **Enrolments.** Each student now has a list of subjects (an *enrolment* per subject, with its curriculum, level, exam board, tutor and topic list). Students gain an optional phase, and their old single curriculum and syllabus are kept only for older versions of the app.
+- **Backfill.** Every existing student receives one Maths enrolment that matches their current syllabus and tutor, so nothing is lost and progress history stays in place. Cambridge Additional Maths (0606) students receive Maths at the *Additional* level, so their existing Maths lessons and reports still match it.
+- **New children.** When a family that is already with us adds a child, the office is notified with the child's subjects, since the family is told we will confirm a tutor within one working day. For Maths, families may choose their child's course (for example, *IGCSE Maths (Edexcel 4MA1)*). If they leave it blank, the server picks the built-in course when the curriculum, level and exam board fit exactly one, so the tutor's topic tree and the progress heatmap are ready from the first lesson.
+- **Shared topic lists.** Topics are stored in shared lists for each subject, curriculum and level. A list one tutor builds is reused for every student who studies the same course, and tutors can add topics for the subjects they teach.
+- **Reports per subject.** A report round creates one report per active enrolment, written by that enrolment's tutor, so a student with Chemistry and English receives two reports (and Maths IGCSE and Maths A-Level are reported separately). The family's notice names the subject.
+- **Test change (please confirm).** The enquiry acknowledgement email now opens 'Thank you for contacting Elite Education' (formerly 'Thanks…'), so one line of the existing `engagement_test.sql` now checks for a subject beginning 'Thank' rather than 'Thanks'. Every other existing test is unchanged. Please confirm that you are happy with this wording change.
+- **Everything else.** Lessons, services, enquiries and roles record a subject (and phase); tutors list their subjects, curricula and phases; tutor applications record phases; insights split revenue by subject.
+
+The website forms send the new subject and phase fields. If the site goes live before the migration is run, the forms fall back automatically and add the subject and phase to the message, so no enquiry is lost.
 
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 

@@ -10,8 +10,8 @@ import { corsHeaders, json, userClient } from '../_shared/supabase.ts';
 
 const MODEL = 'claude-opus-5-5';
 
-const STYLE = `You write for Elite Education, a premium maths tutoring company in the UAE (IB, IGCSE and A-Level).
-Write in British English. Be warm, specific and professional; parents read these. Use only the facts given and never
+const STYLE = `You write for Elite Education, a premium tutoring company in the UAE teaching every subject, phase and curriculum.
+Write in British English, in a formal, refined and empathetic tone; parents read these. Use full sentences and no slang. Use only the facts given and never
 invent marks, grades, topics or events. Refer to the student by first name. No headings, bullet symbols or markdown.`;
 
 type Schema = { type: 'object'; properties: Record<string, { type: 'string'; description: string }>; required: string[]; additionalProperties: false };
@@ -69,9 +69,14 @@ Deno.serve(async (req) => {
       // Only proceed if the caller can see this report (their own, or any for admins).
       const { data: report } = await supabase.from('student_reports').select('id, status').eq('id', body.reportId).single();
       if (!report) return json({ error: 'Report not found' }, 404);
+      const facts = (body.facts ?? {}) as { subject?: unknown; curriculum?: unknown };
+      const subject = typeof facts.subject === 'string' && facts.subject.trim() ? facts.subject.trim().slice(0, 80) : null;
+      const curriculum = typeof facts.curriculum === 'string' && facts.curriculum.trim() ? facts.curriculum.trim().slice(0, 80) : null;
+      const course = [curriculum, subject].filter(Boolean).join(' ');
       const out = await ask(
-        `${STYLE}\nYou are helping a tutor draft an end-of-term progress report. The tutor will edit it before it is sent.`,
-        `Facts about the student this term (JSON):\n${JSON.stringify(body.facts).slice(0, 8000)}\n\nDraft the report.`,
+        `${STYLE}\nYou are helping a tutor draft an end-of-term progress report${course ? ` for ${course}` : ''}. ` +
+          `Write about ${subject ?? 'the subject in the facts'} only, using the language and skills of that subject. The tutor will edit it before it is sent.`,
+        `Facts about the student this term${course ? ` in ${course}` : ''} (JSON):\n${JSON.stringify(body.facts).slice(0, 8000)}\n\nDraft the report.`,
         REPORT_SCHEMA,
       );
       return json({ task: 'report-draft', strengths: out.strengths, nextSteps: out.nextSteps, comment: out.comment });
@@ -80,7 +85,7 @@ Deno.serve(async (req) => {
     if (body.task === 'parent-update') {
       const { data: lesson } = await supabase
         .from('lessons')
-        .select('id, start, student_ids, lesson_notes(summary), tutors(full_name)')
+        .select('id, start_at, subject, student_ids, lesson_notes(summary), tutors(full_name)')
         .eq('id', body.lessonId)
         .single();
       const notes = (lesson as { lesson_notes?: { summary: string } | null } | null)?.lesson_notes?.summary;
@@ -89,7 +94,7 @@ Deno.serve(async (req) => {
       const tutor = (lesson as { tutors?: { full_name: string } | null }).tutors?.full_name ?? me.full_name;
       const out = await ask(
         `${STYLE}\nYou turn a tutor's lesson notes into a short update for the student's family.`,
-        `Student(s): ${(students ?? []).map((s) => s.full_name).join(', ')}\nTutor: ${tutor}\nLesson date: ${lesson.start.slice(0, 10)}\nNotes:\n${notes.slice(0, 4000)}`,
+        `Student(s): ${(students ?? []).map((s) => s.full_name).join(', ')}\nTutor: ${tutor}\nSubject: ${(lesson as { subject?: string | null }).subject ?? 'not recorded'}\nLesson date: ${lesson.start_at.slice(0, 10)}\nNotes:\n${notes.slice(0, 4000)}`,
         UPDATE_SCHEMA,
       );
       return json({ task: 'parent-update', message: out.message });

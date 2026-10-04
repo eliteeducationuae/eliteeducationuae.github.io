@@ -1,9 +1,9 @@
 import { toDateKey } from '@/domain/dates';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
-import type { Expense, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
+import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
 import type { NewOpportunity, NewTutorApplication, ReportFields } from '../source';
-import { AccessError, newId, requireAdmin, type DemoDB } from './db';
+import { AccessError, lessonCountsFor, newId, requireAdmin, type DemoDB } from './db';
 
 /** Demo versions of roles, hiring, tutor pay, reports and expenses. Each mirrors a database function or policy. */
 
@@ -18,6 +18,21 @@ function canSeeOpportunity(db: DemoDB, viewer: Profile, o: Opportunity): boolean
 }
 
 const isStaffTutor = (viewer: Profile, tutorId: string) => viewer.role === 'admin' || viewer.tutorId === tutorId;
+
+/** The most frequent value among the lessons; the latest lesson breaks ties. */
+function mostCommon(lessons: Lesson[], pick: (l: Lesson) => string | undefined): string | undefined {
+  const stats = new Map<string, { n: number; latest: string }>();
+  for (const l of lessons) {
+    const v = pick(l);
+    if (!v) continue;
+    const s = stats.get(v) ?? { n: 0, latest: '' };
+    stats.set(v, { n: s.n + 1, latest: l.start > s.latest ? l.start : s.latest });
+  }
+  return [...stats.entries()].sort((a, b) => b[1].n - a[1].n || b[1].latest.localeCompare(a[1].latest))[0]?.[0];
+}
+
+/** The tutor of most of these lessons (the latest lesson breaks ties). */
+const mainTutor = (lessons: Lesson[]) => mostCommon(lessons, (l) => l.tutorId);
 
 export const ops = {
   opportunities: (db: DemoDB, viewer: Profile) => db.opportunities.filter((o) => canSeeOpportunity(db, viewer, o)),
@@ -64,7 +79,7 @@ export const ops = {
   submitApplication(db: DemoDB, a: NewTutorApplication, now = new Date()) {
     if (!a.fullName.trim()) throw new Error('Please enter your name');
     if (!a.email.includes('@')) throw new Error('Please enter a valid email address');
-    db.applications.push({ ...a, id: newId('app'), createdAt: now.toISOString(), fullName: a.fullName.trim(), email: a.email.trim().toLowerCase(), status: 'applied' });
+    db.applications.push({ ...a, phases: a.phases ?? [], id: newId('app'), createdAt: now.toISOString(), fullName: a.fullName.trim(), email: a.email.trim().toLowerCase(), status: 'applied' });
   },
   applications(db: DemoDB, viewer: Profile) {
     requireAdmin(viewer);
@@ -146,23 +161,41 @@ export const ops = {
     const mine = new Set(db.students.filter((s) => (viewer.role === 'parent' ? s.familyId === viewer.familyId : s.id === viewer.studentId)).map((s) => s.id));
     return db.reports.filter((r) => r.status === 'published' && mine.has(r.studentId));
   },
+  /**
+   * Mirrors public.open_report_cycle: one draft per active enrolment with a lesson that counts for it since
+   * `startsOn`, for the enrolment's tutor (or else the tutor of most of those lessons). A student who was taught
+   * but has no report from an enrolment gets one report for their main tutor.
+   */
   openReportCycle(db: DemoDB, viewer: Profile, name: string, startsOn: string, dueDate: string, now = new Date()) {
     requireAdmin(viewer);
     const cycleId = newId('cyc');
     db.reportCycles.push({ id: cycleId, createdAt: now.toISOString(), name: name.trim(), startsOn, dueDate, status: 'open' });
-    const counts = new Map<string, Map<string, number>>();
-    for (const l of db.lessons) {
-      if (l.start < startsOn || !['completed', 'no-show', 'scheduled'].includes(l.status)) continue;
-      for (const sid of l.studentIds) {
-        const m = counts.get(sid) ?? new Map<string, number>();
-        m.set(l.tutorId, (m.get(l.tutorId) ?? 0) + 1);
-        counts.set(sid, m);
-      }
+    const taught = db.lessons.filter((l) => l.start >= startsOn && ['completed', 'no-show', 'scheduled'].includes(l.status));
+    const created: StudentReport[] = [];
+    // One report per enrolment (Maths IGCSE and Maths A-Level each get one); unlinked reports one per student and subject.
+    const add = (r: Omit<StudentReport, 'id' | 'cycleId' | 'status' | 'aiAssisted' | 'updatedAt'>) => {
+      const key = (r.subject ?? '').trim().toLowerCase();
+      const clash = r.enrolmentId
+        ? created.some((x) => x.enrolmentId === r.enrolmentId)
+        : created.some((x) => !x.enrolmentId && x.studentId === r.studentId && (x.subject ?? '').trim().toLowerCase() === key);
+      if (clash) return;
+      created.push({ id: newId('rep'), cycleId, ...r, status: 'draft', aiAssisted: false, updatedAt: now.toISOString() });
+    };
+    const enrolments = db.enrolments.filter((e) => e.active).sort((a, b) => a.subject.localeCompare(b.subject));
+    for (const e of enrolments) {
+      const counted = taught.filter((l) => lessonCountsFor(db, l, e));
+      if (!counted.length) continue;
+      const tutorId = e.tutorId ?? mainTutor(counted);
+      if (!tutorId) continue;
+      add({ studentId: e.studentId, tutorId, subject: e.subject, enrolmentId: e.id });
     }
-    for (const [studentId, tutors] of counts) {
-      const tutorId = [...tutors.entries()].sort((a, b) => b[1] - a[1])[0][0];
-      db.reports.push({ id: newId('rep'), cycleId, studentId, tutorId, status: 'draft', aiAssisted: false, updatedAt: now.toISOString() });
+    const students = [...new Set(taught.flatMap((l) => l.studentIds))];
+    for (const studentId of students) {
+      if (created.some((r) => r.studentId === studentId)) continue;
+      const theirs = taught.filter((l) => l.studentIds.includes(studentId));
+      add({ studentId, tutorId: mainTutor(theirs)!, subject: mostCommon(theirs, (l) => l.subject?.trim() || undefined) });
     }
+    db.reports.push(...created);
   },
   saveReport(db: DemoDB, viewer: Profile, id: string, f: ReportFields, now = new Date()) {
     const r = db.reports.find((x) => x.id === id && isStaffTutor(viewer, x.tutorId));

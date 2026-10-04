@@ -99,7 +99,7 @@ function ExpenseForm({ existing }: { existing?: Expense }) {
           title="Delete expense"
           variant="danger"
           onPress={() =>
-            confirm('Delete expense?', 'This can’t be undone.', async () => {
+            confirm('Delete expense?', 'This cannot be undone.', async () => {
               await del.mutateAsync([existing.id]);
               router.back();
             }, 'Delete')

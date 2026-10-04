@@ -65,7 +65,7 @@ export default function AdminBilling() {
           <Loading />
         ) : unbilled.size === 0 ? (
           <Card>
-            <Txt variant="muted">Nothing waiting. Completed lessons appear here until they’re invoiced.</Txt>
+            <Txt variant="muted">There is nothing waiting to be invoiced. Completed lessons appear here until they are invoiced.</Txt>
           </Card>
         ) : (
           [...unbilled.entries()].map(([familyId, e]) => (
@@ -100,7 +100,7 @@ export default function AdminBilling() {
         {invoices.isLoading ? (
           <Loading />
         ) : shown.length === 0 ? (
-          <EmptyState icon="card" title="No invoices here" />
+          <EmptyState icon="card" title="No invoices here" message="Invoices you create for families will appear here." />
         ) : (
           shown.map((i) => <InvoiceCard key={i.id} invoice={i} familyName={lookup.family(i.familyId)?.name} />)
         )}

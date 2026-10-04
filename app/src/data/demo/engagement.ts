@@ -1,8 +1,12 @@
+import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
+import { surnameOf } from '@/lib/social-auth';
 
+import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
-import { AccessError, newId, requireAdmin, type DemoDB } from './db';
+
+import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
 
@@ -17,10 +21,68 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
 }
 
 export const eq = {
-  addMyChild(db: DemoDB, viewer: Profile, child: NewChild) {
+  /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
+  setMyName(db: DemoDB, viewer: Profile, fullName: string): Profile {
+    const clean = fullName.trim().replace(/\s+/g, ' ');
+    if (!clean) throw new Error('Please enter your name.');
+    if (clean.length > 120) throw new Error('Please enter a name of 120 characters or fewer.');
+    const me = db.profiles.find((p) => p.id === viewer.id);
+    if (!me || me.role !== 'parent') return viewer;
+    const family = db.families.find((f) => f.id === me.familyId);
+    if (family && family.status !== 'prospect') return me;
+    if (family && family.parentName === me.fullName) {
+      family.parentName = clean;
+      family.name = surnameOf(clean);
+    }
+    me.fullName = clean;
+    return me;
+  },
+  /** Mirrors public.add_my_child: a parent adds a child with 1 to 10 subjects. */
+  addMyChild(db: DemoDB, viewer: Profile, child: NewChild, now = new Date()) {
     if (viewer.role !== 'parent' || !viewer.familyId) throw new AccessError('Only parents can add children');
-    if (!child.fullName.trim()) throw new Error('Enter your child’s name');
-    db.students.push({ id: newId('stu'), familyId: viewer.familyId, ...child, fullName: child.fullName.trim() });
+    const fullName = tidy(child.fullName);
+    if (!fullName) throw new Error('Enter your child’s name');
+    if (db.students.filter((s) => s.familyId === viewer.familyId).length >= 10) throw new Error('Please contact us to add more children');
+    const subjects = child.subjects ?? [];
+    if (subjects.length < 1 || subjects.length > 10) throw new Error('Please choose between one and ten subjects');
+    const phase = tidy(child.phase);
+    if ((phase?.length ?? 0) > 60) throw new Error('Please choose a shorter phase');
+    const rows = subjects.map((s) => {
+      const row = { subject: tidy(s.subject), curriculum: tidy(s.curriculum), level: tidy(s.level), examBoard: tidy(s.examBoard) };
+      // Mirrors public.builtin_syllabus_for: keep the family's choice of course, or find the one that fits.
+      const built = row.subject ? resolveBuiltInSyllabus({ ...row, subject: row.subject, syllabusId: s.syllabusId }) : undefined;
+      if (!built) return { ...row, syllabusId: undefined };
+      const fill = enrolmentFieldsFor(built, row.subject!);
+      return { ...row, curriculum: row.curriculum ?? fill.curriculum, level: row.level ?? fill.level, examBoard: row.examBoard ?? fill.examBoard, syllabusId: built.id };
+    });
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (!r.subject || r.subject.length > 80) throw new Error('Please choose a subject for every row');
+      if ([r.curriculum, r.level, r.examBoard].some((v) => (v?.length ?? 0) > 80)) throw new Error('Please shorten the curriculum, level or exam board');
+      const key = topicListKey(r.subject, r.curriculum, r.level);
+      if (seen.has(key)) throw new Error(`${r.subject} is listed twice. Please remove one.`);
+      seen.add(key);
+    }
+    const studentId = newId('stu');
+    db.students.push({ id: studentId, familyId: viewer.familyId, fullName, school: tidy(child.school), yearGroup: tidy(child.yearGroup), phase });
+    for (const r of rows) {
+      db.enrolments.push(
+        linkList(db, { id: newId('enr'), studentId, subject: r.subject!, curriculum: r.curriculum, level: r.level, examBoard: r.examBoard, syllabusId: r.syllabusId, active: true, createdAt: now.toISOString() }),
+      );
+    }
+    // The parent is told we will confirm a tutor within one working day, so the office must hear about it.
+    const family = db.families.find((f) => f.id === viewer.familyId);
+    const list = rows.map((r) => enrolmentTitle({ subject: r.subject!, curriculum: r.curriculum, level: r.level })).join(', ');
+    const yearGroup = tidy(child.yearGroup);
+    notifyAdmins(
+      db,
+      `New child added: ${fullName}`,
+      `${family?.parentName ?? family?.name ?? 'A family'} added ${fullName}${yearGroup ? ` (${yearGroup})` : ''}.\n\nSubjects: ${list}\n\n` +
+        'Please arrange a tutor and confirm with the family within one working day.',
+      `/students/${studentId}`,
+      now,
+    );
+    return studentId;
   },
   setFamilyStatus(db: DemoDB, viewer: Profile, familyId: string, status: FamilyStatus) {
     requireAdmin(viewer);
@@ -37,6 +99,8 @@ export const eq = {
       source: e.source ?? 'app',
       ...e,
       parentName: e.parentName.trim(),
+      subject: tidy(e.subject),
+      phase: tidy(e.phase),
       familyId: viewer?.role === 'parent' ? viewer.familyId : undefined,
     });
   },
@@ -108,9 +172,11 @@ export const eq = {
     let tutorId = input.tutorId;
     let serviceId = input.serviceId;
     let duration: number;
+    let subject = tidy(input.subject);
     if (input.kind === 'reschedule') {
       const l = db.lessons.find((x) => x.id === input.lessonId && x.studentIds.includes(student.id) && x.status === 'scheduled');
       if (!l) throw new Error('That lesson can no longer be moved');
+      subject = subject ?? l.subject;
       tutorId = l.tutorId;
       serviceId = l.serviceId;
       duration = (new Date(l.end).getTime() - new Date(l.start).getTime()) / 60_000;
@@ -119,6 +185,7 @@ export const eq = {
       if (!svc) throw new Error('Choose a lesson type');
       duration = svc.durationMin;
     }
+    if ((subject?.length ?? 0) > 80) throw new Error('Please choose a shorter subject name');
     const day = new Date(input.start);
     day.setHours(0, 0, 0, 0);
     const free = eq.openSlots(db, { tutorId, from: day.toISOString(), days: 1, durationMin: duration, ignoreLessonId: input.lessonId }, now);
@@ -135,6 +202,7 @@ export const eq = {
       start: new Date(input.start).toISOString(),
       end: new Date(new Date(input.start).getTime() + duration * 60_000).toISOString(),
       note: input.note?.trim() || undefined,
+      subject,
       status: 'pending',
     });
   },
@@ -159,6 +227,7 @@ export const eq = {
           tutorId: r.tutorId,
           studentIds: [r.studentId],
           serviceId: r.serviceId,
+          subject: r.subject,
           start: r.start,
           end: r.end,
           location: previous?.location ?? 'online',

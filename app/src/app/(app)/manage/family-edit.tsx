@@ -7,7 +7,8 @@ import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useFamilies, usePackages, useStudents } from '@/data/hooks';
+import { useAction, useEnrolments, useFamilies, usePackages, useStudents } from '@/data/hooks';
+import { studentSubjects } from '@/domain/enrolments';
 import type { Family, FamilyStatus } from '@/domain/types';
 
 export default function EditFamily() {
@@ -21,6 +22,7 @@ export default function EditFamily() {
 function FamilyForm({ existing }: { existing?: Family }) {
   const save = useAction(source.saveFamily);
   const students = useStudents();
+  const enrolments = useEnrolments();
   const packages = usePackages(existing?.id);
   const [name, setName] = useState(existing?.name ?? '');
   const [parentName, setParentName] = useState(existing?.parentName ?? '');
@@ -72,7 +74,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
             title="Students"
             action={<Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/students/edit', params: { familyId: existing.id } })} />}>
             {kids.map((s) => (
-              <ListItem key={s.id} title={s.fullName} subtitle={s.curriculum} onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })} />
+              <ListItem key={s.id} title={s.fullName} subtitle={studentSubjects(enrolments.data ?? [], s.id) || 'No subjects yet'} onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })} />
             ))}
           </Section>
           <Section

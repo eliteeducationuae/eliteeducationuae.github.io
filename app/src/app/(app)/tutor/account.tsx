@@ -15,12 +15,12 @@ export default function TutorAccount() {
   const openCycles = new Set((cycles.data ?? []).filter((c) => c.status === 'open').map((c) => c.id));
   const toWrite = (reports.data ?? []).filter((r) => r.tutorId === me.tutorId && r.status === 'draft' && openCycles.has(r.cycleId)).length;
   const links = [
-    { title: 'Reports to write', subtitle: toWrite ? `${toWrite} to write — we draft them for you` : 'End-of-term reports for your students', icon: 'book', href: '/reports', badge: toWrite },
-    { title: 'Opportunities', subtitle: 'New students you can put yourself forward for', icon: 'school', href: '/opportunities', badge: 0 },
-    { title: 'My invoices', subtitle: 'Submit your monthly invoice and track payment', icon: 'doc', href: '/tutor-invoices', badge: 0 },
-    { title: 'Payment details', subtitle: 'Where we pay you (private)', icon: 'card', href: '/payment-details', badge: 0 },
+    { title: 'Reports to write', subtitle: toWrite ? `${toWrite} to write. We prepare a draft for you.` : 'End-of-term reports for your students', icon: 'book', href: '/reports', badge: toWrite },
+    { title: 'Opportunities', subtitle: 'New students for whom you can put yourself forward', icon: 'school', href: '/opportunities', badge: 0 },
+    { title: 'My invoices', subtitle: 'Submit your monthly invoice and follow its payment', icon: 'doc', href: '/tutor-invoices', badge: 0 },
+    { title: 'Payment details', subtitle: 'Where we pay you (kept private)', icon: 'card', href: '/payment-details', badge: 0 },
     { title: 'My pay', subtitle: 'Hours taught and earnings by month', icon: 'money', href: '/pay', badge: 0 },
-    { title: 'Availability & time off', subtitle: 'When families can book you, and days you’re away', icon: 'clock', href: '/availability', badge: 0 },
+    { title: 'Availability and time off', subtitle: 'When families can book you, and the days you are away', icon: 'clock', href: '/availability', badge: 0 },
     { title: 'Announcements', subtitle: 'News from Elite Education', icon: 'megaphone', href: '/announcements', badge: 0 },
   ] as const;
   return (

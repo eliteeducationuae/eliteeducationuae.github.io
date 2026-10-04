@@ -45,7 +45,7 @@ export default function Enquiries() {
         ]}
       />
       {list.length === 0 ? (
-        <EmptyState icon="inbox" title="Nothing here" message="Enquiries from the website, the app and phone calls you log appear here." />
+        <EmptyState icon="inbox" title="No enquiries in this view" message="Enquiries from the website, the app and phone calls you log appear here." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((e) => (
@@ -54,7 +54,7 @@ export default function Enquiries() {
                 <View style={{ flex: 1, gap: 2 }}>
                   <Txt variant="h3">{e.parentName}</Txt>
                   <Txt variant="muted" numberOfLines={1}>
-                    {[e.studentName, e.curriculum, e.yearGroup].filter(Boolean).join(' · ') || 'No student details yet'}
+                    {[e.studentName, e.subject, e.phase, e.curriculum, e.yearGroup].filter(Boolean).join(' · ') || 'No student details yet'}
                   </Txt>
                   {e.message ? (
                     <Txt variant="small" numberOfLines={2}>

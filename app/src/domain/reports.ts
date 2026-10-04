@@ -1,3 +1,4 @@
+import { sameSubject } from './enrolments';
 import { RATING_LABELS, focusTopics, masteryByTopic, type TopicMastery } from './progress';
 import type { Homework, Lesson, LessonNote, Student, TopicRating } from './types';
 
@@ -13,16 +14,39 @@ export interface ReportFacts {
   recentNotes: string[];
 }
 
+/**
+ * Limits the facts to one subject. With a subject, only lessons of that subject count (lessons with no subject
+ * count only when there is no subject), homework of those lessons plus homework with no lesson, and ratings on
+ * `topicIds` or from those lessons.
+ */
+export interface ReportScope {
+  subject?: string;
+  topicIds?: Set<string>;
+}
+
 export function reportFacts(
   student: Student,
   data: { lessons: Lesson[]; notes: LessonNote[]; homework: Homework[]; ratings: TopicRating[] },
   since: string,
+  scope?: ReportScope,
 ): ReportFacts {
-  const lessons = data.lessons.filter((l) => l.studentIds.includes(student.id) && l.start >= since);
+  const subject = scope?.subject?.trim();
+  const lessons = data.lessons.filter(
+    (l) => l.studentIds.includes(student.id) && l.start >= since && (!subject || sameSubject(l.subject, subject)),
+  );
+  const lessonIds = new Set(lessons.map((l) => l.id));
+  const scoped = !!subject || !!scope?.topicIds;
   const happened = lessons.filter((l) => l.status === 'completed' || l.status === 'no-show' || l.status === 'late-cancel');
   const attended = happened.filter((l) => l.status === 'completed').length;
-  const hw = data.homework.filter((h) => h.studentId === student.id && h.dueDate >= since.slice(0, 10));
-  const ratings = data.ratings.filter((r) => r.studentId === student.id && r.ratedAt >= since);
+  const hw = data.homework.filter(
+    (h) => h.studentId === student.id && h.dueDate >= since.slice(0, 10) && (!subject || !h.lessonId || lessonIds.has(h.lessonId)),
+  );
+  const ratings = data.ratings.filter(
+    (r) =>
+      r.studentId === student.id &&
+      r.ratedAt >= since &&
+      (!scoped || !!scope?.topicIds?.has(r.topicId) || (!!r.lessonId && lessonIds.has(r.lessonId))),
+  );
   const mastery = masteryByTopic(ratings);
   const byLesson = new Map(lessons.map((l) => [l.id, l]));
   const notes = data.notes
@@ -62,15 +86,15 @@ export function sampleReportDraft(facts: ReportFacts, topicName: (id: string) =>
       ? ''
       : facts.homeworkPercent >= 80
         ? 'Homework has been completed consistently and to a good standard. '
-        : `Homework completion (${facts.homeworkPercent}%) is an area to improve — regular practice will make a real difference. `;
+        : `Homework completion (${facts.homeworkPercent}%) is an area for improvement; regular practice will make a real difference. `;
   return {
     strengths: strong.length
       ? `${name} is now confident with ${list(strong)}${facts.improved.some((m) => m.trend > 0) ? ', and has made clear progress this term' : ''}.`
       : `${name} has engaged well in lessons and is building a secure foundation.`,
     nextSteps: weak.length
-      ? `Focus next on ${list(weak)} (currently ${weak.length === 1 ? RATING_LABELS[facts.needsWork[0].rating].toLowerCase() : 'still developing'}), with regular exam-style practice.`
+      ? `The next focus will be ${list(weak)} (currently ${weak.length === 1 ? RATING_LABELS[facts.needsWork[0].rating].toLowerCase() : 'still developing'}), with regular exam-style practice.`
       : 'Continue with timed exam-style questions to build speed and accuracy.',
-    comment: `${attendance}${homework}Across ${facts.lessonsTaught} lesson${facts.lessonsTaught === 1 ? '' : 's'} this term we have covered ${facts.topicsCovered.length} topic${facts.topicsCovered.length === 1 ? '' : 's'}. ${strong.length ? `${name} should be proud of the progress in ${strong[0]}. ` : ''}${weak.length ? `With continued work on ${weak[0]}, I'm confident ${name} will keep improving.` : `I'm confident ${name} will continue to make excellent progress.`}`,
+    comment: `${attendance}${homework}Across ${facts.lessonsTaught} lesson${facts.lessonsTaught === 1 ? '' : 's'} this term we have covered ${facts.topicsCovered.length} topic${facts.topicsCovered.length === 1 ? '' : 's'}. ${strong.length ? `${name} should be proud of the progress in ${strong[0]}. ` : ''}${weak.length ? `With continued work on ${weak[0]}, I am confident that ${name} will continue to improve.` : `I am confident that ${name} will continue to make excellent progress.`}`,
   };
 }
 
@@ -79,11 +103,13 @@ export const EFFORT_LABELS: Record<number, string> = { 1: 'Needs attention', 2: 
 export const PROGRESS_LABELS: Record<number, string> = { 1: 'Below expected', 2: 'Slower than expected', 3: 'As expected', 4: 'Above expected', 5: 'Exceptional' };
 
 /** The facts in plain words, as sent to the AI drafting service (topic ids resolved to names, no surnames). */
-export function factsForAi(facts: ReportFacts, topicName: (id: string) => string, context: { curriculum: string; syllabus?: string; attainment?: string; effort?: number; progress?: number }) {
+export function factsForAi(facts: ReportFacts, topicName: (id: string) => string, context: { subject?: string; curriculum?: string; syllabus?: string; attainment?: string; effort?: number; progress?: number },
+) {
   const named = (ms: { topicId: string; rating: number }[]) => ms.map((m) => `${topicName(m.topicId)} (${RATING_LABELS[m.rating]})`);
   return {
     firstName: facts.firstName,
-    curriculum: context.syllabus ?? context.curriculum,
+    subject: context.subject || undefined,
+    curriculum: context.syllabus ?? (context.curriculum || undefined),
     workingAt: context.attainment || undefined,
     effort: context.effort ? EFFORT_LABELS[context.effort] : undefined,
     progress: context.progress ? PROGRESS_LABELS[context.progress] : undefined,

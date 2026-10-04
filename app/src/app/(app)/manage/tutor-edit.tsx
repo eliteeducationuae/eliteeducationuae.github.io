@@ -2,16 +2,16 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
+import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { LoginHint } from '@/components/login-hint';
-import { Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
+import { TUTOR_COLORS } from '@/lib/tutor-colors';
+import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useTutors } from '@/data/hooks';
+import { CURRICULA, inCatalogue, PHASES, SUBJECTS } from '@/domain/catalogue';
 import type { Tutor } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
-
-const COLORS = ['#2b6cb0', '#c05621', '#2f855a', '#6b46c1', '#b83280', '#2c7a7b', '#975a16', '#1a365d'];
-const SUBJECTS = ['IB', 'IGCSE', 'A-Level'];
 
 export default function EditTutor() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -28,8 +28,12 @@ function TutorForm({ existing }: { existing?: Tutor }) {
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
   const [pay, setPay] = useState(existing ? String(existing.hourlyPay) : '');
-  const [subjects, setSubjects] = useState<string[]>(existing?.subjects ?? []);
-  const [color, setColor] = useState(existing?.color ?? COLORS[0]);
+  // Before round 4 'subjects' held curricula ('IB', 'IGCSE'); show any such legacy values under Curricula.
+  const legacy = !existing?.curricula?.length ? (existing?.subjects ?? []).filter((v) => v === 'IB' || (inCatalogue(CURRICULA, v) && !inCatalogue(SUBJECTS, v))) : [];
+  const [subjects, setSubjects] = useState<string[]>((existing?.subjects ?? []).filter((v) => !legacy.includes(v)));
+  const [curricula, setCurricula] = useState<string[]>(existing?.curricula?.length ? existing.curricula : legacy.map((v) => (v === 'IB' ? 'IB DP' : v)));
+  const [phases, setPhases] = useState<string[]>(existing?.phases ?? []);
+  const [color, setColor] = useState(existing?.color ?? TUTOR_COLORS[0]);
   const valid = fullName.trim() && /\S+@\S+/.test(email) && Number(pay) >= 0 && pay !== '';
 
   return (
@@ -43,7 +47,17 @@ function TutorForm({ existing }: { existing?: Tutor }) {
           loading={save.isPending}
           onPress={async () => {
             await save.mutateAsync([
-              { id: existing?.id, fullName: fullName.trim(), email: email.trim(), phone: phone.trim() || undefined, hourlyPay: Number(pay), subjects, color },
+              {
+                id: existing?.id,
+                fullName: fullName.trim(),
+                email: email.trim(),
+                phone: phone.trim() || undefined,
+                hourlyPay: Number(pay),
+                subjects,
+                curricula,
+                phases,
+                color,
+              },
             ]);
             router.back();
           }}
@@ -56,7 +70,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       <LoginHint email={email} who="tutor" name={fullName} />
       {existing ? (
         <Button
-          title="Availability & time off"
+          title="Availability and time off"
           icon="clock"
           variant="secondary"
           onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}
@@ -64,15 +78,15 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       ) : null}
       <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
       <Section title="Teaches">
-        <Row gap={Spacing.one} wrap>
-          {SUBJECTS.map((s) => (
-            <Chip key={s} label={s} selected={subjects.includes(s)} onPress={() => setSubjects((x) => (x.includes(s) ? x.filter((y) => y !== s) : [...x, s]))} />
-          ))}
-        </Row>
+        <View style={{ gap: Spacing.three }}>
+          <CatalogueMultiPicker label="Subjects" options={SUBJECTS} values={subjects} onChange={setSubjects} collapsed={12} otherPlaceholder="For example, Latin" />
+          <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} />
+          <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} />
+        </View>
       </Section>
       <Section title="Calendar colour">
         <Row gap={Spacing.two} wrap>
-          {COLORS.map((c) => (
+          {TUTOR_COLORS.map((c) => (
             <Pressable key={c} onPress={() => setColor(c)} accessibilityLabel={`Colour ${c}`} accessibilityState={{ selected: color === c }}>
               <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c, borderWidth: 3, borderColor: color === c ? theme.text : 'transparent' }} />
             </Pressable>

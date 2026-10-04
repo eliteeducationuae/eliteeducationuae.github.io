@@ -1,17 +1,78 @@
-import { getSyllabus, topicName } from '@/data/curriculum';
+import { SYLLABUSES } from '@/data/curriculum';
 import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
-import type { Invoice, Lesson, Message, Profile, Settings, TopicRating } from '@/domain/types';
+import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
+import { buildTopicLookup } from '@/domain/topics';
+import type { Enrolment, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
 import { ops } from './operations';
 
 const SUMMARIES = [
-  'Worked through {t1} from first principles, then exam-style questions on {t2}. Good engagement — method is much more secure.',
-  'Reviewed last week’s homework, then focused on {t1}. Some slips with notation on {t2}; we built a checklist to avoid them.',
-  'Past-paper session targeting {t1} and {t2}. Timing is improving; needs to show more working for method marks.',
-  'Consolidated {t1} and started {t2}. Confident on routine questions, still building towards the harder problem-solving parts.',
+  'We worked through {t1} from first principles, followed by exam-style questions on {t2}. Engagement was excellent and understanding is now considerably more secure.',
+  'We reviewed last week’s homework before concentrating on {t1}. There were a few careless slips on {t2}, so we agreed a short checklist to avoid them.',
+  'A past-paper session focused on {t1} and {t2}. Timing is improving; the next step is to show fuller working to secure every available mark.',
+  'We consolidated {t1} and began {t2}. Routine questions are now handled with confidence, and we are building towards the more demanding problems.',
 ];
+
+/** For lessons whose subject has no topic list yet. */
+const OPEN_SUMMARIES = [
+  'We practised number bonds and mental arithmetic through short games. Concentration was excellent throughout and confidence is growing.',
+  'We explored place value and early multiplication with practical resources. Every new idea was explained clearly and carefully.',
+];
+
+/** Shared topic lists for the subjects without a built-in syllabus. Ids are fixed so the demo is stable. */
+const TOPIC_LISTS: { list: TopicList; units: [string | undefined, string[]][] }[] = [
+  {
+    list: { id: 'tl-igcse-chemistry', subject: 'Chemistry', curriculum: 'IGCSE', name: 'IGCSE Chemistry' },
+    units: [
+      ['States of matter', ['Kinetic particle theory', 'Diffusion']],
+      ['Atoms, elements and compounds', ['Atomic structure', 'Ionic bonding', 'Covalent bonding']],
+      ['Stoichiometry', ['The mole', 'Reacting masses']],
+      ['Electrochemistry', ['Electrolysis']],
+      ['Acids, bases and salts', ['pH and indicators', 'Making salts']],
+      ['Organic chemistry', ['Alkanes and alkenes', 'Polymers']],
+    ],
+  },
+  {
+    list: { id: 'tl-igcse-english-literature', subject: 'English Literature', curriculum: 'IGCSE', name: 'IGCSE English Literature' },
+    units: [
+      ['Poetry', ['Unseen poetry', 'Anthology comparison']],
+      ['Prose', ['Character and theme', 'Extract analysis']],
+      ['Drama', ['Shakespeare']],
+    ],
+  },
+  {
+    list: { id: 'tl-ibdp-arabic-hl', subject: 'Arabic', curriculum: 'IB DP', level: 'HL', name: 'IB DP Arabic (HL)' },
+    units: [
+      ['Identities', ['Personal identity and language', 'Lifestyles and health']],
+      ['Experiences', ['Travel and migration']],
+      ['Human ingenuity', ['Media and communication', 'Technology and innovation']],
+      ['Social organisation', ['Education and the workplace']],
+      ['Sharing the planet', ['Environment and sustainability', 'Human rights']],
+    ],
+  },
+  {
+    list: { id: 'tl-british-english', subject: 'English', curriculum: 'British', name: 'British English' },
+    units: [[undefined, ['Reading comprehension', 'Spelling', 'Grammar and punctuation', 'Creative writing']]],
+  },
+];
+
+function seedTopics(createdAt: string): { lists: TopicList[]; topics: Topic[] } {
+  const lists: TopicList[] = [];
+  const topics: Topic[] = [];
+  for (const { list, units } of TOPIC_LISTS) {
+    lists.push({ ...list, createdAt });
+    let sort = 0;
+    for (const [unit, names] of units) {
+      for (const name of names) {
+        sort += 1;
+        topics.push({ id: `${list.id.replace(/^tl-/, 'tp-')}-${sort}`, listId: list.id, unit, name, sort, createdAt });
+      }
+    }
+  }
+  return { lists, topics };
+}
 
 /** Deterministic pseudo-random numbers so the demo looks the same on every reset. */
 function rng(seed: number) {
@@ -32,6 +93,7 @@ interface SeriesSpec {
   hour: number;
   minute?: number;
   location: Lesson['location'];
+  subject: string;
 }
 
 export function createSeed(now: Date = new Date()): DemoDB {
@@ -57,10 +119,24 @@ export function createSeed(now: Date = new Date()): DemoDB {
     version: DEMO_DB_VERSION,
     settings,
     profiles: [],
+    // Tutor colours come from TUTOR_COLORS in src/lib/tutor-colors.ts (slate, bronze, forest, plum).
     tutors: [
-      { id: 't-craig', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', hourlyPay: 300, subjects: ['IB', 'A-Level', 'IGCSE'], color: '#2b6cb0' },
-      { id: 't-sarah', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', hourlyPay: 200, subjects: ['IGCSE'], color: '#c05621' },
-      { id: 't-james', fullName: 'James Wilson', email: 'james@eliteeducation.me', hourlyPay: 220, subjects: ['IB', 'IGCSE'], color: '#2f855a' },
+      {
+        id: 't-craig', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', hourlyPay: 300, color: '#3F4A56',
+        subjects: ['Maths', 'Further Maths'], curricula: ['IB DP', 'A-Level', 'IGCSE'], phases: ['GCSE and IGCSE', 'Sixth Form and IB Diploma'],
+      },
+      {
+        id: 't-sarah', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', hourlyPay: 200, color: '#7A5C1E',
+        subjects: ['Maths', 'Chemistry', 'English Language'], curricula: ['IGCSE', 'GCSE', 'British'], phases: ['Lower Secondary', 'GCSE and IGCSE'],
+      },
+      {
+        id: 't-james', fullName: 'James Wilson', email: 'james@eliteeducation.me', hourlyPay: 220, color: '#3D6B4F',
+        subjects: ['Maths', 'Physics'], curricula: ['IB DP', 'IGCSE'], phases: ['GCSE and IGCSE', 'Sixth Form and IB Diploma'],
+      },
+      {
+        id: 't-nour', fullName: 'Nour Al Hashimi', email: 'nour@eliteeducation.me', hourlyPay: 220, color: '#5E4660',
+        subjects: ['Arabic', 'English', 'Primary (all subjects)'], curricula: ['British', 'UAE MoE', 'IB PYP', 'IB DP'], phases: ['Primary', 'Lower Secondary'],
+      },
     ],
     families: [
       { id: 'f-mansoori', name: 'Al Mansoori', parentName: 'Fatima Al Mansoori', email: 'fatima@example.com', phone: '+971 50 000 0001' },
@@ -69,18 +145,20 @@ export function createSeed(now: Date = new Date()): DemoDB {
       { id: 'f-haddad', name: 'Haddad', parentName: 'Rami Haddad', email: 'rami@example.com', phone: '+971 50 000 0004' },
     ],
     students: [
-      { id: 's-omar', familyId: 'f-mansoori', fullName: 'Omar Al Mansoori', curriculum: 'IB', syllabusId: 'ib-aa-hl', school: 'Dubai College', yearGroup: 'Year 12', currentGrade: '5', targetGrade: '7', examDate: '2027-05-04', notes: 'Strong algebra; rushes calculus. Prefers worked examples first.' },
-      { id: 's-layla', familyId: 'f-mansoori', fullName: 'Layla Al Mansoori', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1', school: 'Dubai College', yearGroup: 'Year 10', currentGrade: '7', targetGrade: '9' },
-      { id: 's-arjun', familyId: 'f-sharma', fullName: 'Arjun Sharma', curriculum: 'A-Level', syllabusId: 'alevel-maths', school: 'GEMS Wellington', yearGroup: 'Year 13', currentGrade: 'A', targetGrade: 'A*', examDate: '2027-06-03' },
-      { id: 's-charlotte', familyId: 'f-hughes', fullName: 'Charlotte Hughes', curriculum: 'IB', syllabusId: 'ib-ai-sl', school: 'Jumeirah English Speaking School', yearGroup: 'Year 12', currentGrade: '4', targetGrade: '6' },
-      { id: 's-yasmin', familyId: 'f-haddad', fullName: 'Yasmin Haddad', curriculum: 'IGCSE', syllabusId: 'igcse-0580', school: 'Repton Dubai', yearGroup: 'Year 11', currentGrade: '6', targetGrade: '8' },
-      { id: 's-karim', familyId: 'f-haddad', fullName: 'Karim Haddad', curriculum: 'IGCSE', syllabusId: 'igcse-0606', school: 'Repton Dubai', yearGroup: 'Year 11', currentGrade: 'B', targetGrade: 'A' },
+      { id: 's-omar', familyId: 'f-mansoori', fullName: 'Omar Al Mansoori', curriculum: 'IB', syllabusId: 'ib-aa-hl', phase: 'Sixth Form and IB Diploma', school: 'Dubai College', yearGroup: 'Year 12', currentGrade: '5', targetGrade: '7', examDate: '2027-05-04', notes: 'Strong algebra; rushes calculus. Prefers worked examples first.' },
+      { id: 's-layla', familyId: 'f-mansoori', fullName: 'Layla Al Mansoori', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1', phase: 'GCSE and IGCSE', school: 'Dubai College', yearGroup: 'Year 10', currentGrade: '7', targetGrade: '9' },
+      { id: 's-arjun', familyId: 'f-sharma', fullName: 'Arjun Sharma', curriculum: 'A-Level', syllabusId: 'alevel-maths', phase: 'Sixth Form and IB Diploma', school: 'GEMS Wellington', yearGroup: 'Year 13', currentGrade: 'A', targetGrade: 'A*', examDate: '2027-06-03' },
+      { id: 's-charlotte', familyId: 'f-hughes', fullName: 'Charlotte Hughes', curriculum: 'IB', syllabusId: 'ib-ai-sl', phase: 'Sixth Form and IB Diploma', school: 'Jumeirah English Speaking School', yearGroup: 'Year 12', currentGrade: '4', targetGrade: '6' },
+      { id: 's-yasmin', familyId: 'f-haddad', fullName: 'Yasmin Haddad', curriculum: 'IGCSE', syllabusId: 'igcse-0580', phase: 'GCSE and IGCSE', school: 'Repton Dubai', yearGroup: 'Year 11', currentGrade: '6', targetGrade: '8' },
+      { id: 's-karim', familyId: 'f-haddad', fullName: 'Karim Haddad', curriculum: 'IGCSE', syllabusId: 'igcse-0606', phase: 'GCSE and IGCSE', school: 'Repton Dubai', yearGroup: 'Year 11', currentGrade: 'B', targetGrade: 'A' },
+      { id: 's-noor', familyId: 'f-haddad', fullName: 'Noor Haddad', phase: 'Primary', school: 'Repton Dubai', yearGroup: 'Year 4', notes: 'An avid reader. Responds well to short, varied activities.' },
     ],
     services: [
-      { id: 'svc-ib', name: 'IB Maths 1:1', durationMin: 60, rate: 450 },
-      { id: 'svc-igcse', name: 'IGCSE Maths 1:1', durationMin: 60, rate: 350 },
-      { id: 'svc-alevel', name: 'A-Level Maths 1:1', durationMin: 90, rate: 550 },
-      { id: 'svc-group', name: 'IGCSE Small Group', durationMin: 90, rate: 250 },
+      { id: 'svc-ib', name: 'IB Diploma 1:1', durationMin: 60, rate: 450, phase: 'Sixth Form and IB Diploma' },
+      { id: 'svc-igcse', name: 'IGCSE and GCSE 1:1', durationMin: 60, rate: 350, phase: 'GCSE and IGCSE' },
+      { id: 'svc-alevel', name: 'A-Level 1:1', durationMin: 90, rate: 550, phase: 'Sixth Form and IB Diploma' },
+      { id: 'svc-group', name: 'IGCSE Small Group', durationMin: 90, rate: 250, phase: 'GCSE and IGCSE' },
+      { id: 'svc-primary', name: 'Primary 1:1', durationMin: 45, rate: 300, phase: 'Primary' },
     ],
     lessons: [],
     notes: [],
@@ -105,7 +183,43 @@ export function createSeed(now: Date = new Date()): DemoDB {
     reportCycles: [],
     reports: [],
     expenses: [],
+    enrolments: [],
+    topicLists: [],
+    topics: [],
+    outbox: [],
   };
+
+  // Subjects: each student's Maths enrolment from their legacy syllabus, plus their other subjects.
+  const shared = seedTopics(addDays(now, -120).toISOString());
+  db.topicLists = shared.lists;
+  db.topics = shared.topics;
+  const enrolment = (id: string, studentId: string, e: Omit<Enrolment, 'id' | 'studentId' | 'active'>): Enrolment => ({
+    id, studentId, active: true, createdAt: addDays(now, -120).toISOString(), ...e,
+  });
+  const maths = (studentId: string, tutorId: string): Enrolment => {
+    const st = db.students.find((x) => x.id === studentId)!;
+    const syl = SYLLABUSES.find((x) => x.id === st.syllabusId)!;
+    return enrolment(`enr-${studentId.slice(2)}-maths`, studentId, {
+      subject: syl.subject ?? 'Maths', curriculum: syl.curriculum, level: syl.level, examBoard: syl.examBoard, syllabusId: syl.id, tutorId,
+    });
+  };
+  db.enrolments = [
+    maths('s-omar', 't-craig'),
+    enrolment('enr-omar-arabic', 's-omar', { subject: 'Arabic', curriculum: 'IB DP', level: 'HL', tutorId: 't-nour', topicListId: 'tl-ibdp-arabic-hl' }),
+    maths('s-layla', 't-sarah'),
+    enrolment('enr-layla-chemistry', 's-layla', { subject: 'Chemistry', curriculum: 'IGCSE', examBoard: 'Cambridge', tutorId: 't-sarah', topicListId: 'tl-igcse-chemistry' }),
+    maths('s-arjun', 't-craig'),
+    maths('s-charlotte', 't-james'),
+    maths('s-yasmin', 't-sarah'),
+    enrolment('enr-yasmin-english-literature', 's-yasmin', {
+      subject: 'English Literature', curriculum: 'IGCSE', examBoard: 'Cambridge', tutorId: 't-sarah', topicListId: 'tl-igcse-english-literature',
+    }),
+    maths('s-karim', 't-sarah'),
+    enrolment('enr-noor-english', 's-noor', { subject: 'English', curriculum: 'British', tutorId: 't-nour', topicListId: 'tl-british-english' }),
+    // No list yet: tutors add the first topics from the lesson screen.
+    enrolment('enr-noor-maths', 's-noor', { subject: 'Maths', curriculum: 'British', tutorId: 't-nour' }),
+  ];
+  const lookup = buildTopicLookup(SYLLABUSES, db.topicLists, db.topics);
 
   const profiles: Profile[] = [
     { id: 'u-admin', role: 'admin', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', tutorId: 't-craig' },
@@ -129,12 +243,16 @@ export function createSeed(now: Date = new Date()): DemoDB {
   });
 
   const series: SeriesSpec[] = [
-    { key: 'omar', tutorId: 't-craig', studentIds: ['s-omar'], serviceId: 'svc-ib', weekday: 'today', hour: 18, location: 'online' },
-    { key: 'charlotte', tutorId: 't-james', studentIds: ['s-charlotte'], serviceId: 'svc-ib', weekday: 'today', hour: 16, location: 'online' },
-    { key: 'layla', tutorId: 't-sarah', studentIds: ['s-layla'], serviceId: 'svc-igcse', weekday: 1, hour: 17, location: 'in-person' },
-    { key: 'arjun', tutorId: 't-craig', studentIds: ['s-arjun'], serviceId: 'svc-alevel', weekday: 2, hour: 17, minute: 30, location: 'online' },
-    { key: 'haddad', tutorId: 't-sarah', studentIds: ['s-yasmin', 's-karim'], serviceId: 'svc-group', weekday: 5, hour: 10, location: 'in-person' },
-    { key: 'layla-2', tutorId: 't-sarah', studentIds: ['s-layla'], serviceId: 'svc-igcse', weekday: 'today', hour: 15, location: 'in-person' },
+    { key: 'omar', tutorId: 't-craig', studentIds: ['s-omar'], serviceId: 'svc-ib', weekday: 'today', hour: 18, location: 'online', subject: 'Maths' },
+    { key: 'charlotte', tutorId: 't-james', studentIds: ['s-charlotte'], serviceId: 'svc-ib', weekday: 'today', hour: 16, location: 'online', subject: 'Maths' },
+    { key: 'layla', tutorId: 't-sarah', studentIds: ['s-layla'], serviceId: 'svc-igcse', weekday: 1, hour: 17, location: 'in-person', subject: 'Maths' },
+    { key: 'arjun', tutorId: 't-craig', studentIds: ['s-arjun'], serviceId: 'svc-alevel', weekday: 2, hour: 17, minute: 30, location: 'online', subject: 'Maths' },
+    { key: 'haddad', tutorId: 't-sarah', studentIds: ['s-yasmin', 's-karim'], serviceId: 'svc-group', weekday: 5, hour: 10, location: 'in-person', subject: 'Maths' },
+    { key: 'layla-chem', tutorId: 't-sarah', studentIds: ['s-layla'], serviceId: 'svc-igcse', weekday: 3, hour: 16, location: 'in-person', subject: 'Chemistry' },
+    { key: 'yasmin-lit', tutorId: 't-sarah', studentIds: ['s-yasmin'], serviceId: 'svc-igcse', weekday: 4, hour: 15, location: 'online', subject: 'English Literature' },
+    { key: 'omar-arabic', tutorId: 't-nour', studentIds: ['s-omar'], serviceId: 'svc-ib', weekday: 0, hour: 16, location: 'online', subject: 'Arabic' },
+    { key: 'noor-english', tutorId: 't-nour', studentIds: ['s-noor'], serviceId: 'svc-primary', weekday: 0, hour: 14, minute: 30, location: 'in-person', subject: 'English' },
+    { key: 'noor-maths', tutorId: 't-nour', studentIds: ['s-noor'], serviceId: 'svc-primary', weekday: 2, hour: 14, minute: 30, location: 'in-person', subject: 'Maths' },
   ];
 
   const weekStart = startOfWeek(now);
@@ -153,6 +271,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
         tutorId: spec.tutorId,
         studentIds: spec.studentIds,
         serviceId: spec.serviceId,
+        subject: spec.subject,
         start: start.toISOString(),
         end: addMinutes(start, service.durationMin).toISOString(),
         location: spec.location,
@@ -164,6 +283,27 @@ export function createSeed(now: Date = new Date()): DemoDB {
       db.lessons.push(lesson);
     }
   }
+  // Layla's Chemistry lesson that began about two hours ago and is waiting to be recorded. Anything of Sarah's or
+  // Layla's that would overlap it is dropped from the series.
+  const chemStart = new Date(now.getTime() - 2 * 3_600_000);
+  chemStart.setMinutes(Math.floor(chemStart.getMinutes() / 15) * 15, 0, 0);
+  const chemEnd = addMinutes(chemStart, 60);
+  const chemNow: Lesson = {
+    id: 'les-layla-chem-now',
+    tutorId: 't-sarah',
+    studentIds: ['s-layla'],
+    serviceId: 'svc-igcse',
+    subject: 'Chemistry',
+    start: chemStart.toISOString(),
+    end: chemEnd.toISOString(),
+    location: 'in-person',
+    address: 'Elite Education Centre, Al Barsha',
+    status: 'scheduled',
+  };
+  db.lessons = db.lessons.filter(
+    (l) =>
+      !((l.tutorId === 't-sarah' || l.studentIds.includes('s-layla')) && new Date(l.start) < chemEnd && new Date(l.end) > chemStart),
+  );
   db.lessons.sort((a, b) => a.start.localeCompare(b.start));
 
   // Record past lessons (anything that ended before today) as taught, with notes, ratings and homework.
@@ -198,25 +338,34 @@ export function createSeed(now: Date = new Date()): DemoDB {
     const topicIds: string[] = [];
     for (const studentId of lesson.studentIds) {
       attendance[studentId] = r > 0.93 ? 'late' : 'present';
-      const student = db.students.find((s) => s.id === studentId)!;
-      const syllabus = getSyllabus(student.syllabusId)!;
-      const all = syllabus.units.flatMap((u) => u.topics);
-      const cursor = topicCursor.get(studentId) ?? Math.floor(random() * 4);
-      // Step through the syllabus so ratings spread across every unit.
+      // The enrolment this lesson counts for: its subject, or the student's only subject (Karim in the group).
+      const active = activeEnrolments(db.enrolments, studentId);
+      const enr = enrolmentFor(db.enrolments, studentId, lesson.subject) ?? (active.length === 1 ? active[0] : undefined);
+      const all = enr ? lookup.treeFor(enr).units.flatMap((u) => u.topics) : [];
+      const cursor = topicCursor.get(`${studentId}|${enr?.id}`) ?? Math.floor(random() * 4);
+      topicCursor.set(`${studentId}|${enr?.id}`, cursor + 5);
+      const due = addDays(new Date(lesson.start), 6);
+      if (!all.length) {
+        db.homework.push({
+          id: `hw-${lesson.id}-${studentId}`, studentId, lessonId: lesson.id, title: 'Ten minutes of times-tables practice each day',
+          dueDate: toDateKey(due), done: due < addDays(now, -2) || random() > 0.6,
+        });
+        continue;
+      }
+      // Step through the topic tree so ratings spread across every unit.
       const picked = [all[cursor % all.length], all[(cursor + 1) % all.length]];
-      topicCursor.set(studentId, cursor + 5);
       for (const topic of picked) {
         if (!topicIds.includes(topic.id)) topicIds.push(topic.id);
         const base = studentId === 's-charlotte' ? 2 : studentId === 's-omar' ? 3 : 3.5;
         const rating = Math.max(1, Math.min(5, Math.round(base + random() * 2 - 0.5))) as TopicRating['rating'];
-        db.ratings.push({ id: `rat-${lesson.id}-${topic.id}`, studentId, topicId: topic.id, lessonId: lesson.id, rating, ratedAt: lesson.start });
+        if (db.ratings.some((x) => x.id === `rat-${lesson.id}-${topic.id}-${studentId}`)) continue;
+        db.ratings.push({ id: `rat-${lesson.id}-${topic.id}-${studentId}`, studentId, topicId: topic.id, lessonId: lesson.id, rating, ratedAt: lesson.start });
       }
-      const due = addDays(new Date(lesson.start), 6);
       db.homework.push({
         id: `hw-${lesson.id}-${studentId}`,
         studentId,
         lessonId: lesson.id,
-        title: `Exercise set: ${picked[0].name}`,
+        title: `Practice questions: ${picked[0].name}`,
         dueDate: toDateKey(due),
         done: due < addDays(now, -2) || random() > 0.6,
       });
@@ -225,14 +374,20 @@ export function createSeed(now: Date = new Date()): DemoDB {
     const t2 = topicIds[1] ?? topicIds[0];
     db.notes.push({
       lessonId: lesson.id,
-      summary: SUMMARIES[Math.floor(r * SUMMARIES.length)].replace('{t1}', topicName(t1)).replace('{t2}', topicName(t2)),
-      privateNote: r > 0.7 ? 'Parent asked about extra sessions before mocks.' : undefined,
+      summary: t1
+        ? SUMMARIES[Math.floor(r * SUMMARIES.length)].replace('{t1}', lookup.name(t1)).replace('{t2}', lookup.name(t2))
+        : OPEN_SUMMARIES[Math.floor(r * OPEN_SUMMARIES.length)],
+      privateNote: r > 0.7 ? 'The parent asked about additional sessions before the mock examinations.' : undefined,
       topicIds,
       attendance,
       createdAt: lesson.end,
     });
     applyCharges(db, lesson, attendance);
   }
+
+  // Added after the history is recorded, so it stays waiting for its notes.
+  db.lessons.push(chemNow);
+  db.lessons.sort((a, b) => a.start.localeCompare(b.start));
 
   // Charlotte is drifting: two missed lessons and most homework not done, so she shows up as "worth a conversation".
   db.homework.filter((h) => h.studentId === 's-charlotte').forEach((h, i) => (h.done = i % 3 === 0));
@@ -292,31 +447,32 @@ function seedOperations(db: DemoDB, now: Date) {
   const sophie = ops.saveOpportunity(db, admin, {
     title: 'Year 12 A-Level Maths — Hugo',
     description: 'Referred by an existing family. Hugo is predicted an A and wants an A*. Pure and Statistics focus.',
-    curriculum: 'A-Level', syllabusId: 'alevel-maths', enquiryId: 'enq-3', schedule: 'Tuesdays 5–6:30pm, from next week',
+    curriculum: 'A-Level', syllabusId: 'alevel-maths', subject: 'Maths', phase: 'Sixth Form and IB Diploma', enquiryId: 'enq-3',
+    schedule: 'Tuesdays 5–6:30pm, from next week',
     location: 'Online', payRate: 260, closesOn: toDateKey(addDays(now, 4)), visibility: 'all', invitedTutorIds: [],
   }, daysAgo(2));
-  ops.placeBid(db, as('t-james'), sophie.id, 'I’ve taught A-Level Pure and Stats for six years; four of last year’s students got A*. Tuesday evenings are free for me.', 'Tuesdays after 4pm', daysAgo(1));
-  ops.placeBid(db, as('t-sarah'), sophie.id, 'Happy to take Hugo on — I’ve been building up my A-Level hours and have strong Stats experience.', 'Tue/Thu evenings', daysAgo(1));
+  ops.placeBid(db, as('t-james'), sophie.id, 'I have taught A-Level Pure Mathematics and Statistics for six years, and four of last year’s students achieved an A*. I am available on Tuesday evenings.', 'Tuesdays after 4pm', daysAgo(1));
+  ops.placeBid(db, as('t-sarah'), sophie.id, 'I would be delighted to teach Hugo. I have been building my A-Level hours and have particular strength in Statistics.', 'Tuesday and Thursday evenings', daysAgo(1));
 
   ops.saveOpportunity(db, admin, {
-    title: 'IB Maths AA HL — Year 13 IA support',
-    description: 'Six sessions to guide an Internal Assessment on modelling. Deadline mid-November.',
-    curriculum: 'IB', syllabusId: 'ib-aa-hl', enquiryId: 'enq-2', schedule: 'Weekends, flexible',
-    location: 'Online', payRate: 280, closesOn: toDateKey(addDays(now, 7)), visibility: 'all', invitedTutorIds: [],
+    title: 'IGCSE Physics — Year 10',
+    description: 'Weekly lessons for a conscientious Year 10 student who would like to strengthen electricity and forces ahead of the mock examinations.',
+    curriculum: 'IGCSE', subject: 'Physics', phase: 'GCSE and IGCSE', enquiryId: 'enq-5', schedule: 'Wednesdays after school',
+    location: 'Online', payRate: 220, closesOn: toDateKey(addDays(now, 7)), visibility: 'all', invitedTutorIds: [],
   }, daysAgo(1));
 
   const filled = ops.saveOpportunity(db, admin, {
     title: 'IGCSE small group — Haddad twins',
-    curriculum: 'IGCSE', schedule: 'Saturdays 10–11:30am', location: 'Al Barsha centre', payRate: 200, visibility: 'all', invitedTutorIds: [],
+    curriculum: 'IGCSE', subject: 'Maths', phase: 'GCSE and IGCSE', schedule: 'Saturdays 10–11:30am', location: 'Al Barsha centre', payRate: 200, visibility: 'all', invitedTutorIds: [],
   }, daysAgo(40));
-  ops.placeBid(db, as('t-sarah'), filled.id, 'I love group teaching and I’m at the centre on Saturdays.', 'Saturday mornings', daysAgo(39));
+  ops.placeBid(db, as('t-sarah'), filled.id, 'I very much enjoy group teaching and am at the centre on Saturdays.', 'Saturday mornings', daysAgo(39));
   ops.awardOpportunity(db, admin, db.bids.find((b) => b.opportunityId === filled.id)!.id, daysAgo(38));
 
   // Applications to join.
   db.applications.push(
-    { id: 'app-1', createdAt: iso(daysAgo(1)), fullName: 'Hannah Clarke', email: 'hannah@example.com', phone: '+971 52 000 0011', curricula: ['IB', 'A-Level'], subjects: 'Maths, Further Maths', experience: 'Head of Maths at a British international school, 9 years. IB examiner for Paper 2.', qualifications: 'MSc Mathematics, PGCE', availability: 'Weekday evenings, Saturdays', status: 'applied' },
-    { id: 'app-2', createdAt: iso(daysAgo(6)), fullName: 'Ravi Menon', email: 'ravi@example.com', curricula: ['IGCSE'], subjects: 'Maths, Additional Maths', experience: '3 years private tutoring, engineering graduate.', qualifications: 'BEng', availability: 'After 5pm', status: 'interview', notes: 'Strong on 0606. Interview Thursday 4pm.' },
-    { id: 'app-3', createdAt: iso(daysAgo(20)), fullName: 'Lucy Grant', email: 'lucy@example.com', curricula: ['IGCSE', 'IB'], subjects: 'Maths', experience: 'Newly qualified teacher.', availability: 'Weekends only', status: 'rejected', notes: 'Not enough availability for now — revisit in spring.' },
+    { id: 'app-1', createdAt: iso(daysAgo(1)), fullName: 'Hannah Clarke', email: 'hannah@example.com', phone: '+971 52 000 0011', curricula: ['IB DP', 'A-Level'], subjects: 'Chemistry, Biology', phases: ['Sixth Form and IB Diploma'], experience: 'Head of Science at a British international school for nine years, and an IB Chemistry examiner.', qualifications: 'MSc Chemistry, PGCE', availability: 'Weekday evenings, Saturdays', status: 'applied' },
+    { id: 'app-2', createdAt: iso(daysAgo(6)), fullName: 'Ravi Menon', email: 'ravi@example.com', curricula: ['IGCSE'], subjects: 'Maths, Additional Maths', phases: ['GCSE and IGCSE'], experience: 'Three years of private tutoring; engineering graduate.', qualifications: 'BEng', availability: 'After 5pm', status: 'interview', notes: 'Strong on 0606. Interview on Thursday at 4pm.' },
+    { id: 'app-3', createdAt: iso(daysAgo(20)), fullName: 'Lucy Grant', email: 'lucy@example.com', curricula: ['IGCSE', 'IB MYP'], subjects: 'English Literature', phases: ['Lower Secondary', 'GCSE and IGCSE'], experience: 'Newly qualified teacher of English.', availability: 'Weekends only', status: 'rejected', notes: 'Not enough availability at present; to be revisited in the spring.' },
   );
 
   // Bank details (Sarah has filled hers in; James hasn't yet).
@@ -344,7 +500,7 @@ function seedOperations(db: DemoDB, now: Date) {
 
   // A report round in progress: some written, one waiting for approval.
   ops.openReportCycle(db, admin, 'Autumn half-term 2026', toDateKey(daysAgo(45)), toDateKey(addDays(now, 10)), daysAgo(3));
-  const layla = db.reports.find((r) => r.studentId === 's-layla')!;
+  const layla = db.reports.find((r) => r.studentId === 's-layla' && r.subject === 'Maths')!;
   ops.saveReport(db, admin, layla.id, {
     attainment: '7', effort: 5, progress: 4,
     strengths: 'Layla is now confident with algebraic manipulation and simultaneous equations, and her written working is clear and well organised.',
@@ -374,6 +530,7 @@ function seedEngagement(db: DemoDB, now: Date) {
     ['t-sarah', [0, 1, 3, 4], '14:00', '19:00'],
     ['t-sarah', [5], '09:00', '13:00'],
     ['t-james', [0, 2, 3, 4], '15:00', '19:00'],
+    ['t-nour', [0, 1, 2, 3], '14:00', '19:00'],
   ];
   for (const [tutorId, days, start, end] of blocks) {
     for (const weekday of days) db.availability.push({ id: `av-${tutorId}-${weekday}-${start}`, tutorId, weekday, start, end });
@@ -390,11 +547,11 @@ function seedEngagement(db: DemoDB, now: Date) {
   // A prospect who signed up in the app, plus enquiries at different stages.
   db.families.push({ id: 'f-rahman', name: 'Rahman', parentName: 'Rita Rahman', email: 'rita@example.com', phone: '+971 50 000 0005', status: 'prospect', createdAt: iso(hoursAgo(5)) });
   db.enquiries.push(
-    { id: 'enq-1', createdAt: iso(hoursAgo(5)), status: 'new', source: 'app', parentName: 'Rita Rahman', email: 'rita@example.com', phone: '+971 50 000 0005', studentName: 'Zara', curriculum: 'IGCSE', yearGroup: 'Year 10', message: 'Zara is predicted a 6 and wants an 8. Struggling with algebra and graphs.', preferredTimes: 'Weekday evenings', familyId: 'f-rahman' },
-    { id: 'enq-2', createdAt: iso(hoursAgo(30)), status: 'new', source: 'website', parentName: 'Daniel Okafor', email: 'daniel@example.com', studentName: 'Ada', curriculum: 'IB', yearGroup: 'Year 13', message: 'IA help for Maths AA HL, due in November.', preferredTimes: 'Weekends' },
-    { id: 'enq-3', createdAt: iso(hoursAgo(72)), status: 'contacted', source: 'referral', parentName: 'Sophie Laurent', phone: '+971 55 000 0007', studentName: 'Hugo', curriculum: 'A-Level', yearGroup: 'Year 12', message: 'Referred by the Sharmas.', nextActionAt: toDateKey(addDays(now, 1)), notes: 'Called — wants Tuesday evenings. Send trial options.' },
-    { id: 'enq-4', createdAt: iso(hoursAgo(24 * 9)), status: 'enrolled', source: 'website', parentName: 'Rami Haddad', email: 'rami@example.com', studentName: 'Yasmin & Karim', curriculum: 'IGCSE', familyId: 'f-haddad' },
-    { id: 'enq-5', createdAt: iso(hoursAgo(24 * 14)), status: 'lost', source: 'phone', parentName: 'Mark Evans', phone: '+971 50 000 0009', studentName: 'Lily', curriculum: 'IGCSE', lostReason: 'Went with a school-based tutor' },
+    { id: 'enq-1', createdAt: iso(hoursAgo(5)), status: 'new', source: 'app', parentName: 'Rita Rahman', email: 'rita@example.com', phone: '+971 50 000 0005', studentName: 'Zara', curriculum: 'IGCSE', subject: 'English Language', phase: 'GCSE and IGCSE', yearGroup: 'Year 10', message: 'Zara is predicted a 6 and is aiming for an 8. She would like support with essay structure and timed writing.', preferredTimes: 'Weekday evenings', familyId: 'f-rahman' },
+    { id: 'enq-2', createdAt: iso(hoursAgo(30)), status: 'new', source: 'website', parentName: 'Daniel Okafor', email: 'daniel@example.com', studentName: 'Ada', curriculum: 'IB DP', subject: 'Maths', phase: 'Sixth Form and IB Diploma', yearGroup: 'Year 13', message: 'Ada would welcome guidance on her Mathematics Internal Assessment, which is due in November.', preferredTimes: 'Weekends' },
+    { id: 'enq-3', createdAt: iso(hoursAgo(72)), status: 'contacted', source: 'referral', parentName: 'Sophie Laurent', phone: '+971 55 000 0007', studentName: 'Hugo', curriculum: 'A-Level', subject: 'Maths', phase: 'Sixth Form and IB Diploma', yearGroup: 'Year 12', message: 'Referred by the Sharma family.', nextActionAt: toDateKey(addDays(now, 1)), notes: 'Spoke by telephone; Tuesday evenings preferred. Send consultation options.' },
+    { id: 'enq-4', createdAt: iso(hoursAgo(24 * 9)), status: 'enrolled', source: 'website', parentName: 'Rami Haddad', email: 'rami@example.com', studentName: 'Yasmin and Karim', curriculum: 'IGCSE', subject: 'Maths', phase: 'GCSE and IGCSE', familyId: 'f-haddad' },
+    { id: 'enq-5', createdAt: iso(hoursAgo(24 * 14)), status: 'lost', source: 'phone', parentName: 'Mark Evans', phone: '+971 50 000 0009', studentName: 'Lily', curriculum: 'IGCSE', subject: 'Physics', phase: 'GCSE and IGCSE', yearGroup: 'Year 10', lostReason: 'Chose a school-based tutor' },
   );
 
   // Fatima wants an extra lesson for Omar before his mocks.
@@ -405,23 +562,23 @@ function seedEngagement(db: DemoDB, now: Date) {
     start.setHours(17, 0, 0, 0);
     db.requests.push({
       id: 'req-1', createdAt: iso(hoursAgo(3)), familyId: 'f-mansoori', studentId: 's-omar', kind: 'new-lesson', tutorId: 't-craig',
-      serviceId: 'svc-ib', start: iso(start), end: iso(new Date(start.getTime() + 3_600_000)), note: 'Extra session before his mocks please', status: 'pending',
+      serviceId: 'svc-ib', start: iso(start), end: iso(new Date(start.getTime() + 3_600_000)), subject: 'Maths', note: 'An additional session before his mock examinations, if possible.', status: 'pending',
     });
   }
 
   // A family conversation and an announcement.
   const msgs: [number, string, string, Message['senderRole'], string][] = [
-    [50, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Hi Craig, Omar has his mock exams in three weeks. Could we focus on calculus until then?'],
-    [49, 'u-admin', "Craig O'Brien", 'admin', 'Absolutely. I’ll plan the next few sessions around differentiation and integration, with timed past-paper questions.'],
-    [2, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Thank you! I’ve also requested an extra lesson, if there’s space.'],
+    [50, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Dear Craig, Omar has his mock examinations in three weeks. Could we focus on calculus until then?'],
+    [49, 'u-admin', "Craig O'Brien", 'admin', 'Certainly. I will plan the next few sessions around differentiation and integration, with timed past-paper questions.'],
+    [2, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Thank you. I have also requested an additional lesson, should there be availability.'],
   ];
   for (const [h, senderId, senderName, senderRole, body] of msgs) {
     db.messages.push({ id: `msg-${h}`, familyId: 'f-mansoori', senderId, senderName, senderRole, body, createdAt: iso(hoursAgo(h)) });
   }
   db.reads['u-parent'] = { 'f-mansoori': iso(hoursAgo(2)) };
-  db.messages.push({ id: 'msg-h1', familyId: 'f-haddad', senderId: 'u-tutor', senderName: 'Sarah Khan', senderRole: 'tutor', body: 'Great group session today. Yasmin and Karim both nailed simultaneous equations.', createdAt: iso(hoursAgo(20)) });
+  db.messages.push({ id: 'msg-h1', familyId: 'f-haddad', senderId: 'u-tutor', senderName: 'Sarah Khan', senderRole: 'tutor', body: 'A productive group session today. Yasmin and Karim are now both confident with simultaneous equations.', createdAt: iso(hoursAgo(20)) });
   db.announcements.push({
     id: 'ann-1', createdAt: iso(hoursAgo(26)), authorName: "Craig O'Brien", audience: 'everyone',
-    title: 'Mock exam season', body: 'Mocks start soon for most schools. Ask your tutor for a personalised revision plan, and request extra sessions in the app.',
+    title: 'Mock examination season', body: 'Mock examinations begin shortly at most schools. Please ask your tutor for a personalised revision plan; additional sessions may be requested in the app.',
   });
 }

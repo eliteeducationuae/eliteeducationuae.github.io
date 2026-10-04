@@ -6,6 +6,7 @@ import { useLessons, useLookup, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, tutorEarnings } from '@/domain/billing';
 import { formatMonth, startOfMonth } from '@/domain/dates';
+import { plural } from '@/lib/id';
 import { byStart } from '@/domain/scheduling';
 
 export default function TutorEarnings() {
@@ -29,16 +30,16 @@ export default function TutorEarnings() {
       <Row style={{ justifyContent: 'space-between' }}>
         <Button title="Previous" icon="back" size="sm" variant="secondary" onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} />
         <Txt variant="h2">{formatMonth(month)}</Txt>
-        <Button title="Next" size="sm" variant="secondary" onPress={() => setMonth(next)} />
+        <Button title="Next" iconAfter="forward" size="sm" variant="secondary" onPress={() => setMonth(next)} />
       </Row>
       <StatGrid>
         <Stat label="Earned" value={formatAED(e.amount)} tone="success" />
-        <Stat label="Hours" value={String(e.hours)} hint={`${e.lessons} lessons`} />
+        <Stat label="Hours" value={String(e.hours)} hint={plural(e.lessons, 'lesson')} />
         <Stat label="Still to teach" value={String(pending.length)} hint="lessons this month" />
       </StatGrid>
       <Txt variant="small">Paid at {formatAED(tutor.hourlyPay)} per hour.</Txt>
       <Section title="Lessons taught">
-        {paid.length ? paid.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="tutor" showDate />) : <EmptyState title="No lessons taught yet this month" />}
+        {paid.length ? paid.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="tutor" showDate />) : <EmptyState title="No lessons taught yet this month" message="Completed lessons will appear here as soon as they are recorded." />}
       </Section>
     </Screen>
   );

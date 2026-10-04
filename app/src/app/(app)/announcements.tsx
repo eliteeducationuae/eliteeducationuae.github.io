@@ -21,7 +21,7 @@ export default function Announcements() {
         {list.isLoading ? (
           <Loading />
         ) : (list.data ?? []).length === 0 ? (
-          <EmptyState icon="sparkle" title="No announcements yet" />
+          <EmptyState icon="sparkle" title="No announcements yet" message="News from Elite Education will appear here." />
         ) : (
           (list.data ?? []).map((a) => (
             <Card key={a.id}>
@@ -57,7 +57,7 @@ function Compose() {
       <Field label="Message" value={body} onChangeText={setBody} multiline />
       {done ? (
         <Banner tone="success" icon="check">
-          Sent. Everyone in the audience gets a notification and an email.
+          Sent. Everyone in the audience will receive a notification and an email.
         </Banner>
       ) : null}
       <ErrorNote error={post.error} />

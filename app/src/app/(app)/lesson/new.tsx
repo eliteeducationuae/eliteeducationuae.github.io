@@ -2,12 +2,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { CataloguePicker } from '@/components/catalogue-picker';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useClosures, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
+import { useAction, useClosures, useEnrolments, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { SUBJECTS } from '@/domain/catalogue';
 import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey } from '@/domain/dates';
+import { defaultSubject, enrolmentFor, sameSubject, subjectsFor } from '@/domain/enrolments';
 import { expandWeeklySkipping, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
 import { uuid } from '@/lib/id';
@@ -20,6 +23,7 @@ export default function NewLesson() {
   const students = useStudents();
   const tutors = useTutors();
   const services = useServices();
+  const enrolments = useEnrolments();
   const create = useAction(source.createLessons);
 
   const initial = params.date ? new Date(params.date) : new Date();
@@ -33,8 +37,23 @@ export default function NewLesson() {
   const [repeat, setRepeat] = useState<Repeat>('weekly');
   const [count, setCount] = useState('10');
   const [query, setQuery] = useState('');
+  // Until someone picks a subject, it follows the students (and the service); after that it is theirs.
+  const [pickedSubject, setPickedSubject] = useState<string | undefined>();
+  const [subjectPicked, setSubjectPicked] = useState(false);
+  const [otherOpen, setOtherOpen] = useState(false);
 
   const service = serviceId ? lookup.service(serviceId) : undefined;
+  const allEnrolments = enrolments.data ?? [];
+  const enrolled = subjectsFor(allEnrolments, studentIds);
+  const subject = subjectPicked ? pickedSubject : defaultSubject(allEnrolments, studentIds, service);
+  const enrolment = studentIds[0] && subject ? enrolmentFor(allEnrolments, studentIds[0], subject) : undefined;
+  // The tutor already teaching this subject is the sensible default; an explicit choice always wins.
+  const chosenTutorId = tutorId ?? enrolment?.tutorId ?? null;
+  const showOther = otherOpen || (!!subject && !enrolled.some((x) => sameSubject(x, subject)));
+  const pickSubject = (value: string | undefined) => {
+    setPickedSubject(value);
+    setSubjectPicked(true);
+  };
   const start = fromDateAndTime(date, time);
   const n = repeat === 'once' ? 1 : Math.max(1, Math.min(52, parseInt(count, 10) || 1));
   const closures = useClosures();
@@ -46,11 +65,11 @@ export default function NewLesson() {
   const rangeStart = slots.length ? startOfDay(slots[0].start) : startOfDay(initial);
   const rangeEnd = addDays(slots.length ? startOfDay(slots[slots.length - 1].end) : rangeStart, 1);
   const existing = useLessons(rangeStart, rangeEnd);
-  const clashes = tutorId
-    ? slots.flatMap((slot) => findClashes({ ...slot, tutorId, studentIds }, existing.data ?? []).map((c) => ({ slot, c })))
+  const clashes = chosenTutorId
+    ? slots.flatMap((slot) => findClashes({ ...slot, tutorId: chosenTutorId, studentIds }, existing.data ?? []).map((c) => ({ slot, c })))
     : [];
 
-  const ready = studentIds.length > 0 && tutorId && service && start;
+  const ready = studentIds.length > 0 && chosenTutorId && service && start;
   const toggleStudent = (id: string) => setStudentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   async function submit() {
@@ -58,8 +77,9 @@ export default function NewLesson() {
     const seriesId = n > 1 ? uuid() : undefined;
     await create.mutateAsync([
       slots.map((s) => ({
-        tutorId: tutorId!,
+        tutorId: chosenTutorId!,
         studentIds,
+        subject: subject?.trim() || undefined,
         serviceId: service!.id,
         start: s.start.toISOString(),
         end: s.end.toISOString(),
@@ -98,10 +118,33 @@ export default function NewLesson() {
         {studentIds.length > 1 ? <Txt variant="small">Group lesson: each student is charged the service rate.</Txt> : null}
       </Section>
 
+      {studentIds.length ? (
+        <Section title="Subject">
+          <Row gap={Spacing.one} wrap>
+            {enrolled.map((x) => (
+              <Chip
+                key={x}
+                label={x}
+                selected={!showOther && sameSubject(subject, x)}
+                onPress={() => {
+                  setOtherOpen(false);
+                  pickSubject(x);
+                }}
+              />
+            ))}
+            <Chip label="Other subject…" selected={showOther} onPress={() => setOtherOpen(true)} />
+          </Row>
+          {!enrolled.length ? <Txt variant="small">No subjects are recorded for this student yet. Please choose one below.</Txt> : null}
+          {showOther ? (
+            <CataloguePicker label="Other subject" options={SUBJECTS} value={subject} onChange={pickSubject} otherPlaceholder="For example, Latin" collapsed={10} />
+          ) : null}
+        </Section>
+      ) : null}
+
       <Section title="Tutor">
         <Row gap={Spacing.one} wrap>
           {(tutors.data ?? []).map((t) => (
-            <Chip key={t.id} label={t.fullName} selected={tutorId === t.id} onPress={() => setTutorId(t.id)} />
+            <Chip key={t.id} label={t.fullName} selected={chosenTutorId === t.id} onPress={() => setTutorId(t.id)} />
           ))}
         </Row>
       </Section>
@@ -155,7 +198,7 @@ export default function NewLesson() {
       </Section>
 
       {slots.length > 0 ? (
-        <Section title={`Preview · ${slots.length} lesson${slots.length === 1 ? '' : 's'}`}>
+        <Section title={`Preview · ${subject ? `${subject} · ` : ''}${slots.length} lesson${slots.length === 1 ? '' : 's'}`}>
           {skipped.length ? (
             <Banner icon="sun">
               Skipping {skipped.map((d) => formatDay(d)).join(', ')} (holiday{skipped.length === 1 ? '' : 's'}).
@@ -165,7 +208,7 @@ export default function NewLesson() {
             <Banner tone="warning" icon="alert">
               {clashes.length} clash{clashes.length === 1 ? '' : 'es'} found. Check the dates below before scheduling.
             </Banner>
-          ) : tutorId ? (
+          ) : chosenTutorId ? (
             <Banner tone="success" icon="check">
               No clashes with existing lessons.
             </Banner>
@@ -177,7 +220,7 @@ export default function NewLesson() {
                 <Txt key={s.start.toISOString()} variant="muted" color={clash ? 'warning' : undefined}>
                   {formatDay(s.start)} · {formatTime(s.start)}–{formatTime(s.end)}
                   {clash
-                    ? `  ⚠ ${clash.c.reason === 'tutor' ? 'tutor busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
+                    ? ` · Clash: ${clash.c.reason === 'tutor' ? 'the tutor is busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
                     : ''}
                 </Txt>
               );

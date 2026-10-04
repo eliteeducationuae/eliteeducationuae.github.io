@@ -41,6 +41,7 @@ export function RequestCard({ r }: { r: LessonRequest }) {
         <View style={{ flex: 1, gap: 2 }}>
           <Txt variant="h3">
             {r.kind === 'reschedule' ? 'Move lesson' : 'Extra lesson'} · {lookup.student(r.studentId)?.fullName.split(' ')[0] ?? 'Student'}
+            {r.subject ? ` · ${r.subject}` : ''}
           </Txt>
           <Txt>
             {formatDay(r.start)} at {formatTime(r.start)} with {lookup.tutor(r.tutorId)?.fullName}
@@ -52,11 +53,11 @@ export function RequestCard({ r }: { r: LessonRequest }) {
       </Row>
       {r.note ? <Txt variant="muted">“{r.note}”</Txt> : null}
       {r.response ? <Txt variant="muted">Reply: {r.response}</Txt> : null}
-      {clash.length ? <Banner tone="warning" icon="alert">This now clashes with another lesson. Decline and suggest another time.</Banner> : null}
+      {clash.length ? <Banner tone="warning" icon="alert">This now clashes with another lesson. Please decline it and suggest another time.</Banner> : null}
 
       {r.status === 'pending' && me.role === 'admin' ? (
         <>
-          <Field label="Reply (optional)" value={response} onChangeText={setResponse} placeholder="e.g. See you then! / Could you do 5pm instead?" />
+          <Field label="Reply (optional)" value={response} onChangeText={setResponse} placeholder="For example: Confirmed. Or: Would 5pm suit instead?" />
           <ErrorNote error={decide.error} />
           <Row gap={Spacing.two}>
             <Button title="Decline" variant="danger" style={{ flex: 1 }} loading={decide.isPending} onPress={() => decide.mutate([r.id, false, response])} />

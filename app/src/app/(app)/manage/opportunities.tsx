@@ -19,7 +19,7 @@ export default function Opportunities() {
       onRefresh={() => opportunities.refetch()}
       refreshing={opportunities.isRefetching}
       footer={<Button title="Post a role" icon="plus" variant="gold" style={{ flex: 1 }} onPress={() => router.push('/manage/opportunity-edit')} />}>
-      <Txt variant="muted">Post a new student and your tutors can put themselves forward. You set the pay; they tell you why they’re a good fit.</Txt>
+      <Txt variant="muted">Post a new student so that your tutors can express interest. You set the pay, and each tutor explains why they would be a good fit.</Txt>
       <Segmented
         value={filter}
         onChange={setFilter}

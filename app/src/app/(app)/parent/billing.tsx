@@ -33,7 +33,7 @@ export default function ParentBilling() {
         </Section>
       ) : null}
       <Section title="Invoices">
-        {list.length ? list.map((i) => <InvoiceCard key={i.id} invoice={i} />) : <EmptyState icon="card" title="No invoices yet" />}
+        {list.length ? list.map((i) => <InvoiceCard key={i.id} invoice={i} />) : <EmptyState icon="card" title="No invoices yet" message="Your invoices will appear here as soon as they are issued." />}
       </Section>
     </Screen>
   );

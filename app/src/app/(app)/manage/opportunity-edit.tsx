@@ -2,12 +2,16 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { modernCurriculum } from '@/components/catalogue-choice';
+import { CataloguePicker } from '@/components/catalogue-picker';
+import { opportunityTitle } from '@/components/opportunities';
 import { Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { getSyllabus } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAction, useEnquiries, useOpportunities, useStudents, useTutors } from '@/data/hooks';
+import { useAction, useEnquiries, useEnrolments, useOpportunities, useStudents, useTutors } from '@/data/hooks';
+import { CURRICULA, PHASES, SUBJECTS, cleanChoice } from '@/domain/catalogue';
 import { addDays, toDateKey } from '@/domain/dates';
+import { activeEnrolments, sameSubject } from '@/domain/enrolments';
 import type { Opportunity } from '@/domain/types';
 
 /** Post (or edit) a role. Prefills from `?enquiryId=` or `?studentId=`. */
@@ -16,19 +20,27 @@ export default function EditOpportunity() {
   const opportunities = useOpportunities();
   const enquiries = useEnquiries();
   const students = useStudents();
-  if (opportunities.isLoading || enquiries.isLoading || students.isLoading) return <Loading />;
+  const studentId = params.studentId ?? enquiries.data?.find((e) => e.id === params.enquiryId)?.studentId;
+  const enrolments = useEnrolments(studentId);
+  if (opportunities.isLoading || enquiries.isLoading || students.isLoading || (studentId && enrolments.isLoading)) return <Loading />;
   const existing = params.id ? opportunities.data?.find((o) => o.id === params.id) : undefined;
   const enquiry = params.enquiryId ? enquiries.data?.find((e) => e.id === params.enquiryId) : undefined;
-  const student = params.studentId ? students.data?.find((s) => s.id === params.studentId) : undefined;
+  const student = studentId ? students.data?.find((s) => s.id === studentId) : undefined;
+  // The student's subject that matches the enquiry, or else their first active subject.
+  const active = student ? activeEnrolments(enrolments.data ?? [], student.id) : [];
+  const enrolment = active.find((e) => sameSubject(e.subject, enquiry?.subject)) ?? active[0];
+  const subject = cleanChoice(enrolment?.subject ?? enquiry?.subject);
+  const curriculum = modernCurriculum(enrolment?.curriculum ?? enquiry?.curriculum ?? student?.curriculum);
+  const phase = cleanChoice(student?.phase ?? enquiry?.phase);
+  const yearGroup = student?.yearGroup ?? enquiry?.yearGroup;
+  const firstName = student ? student.fullName.split(' ')[0] : enquiry?.studentName;
   const defaults: Partial<Opportunity> = existing ?? {
-    title: student
-      ? `${student.yearGroup ? `${student.yearGroup} ` : ''}${getSyllabus(student.syllabusId)?.name ?? student.curriculum} — ${student.fullName.split(' ')[0]}`
-      : enquiry
-        ? `${enquiry.yearGroup ? `${enquiry.yearGroup} ` : ''}${enquiry.curriculum ?? 'Maths'} — ${enquiry.studentName ?? 'new student'}`
-        : '',
+    title: student || enquiry ? opportunityTitle({ yearGroup, curriculum, subject, firstName }) : '',
     description: enquiry?.message ?? (student ? `Current grade ${student.currentGrade ?? '–'}, target ${student.targetGrade ?? '–'}.` : ''),
-    curriculum: student?.curriculum ?? enquiry?.curriculum,
-    syllabusId: student?.syllabusId,
+    subject,
+    phase,
+    curriculum,
+    syllabusId: enrolment?.syllabusId,
     studentId: student?.id ?? enquiry?.studentId,
     enquiryId: enquiry?.id,
     schedule: enquiry?.preferredTimes,
@@ -41,7 +53,9 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
   const save = useAction(source.saveOpportunity);
   const [title, setTitle] = useState(defaults.title ?? '');
   const [description, setDescription] = useState(defaults.description ?? '');
-  const [curriculum, setCurriculum] = useState(defaults.curriculum ?? '');
+  const [subject, setSubject] = useState<string | undefined>(defaults.subject);
+  const [phase, setPhase] = useState<string | undefined>(defaults.phase);
+  const [curriculum, setCurriculum] = useState<string | undefined>(modernCurriculum(defaults.curriculum));
   const [schedule, setSchedule] = useState(defaults.schedule ?? '');
   const [location, setLocation] = useState(defaults.location ?? 'Online');
   const [pay, setPay] = useState(defaults.payRate ? String(defaults.payRate) : '');
@@ -65,7 +79,9 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
                 id: existing?.id,
                 title: title.trim(),
                 description: description.trim() || undefined,
-                curriculum: curriculum || undefined,
+                subject: cleanChoice(subject),
+                phase: cleanChoice(phase),
+                curriculum: cleanChoice(curriculum),
                 syllabusId: defaults.syllabusId,
                 studentId: defaults.studentId,
                 enquiryId: defaults.enquiryId,
@@ -82,21 +98,17 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
         />
       }>
       <Stack.Screen options={{ title: existing ? 'Edit role' : 'Post a role' }} />
-      <Field label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Year 12 IB AA HL — Tuesdays" />
+      <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Year 10 IGCSE Chemistry — Tuesdays" />
       <Field
         label="About the student (shared with tutors)"
         value={description}
         onChangeText={setDescription}
         multiline
-        placeholder="Level, goals, what they find hard. Don’t include family contact details."
+        placeholder="Level, goals, what they find hard. Please do not include family contact details."
       />
-      <Section title="Curriculum">
-        <Row gap={Spacing.one} wrap>
-          {['IB', 'IGCSE', 'A-Level'].map((c) => (
-            <Chip key={c} label={c} selected={curriculum === c} onPress={() => setCurriculum(curriculum === c ? '' : c)} />
-          ))}
-        </Row>
-      </Section>
+      <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} optional collapsed={10} />
+      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+      <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
       <Row gap={Spacing.two}>
         <View style={{ flex: 1 }}>
           <Field label="When" value={schedule} onChangeText={setSchedule} placeholder="Tuesdays 5pm" />

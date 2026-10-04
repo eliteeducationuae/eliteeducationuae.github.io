@@ -3,7 +3,8 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { APPLICATION_STATUS } from '@/components/hiring';
+import { APPLICATION_STATUS, teachingFromApplication } from '@/components/hiring';
+import { tutorColorFor } from '@/lib/tutor-colors';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -13,7 +14,6 @@ import type { ApplicationStatus, TutorApplication } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 
 const STAGES: ApplicationStatus[] = ['applied', 'interview', 'offer', 'hired', 'rejected'];
-const COLORS = ['#6b46c1', '#b83280', '#2c7a7b', '#975a16', '#2f855a', '#c05621'];
 
 export default function ApplicationDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,12 +34,19 @@ function Detail({ a }: { a: TutorApplication }) {
   async function openCv() {
     const url = a.cvPath && source.fileUrl ? await source.fileUrl('applications', a.cvPath) : null;
     if (url) Linking.openURL(url);
-    else notify('CV', a.cvPath ? `Stored as ${a.cvPath} (files aren’t stored in demo mode).` : 'No CV attached.');
+    else notify('CV', a.cvPath ? `Stored as ${a.cvPath} (files are not stored in demo mode).` : 'No CV attached.');
   }
 
   async function hire() {
     const tutor = await saveTutor.mutateAsync([
-      { fullName: a.fullName, email: a.email, phone: a.phone, hourlyPay: Number(pay) || 0, subjects: a.curricula, color: COLORS[a.fullName.length % COLORS.length] },
+      {
+        fullName: a.fullName,
+        email: a.email,
+        phone: a.phone,
+        hourlyPay: Number(pay) || 0,
+        ...teachingFromApplication(a),
+        color: tutorColorFor(a.fullName),
+      },
     ]);
     await update.mutateAsync([a.id, { status: 'hired', tutorId: tutor.id }]);
     router.push({ pathname: '/manage/tutor-edit', params: { id: tutor.id } });
@@ -59,10 +66,24 @@ function Detail({ a }: { a: TutorApplication }) {
           </View>
           <Badge label={APPLICATION_STATUS[a.status].label} tone={APPLICATION_STATUS[a.status].tone} />
         </Row>
-        <Txt>
-          <Txt style={{ fontWeight: '700' }}>Teaches: </Txt>
-          {[a.curricula.join(', '), a.subjects].filter(Boolean).join(' — ')}
-        </Txt>
+        {a.subjects ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Subjects: </Txt>
+            {a.subjects}
+          </Txt>
+        ) : null}
+        {a.curricula.length ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Curricula: </Txt>
+            {a.curricula.join(', ')}
+          </Txt>
+        ) : null}
+        {a.phases?.length ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Phases: </Txt>
+            {a.phases.join(', ')}
+          </Txt>
+        ) : null}
         {a.qualifications ? <Txt variant="muted">Qualifications: {a.qualifications}</Txt> : null}
         {a.experience ? <Txt>{a.experience}</Txt> : null}
         {a.availability ? <Txt variant="muted">Available: {a.availability}</Txt> : null}
@@ -85,15 +106,15 @@ function Detail({ a }: { a: TutorApplication }) {
         <Banner tone="success" icon="check">
           Hired — their tutor profile is set up.{' '}
           <Txt variant="muted" color="accent" onPress={() => router.push({ pathname: '/manage/tutor-edit', params: { id: a.tutorId! } })}>
-            Open profile & send invite
+            Open profile and send invitation
           </Txt>
         </Banner>
       ) : (
         <Card style={{ gap: Spacing.three }}>
           <Txt variant="h3">Hire {a.fullName.split(' ')[0]}</Txt>
-          <Txt variant="muted">Creates their tutor profile. Then send them the invite to create their login, add bank details and set availability.</Txt>
+          <Txt variant="muted">This creates their tutor profile. You can then send an invitation so that they can create their login, add bank details and set their availability.</Txt>
           <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
-          <Button title="Hire & create tutor profile" variant="gold" loading={saveTutor.isPending || update.isPending} onPress={() => confirm(`Hire ${a.fullName}?`, 'This creates their tutor profile.', hire, 'Hire')} />
+          <Button title="Hire and create tutor profile" variant="gold" loading={saveTutor.isPending || update.isPending} onPress={() => confirm(`Hire ${a.fullName}?`, 'This creates their tutor profile.', hire, 'Hire')} />
         </Card>
       )}
 

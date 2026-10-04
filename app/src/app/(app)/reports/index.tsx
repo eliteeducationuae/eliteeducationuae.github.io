@@ -1,10 +1,10 @@
 import { Redirect } from 'expo-router';
 import { View } from 'react-native';
 
-import { reportProgress, ReportRow } from '@/components/reports';
+import { reportProgress, ReportRow, sortReports } from '@/components/reports';
 import { Banner, Card, EmptyState, Loading, ProgressBar, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useReportCycles, useStudentReports } from '@/data/hooks';
+import { useEnrolments, useLookup, useReportCycles, useStudentReports } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { daysUntil, formatDate } from '@/domain/dates';
 
@@ -13,16 +13,23 @@ export default function TutorReports() {
   const me = useMe();
   const cycles = useReportCycles();
   const reports = useStudentReports();
+  const enrolments = useEnrolments();
+  const lookup = useLookup();
   if (me.role === 'admin') return <Redirect href="/manage/reports" />;
   if (cycles.isLoading || reports.isLoading) return <Loading />;
-  const mine = (reports.data ?? []).filter((r) => r.tutorId === me.tutorId);
+  // Each tutor sees their own reports, grouped by student and then subject.
+  const mine = sortReports(
+    (reports.data ?? []).filter((r) => r.tutorId === me.tutorId),
+    (id) => lookup.student(id)?.fullName ?? '',
+    enrolments.data ?? [],
+  );
   const open = (cycles.data ?? []).filter((c) => c.status === 'open').sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const past = (cycles.data ?? []).filter((c) => c.status === 'closed' || !open.includes(c));
 
   return (
     <Screen onRefresh={() => reports.refetch()} refreshing={reports.isRefetching}>
       {open.length === 0 && mine.length === 0 ? (
-        <EmptyState icon="doc" title="No reports to write" message="When Elite Education opens a report round, your students appear here." />
+        <EmptyState icon="doc" title="No reports to write" message="When Elite Education opens a report round, your students will appear here." />
       ) : null}
       {open.map((c) => {
         const list = mine.filter((r) => r.cycleId === c.id).sort((a, b) => (a.status === 'draft' ? 0 : 1) - (b.status === 'draft' ? 0 : 1));
@@ -40,7 +47,7 @@ export default function TutorReports() {
               <ProgressBar value={p.percent} />
               {p.written < p.total && days <= 3 ? (
                 <Banner tone="warning" icon="clock">
-                  {days < 0 ? 'These are overdue.' : days === 0 ? 'Due today.' : `Due in ${days} day${days === 1 ? '' : 's'}.`} Tap a student, then “Draft for me” to get started.
+                  {days < 0 ? 'These are overdue.' : days === 0 ? 'Due today.' : `Due in ${days} day${days === 1 ? '' : 's'}.`} Select a student, then “Draft for me” to begin.
                 </Banner>
               ) : null}
             </Card>

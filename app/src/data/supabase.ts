@@ -2,10 +2,24 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
+import {
+  friendlySocialError,
+  NATIVE_AUTH_PATH,
+  parseAuthCallback,
+  redirectErrorNotice,
+  webRedirectTo,
+  type SocialProviderName,
+} from '@/lib/social-auth';
+import { brandTutorColor } from '@/lib/tutor-colors';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Enrolment,
+  Topic,
+  TopicList,
   Expense,
   Opportunity,
   OpportunityBid,
@@ -37,8 +51,19 @@ import type {
   TopicRating,
 } from '@/domain/types';
 
-import { NOT_LINKED } from './messages';
-import type { DataSource } from './source';
+import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
+import { AuthNotice, NOT_LINKED } from './messages';
+import { addChildSubjects } from './rpc-mapping';
+import type { DataSource, SocialProvider, SocialSignInResult } from './source';
+
+/**
+ * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
+ * it, so a failed Apple or Google redirect can still be explained on the sign-in screen.
+ */
+const initialUrl = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.href : '';
+
+/** Remembers which provider a web redirect was for, so its error can be named after the page reloads. */
+const PENDING_PROVIDER_KEY = 'elite.auth.pendingProvider';
 
 type Row = Record<string, any>;
 
@@ -102,7 +127,10 @@ const toTutor = (r: Row): Tutor => ({
   phone: r.phone ?? undefined,
   hourlyPay: Number(r.hourly_pay),
   subjects: r.subjects ?? [],
-  color: r.color,
+  curricula: r.curricula ?? [],
+  phases: r.phases ?? [],
+  // Tutors created before the rebrand keep their old bright colours in the database; draw them in the brand palette.
+  color: brandTutorColor(r.color, r.id),
 });
 
 const toFamily = (r: Row): Family => ({
@@ -125,6 +153,8 @@ const toEnquiry = (r: Row): Enquiry => ({
   phone: r.phone ?? undefined,
   studentName: r.student_name ?? undefined,
   curriculum: r.curriculum ?? undefined,
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
   yearGroup: r.year_group ?? undefined,
   message: r.message ?? undefined,
   preferredTimes: r.preferred_times ?? undefined,
@@ -145,6 +175,7 @@ const toRequest = (r: Row): LessonRequest => ({
   lessonId: r.lesson_id ?? undefined,
   tutorId: r.tutor_id,
   serviceId: r.service_id,
+  subject: r.subject ?? undefined,
   start: new Date(r.start_at).toISOString(),
   end: new Date(r.end_at).toISOString(),
   note: r.note ?? undefined,
@@ -162,6 +193,8 @@ const toOpportunity = (r: Row): Opportunity => ({
   description: r.description ?? undefined,
   curriculum: r.curriculum ?? undefined,
   syllabusId: r.syllabus_id ?? undefined,
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
   studentId: r.student_id ?? undefined,
   enquiryId: r.enquiry_id ?? undefined,
   schedule: r.schedule ?? undefined,
@@ -197,6 +230,8 @@ const toReport = (r: Row): StudentReport => ({
   cycleId: r.cycle_id,
   studentId: r.student_id,
   tutorId: r.tutor_id,
+  subject: r.subject ?? undefined,
+  enrolmentId: r.enrolment_id ?? undefined,
   attainment: r.attainment ?? undefined,
   effort: r.effort ?? undefined,
   progress: r.progress ?? undefined,
@@ -214,8 +249,9 @@ const toStudent = (r: Row): Student => ({
   id: r.id,
   familyId: r.family_id,
   fullName: r.full_name,
-  curriculum: r.curriculum,
-  syllabusId: r.syllabus_id,
+  curriculum: r.curriculum ?? undefined,
+  syllabusId: r.syllabus_id ?? undefined,
+  phase: r.phase ?? undefined,
   school: r.school ?? undefined,
   yearGroup: r.year_group ?? undefined,
   currentGrade: r.current_grade ?? undefined,
@@ -224,13 +260,53 @@ const toStudent = (r: Row): Student => ({
   notes: r.student_notes?.notes ?? undefined,
 });
 
-const toService = (r: Row): Service => ({ id: r.id, name: r.name, durationMin: r.duration_min, rate: Number(r.rate) });
+const toService = (r: Row): Service => ({
+  id: r.id,
+  name: r.name,
+  durationMin: r.duration_min,
+  rate: Number(r.rate),
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
+});
+
+const toEnrolment = (r: Row): Enrolment => ({
+  id: r.id,
+  studentId: r.student_id,
+  subject: r.subject,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  examBoard: r.exam_board ?? undefined,
+  tutorId: r.tutor_id ?? undefined,
+  syllabusId: r.syllabus_id ?? undefined,
+  topicListId: r.topic_list_id ?? undefined,
+  active: r.active,
+  createdAt: r.created_at ?? undefined,
+});
+
+const toTopicList = (r: Row): TopicList => ({
+  id: r.id,
+  subject: r.subject,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  name: r.name,
+  createdAt: r.created_at ?? undefined,
+});
+
+const toTopic = (r: Row): Topic => ({
+  id: r.id,
+  listId: r.list_id,
+  unit: r.unit ?? undefined,
+  name: r.name,
+  sort: r.sort ?? 0,
+  createdAt: r.created_at ?? undefined,
+});
 
 const toLesson = (r: Row): Lesson => ({
   id: r.id,
   tutorId: r.tutor_id,
   studentIds: r.student_ids,
   serviceId: r.service_id,
+  subject: r.subject ?? undefined,
   start: new Date(r.start_at).toISOString(),
   end: new Date(r.end_at).toISOString(),
   location: r.location,
@@ -314,6 +390,9 @@ const toInvoice = (r: Row): Invoice => ({
   })),
 });
 
+/** Rows per request when reading topics; at or below the server's response cap. */
+const TOPIC_PAGE = 1000;
+
 function strip(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
 }
@@ -335,10 +414,131 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     return row ? toProfile(row) : null;
   }
 
+  /** On the web, the error from an Apple or Google redirect is reported once, then forgotten. */
+  let callbackChecked = Platform.OS !== 'web';
+
+  async function takeCallbackNotice(): Promise<string | null> {
+    if (callbackChecked) return null;
+    callbackChecked = true;
+    const pending = await AsyncStorage.getItem(PENDING_PROVIDER_KEY).catch(() => null);
+    if (pending) await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
+    const { error, errorCode } = parseAuthCallback(initialUrl);
+    if (!error && !errorCode) return null;
+    try {
+      // Tidy the error out of the address bar so a refresh does not repeat it.
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+    } catch {
+      // Not fatal.
+    }
+    const provider = pending === 'apple' || pending === 'google' ? pending : null;
+    return redirectErrorNotice(provider, error, errorCode);
+  }
+
+  /** Finish a native browser sign-in from the URL the browser returned to. */
+  async function completeFromCallback(provider: SocialProviderName, url: string): Promise<'done' | 'cancelled'> {
+    const parsed = parseAuthCallback(url);
+    if (parsed.error) {
+      const message = friendlySocialError(provider, parsed.error);
+      if (message === 'Sign-in was cancelled.') return 'cancelled';
+      throw new Error(message);
+    }
+    if (parsed.code) {
+      check(await client.auth.exchangeCodeForSession(parsed.code));
+    } else if (parsed.accessToken && parsed.refreshToken) {
+      check(await client.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken }));
+    } else {
+      throw new Error(friendlySocialError(provider, 'missing session'));
+    }
+    return 'done';
+  }
+
+  async function startProviderSignIn(provider: SocialProvider): Promise<SocialSignInResult | 'done'> {
+    // (1) Web: hand the whole page to the provider; restoreSession picks the session up on return.
+    if (Platform.OS === 'web') {
+      await AsyncStorage.setItem(PENDING_PROVIDER_KEY, provider).catch(() => undefined);
+      const { error } = await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: webRedirectTo(window.location.origin, process.env.EXPO_BASE_URL),
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        },
+      });
+      if (error) {
+        await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
+        throw new Error(error.message);
+      }
+      return { status: 'redirecting' };
+    }
+
+    // (2) iOS: Apple's native sheet, then the identity token goes to Supabase with the raw nonce.
+    if (Platform.OS === 'ios' && provider === 'apple' && APPLE_NATIVE) {
+      const apple = await appleNativeSignIn();
+      if (!apple) return { status: 'cancelled' };
+      check(await client.auth.signInWithIdToken({ provider: 'apple', token: apple.identityToken, nonce: apple.rawNonce }));
+      if (apple.fullName) {
+        // Apple shares the name only once. set_my_name records it only for a parent whose family is still a
+        // prospect, so a name the office has recorded for an active family is never overwritten.
+        await client.rpc('set_my_name', { p_full_name: apple.fullName }).then(undefined, () => undefined);
+      }
+      return 'done';
+    }
+
+    // (3) Google everywhere native, and Apple on Android: an in-app browser returning to the app.
+    const redirectTo = AuthSession.makeRedirectUri({ scheme: 'eliteeducation', path: NATIVE_AUTH_PATH });
+    const data = check<{ url: string }>(
+      await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        },
+      }),
+    );
+    const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (res.type !== 'success') return { status: 'cancelled' };
+    return (await completeFromCallback(provider, res.url)) === 'cancelled' ? { status: 'cancelled' } : 'done';
+  }
+
   return {
     kind: 'supabase',
 
-    restoreSession: loadProfile,
+    async restoreSession() {
+      const notice = await takeCallbackNotice();
+      if (notice) throw new AuthNotice(notice);
+      // Offline or no login: just show the sign-in screen, keeping any stored session.
+      const { data, error } = await client.auth.getUser();
+      if (error || !data.user) return null;
+      const row = check(await client.from('profiles').select('*').eq('id', data.user.id).maybeSingle());
+      if (row) return toProfile(row);
+      // A login without a profile (e.g. an Apple or Google login that could not be linked): sign it out and say why.
+      await client.auth.signOut();
+      throw new AuthNotice(NOT_LINKED);
+    },
+    async signInWithProvider(provider) {
+      let started: SocialSignInResult | 'done';
+      try {
+        started = await startProviderSignIn(provider);
+      } catch (err) {
+        // Never log tokens; show families a plain-English message instead of the raw provider error.
+        const message = err instanceof Error ? err.message : String(err);
+        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not');
+        throw new Error(friendly ? message : friendlySocialError(provider, message));
+      }
+      if (started !== 'done') return started;
+      const profile = await loadProfile();
+      if (!profile) {
+        await client.auth.signOut();
+        throw new Error(NOT_LINKED);
+      }
+      return { status: 'signed-in', profile };
+    },
+    async setMyName(fullName) {
+      check(await client.rpc('set_my_name', { p_full_name: fullName.trim() }));
+      const profile = await loadProfile();
+      if (!profile) throw new Error(NOT_LINKED);
+      return profile;
+    },
     async signIn(email, password) {
       check(await client.auth.signInWithPassword({ email: email.trim(), password }));
       const profile = await loadProfile();
@@ -444,7 +644,14 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(await client.from('settings').update(fromSettings(patch)).eq('id', 1));
     },
     async saveTutor(t) {
-      const row = strip({ id: t.id, full_name: t.fullName, email: t.email, phone: t.phone, hourly_pay: t.hourlyPay, subjects: t.subjects, color: t.color });
+      const row = strip({
+        id: t.id,
+        full_name: t.fullName, email: t.email, phone: t.phone, hourly_pay: t.hourlyPay,
+        subjects: t.subjects,
+        curricula: t.curricula,
+        phases: t.phases,
+        color: t.color,
+      });
       return toTutor(check(await client.from('tutors').upsert(row).select().single()));
     },
     async saveFamily(f) {
@@ -458,6 +665,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         full_name: s.fullName,
         curriculum: s.curriculum,
         syllabus_id: s.syllabusId,
+        phase: s.phase,
         school: s.school,
         year_group: s.yearGroup,
         current_grade: s.currentGrade,
@@ -471,8 +679,50 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return toStudent({ ...saved, student_notes: { notes: s.notes } });
     },
     async saveService(s) {
-      const row = strip({ id: s.id, name: s.name, duration_min: s.durationMin, rate: s.rate });
+      const row = strip({ id: s.id, name: s.name, duration_min: s.durationMin, rate: s.rate, subject: s.subject, phase: s.phase });
       return toService(check(await client.from('services').upsert(row).select().single()));
+    },
+
+    async listEnrolments(filter = {}) {
+      let q = client.from('enrolments').select('*');
+      if (filter.studentId) q = q.eq('student_id', filter.studentId);
+      return check(await q.order('subject')).map(toEnrolment);
+    },
+    async saveEnrolment(e) {
+      // topic_list_id is never sent: the server links each enrolment to its shared list.
+      const row = strip({
+        id: e.id,
+        student_id: e.studentId,
+        subject: e.subject.trim(),
+        curriculum: e.curriculum?.trim() || null,
+        level: e.level?.trim() || null,
+        exam_board: e.examBoard?.trim() || null,
+        tutor_id: e.tutorId ?? null,
+        syllabus_id: e.syllabusId ?? null,
+        active: e.active,
+      });
+      return toEnrolment(check(await client.from('enrolments').upsert(row).select().single()));
+    },
+    async listTopicLists() {
+      return check(await client.from('topic_lists').select('*').order('name')).map(toTopicList);
+    },
+    async listTopics(filter = {}) {
+      // PostgREST caps a response (1000 rows by default), so read the shared lists a page at a time.
+      const rows: Row[] = [];
+      for (let from = 0; ; from += TOPIC_PAGE) {
+        let q = client.from('topics').select('*');
+        if (filter.listId) q = q.eq('list_id', filter.listId);
+        const page = check(await q.order('list_id').order('sort').order('id').range(from, from + TOPIC_PAGE - 1)) as Row[];
+        rows.push(...page);
+        if (page.length < TOPIC_PAGE) break;
+      }
+      return rows.map(toTopic);
+    },
+    async addTopic(input) {
+      const row = check(
+        await client.rpc('add_topic', { p_enrolment_id: input.enrolmentId, p_name: input.name, p_unit: input.unit ?? null }),
+      ) as Row;
+      return toTopic(row);
     },
 
     async createLessons(lessons) {
@@ -481,6 +731,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           tutor_id: l.tutorId,
           student_ids: l.studentIds,
           service_id: l.serviceId,
+          subject: l.subject,
           start_at: l.start,
           end_at: l.end,
           location: l.location,
@@ -544,10 +795,10 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(
         await client.rpc('add_my_child', {
           p_full_name: c.fullName,
-          p_curriculum: c.curriculum,
-          p_syllabus_id: c.syllabusId,
           p_school: c.school ?? null,
           p_year_group: c.yearGroup ?? null,
+          p_phase: c.phase ?? null,
+          p_subjects: addChildSubjects(c.subjects),
         }),
       );
     },
@@ -566,6 +817,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_message: e.message ?? null,
           p_preferred_times: e.preferredTimes ?? null,
           p_source: e.source ?? 'app',
+          p_subject: e.subject ?? null,
+          p_phase: e.phase ?? null,
         }),
       );
     },
@@ -581,6 +834,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         phone: p.phone,
         student_name: p.studentName,
         curriculum: p.curriculum,
+        subject: p.subject,
+        phase: p.phase,
         year_group: p.yearGroup,
         message: p.message,
         preferred_times: p.preferredTimes,
@@ -661,6 +916,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_service_id: r.serviceId,
           p_start: r.start,
           p_note: r.note ?? null,
+          p_subject: r.subject ?? null,
         }),
       );
     },
@@ -742,6 +998,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         description: o.description,
         curriculum: o.curriculum,
         syllabus_id: o.syllabusId,
+        subject: o.subject,
+        phase: o.phase,
         student_id: o.studentId,
         enquiry_id: o.enquiryId,
         schedule: o.schedule,
@@ -776,6 +1034,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_qualifications: a.qualifications ?? null,
           p_availability: a.availability ?? null,
           p_cv_path: a.cvPath ?? null,
+          p_phases: a.phases ?? [],
         }),
       );
     },
@@ -790,6 +1049,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           phone: r.phone ?? undefined,
           curricula: r.curricula ?? [],
           subjects: r.subjects ?? undefined,
+          phases: r.phases ?? [],
           experience: r.experience ?? undefined,
           qualifications: r.qualifications ?? undefined,
           availability: r.availability ?? undefined,

@@ -26,11 +26,11 @@ export default function Closures() {
   return (
     <Screen>
       <Txt variant="muted">
-        When you schedule weekly lessons, dates in these breaks are skipped automatically and families can’t request lessons on them.
+        When you schedule weekly lessons, dates in these breaks are skipped automatically and families cannot request lessons on them.
         Lessons already booked on these days are not cancelled.
       </Txt>
       <Section title="Upcoming">
-        {upcoming.length === 0 ? <EmptyState icon="sun" title="No holidays set" /> : null}
+        {upcoming.length === 0 ? <EmptyState icon="sun" title="No holidays set" message="Add school holidays and term breaks below so that weekly lessons skip them." /> : null}
         {upcoming.map((c) => (
           <Card key={c.id}>
             <Row style={{ justifyContent: 'space-between' }}>

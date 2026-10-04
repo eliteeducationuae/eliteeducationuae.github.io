@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
-import type { Lookup } from '@/data/hooks';
+import { Spacing, elevation, font } from '@/constants/theme';
+import { useEnrolments, type Lookup } from '@/data/hooks';
 import { addDays, formatTime, isSameDay, minutesBetween, startOfDay, weekdayShort } from '@/domain/dates';
+import { lessonSubject } from '@/domain/enrolments';
 import type { Lesson, LessonStatus } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -12,7 +13,7 @@ import { Icon } from './icon';
 import { Badge, Card, Row, Txt, type Tone } from './ui';
 
 export const LESSON_STATUS: Record<LessonStatus, { label: string; tone: Tone }> = {
-  scheduled: { label: 'Scheduled', tone: 'info' },
+  scheduled: { label: 'Scheduled', tone: 'neutral' },
   completed: { label: 'Completed', tone: 'success' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
   'late-cancel': { label: 'Late cancel', tone: 'warning' },
@@ -23,6 +24,17 @@ export function LessonStatusBadge({ lesson, now = new Date() }: { lesson: Lesson
   if (lesson.status === 'scheduled' && new Date(lesson.end) < now) return <Badge label="Needs notes" tone="warning" />;
   const s = LESSON_STATUS[lesson.status];
   return <Badge label={s.label} tone={s.tone} />;
+}
+
+/** The lesson's subject when it is known: its own, or the student's only subject. */
+export function useLessonSubject(lesson: Pick<Lesson, 'subject' | 'studentIds'>): string | undefined {
+  const enrolments = useEnrolments();
+  return lessonSubject(lesson, enrolments.data ?? []);
+}
+
+/** 'Layla · Chemistry', or just the names when the subject is not known. */
+export function withSubject(names: string, subject?: string): string {
+  return subject ? `${names} · ${subject}` : names;
 }
 
 /** A lesson in a list. `perspective` decides whose name leads. */
@@ -40,8 +52,9 @@ export function LessonCard({
   const theme = useTheme();
   const tutor = lookup.tutor(lesson.tutorId);
   const service = lookup.service(lesson.serviceId);
+  const subject = useLessonSubject(lesson);
   const students = lookup.studentNames(lesson.studentIds);
-  const title = perspective === 'family' ? (service?.name ?? 'Lesson') : students;
+  const title = perspective === 'family' ? (subject ?? service?.name ?? 'Lesson') : withSubject(students, subject);
   const subtitle =
     perspective === 'family'
       ? `${students} · with ${tutor?.fullName ?? 'tutor'}`
@@ -57,22 +70,22 @@ export function LessonCard({
       accessibilityLabel={`${title}, ${formatTime(lesson.start)}`}
       style={inactive && { opacity: 0.6 }}>
       <Row gap={Spacing.three} style={{ alignItems: 'flex-start' }}>
-        <View style={{ width: 56 }}>
+        <View style={{ width: 60 }}>
           {showDate ? (
-            <Txt variant="small" style={{ fontWeight: '700' }}>
+            <Text style={[styles.cardDay, font('sans', 'bold'), { color: theme.accent }]}>
               {weekdayShort(start)} {start.getDate()}
-            </Txt>
+            </Text>
           ) : null}
-          <Txt variant="h3" style={{ fontVariant: ['tabular-nums'] }}>
-            {formatTime(lesson.start)}
-          </Txt>
-          <Txt variant="small">{formatTime(lesson.end)}</Txt>
+          <Text style={[styles.cardTime, font('serif'), { color: theme.text }]}>{formatTime(lesson.start)}</Text>
+          <Txt variant="small">to {formatTime(lesson.end)}</Txt>
         </View>
         <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="h3" numberOfLines={1} style={inactive && { textDecorationLine: 'line-through' }}>
+          <Text
+            numberOfLines={1}
+            style={[styles.cardTitle, font('sans', 'bold'), { color: theme.text }, inactive && { textDecorationLine: 'line-through' }]}>
             {title}
-          </Txt>
-          <Txt variant="muted" numberOfLines={1}>
+          </Text>
+          <Txt variant="muted" numberOfLines={2}>
             {subtitle}
           </Txt>
           <Row gap={Spacing.one} style={{ marginTop: 4 }}>
@@ -173,6 +186,7 @@ function TimelineBlock({
   onMove?: (lesson: Lesson, deltaMin: number) => void;
 }) {
   const theme = useTheme();
+  const subject = useLessonSubject(l);
   const [armed, setArmed] = useState(false);
   const [dy, setDy] = useState(0);
   const responder = useMemo(
@@ -197,23 +211,29 @@ function TimelineBlock({
   );
   const color = lookup.tutor(l.tutorId)?.color ?? theme.accent;
   const inactive = l.status === 'cancelled' || l.status === 'late-cancel';
+  const label = withSubject(lookup.studentNames(l.studentIds), subject);
   const preview = dragToMinutes(dy);
   const shownStart = new Date(new Date(l.start).getTime() + preview * 60_000);
   const shownEnd = new Date(new Date(l.end).getTime() + preview * 60_000);
   return (
     <View
       {...(onMove ? responder.panHandlers : {})}
-      style={[styles.block, { top: top + dy, height, zIndex: armed ? 10 : 1, backgroundColor: color + (inactive ? '33' : 'dd'), borderColor: color }, armed && styles.lifted]}>
+      style={[
+        styles.block,
+        // Solid tutor colour so the ivory text keeps WCAG AA on any background; cancelled lessons fade.
+        { top: top + dy, height, zIndex: armed ? 10 : 1, backgroundColor: inactive ? color + '33' : color, borderColor: color },
+        armed && [styles.lifted, elevation(theme, 2)],
+      ]}>
       <Pressable
         style={{ flex: 1 }}
         onPress={() => (armed ? setArmed(false) : router.push({ pathname: '/lesson/[id]', params: { id: l.id } }))}
         onLongPress={onMove ? () => setArmed(true) : undefined}
         delayLongPress={300}
-        accessibilityLabel={`${lookup.studentNames(l.studentIds)} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
-        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.text : '#fff', fontWeight: '700' }}>
-          {lookup.studentNames(l.studentIds)}
+        accessibilityLabel={`${label} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
+        <Txt variant="small" numberOfLines={1} style={[font('sans', 'bold'), { color: inactive ? theme.text : theme.onHero }]}>
+          {label}
         </Txt>
-        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : '#ffffffcc' }}>
+        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : theme.onHero, opacity: inactive ? 1 : 0.9 }}>
           {formatTime(shownStart)}–{formatTime(shownEnd)}
           {armed && !dy ? '  · drag to move' : ''}
         </Txt>
@@ -249,10 +269,12 @@ export function DayTimeline({
       <Row gap={0} style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.border }}>
         <View style={{ width: 48 }} />
         {tutorIds.map((id) => (
-          <View key={id} style={{ flex: 1, padding: Spacing.two }}>
-            <Txt variant="small" numberOfLines={1} style={{ fontWeight: '700', color: lookup.tutor(id)?.color }}>
+          <View key={id} style={{ flex: 1, padding: Spacing.two, gap: Spacing.one }}>
+            <Txt variant="small" numberOfLines={1} style={[font('sans', 'bold'), { color: theme.text }]}>
               {lookup.tutor(id)?.fullName.split(' ')[0]}
             </Txt>
+            {/* The tutor's colour is decorative only: a short rule under the name, never the text itself. */}
+            <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: lookup.tutor(id)?.color ?? theme.gold }} />
           </View>
         ))}
       </Row>
@@ -300,5 +322,8 @@ const styles = StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 3 },
   timeline: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
   block: { position: 'absolute', left: 3, right: 3, borderRadius: 6, borderLeftWidth: 3, padding: 4, overflow: 'hidden', userSelect: 'none' },
-  lifted: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6, transform: [{ scale: 1.03 }] },
+  lifted: { transform: [{ scale: 1.03 }] },
+  cardDay: { fontSize: 12, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase' },
+  cardTime: { fontSize: 18, lineHeight: 24, fontVariant: ['tabular-nums'] },
+  cardTitle: { fontSize: 16, lineHeight: 22 },
 });

@@ -19,9 +19,9 @@ export default function Tutors() {
             <ListItem
               key={t.id}
               title={t.fullName}
-              subtitle={`${t.subjects.join(', ') || 'No subjects'} · ${formatAED(t.hourlyPay)}/hr`}
+              subtitle={[t.subjects.join(', ') || 'No subjects yet', (t.phases ?? []).join(', '), `${formatAED(t.hourlyPay)} an hour`].filter(Boolean).join(' · ')}
               left={<Avatar name={t.fullName} color={t.color} />}
-              right={<Badge label={logins.has(t.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(t.email.toLowerCase()) ? 'success' : 'neutral'} />}
+              below={<Badge label={logins.has(t.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(t.email.toLowerCase()) ? 'success' : 'neutral'} />}
               onPress={() => router.push({ pathname: '/manage/tutor-edit', params: { id: t.id } })}
             />
           ))}

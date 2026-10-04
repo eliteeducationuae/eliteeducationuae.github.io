@@ -14,7 +14,10 @@ export interface SyllabusUnit {
 export interface Syllabus {
   id: string;
   name: string;
-  curriculum: 'IB' | 'IGCSE' | 'A-Level';
+  curriculum: string;
+  subject?: string;
+  level?: string;
+  examBoard?: string;
   units: SyllabusUnit[];
 }
 

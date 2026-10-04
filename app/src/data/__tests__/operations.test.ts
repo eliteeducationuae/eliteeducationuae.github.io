@@ -27,8 +27,8 @@ describe('roles & bids (mirror place_bid / award_opportunity)', () => {
     const tutor = who(db, 'tutor'); // Sarah
     const visible = ops.opportunities(db, tutor);
     expect(visible.every((o) => o.status === 'open' || o.awardedTutorId === 't-sarah' || db.bids.some((b) => b.opportunityId === o.id && b.tutorId === 't-sarah'))).toBe(true);
-    const ia = db.opportunities.find((o) => o.title.startsWith('IB Maths AA HL'))!;
-    ops.placeBid(db, tutor, ia.id, 'I love IA work', undefined, NOW);
+    const ia = db.opportunities.find((o) => o.title.startsWith('IGCSE Physics'))!;
+    ops.placeBid(db, tutor, ia.id, 'I would be pleased to teach this student.', undefined, NOW);
     expect(() => ops.awardOpportunity(db, tutor, db.bids[db.bids.length - 1].id)).toThrow(AccessError);
     ops.awardOpportunity(db, who(db, 'admin'), db.bids[db.bids.length - 1].id, NOW);
     expect(ia).toMatchObject({ status: 'awarded', awardedTutorId: 't-sarah' });
@@ -73,7 +73,7 @@ describe('reports', () => {
     const db = createSeed(NOW);
     const parent = who(db, 'parent');
     expect(ops.reports(db, parent)).toEqual([]);
-    const layla = db.reports.find((r) => r.studentId === 's-layla')!;
+    const layla = db.reports.find((r) => r.studentId === 's-layla' && r.subject === 'Maths')!;
     ops.setReportStatus(db, who(db, 'admin'), layla.id, 'published', NOW);
     expect(ops.reports(db, parent).map((r) => r.studentId)).toEqual(['s-layla']);
   });

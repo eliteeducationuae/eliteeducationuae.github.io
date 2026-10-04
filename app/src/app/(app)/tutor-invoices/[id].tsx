@@ -185,7 +185,7 @@ function Detail({ inv }: { inv: TutorInvoice }) {
             title={`Mark ${formatAED(tutorInvoiceTotal(inv.items))} paid`}
             variant="gold"
             loading={pay.isPending}
-            onPress={() => confirm('Mark as paid?', `${tutor?.fullName} will be told the payment has been sent.`, () => pay.mutate([inv.id, reference]), 'Mark paid')}
+            onPress={() => confirm('Mark as paid?', `${tutor?.fullName} will be notified that the payment has been sent.`, () => pay.mutate([inv.id, reference]), 'Mark paid')}
           />
         </Card>
       ) : null}

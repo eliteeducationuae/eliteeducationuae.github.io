@@ -3,10 +3,11 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { useLookup, useReportCycles, useSettings, useStudentReports } from '@/data/hooks';
+import { useEnrolments, useLookup, useReportCycles, useSettings, useStudentReports } from '@/data/hooks';
 import { formatDate } from '@/domain/dates';
+import { enrolmentFor } from '@/domain/enrolments';
 import { EFFORT_LABELS, PROGRESS_LABELS } from '@/domain/reports';
-import type { ReportCycle, ReportStatus, Student, StudentReport } from '@/domain/types';
+import type { Enrolment, ReportCycle, ReportStatus, Student, StudentReport } from '@/domain/types';
 import { shareStudentReport } from '@/lib/student-report-pdf';
 
 import { Badge, Button, Card, Row, Section, Txt, type Tone } from './ui';
@@ -24,16 +25,39 @@ export function reportProgress(reports: StudentReport[]) {
   return { written, total: reports.length, percent: reports.length ? Math.round((written / reports.length) * 100) : 0 };
 }
 
-export function ReportRow({ report, subtitle }: { report: StudentReport; subtitle?: string }) {
+/** The subject a report covers and its enrolment: by the report's enrolment id first, then by its subject. */
+export function reportSubject(report: StudentReport, enrolments: Enrolment[]): { subject?: string; enrolment?: Enrolment } {
+  const byId = report.enrolmentId ? enrolments.find((e) => e.id === report.enrolmentId) : undefined;
+  const subject = byId?.subject ?? report.subject;
+  return { subject, enrolment: byId ?? enrolmentFor(enrolments, report.studentId, subject) };
+}
+
+/** Reports in reading order: by student name, then by subject. */
+export function sortReports(reports: StudentReport[], studentName: (id: string) => string, enrolments: Enrolment[]): StudentReport[] {
+  return [...reports].sort(
+    (a, b) =>
+      studentName(a.studentId).localeCompare(studentName(b.studentId)) ||
+      (reportSubject(a, enrolments).subject ?? '').localeCompare(reportSubject(b, enrolments).subject ?? ''),
+  );
+}
+
+/** 'Chemistry · Sarah Khan · Draft' style subtitle parts, without empty pieces. */
+export function joinParts(...parts: (string | undefined | null | false)[]): string {
+  return parts.filter(Boolean).join(' · ');
+}
+
+export function ReportRow({ report, subtitle, showTutor }: { report: StudentReport; subtitle?: string; showTutor?: boolean }) {
   const lookup = useLookup();
+  const enrolments = useEnrolments();
   const s = REPORT_STATUS[report.status];
   const student = lookup.student(report.studentId);
+  const { subject } = reportSubject(report, enrolments.data ?? []);
   return (
     <Card onPress={() => router.push({ pathname: '/reports/[id]', params: { id: report.id } })} accessibilityLabel={`Report for ${student?.fullName ?? 'student'}`}>
       <Row style={{ justifyContent: 'space-between' }}>
         <View style={{ flex: 1, gap: 2 }}>
           <Txt variant="h3">{student?.fullName ?? 'Student'}</Txt>
-          <Txt variant="muted">{subtitle ?? `${student?.curriculum ?? ''}${report.aiAssisted ? ' · AI-assisted' : ''}`}</Txt>
+          <Txt variant="muted">{subtitle ?? joinParts(subject ?? student?.curriculum, showTutor && lookup.tutor(report.tutorId)?.fullName, report.aiAssisted && 'AI-assisted')}</Txt>
         </View>
         <Badge label={s.label} tone={s.tone} />
       </Row>
@@ -78,6 +102,7 @@ export function PublishedReports({ student }: { student: Student }) {
   const cycles = useReportCycles();
   const settings = useSettings();
   const lookup = useLookup();
+  const enrolments = useEnrolments(student.id);
   const [open, setOpen] = useState<string | null>(null);
   const list = (reports.data ?? [])
     .filter((r) => r.studentId === student.id && r.status === 'published')
@@ -92,7 +117,7 @@ export function PublishedReports({ student }: { student: Student }) {
           <Card key={r.id} style={{ gap: Spacing.three }} onPress={shown === r.id ? undefined : () => setOpen(r.id)}>
             <Row style={{ justifyContent: 'space-between' }}>
               <View style={{ flex: 1 }}>
-                <Txt variant="h3">{cycle(r.cycleId)?.name ?? 'Report'}</Txt>
+                <Txt variant="h3">{joinParts(cycle(r.cycleId)?.name ?? 'Report', reportSubject(r, enrolments.data ?? []).subject)}</Txt>
                 <Txt variant="muted">
                   {lookup.tutor(r.tutorId)?.fullName}
                   {r.publishedAt ? ` · ${formatDate(r.publishedAt)}` : ''}

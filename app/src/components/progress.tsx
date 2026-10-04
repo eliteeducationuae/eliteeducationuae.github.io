@@ -2,31 +2,50 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MasteryColors, Spacing } from '@/constants/theme';
-import { topicName } from '@/data/curriculum';
+import { useTopicLookup } from '@/data/hooks';
 import { focusTopics, RATING_LABELS, summariseSyllabus, type Syllabus, type TopicMastery } from '@/domain/progress';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Icon } from './icon';
 import { Badge, Card, ProgressBar, Row, Txt } from './ui';
 
+function luminance(color: string): number {
+  const v = color.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(v.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Whichever of a light and a dark text colour reads better on `bg` (both given as six-digit colours). */
+export function readableOn(bg: string, light: string, dark: string): string {
+  const contrast = (a: string, b: string) => {
+    const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+    return (x + 0.05) / (y + 0.05);
+  };
+  return contrast(bg, light) >= contrast(bg, dark) ? light : dark;
+}
+
 export function masteryColor(rating: number | undefined, fallback: string): string {
   return rating ? MasteryColors[Math.round(rating) - 1] : fallback;
 }
 
-/** Headline numbers + "work on next" for a student. */
-export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mastery: Map<string, TopicMastery> }) {
+/** Headline numbers + "work on next" for a student. `hideTitle` when a heading above already names the list. */
+export function ProgressSummary({ syllabus, mastery, hideTitle }: { syllabus: Syllabus; mastery: Map<string, TopicMastery>; hideTitle?: boolean }) {
   const theme = useTheme();
+  const topics = useTopicLookup();
   const summary = summariseSyllabus(syllabus, mastery);
   const focus = focusTopics(mastery);
   return (
     <Card style={{ gap: Spacing.three }}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="h3">{syllabus.name}</Txt>
+      <Row style={{ justifyContent: hideTitle ? 'flex-end' : 'space-between' }}>
+        {hideTitle ? null : <Txt variant="h3">{syllabus.name}</Txt>}
         <Badge label={`${summary.covered}/${summary.total} topics`} tone="info" />
       </Row>
       <View style={{ gap: Spacing.one }}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt variant="muted">Syllabus covered</Txt>
+          <Txt variant="muted">Topics covered</Txt>
           <Txt variant="h3">{summary.coveragePercent}%</Txt>
         </Row>
         <ProgressBar value={summary.coveragePercent} color={theme.accent} />
@@ -45,7 +64,7 @@ export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mas
             <Row key={t.topicId} gap={Spacing.two}>
               <View style={[styles.swatch, { backgroundColor: masteryColor(t.rating, theme.border) }]} />
               <Txt style={{ flex: 1 }} numberOfLines={1}>
-                {topicName(t.topicId)}
+                {topics.name(t.topicId)}
               </Txt>
               <Txt variant="small">{RATING_LABELS[t.rating]}</Txt>
             </Row>
@@ -59,6 +78,7 @@ export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mas
 /** Units × topics grid coloured by latest rating. Tap a cell for detail. */
 export function MasteryHeatmap({ syllabus, mastery }: { syllabus: Syllabus; mastery: Map<string, TopicMastery> }) {
   const theme = useTheme();
+  const topics = useTopicLookup();
   const [selected, setSelected] = useState<string | null>(null);
   const summary = summariseSyllabus(syllabus, mastery);
   const sel = selected ? mastery.get(selected) : undefined;
@@ -101,7 +121,7 @@ export function MasteryHeatmap({ syllabus, mastery }: { syllabus: Syllabus; mast
       ))}
       {selected ? (
         <View style={[styles.detail, { backgroundColor: theme.surfaceAlt }]}>
-          <Txt variant="h3">{topicName(selected)}</Txt>
+          <Txt variant="h3">{topics.name(selected)}</Txt>
           {sel ? (
             <Row gap={Spacing.two}>
               <Badge label={RATING_LABELS[sel.rating]} tone={sel.rating >= 4 ? 'success' : sel.rating === 3 ? 'warning' : 'danger'} />
@@ -163,7 +183,7 @@ export function RatingPicker({ value, onChange, label }: { value?: number; onCha
               styles.rating,
               { borderColor: active ? MasteryColors[r - 1] : theme.border, backgroundColor: active ? MasteryColors[r - 1] : theme.surface },
             ]}>
-            <Txt variant="h3" style={{ color: active ? '#fff' : theme.textMuted }}>
+            <Txt variant="h3" style={{ color: active ? readableOn(MasteryColors[r - 1], theme.onHero, theme.hero) : theme.textMuted }}>
               {r}
             </Txt>
           </Pressable>

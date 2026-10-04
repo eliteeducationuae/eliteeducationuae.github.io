@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { invoiceTotals } from '@/domain/billing';
 import type { Profile } from '@/domain/types';
+import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
-import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
+import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
 import { createSeed } from './seed';
@@ -80,6 +81,20 @@ export function createDemoSource(): DataSource {
       await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
       return found;
     },
+    async signInWithProvider() {
+      // Demo: Apple and Google both sign in as the sample parent.
+      const d = await load();
+      const found = d.profiles.find((p) => p.role === 'parent');
+      if (!found) throw new Error('No demo parent account.');
+      viewer = found;
+      await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
+      return { status: 'signed-in' as const, profile: found };
+    },
+    async setMyName(fullName) {
+      const updated = await write((d, v) => eq.setMyName(d, v, fullName));
+      viewer = updated;
+      return updated;
+    },
     async signOut() {
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
@@ -92,7 +107,7 @@ export function createDemoSource(): DataSource {
       const familyId = newId('fam');
       d.families.push({
         id: familyId,
-        name: details.fullName.trim().split(' ').pop() ?? details.fullName,
+        name: surnameOf(details.fullName),
         parentName: details.fullName.trim(),
         email: e,
         phone: details.phone,
@@ -135,6 +150,12 @@ export function createDemoSource(): DataSource {
     saveStudent: (s) => write((d, v) => cmd.saveStudent(d, v, s)),
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
 
+    listEnrolments: (filter) => read((d, v) => enr.enrolments(d, v, filter?.studentId)),
+    saveEnrolment: (e) => write((d, v) => enr.saveEnrolment(d, v, e)),
+    listTopicLists: () => read((d) => enr.topicLists(d)),
+    listTopics: (filter) => read((d) => enr.topics(d, filter?.listId)),
+    addTopic: (input) => write((d, v) => enr.addTopic(d, v, input)),
+
     createLessons: (lessons) => write((d, v) => cmd.createLessons(d, v, lessons)),
     rescheduleLesson: (id, start, end) => write((d, v) => cmd.rescheduleLesson(d, v, id, start, end)),
     cancelLesson: (id, reason, waive) => write((d, v) => cmd.cancelLesson(d, v, id, reason, waive)),
@@ -145,7 +166,9 @@ export function createDemoSource(): DataSource {
     invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
     setInvoiceStatus: (id, status) => write((d, v) => cmd.setInvoiceStatus(d, v, id, status)),
     recordPayment: (id, amount, method, ref) => write((d, v) => cmd.recordPayment(d, v, id, amount, method, ref)),
-    addMyChild: (child) => write((d, v) => eq.addMyChild(d, v, child)),
+    addMyChild: async (child) => {
+      await write((d, v) => eq.addMyChild(d, v, child));
+    },
     setFamilyStatus: (id, status) => write((d, v) => eq.setFamilyStatus(d, v, id, status)),
     async submitEnquiry(e) {
       const d = await load();

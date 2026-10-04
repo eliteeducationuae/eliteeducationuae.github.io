@@ -1,6 +1,7 @@
 import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
+import { subjectLine } from '@/components/catalogue-choice';
 import { BID_STATUS, opportunityTone } from '@/components/opportunities';
 import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -43,6 +44,7 @@ function Detail({ o, mine }: { o: NonNullable<ReturnType<typeof useOpportunities
           </Txt>
           <Badge label={s.label} tone={s.tone} />
         </Row>
+        {subjectLine(o) ? <Txt variant="label">{subjectLine(o)}</Txt> : null}
         {o.description ? <Txt>{o.description}</Txt> : null}
         {o.schedule ? <Txt variant="muted">When: {o.schedule}</Txt> : null}
         {o.location ? <Txt variant="muted">Where: {o.location}</Txt> : null}
@@ -52,10 +54,10 @@ function Detail({ o, mine }: { o: NonNullable<ReturnType<typeof useOpportunities
 
       {won ? (
         <Banner tone="success" icon="check">
-          You’ve been chosen for this student! Elite Education will schedule the first lesson with you shortly.
+          You have been chosen for this student. Elite Education will schedule the first lesson with you shortly.
         </Banner>
       ) : mine?.status === 'declined' || (o.status !== 'open' && !won) ? (
-        <Banner icon="sparkle">This role has been filled. Thanks for your interest — keep an eye out for new opportunities.</Banner>
+        <Banner icon="sparkle">This role has been filled. Thank you for your interest. New opportunities will appear here as they arise.</Banner>
       ) : null}
 
       {o.status === 'open' && mine?.status === 'pending' && !editing ? (
@@ -78,7 +80,7 @@ function Detail({ o, mine }: { o: NonNullable<ReturnType<typeof useOpportunities
             value={pitch}
             onChangeText={setPitch}
             multiline
-            placeholder="Relevant experience, results with similar students, how you’d approach their goals."
+            placeholder="Relevant experience, results with similar students, and how you would approach their goals."
           />
           <Field label="When you could teach them" value={availability} onChangeText={setAvailability} placeholder="e.g. Tuesdays after 4pm" />
           <ErrorNote error={bid.error} />

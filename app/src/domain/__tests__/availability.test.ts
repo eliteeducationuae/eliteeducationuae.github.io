@@ -62,7 +62,7 @@ describe('expandWeeklySkipping', () => {
 });
 
 describe('cover', () => {
-  const tutors: Tutor[] = ['t1', 't2', 't3'].map((id) => ({ id, fullName: id.toUpperCase(), email: '', hourlyPay: 0, subjects: [], color: '' }));
+  const tutors: Tutor[] = ['t1', 't2', 't3'].map((id) => ({ id, fullName: id.toUpperCase(), email: '', hourlyPay: 0, subjects: [], curricula: [], phases: [], color: '' }));
   it('lists free tutors, available ones first, excluding absent or busy tutors', () => {
     const lessons = [lesson({}), lesson({ id: 'busy', tutorId: 't3', studentIds: ['s9'] })];
     expect(coverOptions(lessons[0], tutors, lessons, avail, []).map((o) => [o.tutor.id, o.available])).toEqual([['t2', true]]);

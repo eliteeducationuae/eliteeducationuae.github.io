@@ -28,7 +28,7 @@ describe('booking (mirrors open_slots / request_lesson / decide_request)', () =>
   it('rejects taken slots, other families’ children and non-admin approvals', () => {
     const db = createSeed(NOW);
     const parent = who(db, 'parent');
-    const omar = db.lessons.find((l) => l.studentIds.includes('s-omar') && l.status === 'scheduled' && new Date(l.start) > new Date(2026, 9, 4))!;
+    const omar = db.lessons.find((l) => l.studentIds.includes('s-omar') && l.tutorId === 't-craig' && l.status === 'scheduled' && new Date(l.start) > new Date(2026, 9, 4))!;
     expect(() => eq.requestLesson(db, parent, { studentId: 's-omar', kind: 'new-lesson', tutorId: 't-craig', serviceId: 'svc-ib', start: omar.start }, NOW)).toThrow(
       'no longer available',
     );
@@ -81,13 +81,39 @@ describe('sign-up and enquiries', () => {
   it('lets parents add children and anyone send an enquiry', () => {
     const db = createSeed(NOW);
     const parent = who(db, 'parent');
-    eq.addMyChild(db, parent, { fullName: 'Noor Al Mansoori', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1' });
+    eq.addMyChild(db, parent, { fullName: 'Noor Al Mansoori', subjects: [{ subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel' }] });
     expect(db.students.filter((s) => s.familyId === 'f-mansoori')).toHaveLength(3);
-    expect(() => eq.addMyChild(db, who(db, 'tutor'), { fullName: 'X', curriculum: 'IB', syllabusId: 'ib-aa-sl' })).toThrow(AccessError);
+    expect(() => eq.addMyChild(db, who(db, 'tutor'), { fullName: 'X', subjects: [{ subject: 'Maths' }] })).toThrow(AccessError);
 
     eq.submitEnquiry(db, null, { parentName: 'Web Visitor', email: 'v@example.com', source: 'website' }, NOW);
     expect(db.enquiries.some((e) => e.parentName === 'Web Visitor' && e.status === 'new')).toBe(true);
     expect(() => eq.submitEnquiry(db, null, { parentName: 'No contact' })).toThrow('email address or phone');
     expect(eq.enquiries(db, parent)).toEqual([]);
+  });
+});
+
+describe('setMyName (mirrors set_my_name)', () => {
+  it('names a parent whose prospect family was created without one', () => {
+    const db = createSeed(NOW);
+    db.families.push({ id: 'f-new', name: 'New family', parentName: 'New parent', email: 'x@privaterelay.appleid.com', status: 'prospect', createdAt: NOW.toISOString() });
+    const me = { id: 'u-new', role: 'parent' as const, fullName: 'New parent', email: 'x@privaterelay.appleid.com', familyId: 'f-new' };
+    db.profiles.push(me);
+    const updated = eq.setMyName(db, me, '  Fatima   Al Mansoori ');
+    expect(updated.fullName).toBe('Fatima Al Mansoori');
+    expect(db.families.find((f) => f.id === 'f-new')).toMatchObject({ parentName: 'Fatima Al Mansoori', name: 'Al Mansoori' });
+    expect(() => eq.setMyName(db, me, '   ')).toThrow('Please enter your name.');
+    expect(() => eq.setMyName(db, me, 'a'.repeat(121))).toThrow('Please enter a name of 120 characters or fewer.');
+  });
+
+  it('never overwrites the name recorded for an active family, and ignores other roles', () => {
+    const db = createSeed(NOW);
+    const parent = who(db, 'parent');
+    const family = db.families.find((f) => f.id === parent.familyId)!;
+    expect(family.status).not.toBe('prospect');
+    const before = parent.fullName;
+    expect(eq.setMyName(db, parent, 'Someone Else').fullName).toBe(before);
+    expect(family.parentName).not.toBe('Someone Else');
+    const tutor = who(db, 'tutor');
+    expect(eq.setMyName(db, tutor, 'Someone Else').fullName).toBe(tutor.fullName);
   });
 });

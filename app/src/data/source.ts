@@ -1,3 +1,4 @@
+import type { EnrolmentDraft } from '@/domain/enrolments';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
@@ -17,6 +18,7 @@ import type {
   AttendanceMark,
   Closure,
   Enquiry,
+  Enrolment,
   FamilyStatus,
   LessonRequest,
   Message,
@@ -37,6 +39,8 @@ import type {
   Settings,
   Student,
   Tutor,
+  Topic,
+  TopicList,
   TopicRating,
 } from '@/domain/types';
 
@@ -51,6 +55,15 @@ export interface CompleteLessonInput {
   ratings: { studentId: string; topicId: string; rating: TopicRating['rating'] }[];
   homework: { studentId: string; title: string; dueDate: string }[];
 }
+
+/** Third-party sign-in providers offered on the sign-in screen. */
+export type SocialProvider = 'apple' | 'google';
+
+/**
+ * Outcome of signInWithProvider: signed straight in, leaving the page for the provider (web; the result
+ * arrives through restoreSession after the redirect), or cancelled by the person.
+ */
+export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { status: 'redirecting' } | { status: 'cancelled' };
 
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
 
@@ -83,6 +96,17 @@ export interface DataSource {
   verifySignUpCode?(email: string, code: string): Promise<void>;
   /** Email the sign-up code again. */
   resendSignUpCode?(email: string): Promise<void>;
+  /**
+   * Sign in with Apple or Google. On the web this redirects the page away ('redirecting'); on devices it
+   * opens the provider's sheet or browser and returns the signed-in profile, or 'cancelled'. Throws
+   * NOT_LINKED if the login has no profile, and a friendly message if the provider is not switched on.
+   */
+  signInWithProvider?(provider: SocialProvider): Promise<SocialSignInResult>;
+  /**
+   * A parent saves their own name, e.g. after an Apple sign-in that shared none. Renames a prospect family too;
+   * a name the office has recorded for an active family is left alone. Returns the refreshed profile.
+   */
+  setMyName?(fullName: string): Promise<Profile>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */
@@ -112,6 +136,19 @@ export interface DataSource {
   saveFamily(family: Omit<Family, 'id'> & { id?: string }): Promise<Family>;
   saveStudent(student: Omit<Student, 'id'> & { id?: string }): Promise<Student>;
   saveService(service: Omit<Service, 'id'> & { id?: string }): Promise<Service>;
+
+  // Subjects: enrolments and shared topic lists
+  /** Enrolments of the students the caller can see. */
+  listEnrolments(filter?: { studentId?: string }): Promise<Enrolment[]>;
+  /** Admins only. `active: false` removes the subject from use but keeps its history. */
+  saveEnrolment(e: EnrolmentDraft & { studentId: string }): Promise<Enrolment>;
+  listTopicLists(): Promise<TopicList[]>;
+  listTopics(filter?: { listId?: string }): Promise<Topic[]>;
+  /**
+   * Adds a topic to the shared list for the enrolment's subject, curriculum and level (admins, and tutors who
+   * teach that enrolment). Creates or reuses the list; the same name in the same unit returns the existing topic.
+   */
+  addTopic(input: { enrolmentId: string; name: string; unit?: string }): Promise<Topic>;
 
   // Scheduling
   createLessons(lessons: NewLesson[]): Promise<Lesson[]>;
@@ -220,6 +257,8 @@ export interface NewOpportunity {
   description?: string;
   curriculum?: string;
   syllabusId?: string;
+  subject?: string;
+  phase?: string;
   studentId?: string;
   enquiryId?: string;
   schedule?: string;
@@ -236,6 +275,7 @@ export interface NewTutorApplication {
   phone?: string;
   curricula: string[];
   subjects?: string;
+  phases?: string[];
   experience?: string;
   qualifications?: string;
   availability?: string;
@@ -267,12 +307,22 @@ export interface SignUpDetails {
   phone?: string;
 }
 
+export interface NewChildSubject {
+  subject: string;
+  curriculum?: string;
+  level?: string;
+  examBoard?: string;
+  /** A built-in course the family chose; the server keeps it only if it is built in and fits the subject. */
+  syllabusId?: string;
+}
+
 export interface NewChild {
   fullName: string;
-  curriculum: Student['curriculum'];
-  syllabusId: string;
   school?: string;
   yearGroup?: string;
+  phase?: string;
+  /** 1 to 10 subjects. */
+  subjects: NewChildSubject[];
 }
 
 export interface NewEnquiry {
@@ -281,6 +331,8 @@ export interface NewEnquiry {
   phone?: string;
   studentName?: string;
   curriculum?: string;
+  subject?: string;
+  phase?: string;
   yearGroup?: string;
   message?: string;
   preferredTimes?: string;
@@ -293,6 +345,7 @@ export interface NewLessonRequest {
   lessonId?: string;
   tutorId: string;
   serviceId: string;
+  subject?: string;
   start: string;
   note?: string;
 }

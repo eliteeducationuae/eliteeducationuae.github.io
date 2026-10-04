@@ -32,9 +32,9 @@ export default function TutorInvoices() {
     <Screen onRefresh={() => invoices.refetch()} refreshing={invoices.isRefetching}>
       {!bank.isLoading && !bank.data ? (
         <Banner tone="warning" icon="money">
-          Add your bank details so we can pay you.{' '}
+          Please add your bank details so that we can pay you.{' '}
           <Txt variant="muted" color="accent" onPress={() => router.push('/payment-details')}>
-            Add now
+            Add them now
           </Txt>
         </Banner>
       ) : null}
@@ -49,7 +49,7 @@ export default function TutorInvoices() {
       </Card>
       <Section title="Your invoices">
         {mine.length === 0 ? (
-          <EmptyState icon="doc" title="No invoices yet" />
+          <EmptyState icon="doc" title="No invoices yet" message="Your monthly invoices will appear here once you create them." />
         ) : (
           <View style={{ gap: Spacing.two }}>
             {mine.map((i) => (

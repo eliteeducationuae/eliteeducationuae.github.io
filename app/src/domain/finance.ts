@@ -1,7 +1,8 @@
 import { chargeRevenue, invoiceTotals, roundMoney, tutorEarnings } from './billing';
+import { OTHER } from './catalogue';
 import { toDateKey } from './dates';
 import { tutorInvoiceTotal } from './tutor-pay';
-import type { Charge, Expense, Invoice, Lesson, LessonPackage, Settings, Student, Tutor, TutorInvoice } from './types';
+import type { Charge, Expense, Invoice, Lesson, LessonPackage, Settings, Tutor, TutorInvoice } from './types';
 
 export interface MonthFigures {
   /** `YYYY-MM` */
@@ -89,16 +90,20 @@ export function receivables(invoices: Invoice[]): number {
   return roundMoney(invoices.filter((i) => i.status === 'sent').reduce((s, i) => s + invoiceTotals(i).balance, 0));
 }
 
-/** Revenue split by curriculum for a set of charges. */
-export function revenueByCurriculum(charges: Charge[], students: Student[], packages: LessonPackage[]): { curriculum: string; revenue: number }[] {
-  const out = new Map<string, Charge[]>();
+/** Revenue split by subject: each charge counts towards its lesson's subject, or 'Other'. Highest first. */
+export function revenueBySubject(charges: Charge[], lessons: Lesson[], packages: LessonPackage[]): { subject: string; revenue: number }[] {
+  const byLesson = new Map(lessons.map((l) => [l.id, l]));
+  const out = new Map<string, { subject: string; charges: Charge[] }>();
   for (const c of charges) {
-    const cur = students.find((s) => s.id === c.studentId)?.curriculum ?? 'Other';
-    out.set(cur, [...(out.get(cur) ?? []), c]);
+    const subject = byLesson.get(c.lessonId)?.subject?.trim() || OTHER;
+    const key = subject.toLowerCase();
+    const entry = out.get(key) ?? { subject, charges: [] };
+    entry.charges.push(c);
+    out.set(key, entry);
   }
-  return [...out.entries()]
-    .map(([curriculum, cs]) => ({ curriculum, revenue: chargeRevenue(cs, packages) }))
-    .sort((a, b) => b.revenue - a.revenue);
+  return [...out.values()]
+    .map(({ subject, charges: cs }) => ({ subject, revenue: chargeRevenue(cs, packages) }))
+    .sort((a, b) => b.revenue - a.revenue || a.subject.localeCompare(b.subject));
 }
 
 /** RFC 4180 CSV. */

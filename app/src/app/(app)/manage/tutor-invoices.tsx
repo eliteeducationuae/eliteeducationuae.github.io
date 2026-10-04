@@ -40,7 +40,7 @@ export default function AdminTutorInvoices() {
       />
       {filter === 'approved' && list.length ? <Txt variant="muted">Pay these by bank transfer, then mark each one paid with the reference.</Txt> : null}
       {list.length === 0 ? (
-        <EmptyState icon="doc" title="Nothing here" message="Tutors submit their monthly invoices from the app." />
+        <EmptyState icon="doc" title="No invoices in this view" message="Tutors submit their monthly invoices from the app." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((i) => (

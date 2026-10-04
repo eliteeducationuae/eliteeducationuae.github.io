@@ -7,11 +7,23 @@ import { Icon } from '@/components/icon';
 import { LessonStatusBadge } from '@/components/lessons';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { topicName } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAbsences, useAction, useAvailability, useLesson, useLessons, useLookup, useNotes, useSettings, useTutors } from '@/data/hooks';
+import {
+  useAbsences,
+  useAction,
+  useAvailability,
+  useEnrolments,
+  useLesson,
+  useLessons,
+  useLookup,
+  useNotes,
+  useSettings,
+  useTopicLookup,
+  useTutors,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
+import { lessonSubject, studentSubjects } from '@/domain/enrolments';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findClashes, isAbsent } from '@/domain/scheduling';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,6 +36,8 @@ export default function LessonDetail() {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const notes = useNotes({ lessonId: id });
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
   const [mode, setMode] = useState<'view' | 'cancel' | 'move' | 'cover'>('view');
 
   if (lesson.isLoading || !lookup.ready) return <Loading />;
@@ -33,6 +47,7 @@ export default function LessonDetail() {
   const service = lookup.service(l.serviceId);
   const tutor = lookup.tutor(l.tutorId);
   const note = notes.data?.[0];
+  const subject = lessonSubject(l, enrolments.data ?? []);
   const isStaff = me.role === 'admin' || (me.role === 'tutor' && me.tutorId === l.tutorId);
   const scheduled = l.status === 'scheduled';
   const started = new Date(l.start) <= new Date();
@@ -51,6 +66,12 @@ export default function LessonDetail() {
           </View>
           <LessonStatusBadge lesson={l} />
         </Row>
+        {subject ? (
+          <Row gap={Spacing.two}>
+            <Icon name="book" size={18} color={theme.textMuted} />
+            <Txt>Subject: {subject}</Txt>
+          </Row>
+        ) : null}
         <Row gap={Spacing.two}>
           <Avatar name={tutor?.fullName ?? '?'} color={tutor?.color} size={32} />
           <Txt>{tutor?.fullName}</Txt>
@@ -59,7 +80,7 @@ export default function LessonDetail() {
           <Icon name={l.location === 'online' ? 'video' : 'pin'} size={18} color={theme.textMuted} />
           <Txt style={{ flex: 1 }}>{l.location === 'online' ? 'Online lesson' : (l.address ?? 'In person')}</Txt>
           {l.location === 'online' && l.meetingUrl && scheduled ? (
-            <Button title="Join" size="sm" icon="video" onPress={() => Linking.openURL(l.meetingUrl!)} />
+            <Button title="Join lesson" size="sm" icon="video" onPress={() => Linking.openURL(l.meetingUrl!)} />
           ) : null}
         </Row>
         {l.cancelReason ? <Txt variant="muted">Cancelled: {l.cancelReason}</Txt> : null}
@@ -72,7 +93,7 @@ export default function LessonDetail() {
             <ListItem
               key={sid}
               title={s?.fullName ?? 'Student'}
-              subtitle={note?.attendance[sid] ? `Attendance: ${note.attendance[sid]}` : s?.curriculum}
+              subtitle={note?.attendance[sid] ? `Attendance: ${note.attendance[sid]}` : studentSubjects(enrolments.data ?? [], sid) || s?.curriculum}
               left={<Avatar name={s?.fullName ?? '?'} size={36} />}
               onPress={me.role === 'admin' || me.role === 'tutor' ? () => router.push({ pathname: '/students/[id]', params: { id: sid } }) : undefined}
             />
@@ -83,11 +104,11 @@ export default function LessonDetail() {
       {note ? (
         <Section title="Lesson notes">
           <Card>
-            <Txt>{note.summary || 'No summary written.'}</Txt>
+            <Txt>{note.summary || 'No summary has been written yet.'}</Txt>
             {note.topicIds.length ? (
               <Row gap={4} wrap>
                 {note.topicIds.map((t) => (
-                  <Badge key={t} label={topicName(t)} />
+                  <Badge key={t} label={topics.name(t)} />
                 ))}
               </Row>
             ) : null}
@@ -103,7 +124,7 @@ export default function LessonDetail() {
 
       {isStaff && scheduled ? (
         <Button
-          title={started ? 'Record lesson: notes, attendance, homework' : 'Record lesson early'}
+          title={started ? 'Record the lesson: notes, attendance and homework' : 'Record the lesson early'}
           icon="check"
           variant={started ? 'gold' : 'secondary'}
           onPress={() => router.push({ pathname: '/complete/[id]', params: { id: l.id } })}
@@ -119,7 +140,7 @@ export default function LessonDetail() {
             <Button title="Change tutor" icon="people" variant="secondary" style={{ flex: 1 }} onPress={() => setMode('cover')} />
           ) : null}
           {me.role === 'parent' && !started ? (
-            <Button title="Ask to move" icon="calendar" variant="secondary" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/book', params: { lessonId: l.id } })} />
+            <Button title="Request a new time" icon="calendar" variant="secondary" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/book', params: { lessonId: l.id } })} />
           ) : null}
           {canCancel ? <Button title="Cancel lesson" icon="close" variant="danger" style={{ flex: 1 }} onPress={() => setMode('cancel')} /> : null}
         </Row>
@@ -158,7 +179,7 @@ function ParentUpdate({ lessonId, familyIds }: { lessonId: string; familyIds: st
             else setFailed(true);
           }}
         />
-        {failed ? <Txt variant="small">AI drafting isn’t available right now.</Txt> : null}
+        {failed ? <Txt variant="small">Drafting is not available at the moment. Please write the message yourself.</Txt> : null}
       </View>
     );
   return (
@@ -177,7 +198,7 @@ function ParentUpdate({ lessonId, familyIds }: { lessonId: string; familyIds: st
           onPress={async () => {
             await send.mutateAsync([familyIds[0], message.trim()]);
             setMessage(null);
-            notify('Sent', 'Your message is in the family’s conversation.');
+            notify('Message sent', 'Your message has been added to the family’s conversation.');
           }}
         />
       </Row>
@@ -259,11 +280,11 @@ function CancelPanel({
         <Banner tone={preview.chargeable ? 'warning' : 'info'} icon="alert">
           {preview.chargeable
             ? `This is less than ${settings.data.cancellationHours} hours’ notice, so the lesson will still be charged (${formatAED(fee)}).`
-            : `Late notice, but no charge will be made${me.role === 'tutor' ? ' because the tutor is cancelling' : ''}.`}
+            : `This is late notice, but no charge will be made${me.role === 'tutor' ? ' because the tutor is cancelling' : ''}.`}
         </Banner>
       ) : (
         <Banner tone="success" icon="check">
-          More than {settings.data.cancellationHours} hours’ notice, so there’s no charge.
+          More than {settings.data.cancellationHours} hours’ notice, so there is no charge.
         </Banner>
       )}
       {me.role === 'admin' && late ? (
@@ -272,12 +293,12 @@ function CancelPanel({
           <Switch value={waive} onValueChange={setWaive} accessibilityLabel="Waive the late-cancellation fee" />
         </Row>
       ) : null}
-      <Field label="Reason" placeholder="e.g. Illness, school trip" value={reason} onChangeText={setReason} />
+      <Field label="Reason" placeholder="e.g. Illness or a school trip" value={reason} onChangeText={setReason} />
       <ErrorNote error={cancel.error} />
       <Row gap={Spacing.two}>
         <Button title="Keep lesson" variant="secondary" style={{ flex: 1 }} onPress={onDone} />
         <Button
-          title="Yes, cancel"
+          title="Yes, cancel the lesson"
           variant="danger"
           style={{ flex: 1 }}
           loading={cancel.isPending}
