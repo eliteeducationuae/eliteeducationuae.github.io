@@ -160,6 +160,13 @@ export function nameFromEmail(email: string | null | undefined): string {
 /**
  * True when a parent's name is a stand-in rather than their real name: blank, 'New parent', or a single word
  * taken from their email address (e.g. 'Jsmith1984'). Such names are never used to greet a family.
+ *
+ * Deliberately cautious, so a family is never greeted as 'Welcome, Jsmith1984':
+ * - Any digit marks a name as a stand-in. Real names rarely contain one; a parent called 'Henry Lewis 3rd'
+ *   is simply greeted without a name.
+ * - A single word that equals the name derived from the email address counts as a stand-in even when the
+ *   provider did share it (e.g. 'Fatima' with fatima@...), because the database derives exactly that word
+ *   when no name is shared, and the two cannot be told apart. Such a parent is asked for their full name once.
  */
 export function isPlaceholderName(name: string | null | undefined, email?: string | null): boolean {
   const clean = (name ?? '').trim();

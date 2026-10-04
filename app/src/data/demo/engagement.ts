@@ -22,7 +22,8 @@ export const eq = {
   /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
   setMyName(db: DemoDB, viewer: Profile, fullName: string): Profile {
     const clean = fullName.trim().replace(/\s+/g, ' ');
-    if (!clean || clean.length > 120) throw new Error('Please enter your name.');
+    if (!clean) throw new Error('Please enter your name.');
+    if (clean.length > 120) throw new Error('Please enter a name of 120 characters or fewer.');
     const me = db.profiles.find((p) => p.id === viewer.id);
     if (!me || me.role !== 'parent') return viewer;
     const family = db.families.find((f) => f.id === me.familyId);

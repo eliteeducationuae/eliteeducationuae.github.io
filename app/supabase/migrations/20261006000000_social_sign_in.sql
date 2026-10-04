@@ -91,6 +91,9 @@ revoke all on function public.link_login(uuid, text, jsonb) from public, anon, a
 -- The provider is added last so that it overrides anything a person put in their own metadata. The
 -- 'provider' field is only the first provider, so a login that began as an email sign-up and was then
 -- continued with Apple or Google is recognised from 'providers'. Both are set by the auth server.
+-- The trigger fires on insert or when email_confirmed_at changes, so this covers an identity linked before
+-- the email was confirmed. A login confirmed earlier that links Apple or Google later is not re-linked here;
+-- the sign-in screen's 'not linked' banner covers that case.
 create or replace function public.on_auth_user_confirmed() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare app jsonb := coalesce(new.raw_app_meta_data, '{}'::jsonb); provider text := app->>'provider';
@@ -143,7 +146,8 @@ returns void language plpgsql security definer set search_path = public as $$
 declare me public.profiles; fam public.families; clean text := regexp_replace(trim(coalesce(p_full_name, '')), '\s+', ' ', 'g');
 begin
   if auth.uid() is null then raise exception 'Please sign in first.' using errcode = '42501'; end if;
-  if clean = '' or length(clean) > 120 then raise exception 'Please enter your name.'; end if;
+  if clean = '' then raise exception 'Please enter your name.'; end if;
+  if length(clean) > 120 then raise exception 'Please enter a name of 120 characters or fewer.'; end if;
   select * into me from public.profiles where id = auth.uid();
   if me.id is null or me.role <> 'parent' then return; end if;
   if me.family_id is not null then

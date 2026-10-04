@@ -102,6 +102,7 @@ describe('setMyName (mirrors set_my_name)', () => {
     expect(updated.fullName).toBe('Fatima Al Mansoori');
     expect(db.families.find((f) => f.id === 'f-new')).toMatchObject({ parentName: 'Fatima Al Mansoori', name: 'Al Mansoori' });
     expect(() => eq.setMyName(db, me, '   ')).toThrow('Please enter your name.');
+    expect(() => eq.setMyName(db, me, 'a'.repeat(121))).toThrow('Please enter a name of 120 characters or fewer.');
   });
 
   it('never overwrites the name recorded for an active family, and ignores other roles', () => {

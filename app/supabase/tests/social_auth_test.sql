@@ -110,14 +110,14 @@ do $$ begin
   perform public.set_my_name('   ');
   raise exception 'accepted a blank name';
 exception when raise_exception then
-  if sqlerrm = 'accepted a blank name' then raise; end if;
+  if sqlerrm <> 'Please enter your name.' then raise; end if;
   raise notice 'ok - set_my_name rejects a blank name';
 end $$;
 do $$ begin
   perform public.set_my_name(repeat('a', 121));
   raise exception 'accepted a long name';
 exception when raise_exception then
-  if sqlerrm = 'accepted a long name' then raise; end if;
+  if sqlerrm <> 'Please enter a name of 120 characters or fewer.' then raise; end if;
   raise notice 'ok - set_my_name rejects a name over 120 characters';
 end $$;
 select pg_temp.as_user('');
