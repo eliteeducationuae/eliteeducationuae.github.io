@@ -1,0 +1,127 @@
+# Elite Education — tutoring app
+
+The Elite Education app for iPhone (plus Android and web, from the same code). It runs scheduling, billing and student progress for **admins, tutors, parents and students**. It's built to replace Teachworks.
+
+## Why it's better than Teachworks
+
+| | Teachworks | Elite Education app |
+|---|---|---|
+| Mobile | Mostly web pages | A native app for every role, with home-screen tabs and dark mode |
+| Progress tracking | Free-text notes | Curriculum-aware: IB AA/AI, IGCSE 4MA1/0580/0606 and A-Level syllabus topic trees, with 1–5 mastery ratings over time, heatmaps and "work on next" |
+| Recording a lesson | Several screens | One pass: attendance, topics with suggestions, ratings, family summary, homework and private notes. Billing happens automatically. |
+| Parents | Invoices and a portal | Upcoming lessons, lesson notes, child progress, PDF progress reports and invoices paid by card in AED |
+| Cancellations | Manual | Your 24-hour policy is applied automatically. Parents see the fee before confirming; tutor cancellations never charge families; admins can waive fees. |
+| Packages | Add-on | Prepaid lesson bundles: credits are used automatically, with low-credit alerts on the dashboard |
+| Calendar | | Day, week and per-tutor timeline views, drag-to-reschedule, clash detection, holidays that recurring lessons skip, tutor time off with cover suggestions, and a live Apple/Google Calendar feed |
+| Sign-up | Admin creates every account | Parents sign up themselves (6-digit email code), add their children and request a free consultation; existing families and tutors are linked automatically by email |
+| Enquiries | Separate CRM | Built-in pipeline (new → contacted → trial booked → enrolled / lost) fed by the website form, the app and logged phone calls |
+| Booking | Admin books everything | Parents pick a real open slot from the tutor's availability to request an extra lesson or a move; one-tap approval creates or moves the lesson |
+| Messaging | Email only | A conversation per family with you and their tutors, announcements, and automatic emails + push for notes, invoices, messages and booking decisions |
+| New students for tutors | Phone calls and WhatsApp | Post a role (prefilled from an enquiry); your tutors pitch for it; you pick one and schedule in one tap |
+| Hiring | Google Forms | "Teach with us" form on the website and in the app, with CV upload, feeding a hiring pipeline. **Hire** creates the tutor. |
+| Tutor pay | Tutors email invoices | Tutors submit a monthly invoice built from the lessons they taught. You approve it, pay it and record the reference. Bank details are collected in the app and kept private. |
+| Reports | Written from scratch | Report rounds with a facts panel for each student, one-tap grades and **Draft for me** (AI). You review it and send it to families as a PDF. |
+| Money | Spreadsheets | Profit and loss by month, expenses with receipts, the pay run and CSV exports for your accountant |
+| Insights | Basic reports | Revenue trends, tutor capacity, family activity, enquiry conversion, students to check on and an AI summary |
+| Desktop | | A sidebar layout on laptops, global search (Ctrl/⌘-K) and the web app at `/app` |
+
+## Run it
+
+```bash
+cd app
+npm install
+npx expo start         # scan the QR code with Expo Go on your iPhone, or press w for web
+```
+
+The app connects to the live Supabase project (settings in `src/config.ts`). To explore with realistic sample data instead, start it with `EXPO_PUBLIC_DEMO=1 npx expo start` and pick a role on the sign-in screen.
+
+Demo data is stored on the device. Use **Account → Reset demo data** to start again.
+
+## Project layout
+
+```
+app/
+  src/app/            screens (Expo Router): admin/, tutor/, parent/, student/, lesson/, invoice/, manage/…
+  src/components/     UI kit, calendar, progress heatmap, billing cards
+  src/domain/         pure business rules + unit tests (scheduling, billing, progress, calendar feed)
+  src/data/           DataSource interface, Supabase implementation, offline demo implementation, syllabus data
+  supabase/
+    migrations/       database schema, row-level security, server functions (complete/cancel lesson, invoicing)
+    functions/        Edge Functions: Stripe checkout + webhook, calendar feed, reminders, notifications, AI drafting
+    tests/            permission tests run against a throwaway Postgres
+```
+
+## Going live
+
+1. **Supabase** (free tier is fine). Create a project at [supabase.com](https://supabase.com).
+   - Run `supabase/migrations/20261002000000_init.sql` in the SQL editor, or use `npx supabase db push`.
+   - Create your login under Authentication → Users, then run `supabase/bootstrap.sql` (edit the email first).
+   - The project URL and publishable key are in `src/config.ts`.
+2. **Stripe** (UAE account, for card payments in AED).
+   - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://…`
+   - `npx supabase functions deploy create-checkout stripe-webhook ics send-reminders send-notifications`
+   - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for `checkout.session.completed`.
+   - Schedule `send-reminders` to run hourly (Supabase → Edge Functions → Schedules).
+3. **App Store.** This needs an Apple Developer account ($99/yr). No Mac is required.
+   ```bash
+   npx eas-cli@latest init            # links the project and enables push notifications
+   npx eas-cli@latest build -p ios    # cloud build
+   npx eas-cli@latest submit -p ios   # sends it to TestFlight / App Store Connect
+   ```
+
+Secrets never go in the app or this repo. The anon key is safe to ship because row-level security decides what each person can see.
+
+## Turning on the newer features
+
+Run these once in the Supabase SQL editor, in order, if you haven't already:
+`supabase/migrations/20261003000000_auto_link_logins.sql`, then `supabase/migrations/20261004000000_engagement.sql`.
+
+**Sign-up codes.** In Supabase → Authentication → Emails → *Confirm signup*, add the code to the email so parents can type it into the app:
+
+```html
+<h2>Welcome to Elite Education</h2>
+<p>Your code is <strong style="font-size:22px;letter-spacing:4px">{{ .Token }}</strong></p>
+<p>Or <a href="{{ .ConfirmationURL }}">confirm your email here</a>.</p>
+```
+
+**Emails and push notifications.** Messages, lesson notes, invoices, enquiries and booking decisions are queued in the database and delivered by the `send-notifications` Edge Function:
+
+1. Create a free [Resend](https://resend.com) account and verify the `eliteeducation.me` domain.
+2. `npx supabase secrets set RESEND_API_KEY=re_… EMAIL_FROM="Elite Education <hello@eliteeducation.me>" APP_URL=https://eliteeducation.me`
+3. `npx supabase functions deploy send-notifications`, then schedule it every minute (Supabase → Edge Functions → Schedules).
+
+Until this is set up, everything still works in the app; the emails simply wait in the queue.
+
+**Website enquiries.** The "Book a free consultation" form on eliteeducation.me posts straight into the enquiry pipeline.
+
+**Roles, hiring, tutor invoices, reports and money (round 3).** Run `supabase/migrations/20261005000000_operations.sql` in the SQL editor. It also creates the private `applications` (CVs) and `receipts` storage buckets with their access rules.
+
+**AI drafting (optional).** Report drafts, parent updates and the insights summary use Claude through the `ai-assist` Edge Function. Without it, tutors still get a template draft.
+
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com).
+2. `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-…`
+3. `npx supabase functions deploy ai-assist`
+
+The function reads data as the signed-in person, so the AI only sees what that person can already see. It uses server-side fallbacks: if the main model declines a request, the API retries it on a recommended fallback model. Bank details are never sent.
+
+**Web app at `/app`.** `.github/workflows/deploy.yml` publishes the website and the web app on every push to `main`. One-off setup: in GitHub, go to repo **Settings → Pages → Source** and choose **GitHub Actions**. Then:
+
+- Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app.
+- Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs.
+
+**Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
+
+## Checks
+
+```bash
+npm run check      # lint + typecheck + unit tests
+npm run test:db    # schema, row-level security and billing functions against a local Postgres
+```
+
+## Roadmap ideas
+
+- AI worksheets on each student's weak topics
+- Two-way Google Calendar sync
+- Online booking of trial lessons from eliteeducation.me
+- WhatsApp reminders
+- Bank-feed import for expenses

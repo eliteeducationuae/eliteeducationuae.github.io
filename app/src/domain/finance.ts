@@ -1,0 +1,111 @@
+import { chargeRevenue, invoiceTotals, roundMoney, tutorEarnings } from './billing';
+import { toDateKey } from './dates';
+import { tutorInvoiceTotal } from './tutor-pay';
+import type { Charge, Expense, Invoice, Lesson, LessonPackage, Settings, Student, Tutor, TutorInvoice } from './types';
+
+export interface MonthFigures {
+  /** `YYYY-MM` */
+  month: string;
+  label: string;
+  revenue: number;
+  tutorCosts: number;
+  /** True when some tutor costs are estimated from lessons because no invoice has been approved yet. */
+  tutorCostsEstimated: boolean;
+  expenses: number;
+  profit: number;
+  /** Profit as a share of revenue (0–1), or 0 with no revenue. */
+  margin: number;
+  /** Money actually received from families. */
+  cashIn: number;
+}
+
+export interface FinanceData {
+  charges: Charge[];
+  packages: LessonPackage[];
+  invoices: Invoice[];
+  lessons: Lesson[];
+  tutors: Tutor[];
+  tutorInvoices: TutorInvoice[];
+  expenses: Expense[];
+  settings: Pick<Settings, 'payTutorForLateCancel'>;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const inMonth = (iso: string, month: string) => iso.slice(0, 7) === month;
+
+/**
+ * Profit and loss for one calendar month.
+ * Revenue: lessons delivered (charges, with package credits at their per-lesson value).
+ * Tutor costs: the tutor's submitted/approved/paid invoice for that month, otherwise estimated from lessons taught.
+ */
+export function monthFigures(month: Date, data: FinanceData): MonthFigures {
+  const key = ym(month);
+  const revenue = chargeRevenue(
+    data.charges.filter((c) => inMonth(toDateKey(new Date(c.date)), key)),
+    data.packages,
+  );
+  let tutorCosts = 0;
+  let estimated = false;
+  for (const tutor of data.tutors) {
+    const invoice = data.tutorInvoices.find(
+      (i) => i.tutorId === tutor.id && i.periodStart.slice(0, 7) === key && i.status !== 'draft' && i.status !== 'rejected',
+    );
+    if (invoice) {
+      tutorCosts += tutorInvoiceTotal(invoice.items);
+    } else {
+      const taught = data.lessons.filter((l) => inMonth(toDateKey(new Date(l.start)), key));
+      const est = tutorEarnings(tutor, taught, data.settings).amount;
+      if (est > 0) estimated = true;
+      tutorCosts += est;
+    }
+  }
+  const expenses = data.expenses.filter((e) => inMonth(e.date, key)).reduce((s, e) => s + e.amount, 0);
+  const cashIn = data.invoices
+    .flatMap((i) => i.payments)
+    .filter((p) => inMonth(toDateKey(new Date(p.paidAt)), key))
+    .reduce((s, p) => s + p.amount, 0);
+  const profit = revenue - tutorCosts - expenses;
+  return {
+    month: key,
+    label: `${MONTHS[month.getMonth()]} ${String(month.getFullYear()).slice(2)}`,
+    revenue: roundMoney(revenue),
+    tutorCosts: roundMoney(tutorCosts),
+    tutorCostsEstimated: estimated,
+    expenses: roundMoney(expenses),
+    profit: roundMoney(profit),
+    margin: revenue > 0 ? profit / revenue : 0,
+    cashIn: roundMoney(cashIn),
+  };
+}
+
+/** The last `count` months ending with the month of `now`, oldest first. */
+export function monthSeries(now: Date, count: number, data: FinanceData): MonthFigures[] {
+  return Array.from({ length: count }, (_, i) => monthFigures(new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1), data));
+}
+
+/** Money families owe right now (sent invoices not yet paid in full). */
+export function receivables(invoices: Invoice[]): number {
+  return roundMoney(invoices.filter((i) => i.status === 'sent').reduce((s, i) => s + invoiceTotals(i).balance, 0));
+}
+
+/** Revenue split by curriculum for a set of charges. */
+export function revenueByCurriculum(charges: Charge[], students: Student[], packages: LessonPackage[]): { curriculum: string; revenue: number }[] {
+  const out = new Map<string, Charge[]>();
+  for (const c of charges) {
+    const cur = students.find((s) => s.id === c.studentId)?.curriculum ?? 'Other';
+    out.set(cur, [...(out.get(cur) ?? []), c]);
+  }
+  return [...out.entries()]
+    .map(([curriculum, cs]) => ({ curriculum, revenue: chargeRevenue(cs, packages) }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+/** RFC 4180 CSV. */
+export function toCSV(rows: (string | number | undefined | null)[][]): string {
+  const cell = (v: string | number | undefined | null) => {
+    const s = v === undefined || v === null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return rows.map((r) => r.map(cell).join(',')).join('\r\n');
+}

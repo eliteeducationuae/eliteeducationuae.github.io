@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Elite Education</title>
+<script>
+  // GitHub Pages serves this page for any unknown path. Links into the web app (/app/...) are handed to the
+  // app, which reopens the right screen; anything else goes to the home page.
+  (function () {
+    var l = window.location;
+    if (l.pathname.indexOf('/app/') === 0) {
+      try { sessionStorage.setItem('elite.redirect', l.pathname.slice(4) + l.search + l.hash); } catch (e) {}
+      l.replace('/app/');
+    } else {
+      l.replace('/');
+    }
+  })();
+</script>
+</head>
+<body></body>
+</html>

@@ -90,6 +90,24 @@
         .contact-info { display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap; margin-bottom: 2rem; }
         .contact-item { font-size: 1.1rem; }
         .contact-item a { color: var(--gold); text-decoration: none; }
+        .enquiry { max-width: 640px; margin: 0 auto 2.5rem; background: var(--white); color: var(--text); border-radius: 12px; padding: 2rem; text-align: left; }
+        .enquiry h3 { color: var(--primary); margin-bottom: 1rem; font-size: 1.3rem; }
+        .enquiry .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .enquiry label { display: block; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+        .enquiry input, .enquiry select, .enquiry textarea { width: 100%; padding: 0.7rem 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px; font: inherit; color: var(--text); background: #fff; }
+        .enquiry textarea { min-height: 96px; resize: vertical; }
+        .enquiry button { margin-top: 1.25rem; width: 100%; border: 0; cursor: pointer; }
+        .enquiry .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.75rem; }
+        .enquiry .status { margin-top: 1rem; padding: 0.8rem 1rem; border-radius: 8px; display: none; }
+        .enquiry .status.ok { display: block; background: #e6f4ea; color: #2f855a; }
+        .enquiry .status.err { display: block; background: #fde8e8; color: #c53030; }
+        .enquiry .checks { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.25rem; }
+        .enquiry .checks label { display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.95rem; color: var(--text); font-weight: 400; }
+        .enquiry .checks input { width: auto; }
+        .teach { background: var(--light); max-width: none; }
+        .teach > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+        .teach .enquiry { max-width: 640px; box-shadow: 0 2px 12px rgba(26, 54, 93, 0.08); }
+        .hp { position: absolute; left: -9999px; }
         footer { background: #0f2440; color: var(--muted); text-align: center; padding: 1.5rem; font-size: 0.875rem; }
         @media (max-width: 768px) {
             header { flex-direction: column; gap: 1rem; }
@@ -98,6 +116,8 @@
             .hero p { font-size: 1rem; }
             .btn-outline { margin-left: 0; margin-top: 0.5rem; }
             .contact-info { flex-direction: column; gap: 1rem; }
+            .enquiry { padding: 1.25rem; }
+            .enquiry .row { grid-template-columns: 1fr; gap: 0; }
         }
     </style>
 </head>
@@ -108,6 +128,8 @@
         <a href="#subjects">Subjects</a>
         <a href="#why">Why Us</a>
         <a href="#contact">Contact</a>
+        <a href="#teach">Teach with us</a>
+        <a href="/app/">Sign in</a>
     </nav>
 </header>
 <section class="hero">
@@ -168,12 +190,125 @@
 <section class="contact" id="contact">
     <h2>Ready to Start?</h2>
     <p>Get in touch to book a free consultation and find out how we can help.</p>
+    <form class="enquiry" id="enquiry" novalidate>
+        <h3>Book a free consultation</h3>
+        <div class="row">
+            <div><label for="e-name">Your name</label><input id="e-name" name="name" required autocomplete="name"></div>
+            <div><label for="e-student">Student’s first name</label><input id="e-student" name="student"></div>
+        </div>
+        <div class="row">
+            <div><label for="e-email">Email</label><input id="e-email" name="email" type="email" autocomplete="email"></div>
+            <div><label for="e-phone">Mobile / WhatsApp</label><input id="e-phone" name="phone" type="tel" autocomplete="tel"></div>
+        </div>
+        <div class="row">
+            <div><label for="e-curriculum">Curriculum</label>
+                <select id="e-curriculum" name="curriculum"><option value="">Choose…</option><option>IB</option><option>IGCSE</option><option>A-Level</option><option>Other</option></select></div>
+            <div><label for="e-year">Year group</label><input id="e-year" name="year" placeholder="e.g. Year 11"></div>
+        </div>
+        <label for="e-times">Best times</label><input id="e-times" name="times" placeholder="e.g. Weekday evenings">
+        <label for="e-message">How can we help?</label><textarea id="e-message" name="message" placeholder="Current grade, target, exam dates, topics they find hard…"></textarea>
+        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button type="submit" class="btn btn-primary">Send enquiry</button>
+        <div class="status" id="enquiry-status" role="status"></div>
+        <p class="note">We reply within one working day. Your details are only used to respond to your enquiry.</p>
+    </form>
     <div class="contact-info">
         <div class="contact-item">&#x1F4E7; <a href="mailto:craig@craigobrieneducation.com">craig@craigobrieneducation.com</a></div>
         <div class="contact-item">&#x1F310; <a href="https://eliteeducation.me" target="_blank">eliteeducation.me</a></div>
     </div>
     <a href="mailto:craig@craigobrieneducation.com" class="btn btn-primary">Book a Consultation</a>
 </section>
+<section class="section teach" id="teach">
+    <h2 class="section-title">Teach with Elite Education</h2>
+    <p class="section-subtitle">Experienced IB, IGCSE or A-Level maths teacher? Join our team of specialist tutors in the UAE.</p>
+    <form class="enquiry" id="apply" novalidate>
+        <h3>Apply to tutor with us</h3>
+        <div class="row">
+            <div><label for="a-name">Your name</label><input id="a-name" name="name" required autocomplete="name"></div>
+            <div><label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email"></div>
+        </div>
+        <label for="a-phone">Mobile / WhatsApp</label><input id="a-phone" name="phone" type="tel" autocomplete="tel">
+        <label>Curricula you teach</label>
+        <div class="checks">
+            <label><input type="checkbox" name="curricula" value="IB"> IB</label>
+            <label><input type="checkbox" name="curricula" value="IGCSE"> IGCSE</label>
+            <label><input type="checkbox" name="curricula" value="A-Level"> A-Level</label>
+        </div>
+        <label for="a-subjects">Courses and levels</label><input id="a-subjects" name="subjects" placeholder="e.g. IB AA HL, IGCSE Further Maths">
+        <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="Schools, years teaching, exam results…"></textarea>
+        <label for="a-qualifications">Qualifications</label><input id="a-qualifications" name="qualifications" placeholder="e.g. BSc Mathematics, PGCE, IB examiner">
+        <label for="a-availability">Availability</label><input id="a-availability" name="availability" placeholder="e.g. Weekday evenings, Saturday mornings">
+        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button type="submit" class="btn btn-primary">Send application</button>
+        <div class="status" id="apply-status" role="status"></div>
+        <p class="note">Want to attach your CV? <a href="/app/teach">Apply in our app</a> instead. We only use your details to consider your application.</p>
+    </form>
+</section>
 <footer>&copy; 2026 Elite Education UAE. All rights reserved.</footer>
+<script>
+(function () {
+    // Sends website enquiries straight into the Elite Education app's enquiry pipeline.
+    // The publishable key is public by design; the database only allows submit_enquiry for visitors.
+    var URL = 'https://tzahajbulieoalzuzclv.supabase.co/rest/v1/rpc/submit_enquiry';
+    var KEY = 'sb_publishable_GGcYrMILBwC_39aVhEiQ4w_uuQ06_Q6';
+    var form = document.getElementById('enquiry');
+    var status = document.getElementById('enquiry-status');
+    function show(ok, text) { status.className = 'status ' + (ok ? 'ok' : 'err'); status.textContent = text; }
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var f = form.elements;
+        if (f.website.value) return; // bots fill hidden fields
+        if (!f.name.value.trim()) return show(false, 'Please enter your name.');
+        if (!f.email.value.trim() && !f.phone.value.trim()) return show(false, 'Please give an email address or phone number so we can reply.');
+        var button = form.querySelector('button');
+        button.disabled = true; button.textContent = 'Sending…';
+        fetch(URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: KEY },
+            body: JSON.stringify({
+                p_parent_name: f.name.value, p_email: f.email.value || null, p_phone: f.phone.value || null,
+                p_student_name: f.student.value || null, p_curriculum: f.curriculum.value || null, p_year_group: f.year.value || null,
+                p_message: f.message.value || null, p_preferred_times: f.times.value || null, p_source: 'website'
+            })
+        }).then(function (r) {
+            if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || 'Something went wrong'); });
+            form.reset();
+            show(true, 'Thank you! We’ll be in touch within one working day to arrange your free consultation.');
+        }).catch(function (err) {
+            show(false, (err && err.message ? err.message + '. ' : '') + 'You can also email craig@craigobrieneducation.com.');
+        }).finally(function () { button.disabled = false; button.textContent = 'Send enquiry'; });
+    });
+
+    // Tutor applications go straight into the app's hiring pipeline.
+    var apply = document.getElementById('apply');
+    var applyStatus = document.getElementById('apply-status');
+    function showApply(ok, text) { applyStatus.className = 'status ' + (ok ? 'ok' : 'err'); applyStatus.textContent = text; }
+    apply.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var f = apply.elements;
+        if (f.website.value) return;
+        if (!f.name.value.trim()) return showApply(false, 'Please enter your name.');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.value.trim())) return showApply(false, 'Please enter a valid email address.');
+        var curricula = Array.prototype.filter.call(apply.querySelectorAll('input[name=curricula]'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+        var button = apply.querySelector('button');
+        button.disabled = true; button.textContent = 'Sending…';
+        fetch(URL.replace('submit_enquiry', 'submit_tutor_application'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: KEY },
+            body: JSON.stringify({
+                p_full_name: f.name.value, p_email: f.email.value, p_phone: f.phone.value || null, p_curricula: curricula,
+                p_subjects: f.subjects.value || null, p_experience: f.experience.value || null,
+                p_qualifications: f.qualifications.value || null, p_availability: f.availability.value || null
+            })
+        }).then(function (r) {
+            if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || 'Something went wrong'); });
+            apply.reset();
+            showApply(true, 'Thank you for applying! We’ll review your application and be in touch soon.');
+        }).catch(function (err) {
+            showApply(false, (err && err.message ? err.message + '. ' : '') + 'You can also email craig@craigobrieneducation.com.');
+        }).finally(function () { button.disabled = false; button.textContent = 'Send application'; });
+    });
+})();
+</script>
 </body>
 </html>

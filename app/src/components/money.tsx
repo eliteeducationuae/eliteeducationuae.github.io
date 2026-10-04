@@ -1,0 +1,110 @@
+import { useMemo } from 'react';
+import { View } from 'react-native';
+
+import { Spacing } from '@/constants/theme';
+import { useCharges, useExpenses, useInvoices, useLessons, usePackages, useSettings, useTutorInvoices, useTutors } from '@/data/hooks';
+import { formatAED } from '@/domain/billing';
+import { addDays, startOfMonth } from '@/domain/dates';
+import type { FinanceData } from '@/domain/finance';
+import { useTheme } from '@/hooks/use-theme';
+
+import { Row, Txt } from './ui';
+
+const FROM = new Date(startOfMonth(new Date()).getFullYear(), startOfMonth(new Date()).getMonth() - 12, 1);
+const TO = addDays(new Date(), 1);
+
+/** Everything the money and insights screens need, for the last 13 months. */
+export function useFinanceData(): { data: FinanceData | null; refetch: () => void; refreshing: boolean } {
+  const charges = useCharges();
+  const packages = usePackages();
+  const invoices = useInvoices();
+  const lessons = useLessons(FROM, TO);
+  const tutors = useTutors();
+  const tutorInvoices = useTutorInvoices();
+  const expenses = useExpenses();
+  const settings = useSettings();
+  const data = useMemo(() => {
+    if (!charges.data || !packages.data || !invoices.data || !lessons.data || !tutors.data || !tutorInvoices.data || !expenses.data || !settings.data) return null;
+    return {
+      charges: charges.data,
+      packages: packages.data,
+      invoices: invoices.data,
+      lessons: lessons.data,
+      tutors: tutors.data,
+      tutorInvoices: tutorInvoices.data,
+      expenses: expenses.data,
+      settings: settings.data,
+    };
+  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data]);
+  return {
+    data,
+    refetch: () => {
+      charges.refetch();
+      invoices.refetch();
+      expenses.refetch();
+      tutorInvoices.refetch();
+    },
+    refreshing: charges.isRefetching || expenses.isRefetching,
+  };
+}
+
+/** A simple vertical bar chart built from Views. Negative values draw downwards in red. */
+export function Bars({ items, height = 120 }: { items: { label: string; value: number; secondary?: number }[]; height?: number }) {
+  const theme = useTheme();
+  const max = Math.max(1, ...items.map((i) => Math.max(Math.abs(i.value), Math.abs(i.secondary ?? 0))));
+  return (
+    <View accessibilityRole="image" accessibilityLabel={items.map((i) => `${i.label} ${formatAED(i.value)}`).join(', ')}>
+      <Row style={{ alignItems: 'flex-end', height, gap: 4 }}>
+        {items.map((i) => (
+          <View key={i.label} style={{ flex: 1, height: '100%', justifyContent: 'flex-end', flexDirection: 'row', alignItems: 'flex-end', gap: 1 }}>
+            <View style={{ flex: 1, height: `${(Math.abs(i.value) / max) * 100}%`, minHeight: i.value ? 2 : 0, backgroundColor: i.value < 0 ? theme.danger : theme.primary, borderRadius: 3 }} />
+            {i.secondary !== undefined ? (
+              <View style={{ flex: 1, height: `${(Math.abs(i.secondary) / max) * 100}%`, minHeight: i.secondary ? 2 : 0, backgroundColor: i.secondary < 0 ? theme.danger : theme.gold, borderRadius: 3 }} />
+            ) : null}
+          </View>
+        ))}
+      </Row>
+      <Row style={{ gap: 4, marginTop: Spacing.one }}>
+        {items.map((i) => (
+          <Txt key={i.label} variant="small" style={{ flex: 1, textAlign: 'center', fontSize: 10 }} numberOfLines={1}>
+            {i.label}
+          </Txt>
+        ))}
+      </Row>
+    </View>
+  );
+}
+
+export function Legend({ items }: { items: { label: string; color: string }[] }) {
+  return (
+    <Row style={{ gap: Spacing.three }}>
+      {items.map((i) => (
+        <Row key={i.label} style={{ gap: 6 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: i.color }} />
+          <Txt variant="small">{i.label}</Txt>
+        </Row>
+      ))}
+    </Row>
+  );
+}
+
+/** Horizontal bars for a share-of-total breakdown. */
+export function ShareBars({ items, format = formatAED }: { items: { label: string; value: number }[]; format?: (n: number) => string }) {
+  const theme = useTheme();
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <View style={{ gap: Spacing.two }}>
+      {items.map((i) => (
+        <View key={i.label} style={{ gap: 4 }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt>{i.label}</Txt>
+            <Txt variant="muted">{format(i.value)}</Txt>
+          </Row>
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: theme.surfaceAlt }}>
+            <View style={{ width: `${(i.value / max) * 100}%`, height: '100%', borderRadius: 4, backgroundColor: theme.accent }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
