@@ -3,9 +3,11 @@ import { create } from 'zustand';
 import type { Profile } from '@/domain/types';
 
 import { source } from './index';
-import { NOT_LINKED } from './messages';
+import { AuthNotice, NOT_LINKED } from './messages';
 import { queryClient } from './query';
-import type { SignUpDetails } from './source';
+import type { SignUpDetails, SocialProvider } from './source';
+
+export type { SocialProvider, SocialSignInResult } from './source';
 
 /** After sign-up: load the profile the database created (or explain why there isn't one). */
 async function finishSignIn(set: (s: Partial<SessionState>) => void) {
@@ -21,6 +23,9 @@ async function finishSignIn(set: (s: Partial<SessionState>) => void) {
 interface SessionState {
   status: 'loading' | 'signed-out' | 'signed-in';
   profile: Profile | null;
+  /** A message for the sign-in screen, e.g. why a web sign-in redirect could not finish. */
+  authNotice: string | null;
+  clearAuthNotice(): void;
   restore(): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
@@ -28,18 +33,33 @@ interface SessionState {
   signUp(email: string, password: string, details: SignUpDetails): Promise<'signed-in' | 'confirm-email'>;
   /** Finish sign-up with the emailed code, then sign in. */
   confirmSignUp(email: string, code: string): Promise<void>;
+  /** Sign in with Apple or Google. On the web this leaves the page ('redirecting'). */
+  signInWithProvider(provider: SocialProvider): Promise<'signed-in' | 'redirecting' | 'cancelled'>;
 }
 
 export const useSession = create<SessionState>((set) => ({
   status: 'loading',
   profile: null,
+  authNotice: null,
+  clearAuthNotice() {
+    set({ authNotice: null });
+  },
   async restore() {
     try {
       const profile = await source.restoreSession();
       set({ profile, status: profile ? 'signed-in' : 'signed-out' });
-    } catch {
-      set({ profile: null, status: 'signed-out' });
+    } catch (err) {
+      set({ profile: null, status: 'signed-out', authNotice: err instanceof AuthNotice ? err.message : null });
     }
+  },
+  async signInWithProvider(provider) {
+    if (!source.signInWithProvider) throw new Error('Sign-in with this provider is not available.');
+    const result = await source.signInWithProvider(provider);
+    if (result.status === 'signed-in') {
+      queryClient.clear();
+      set({ profile: result.profile, status: 'signed-in', authNotice: null });
+    }
+    return result.status;
   },
   async signIn(email, password) {
     const profile = await source.signIn(email, password);

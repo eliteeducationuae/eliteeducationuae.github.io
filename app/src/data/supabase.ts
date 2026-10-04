@@ -2,8 +2,18 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
+import {
+  friendlySocialError,
+  NATIVE_AUTH_PATH,
+  parseAuthCallback,
+  redirectErrorNotice,
+  webRedirectTo,
+  type SocialProviderName,
+} from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -38,8 +48,18 @@ import type {
   TopicRating,
 } from '@/domain/types';
 
-import { NOT_LINKED } from './messages';
-import type { DataSource } from './source';
+import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
+import { AuthNotice, NOT_LINKED } from './messages';
+import type { DataSource, SocialProvider, SocialSignInResult } from './source';
+
+/**
+ * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
+ * it, so a failed Apple or Google redirect can still be explained on the sign-in screen.
+ */
+const initialUrl = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.href : '';
+
+/** Remembers which provider a web redirect was for, so its error can be named after the page reloads. */
+const PENDING_PROVIDER_KEY = 'elite.auth.pendingProvider';
 
 type Row = Record<string, any>;
 
@@ -337,10 +357,124 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     return row ? toProfile(row) : null;
   }
 
+  /** On the web, the error from an Apple or Google redirect is reported once, then forgotten. */
+  let callbackChecked = Platform.OS !== 'web';
+
+  async function takeCallbackNotice(): Promise<string | null> {
+    if (callbackChecked) return null;
+    callbackChecked = true;
+    const pending = await AsyncStorage.getItem(PENDING_PROVIDER_KEY).catch(() => null);
+    if (pending) await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
+    const { error } = parseAuthCallback(initialUrl);
+    if (!error) return null;
+    try {
+      // Tidy the error out of the address bar so a refresh does not repeat it.
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+    } catch {
+      // Not fatal.
+    }
+    const provider = pending === 'apple' || pending === 'google' ? pending : null;
+    return redirectErrorNotice(provider, error);
+  }
+
+  /** Finish a native browser sign-in from the URL the browser returned to. */
+  async function completeFromCallback(provider: SocialProviderName, url: string): Promise<'done' | 'cancelled'> {
+    const parsed = parseAuthCallback(url);
+    if (parsed.error) {
+      const message = friendlySocialError(provider, parsed.error);
+      if (message === 'Sign-in was cancelled.') return 'cancelled';
+      throw new Error(message);
+    }
+    if (parsed.code) {
+      check(await client.auth.exchangeCodeForSession(parsed.code));
+    } else if (parsed.accessToken && parsed.refreshToken) {
+      check(await client.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken }));
+    } else {
+      throw new Error(friendlySocialError(provider, 'missing session'));
+    }
+    return 'done';
+  }
+
+  async function startProviderSignIn(provider: SocialProvider): Promise<SocialSignInResult | 'done'> {
+    // (1) Web: hand the whole page to the provider; restoreSession picks the session up on return.
+    if (Platform.OS === 'web') {
+      await AsyncStorage.setItem(PENDING_PROVIDER_KEY, provider).catch(() => undefined);
+      const { error } = await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: webRedirectTo(window.location.origin, process.env.EXPO_BASE_URL),
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        },
+      });
+      if (error) {
+        await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
+        throw new Error(error.message);
+      }
+      return { status: 'redirecting' };
+    }
+
+    // (2) iOS: Apple's native sheet, then the identity token goes to Supabase with the raw nonce.
+    if (Platform.OS === 'ios' && provider === 'apple' && APPLE_NATIVE) {
+      const apple = await appleNativeSignIn();
+      if (!apple) return { status: 'cancelled' };
+      check(await client.auth.signInWithIdToken({ provider: 'apple', token: apple.identityToken, nonce: apple.rawNonce }));
+      if (apple.fullName) {
+        // Apple shares the name only once; keep it if the profile was created without one.
+        await client.rpc('set_my_name', { p_full_name: apple.fullName }).then(undefined, () => undefined);
+      }
+      return 'done';
+    }
+
+    // (3) Google everywhere native, and Apple on Android: an in-app browser returning to the app.
+    const redirectTo = AuthSession.makeRedirectUri({ scheme: 'eliteeducation', path: NATIVE_AUTH_PATH });
+    const data = check<{ url: string }>(
+      await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        },
+      }),
+    );
+    const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (res.type !== 'success') return { status: 'cancelled' };
+    return (await completeFromCallback(provider, res.url)) === 'cancelled' ? { status: 'cancelled' } : 'done';
+  }
+
   return {
     kind: 'supabase',
 
-    restoreSession: loadProfile,
+    async restoreSession() {
+      const notice = await takeCallbackNotice();
+      if (notice) throw new AuthNotice(notice);
+      // Offline or no login: just show the sign-in screen, keeping any stored session.
+      const { data, error } = await client.auth.getUser();
+      if (error || !data.user) return null;
+      const row = check(await client.from('profiles').select('*').eq('id', data.user.id).maybeSingle());
+      if (row) return toProfile(row);
+      // A login without a profile (e.g. an Apple or Google login that could not be linked): sign it out and say why.
+      await client.auth.signOut();
+      throw new AuthNotice(NOT_LINKED);
+    },
+    async signInWithProvider(provider) {
+      let started: SocialSignInResult | 'done';
+      try {
+        started = await startProviderSignIn(provider);
+      } catch (err) {
+        // Never log tokens; show families a plain-English message instead of the raw provider error.
+        const message = err instanceof Error ? err.message : String(err);
+        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not');
+        throw new Error(friendly ? message : friendlySocialError(provider, message));
+      }
+      if (started !== 'done') return started;
+      const profile = await loadProfile();
+      if (!profile) {
+        await client.auth.signOut();
+        throw new Error(NOT_LINKED);
+      }
+      return { status: 'signed-in', profile };
+    },
     async signIn(email, password) {
       check(await client.auth.signInWithPassword({ email: email.trim(), password }));
       const profile = await loadProfile();

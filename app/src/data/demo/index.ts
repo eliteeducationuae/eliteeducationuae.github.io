@@ -80,6 +80,15 @@ export function createDemoSource(): DataSource {
       await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
       return found;
     },
+    async signInWithProvider() {
+      // Demo: Apple and Google both sign in as the sample parent.
+      const d = await load();
+      const found = d.profiles.find((p) => p.role === 'parent');
+      if (!found) throw new Error('No demo parent account.');
+      viewer = found;
+      await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
+      return { status: 'signed-in' as const, profile: found };
+    },
     async signOut() {
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);

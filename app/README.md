@@ -109,6 +109,35 @@ The function reads data as the signed-in person, so the AI only sees what that p
 - Set `APP_URL` to `https://eliteeducation.me/app` so email links open the web app.
 - Add `https://eliteeducation.me/app/**` under Supabase → Authentication → URL configuration → Redirect URLs.
 
+**Sign in with Apple and Google.** Families and tutors can choose "Continue with Apple" or "Continue with Google" instead of a password. Set it up once, in this order:
+
+1. **Database.** Run `supabase/migrations/20261006000000_social_sign_in.sql` in the Supabase SQL editor.
+2. **Redirect URLs.** In Supabase → Authentication → URL configuration → Redirect URLs, add all four of these:
+   - `https://eliteeducation.me/app/`
+   - `https://eliteeducation.me/app/**`
+   - `eliteeducation://auth-callback`
+   - `http://localhost:8081/**`
+3. **Google.**
+   1. In the [Google Cloud Console](https://console.cloud.google.com), create a project (for example "Elite Education").
+   2. Under *APIs & Services → OAuth consent screen*, set the app name to **Elite Education**, add your support email, and add the authorised domain **eliteeducation.me**. Publish the app when you are ready for families to use it.
+   3. Under *APIs & Services → Credentials*, choose *Create credentials → OAuth client ID*, type **Web application**. Under *Authorised redirect URIs*, add `https://<project-ref>.supabase.co/auth/v1/callback` (your project reference is in the Supabase URL).
+   4. Copy the client ID and client secret into Supabase → Authentication → Providers → Google, and switch Google on.
+   5. Keep this Google project: the Google Calendar step will reuse the same OAuth client later.
+4. **Apple.** In [Apple Developer](https://developer.apple.com/account) → *Certificates, Identifiers & Profiles*:
+   1. Under *Identifiers*, open the App ID `me.eliteeducation.app` and enable **Sign in with Apple**.
+   2. Create a **Services ID** (for example `me.eliteeducation.signin`). Enable Sign in with Apple on it, with the domain `eliteeducation.me` and the return URL `https://<project-ref>.supabase.co/auth/v1/callback`.
+   3. Under *Keys*, create a key with **Sign in with Apple** enabled and download the `.p8` file. Note the Key ID and your Team ID.
+   4. In Supabase → Authentication → Providers → Apple, switch Apple on. Set the Client IDs to `me.eliteeducation.signin,me.eliteeducation.app`, and paste the secret generated from the `.p8` key (Supabase links to a generator on that page).
+   5. The Apple secret expires every six months. Put a reminder in your calendar to generate a new one and paste it in again, or Apple sign-in on the web and Android will stop working.
+5. **Rebuild the iPhone app** with EAS (`npx eas build --platform ios`). The new `usesAppleSignIn` setting adds the Sign in with Apple entitlement, so an older build will not show the native Apple sheet.
+
+How it behaves:
+
+- **Unknown emails** become new prospect families, exactly as if the parent had signed up with a password. They appear in *More → Families*.
+- **Known emails link automatically.** If the Apple or Google email matches a tutor or a family already on file, that person signs straight into their own account.
+- **Apple "Hide My Email".** If a parent chooses to hide their email, Apple gives a relay address ending `@privaterelay.appleid.com`, which will not match the family's email on file, so they arrive as a new prospect family. Either ask the parent to sign in again and choose **Share My Email**, or open the family in *More → Families* and change its email to the relay address. That moves the login to the correct family and archives the empty prospect family.
+- **Demo mode:** both buttons sign in as the sample parent, Fatima Al Mansoori.
+
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
 ## Checks

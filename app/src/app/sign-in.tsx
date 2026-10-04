@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-na
 
 import { Icon, type IconName } from '@/components/icon';
 import { Logo } from '@/components/logo';
+import { SocialSignIn } from '@/components/social-sign-in';
 import { Banner, Button, Card, ErrorNote, Field, ListItem, Screen, Txt } from '@/components/ui';
 import { Radius, Spacing, elevation, font } from '@/constants/theme';
 import { source } from '@/data';
@@ -22,7 +23,7 @@ type Mode = 'sign-in' | 'sign-up' | 'verify' | 'reset';
 
 export default function SignIn() {
   const theme = useTheme();
-  const { status, signIn, signUp, confirmSignUp } = useSession();
+  const { status, signIn, signUp, confirmSignUp, authNotice, clearAuthNotice } = useSession();
   const [mode, setMode] = useState<Mode>('sign-in');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -39,7 +40,22 @@ export default function SignIn() {
     setMode(m);
     setError(null);
     setMessage(null);
+    clearAuthNotice();
   };
+
+  const clearFeedback = () => {
+    setError(null);
+    setMessage(null);
+  };
+
+  const social = (
+    <>
+      <SocialSignIn disabled={busy} onStart={clearFeedback} onError={setError} />
+      <Txt variant="small" style={{ textAlign: 'center' }}>
+        We use only your name and email address to set up your account.
+      </Txt>
+    </>
+  );
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -116,11 +132,24 @@ export default function SignIn() {
             </Text>
           </View>
 
+          {authNotice ? (
+            <Banner tone="warning" icon="alert">
+              {authNotice}
+            </Banner>
+          ) : null}
+
           {demo && mode === 'sign-in' ? (
             <View style={{ gap: Spacing.two }}>
-              <Banner icon="sparkle">
-                Demo mode: explore the app with realistic sample data. Choose a role to sign in. Nothing you do here is sent anywhere.
+              <Banner tone="warning" icon="sparkle">
+                Demo mode: explore the app with realistic sample data. Continue with Apple or Google to sign in as the sample parent, or
+                choose a role below. Nothing you do here is sent anywhere.
               </Banner>
+              {social}
+              <View style={[styles.divider, { marginTop: Spacing.two }]}>
+                <View style={[styles.hairline, { backgroundColor: theme.border }]} />
+                <Txt variant="label">Or choose a role</Txt>
+                <View style={[styles.hairline, { backgroundColor: theme.border }]} />
+              </View>
               {demo.map((p) => (
                 <ListItem
                   key={p.id}
@@ -141,6 +170,16 @@ export default function SignIn() {
                   Create an account to arrange a complimentary consultation, message us and follow your child’s progress. If you are already
                   a client or one of our tutors, please use the email address we hold for you.
                 </Txt>
+              ) : null}
+              {mode === 'sign-in' || mode === 'sign-up' ? (
+                <>
+                  {social}
+                  <View style={styles.divider}>
+                    <View style={[styles.hairline, { backgroundColor: theme.border }]} />
+                    <Txt variant="label">Or use your email</Txt>
+                    <View style={[styles.hairline, { backgroundColor: theme.border }]} />
+                  </View>
+                </>
               ) : null}
               {mode === 'verify' ? (
                 <Txt variant="muted">
@@ -253,6 +292,8 @@ export default function SignIn() {
 }
 
 const styles = StyleSheet.create({
+  divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  hairline: { flex: 1, height: StyleSheet.hairlineWidth },
   column: {
     width: '100%',
     maxWidth: 480,

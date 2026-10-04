@@ -52,6 +52,15 @@ export interface CompleteLessonInput {
   homework: { studentId: string; title: string; dueDate: string }[];
 }
 
+/** Third-party sign-in providers offered on the sign-in screen. */
+export type SocialProvider = 'apple' | 'google';
+
+/**
+ * Outcome of signInWithProvider: signed straight in, leaving the page for the provider (web; the result
+ * arrives through restoreSession after the redirect), or cancelled by the person.
+ */
+export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { status: 'redirecting' } | { status: 'cancelled' };
+
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
 
 export interface CardPaymentResult {
@@ -83,6 +92,12 @@ export interface DataSource {
   verifySignUpCode?(email: string, code: string): Promise<void>;
   /** Email the sign-up code again. */
   resendSignUpCode?(email: string): Promise<void>;
+  /**
+   * Sign in with Apple or Google. On the web this redirects the page away ('redirecting'); on devices it
+   * opens the provider's sheet or browser and returns the signed-in profile, or 'cancelled'. Throws
+   * NOT_LINKED if the login has no profile, and a friendly message if the provider is not switched on.
+   */
+  signInWithProvider?(provider: SocialProvider): Promise<SocialSignInResult>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */

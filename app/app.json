@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "me.eliteeducation.app",
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -50,7 +51,8 @@
         {
           "color": "#C9A84C"
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true,
