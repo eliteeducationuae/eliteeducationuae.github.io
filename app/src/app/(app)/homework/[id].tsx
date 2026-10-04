@@ -9,7 +9,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHomeworkItem, useLookup, useSubmissions } from '@/data/hooks';
 import { useMe } from '@/data/session';
-import { relativeDay } from '@/domain/dates';
+import { dueLabel } from '@/domain/homework';
 import type { Homework } from '@/domain/types';
 
 /** One piece of homework: instructions and attachments, hand-ins, and tutor feedback. */
@@ -84,7 +84,7 @@ export default function HomeworkDetail() {
             <View style={{ flex: 1, minWidth: 180, gap: 2 }}>
               <Txt variant="h2">{h.title}</Txt>
               {(staff || me.role === 'parent') && student ? <Txt variant="muted">{student.fullName}</Txt> : null}
-              <Txt variant="small">Due {relativeDay(h.dueDate.slice(0, 10) + 'T12:00:00')}</Txt>
+              <Txt variant="small">{dueLabel(h.dueDate)}</Txt>
             </View>
             <HomeworkStatusBadge homework={h} submissions={subs} />
           </Row>
@@ -98,17 +98,15 @@ export default function HomeworkDetail() {
         </Card>
       )}
 
-      {family ? (
-        subs.length === 0 || handingIn ? (
-          <HandInForm homework={h} onDone={() => setHandingIn(false)} />
-        ) : (
-          <Row>
-            <Button title="Hand in again" icon="plus" variant="ghost" onPress={() => setHandingIn(true)} />
-          </Row>
-        )
-      ) : null}
+      {family && (subs.length === 0 || handingIn) ? <HandInForm homework={h} onDone={() => setHandingIn(false)} /> : null}
 
-      <Section title="Hand-ins">
+      <Section
+        title="Hand-ins"
+        action={
+          family && subs.length > 0 && !handingIn ? (
+            <Button title="Hand in again" icon="plus" size="sm" variant="outline" onPress={() => setHandingIn(true)} />
+          ) : undefined
+        }>
         {submissions.isLoading ? (
           <Loading />
         ) : subs.length === 0 ? (

@@ -3,10 +3,12 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Linking, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DEMO_MODE } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useResources } from '@/data/hooks';
-import { filterResources, resourceAttachment, resourceFacets } from '@/domain/homework';
+import { useMe } from '@/data/session';
+import { filterResources, resourceAttachment, resourceFacets, resourceMeta } from '@/domain/homework';
 import type { Attachment, Resource } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
@@ -22,7 +24,8 @@ async function openUrl(url: string) {
 
 /**
  * Open an attachment. Links open directly; files are fetched as a short-lived link from the
- * private classwork bucket. The demo keeps file names only, so it explains that instead.
+ * private classwork bucket. The demo keeps file names only, so it explains that instead; in the
+ * live app a file that cannot be reached is reported as unavailable.
  */
 export async function openAttachment(a: Attachment) {
   try {
@@ -32,7 +35,8 @@ export async function openAttachment(a: Attachment) {
     }
     const url = a.path ? await source.fileUrl?.('classwork', a.path) : null;
     if (url) await openUrl(url);
-    else notify('This file opens in the live app', 'The demo keeps file names only.');
+    else if (DEMO_MODE) notify('This file opens in the live app', 'The demo keeps file names only.');
+    else notify('This file is not available', 'It may have been removed. Please ask your tutor to share it again.');
   } catch (err) {
     notify('This could not be opened', err instanceof Error ? err.message : String(err));
   }
@@ -65,18 +69,24 @@ export function ResourceFilters({
         autoCapitalize="none"
       />
       {facets.subjects.length ? (
-        <Row gap={Spacing.one} wrap>
-          {facets.subjects.map((s) => (
-            <Chip key={s} label={s} selected={value.subject === s} onPress={() => onChange({ ...value, subject: value.subject === s ? undefined : s })} />
-          ))}
-        </Row>
+        <View style={{ gap: Spacing.one }} role="group" aria-label="Filter by subject">
+          <Txt variant="label">Subject</Txt>
+          <Row gap={Spacing.one} wrap>
+            {facets.subjects.map((s) => (
+              <Chip key={s} label={s} selected={value.subject === s} onPress={() => onChange({ ...value, subject: value.subject === s ? undefined : s })} />
+            ))}
+          </Row>
+        </View>
       ) : null}
       {facets.levels.length ? (
-        <Row gap={Spacing.one} wrap>
-          {facets.levels.map((l) => (
-            <Chip key={l} label={l} selected={value.level === l} onPress={() => onChange({ ...value, level: value.level === l ? undefined : l })} />
-          ))}
-        </Row>
+        <View style={{ gap: Spacing.one }} role="group" aria-label="Filter by level">
+          <Txt variant="label">Level</Txt>
+          <Row gap={Spacing.one} wrap>
+            {facets.levels.map((l) => (
+              <Chip key={l} label={l} selected={value.level === l} onPress={() => onChange({ ...value, level: value.level === l ? undefined : l })} />
+            ))}
+          </Row>
+        </View>
       ) : null}
     </View>
   );
@@ -87,8 +97,10 @@ export function applyResourceFilter(list: Resource[], value: ResourceFilterValue
   return filterResources(list, value).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-function resourceMeta(r: Resource): string {
-  return [r.subject, r.level, r.curriculum].map((x) => x?.trim()).filter(Boolean).join(' · ');
+/** Tutors are told only about their own students, as list_resources leaves out the rest. */
+function sharingLine(count: number, admin: boolean): string {
+  if (admin) return count ? `Shared with ${count} ${count === 1 ? 'student' : 'students'}` : 'Not yet shared with students';
+  return count ? `Shared with ${count} of your students` : 'Not yet shared with your students';
 }
 
 /** One library item: title, subject · level · curriculum, tags, sharing and uploader. */
@@ -105,6 +117,7 @@ export function ResourceCard({
   showSharing?: boolean;
 }) {
   const theme = useTheme();
+  const me = useMe();
   const meta = resourceMeta(resource);
   const shared = resource.studentIds.length;
   return (
@@ -127,7 +140,7 @@ export function ResourceCard({
       {showSharing || resource.uploadedByName ? (
         <Txt variant="small">
           {[
-            showSharing ? (shared ? `Shared with ${shared} ${shared === 1 ? 'student' : 'students'}` : 'Not yet shared with students') : '',
+            showSharing ? sharingLine(shared, me.role === 'admin') : '',
             resource.uploadedByName ? `Added by ${resource.uploadedByName}` : '',
           ]
             .filter(Boolean)

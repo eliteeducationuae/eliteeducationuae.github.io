@@ -157,7 +157,7 @@ export function createDemoSource(): DataSource {
     createLessons: (lessons) => write((d, v) => cmd.createLessons(d, v, lessons)),
     rescheduleLesson: (id, start, end) => write((d, v) => cmd.rescheduleLesson(d, v, id, start, end)),
     cancelLesson: (id, reason, waive) => write((d, v) => cmd.cancelLesson(d, v, id, reason, waive)),
-    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, input)),
+    completeLesson: (input) => write((d, v) => cmd.completeLesson(d, v, cw.checkLessonHomework(input))),
     setHomeworkDone: (id, done) => write((d, v) => cmd.setHomeworkDone(d, v, id, done)),
 
     getHomework: (id) => read((d, v) => cw.getHomework(d, v, id)),
@@ -167,8 +167,12 @@ export function createDemoSource(): DataSource {
     giveFeedback: (id, feedback, mark) => write((d, v) => cw.giveFeedback(d, v, id, feedback, mark)),
     listResources: (filter) => read((d, v) => cw.resources(d, v, filter)),
     saveResource: (input) => write((d, v) => cw.saveResource(d, v, input)),
-    deleteResource: (id) => write((d, v) => cw.deleteResource(d, v, id)),
+    async deleteResource(id) {
+      const path = await write((d, v) => cw.deleteResource(d, v, id));
+      if (path) demoFiles.delete(path);
+    },
     shareResource: (resourceId, studentId) => write((d, v) => cw.shareResource(d, v, resourceId, studentId)),
+    unshareResource: (resourceId, studentId) => write((d, v) => cw.unshareResource(d, v, resourceId, studentId)),
 
     sellPackage: (pkg) => write((d, v) => cmd.sellPackage(d, v, pkg)),
     invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
@@ -211,6 +215,9 @@ export function createDemoSource(): DataSource {
       return path;
     },
     fileUrl: async (_bucket, path) => demoFiles.get(path) ?? null,
+    removeFile: async (_bucket, path) => {
+      demoFiles.delete(path);
+    },
     listOpportunities: () => read((d, v) => ops.opportunities(d, v)),
     listBids: () => read((d, v) => ops.bids(d, v)),
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),

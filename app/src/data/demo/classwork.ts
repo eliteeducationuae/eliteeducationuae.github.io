@@ -2,7 +2,7 @@ import { addDays, toDateKey } from '@/domain/dates';
 import { normaliseLink } from '@/domain/homework';
 import type { Attachment, Homework, HomeworkSubmission, Profile, Resource } from '@/domain/types';
 
-import type { HomeworkInput, ResourceInput } from '../source';
+import type { CompleteLessonInput, HomeworkInput, ResourceInput } from '../source';
 import { AccessError, newId, visibleStudentIds, type DemoDB } from './db';
 
 // Homework hand-ins, feedback and the resource library. Mirrors the rules in the
@@ -145,14 +145,16 @@ export const cw = {
     sub.feedbackByName = viewer.fullName;
   },
 
+  /** Mirrors list_resources: only admins see every student a resource is shared with. */
   resources(db: DemoDB, viewer: Profile, filter: { studentId?: string } = {}): Resource[] {
     let list = resourcesOf(db);
+    const ids = visibleStudentIds(db, viewer);
     if (!isStaff(viewer)) {
-      const ids = visibleStudentIds(db, viewer);
       list = list.filter((r) => r.visibility === 'students' && r.studentIds.some((id) => ids.has(id)));
     }
-    if (filter.studentId) list = list.filter((r) => r.studentIds.includes(filter.studentId!));
-    return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    let out = list.map((r) => (viewer.role === 'admin' ? { ...r } : { ...r, studentIds: r.studentIds.filter((id) => ids.has(id)) }));
+    if (filter.studentId) out = out.filter((r) => r.studentIds.includes(filter.studentId!));
+    return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
   saveResource(db: DemoDB, viewer: Profile, input: ResourceInput, now = new Date()): Resource {
@@ -203,7 +205,11 @@ export const cw = {
     return resource;
   },
 
-  deleteResource(db: DemoDB, viewer: Profile, id: string) {
+  /**
+   * Mirrors delete_resource: returns the stored path to remove, or null when there is no file or
+   * homework, a hand-in or another library entry still refers to it, so work already set keeps its copy.
+   */
+  deleteResource(db: DemoDB, viewer: Profile, id: string): string | null {
     const list = resourcesOf(db);
     const resource = list.find((r) => r.id === id);
     if (!resource || !isStaff(viewer)) throw new Error('Resource not found');
@@ -211,6 +217,12 @@ export const cw = {
       throw new AccessError('Only the person who added this resource, or an admin, can delete it.');
     }
     db.resources = list.filter((r) => r.id !== id);
+    const path = resource.kind === 'file' ? resource.path : undefined;
+    if (!path) return null;
+    const uses = (atts: Attachment[] | undefined) => (atts ?? []).some((a) => a.path === path);
+    const inUse =
+      db.homework.some((h) => uses(h.attachments)) || submissionsOf(db).some((s) => uses(s.files)) || db.resources.some((r) => r.path === path);
+    return inUse ? null : path;
   },
 
   shareResource(db: DemoDB, viewer: Profile, resourceId: string, studentId: string) {
@@ -219,6 +231,22 @@ export const cw = {
     if (!canTeach(db, viewer, studentId)) throw new AccessError('You can only share resources with students you teach.');
     if (!resource.studentIds.includes(studentId)) resource.studentIds.push(studentId);
     resource.visibility = 'students';
+  },
+
+  unshareResource(db: DemoDB, viewer: Profile, resourceId: string, studentId: string) {
+    const resource = resourcesOf(db).find((r) => r.id === resourceId);
+    if (!resource || !isStaff(viewer)) throw new Error('Resource not found');
+    if (!canTeach(db, viewer, studentId)) throw new AccessError('You can only change sharing for students you teach.');
+    resource.studentIds = resource.studentIds.filter((id) => id !== studentId);
+    resource.visibility = resource.studentIds.length ? 'students' : 'tutors';
+  },
+
+  /** Check homework attachments set while recording a lesson, as save_homework would. Throws before anything changes. */
+  checkLessonHomework(input: CompleteLessonInput): CompleteLessonInput {
+    return {
+      ...input,
+      homework: input.homework.map((h) => ({ ...h, attachments: cleanAttachments(h.attachments, studentPrefixes(h.studentId)) })),
+    };
   },
 };
 

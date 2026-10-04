@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
-import { AttachmentList, CLASSWORK_FILE_TYPES } from '@/components/attachments';
+import { AttachmentList, CLASSWORK_FILE_TYPES, discardUpload } from '@/components/attachments';
 import { pickFile } from '@/components/file-pick';
 import { CAN_USE_CAMERA, pickPhoto } from '@/components/photo-pick';
 import { Button, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
@@ -80,6 +80,9 @@ function ResourceForm({ existing, library }: { existing?: Resource; library: Res
   const [link, setLink] = useState(existing?.kind === 'link' ? (existing.url ?? '') : '');
   const [uploading, setUploading] = useState<'file' | 'photo' | 'camera' | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
+  // A file uploaded on this screen; the saved resource's own file is never deleted from here,
+  // because homework may share it.
+  const [freshPath, setFreshPath] = useState<string | null>(null);
 
   const url = kind === 'link' ? normaliseLink(link) : null;
   const linkInvalid = kind === 'link' && !!link.trim() && !url;
@@ -93,6 +96,8 @@ function ResourceForm({ existing, library }: { existing?: Resource; library: Res
       if (!picked) return;
       const folder = classworkFolder('resources');
       const path = source.uploadFile ? await source.uploadFile('classwork', folder, picked) : `${folder}/${picked.name}`;
+      if (freshPath) discardUpload(freshPath);
+      setFreshPath(path);
       setFile({ path, fileName: picked.name, mimeType: picked.mimeType });
       if (!title.trim()) setTitle(picked.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
     } catch (err) {
@@ -139,7 +144,16 @@ function ResourceForm({ existing, library }: { existing?: Resource; library: Res
         {kind === 'file' ? (
           <View style={{ gap: Spacing.two }}>
             {file ? (
-              <AttachmentList items={[fileAttachment(file.path, file.fileName, file.mimeType)]} onRemove={() => setFile(null)} />
+              <AttachmentList
+                items={[fileAttachment(file.path, file.fileName, file.mimeType)]}
+                onRemove={() => {
+                  if (freshPath && file.path === freshPath) {
+                    discardUpload(freshPath);
+                    setFreshPath(null);
+                  }
+                  setFile(null);
+                }}
+              />
             ) : (
               <Txt variant="muted">Upload a PDF, a Word, PowerPoint or Excel document, or a photo.</Txt>
             )}

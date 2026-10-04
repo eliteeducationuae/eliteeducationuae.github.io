@@ -247,7 +247,7 @@ do $$ begin
 exception when insufficient_privilege then raise notice 'ok - a tutor cannot share with another tutor''s student';
 end $$;
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
-select pg_temp.check((select count(*) from public.resources) = 0, 'families cannot see resources that have not been shared');
+select pg_temp.check((select count(*) from public.list_resources()) = 0, 'families cannot see resources that have not been shared');
 do $$ begin
   insert into public.resources (title, kind, url) values ('Parent link', 'link', 'https://x.test');
   raise exception 'parent added a resource';
@@ -266,17 +266,40 @@ do $$ begin
   raise exception 'widened sharing';
 exception when insufficient_privilege then raise notice 'ok - an uploader cannot share with students they do not teach';
 end $$;
+-- An admin also shares it with Ollie, so the row now names a second family's child.
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.share_resource('90000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000002');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+select pg_temp.check((select array_to_string(student_ids, ',') from public.list_resources()) = 'd0000000-0000-0000-0000-000000000001',
+  'a tutor sees only their own students among those a resource is shared with');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
-select pg_temp.check((select count(*) from public.resources) = 1, 'the family sees a resource once it is shared');
+select pg_temp.check((select count(*) from public.list_resources()) = 1, 'the family sees a resource once it is shared');
+select pg_temp.check((select array_to_string(student_ids, ',') from public.list_resources()) = 'd0000000-0000-0000-0000-000000000001',
+  'the family never sees which other students a resource is shared with');
+select pg_temp.check((select count(*) from public.resources) = 0, 'families cannot read the library table directly');
+select pg_temp.check((select count(*) from public.list_resources('d0000000-0000-0000-0000-000000000001')) = 1
+  and (select count(*) from public.list_resources('d0000000-0000-0000-0000-000000000002')) = 0, 'the list can be narrowed to one child');
 select pg_temp.check(public.classwork_can_read('resources/r1.pdf'), 'the family can open a shared library file');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
-select pg_temp.check((select count(*) from public.resources) = 1, 'the student sees a resource once it is shared');
+select pg_temp.check((select count(*) from public.list_resources()) = 1, 'the student sees a resource once it is shared');
+-- The admin withdraws the share with Ollie again.
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.unshare_resource('90000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000002');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000e');
-select pg_temp.check((select count(*) from public.resources) = 0, 'another family still cannot see it');
-select pg_temp.check(not public.classwork_can_read('resources/r1.pdf'), 'another family cannot open the shared file');
+select pg_temp.check((select count(*) from public.list_resources()) = 0, 'another family cannot see it once the share is withdrawn');
+select pg_temp.check(not public.classwork_can_read('resources/r1.pdf'), 'another family cannot open the file once the share is withdrawn');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+do $$ begin
+  perform public.unshare_resource('90000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001');
+  raise exception 'unshared another tutor''s student';
+exception when insufficient_privilege then raise notice 'ok - a tutor cannot change sharing for another tutor''s student';
+end $$;
 reset role;
-select pg_temp.check((select count(*) from public.notification_outbox where subject = 'A new resource from Elite Education: Past paper 2025') = 2,
+select pg_temp.check((select count(*) from public.notification_outbox where subject = 'A new resource from Elite Education: Past paper 2025'
+  and profile_id in ('a0000000-0000-0000-0000-00000000000c', 'a0000000-0000-0000-0000-00000000000d')) = 2,
   'the student and family are told about a shared resource once');
+select pg_temp.check((select url from public.notification_outbox where subject like 'A new resource%' and profile_id = 'a0000000-0000-0000-0000-00000000000c')
+  = '/parent/progress?tab=homework', 'the family notice opens the homework tab');
 select pg_temp.check((select url from public.notification_outbox where subject like 'A new resource%' and profile_id = 'a0000000-0000-0000-0000-00000000000d')
   = '/student/homework', 'the student notice opens their homework');
 set role authenticated;
@@ -285,6 +308,18 @@ select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 insert into public.resources (id, title, kind, url) values ('90000000-0000-0000-0000-000000000002', 'Video', 'link', 'https://video.test/1');
 delete from public.resources where id = '90000000-0000-0000-0000-000000000002';
 select pg_temp.check((select count(*) from public.resources) = 1, 'the uploader deletes their resource');
+do $$ begin
+  insert into public.resources (title, kind, url) values (repeat('x', 201), 'link', 'https://x.test');
+  raise exception 'long title accepted';
+exception when check_violation then raise notice 'ok - resource titles are limited to 200 characters';
+end $$;
+do $$ begin
+  perform public.save_homework(null, 'd0000000-0000-0000-0000-000000000001', 'Long', repeat('x', 4001), current_date + 7, '[]');
+  raise exception 'long details accepted';
+exception when raise_exception then
+  if sqlerrm = 'long details accepted' then raise; end if;
+  raise notice 'ok - homework details are limited to 4,000 characters';
+end $$;
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 update public.resources set title = 'Past paper 2025 (Paper 1)';
 select pg_temp.check((select title from public.resources) = 'Past paper 2025 (Paper 1)', 'admins can edit any resource');
@@ -322,6 +357,27 @@ select pg_temp.check(not public.classwork_can_read('resources/r3.pdf'), 'another
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 select pg_temp.check(public.classwork_can_read('students/d0000000-0000-0000-0000-000000000002/x.jpg') and public.classwork_can_write('resources/y.pdf'),
   'admins can reach every folder');
+
+-- Deleting a library file keeps the stored copy while homework still uses it.
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+insert into public.resources (id, title, kind, path, file_name) values
+  ('90000000-0000-0000-0000-000000000003', 'Worksheet', 'file', 'resources/r3.pdf', 'r3.pdf'),
+  ('90000000-0000-0000-0000-000000000004', 'Unused', 'file', 'resources/r4.pdf', 'r4.pdf');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+do $$ begin
+  perform public.delete_resource('90000000-0000-0000-0000-000000000003');
+  raise exception 'deleted another tutor''s resource';
+exception when insufficient_privilege then raise notice 'ok - only the uploader or an admin deletes a resource';
+end $$;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+select pg_temp.check(public.delete_resource('90000000-0000-0000-0000-000000000003') is null,
+  'deleting a library file that homework uses keeps the stored file');
+select pg_temp.check(public.delete_resource('90000000-0000-0000-0000-000000000004') = 'resources/r4.pdf',
+  'deleting an unused library file hands back its path for removal');
+select pg_temp.check(not exists (select 1 from public.resources where id in ('90000000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000004')),
+  'both library entries are gone');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+select pg_temp.check(public.classwork_can_read('resources/r3.pdf'), 'the family can still open the homework copy');
 
 reset role;
 set role anon;

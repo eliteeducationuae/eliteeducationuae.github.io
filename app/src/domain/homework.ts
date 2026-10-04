@@ -1,3 +1,4 @@
+import { addDays, relativeDay, toDateKey } from './dates';
 import type { Attachment, Homework, HomeworkSubmission, Resource } from './types';
 
 /** Where a piece of homework stands, from the student's point of view. */
@@ -145,4 +146,47 @@ export function parseTags(text: string): string[] {
     out.push(tag);
   }
   return out;
+}
+
+/** "Subject · Level · Curriculum", leaving out a curriculum that merely repeats the level. */
+export function resourceMeta(r: Pick<Resource, 'subject' | 'level' | 'curriculum'>): string {
+  const subject = r.subject?.trim();
+  const level = r.level?.trim();
+  let curriculum = r.curriculum?.trim();
+  if (curriculum && level && curriculum.toLowerCase() === level.toLowerCase()) curriculum = undefined;
+  return [subject, level, curriculum].filter(Boolean).join(' · ');
+}
+
+/** "Due today", "Due tomorrow", "Due yesterday" or "Due Mon 5 Oct", for a YYYY-MM-DD due date. */
+export function dueLabel(dueDate: string, now: Date = new Date()): string {
+  const day = relativeDay(`${dueDate.slice(0, 10)}T12:00:00`, now);
+  return `Due ${['Today', 'Tomorrow', 'Yesterday'].includes(day) ? day.toLowerCase() : day}`;
+}
+
+/** Quick due-date choices for the homework form. "Next lesson" is offered when one is booked. */
+export function dueDateChoices(now: Date, nextLesson?: string): { label: string; date: string }[] {
+  const choices = [
+    { label: 'Tomorrow', date: toDateKey(addDays(now, 1)) },
+    { label: 'In 3 days', date: toDateKey(addDays(now, 3)) },
+    { label: 'In a week', date: toDateKey(addDays(now, 7)) },
+    { label: 'In two weeks', date: toDateKey(addDays(now, 14)) },
+  ];
+  const next = nextLesson ? toDateKey(new Date(nextLesson)) : undefined;
+  if (next && next > toDateKey(now)) choices.unshift({ label: 'Next lesson', date: next });
+  return choices;
+}
+
+/** The notice shown when a lesson was recorded but some homework details or attachments were not saved. */
+export function lessonHomeworkWarning(titles: string[]): string {
+  const named = titles.filter(Boolean).map((t) => `"${t}"`);
+  const which = named.length ? ` for ${named.join(', ')}` : '';
+  return `The lesson has been recorded, but the details or attachments${which} could not be saved. Please open the homework and add them there.`;
+}
+
+/**
+ * True when removing this attachment should also delete its stored file: a file uploaded while this
+ * form was open, not a library resource, which homework elsewhere may share.
+ */
+export function shouldDiscardUpload(a: Attachment, uploadedNow: ReadonlySet<string>): boolean {
+  return a.kind === 'file' && !a.resourceId && !!a.path && uploadedNow.has(a.path);
 }

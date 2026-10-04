@@ -8,6 +8,7 @@ import { useAction, useHomework, useLessons, useLookup, useNotes, useRatings, us
 import { source } from '@/data';
 import { useMe } from '@/data/session';
 import { addDays, daysUntil, formatDate, relativeDay } from '@/domain/dates';
+import { dueLabel } from '@/domain/homework';
 import { masteryByTopic } from '@/domain/progress';
 import type { Homework, Lesson, LessonNote, Student } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -23,7 +24,9 @@ const HISTORY_FROM = addDays(new Date(), -365);
 const HISTORY_TO = addDays(new Date(), 90);
 
 /** Everything about one student's learning — shared by admin, tutor, parent and student views. */
-export function StudentOverview({ student }: { student: Student }) {
+export type OverviewTab = 'progress' | 'notes' | 'homework';
+
+export function StudentOverview({ student, initialTab = 'progress' }: { student: Student; initialTab?: OverviewTab }) {
   const theme = useTheme();
   const me = useMe();
   const lookup = useLookup();
@@ -32,7 +35,7 @@ export function StudentOverview({ student }: { student: Student }) {
   const homework = useHomework(student.id);
   const settings = useSettings();
   const lessons = useLessons(HISTORY_FROM, HISTORY_TO);
-  const [tab, setTab] = useState<'progress' | 'notes' | 'homework'>('progress');
+  const [tab, setTab] = useState<OverviewTab>(initialTab);
   const [sharing, setSharing] = useState(false);
 
   const syllabus = getSyllabus(student.syllabusId);
@@ -144,7 +147,7 @@ export function StudentOverview({ student }: { student: Student }) {
           {me.role === 'admin' || me.role === 'tutor' ? (
             <Button title="Set homework" icon="plus" variant="outline" onPress={() => router.push(`/homework/new?studentId=${student.id}`)} />
           ) : null}
-          <HomeworkList items={hw} loading={homework.isLoading} />
+          <HomeworkList items={hw} loading={homework.isLoading} studentId={student.id} />
           <SharedResources studentId={student.id} />
         </View>
       ) : null}
@@ -193,10 +196,21 @@ export function NotesFeed({ notes, lessons, loading, limit }: { notes: LessonNot
   );
 }
 
-export function HomeworkList({ items, loading, canTick = true }: { items: Homework[]; loading?: boolean; canTick?: boolean }) {
+export function HomeworkList({
+  items,
+  loading,
+  canTick = true,
+  studentId,
+}: {
+  items: Homework[];
+  loading?: boolean;
+  canTick?: boolean;
+  /** The one student these items belong to, so only their hand-ins are fetched. */
+  studentId?: string;
+}) {
   const theme = useTheme();
   const toggle = useAction(source.setHomeworkDone);
-  const submissions = useSubmissions();
+  const submissions = useSubmissions(studentId ? { studentId } : {});
   if (loading) return <Loading />;
   if (items.length === 0) return <EmptyState icon="book" title="No homework set" message="Homework will appear here as soon as it is set." />;
   const subs = submissions.data ?? [];
@@ -207,7 +221,7 @@ export function HomeworkList({ items, loading, canTick = true }: { items: Homewo
         const attachments = (h.attachments ?? []).length;
         const tick = <Icon name={h.done ? 'check' : 'circle'} size={24} color={h.done ? theme.success : theme.textMuted} />;
         return (
-          <Card key={h.id} onPress={() => router.push(`/homework/${h.id}`)} accessibilityLabel={`${h.title}, due ${relativeDay(h.dueDate + 'T12:00:00')}`}>
+          <Card key={h.id}>
             <Row gap={Spacing.three}>
               {canTick ? (
                 <Pressable
@@ -221,15 +235,22 @@ export function HomeworkList({ items, loading, canTick = true }: { items: Homewo
               ) : (
                 tick
               )}
-              <View style={{ flex: 1, gap: 2 }}>
-                <Txt style={h.done && { textDecorationLine: 'line-through', color: theme.textMuted }}>{h.title}</Txt>
-                <Txt variant="small">Due {relativeDay(h.dueDate + 'T12:00:00')}</Txt>
-                {attachments ? <Txt variant="small">{attachments === 1 ? '1 attachment' : `${attachments} attachments`}</Txt> : null}
-                <View style={{ flexDirection: 'row', marginTop: 2 }}>
-                  <HomeworkStatusBadge homework={h} submissions={subs} />
+              {/* The checkbox and the link to the detail are siblings, never nested. */}
+              <Pressable
+                onPress={() => router.push(`/homework/${h.id}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`${h.title}, ${dueLabel(h.dueDate).replace(/^Due/, 'due')}`}
+                style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.three }, pressed && { opacity: 0.7 }]}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt style={h.done && { textDecorationLine: 'line-through', color: theme.textMuted }}>{h.title}</Txt>
+                  <Txt variant="small">{dueLabel(h.dueDate)}</Txt>
+                  {attachments ? <Txt variant="small">{attachments === 1 ? '1 attachment' : `${attachments} attachments`}</Txt> : null}
+                  <View style={{ flexDirection: 'row', marginTop: 2 }}>
+                    <HomeworkStatusBadge homework={h} submissions={subs} />
+                  </View>
                 </View>
-              </View>
-              <Icon name="chevron" size={16} color={theme.textMuted} />
+                <Icon name="chevron" size={16} color={theme.textMuted} />
+              </Pressable>
             </Row>
           </Card>
         );

@@ -15,7 +15,7 @@ import {
   type SocialProviderName,
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
-import { normaliseLink } from '@/domain/homework';
+import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -53,7 +53,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import type { DataSource, HomeworkInput, SocialProvider, SocialSignInResult } from './source';
+import { PartialSaveError, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -716,25 +716,39 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       // complete_lesson stores the title and due date; details and attachments are added through save_homework.
       const rich = input.homework.filter((h) => h.details?.trim() || h.attachments?.length);
       if (rich.length === 0) return;
-      const created = check<Row[]>(await client.from('homework').select('id, student_id, title').eq('lesson_id', input.lessonId));
-      for (const h of rich) {
-        const match = created.find((r) => r.student_id === h.studentId && r.title.trim() === h.title.trim());
-        if (!match) continue;
-        check(
-          await client.rpc(
-            'save_homework',
-            saveHomeworkArgs({
-              id: match.id,
-              studentId: h.studentId,
-              lessonId: input.lessonId,
-              title: h.title.trim(),
-              details: h.details?.trim() || undefined,
-              dueDate: h.dueDate,
-              attachments: h.attachments ?? [],
-            }),
-          ),
-        );
+      // The lesson is already recorded at this point, so a failure here must not read as if nothing was saved.
+      const unsaved: string[] = [];
+      try {
+        const created = check<Row[]>(await client.from('homework').select('id, student_id, title').eq('lesson_id', input.lessonId));
+        for (const h of rich) {
+          const match = created.find((r) => r.student_id === h.studentId && r.title.trim() === h.title.trim());
+          if (!match) {
+            unsaved.push(h.title.trim());
+            continue;
+          }
+          try {
+            check(
+              await client.rpc(
+                'save_homework',
+                saveHomeworkArgs({
+                  id: match.id,
+                  studentId: h.studentId,
+                  lessonId: input.lessonId,
+                  title: h.title.trim(),
+                  details: h.details?.trim() || undefined,
+                  dueDate: h.dueDate,
+                  attachments: h.attachments ?? [],
+                }),
+              ),
+            );
+          } catch {
+            unsaved.push(h.title.trim());
+          }
+        }
+      } catch {
+        unsaved.push(...rich.map((h) => h.title.trim()));
       }
+      if (unsaved.length) throw new PartialSaveError(lessonHomeworkWarning(unsaved));
     },
     async setHomeworkDone(id, done) {
       check(await client.rpc('set_homework_done', { p_id: id, p_done: done }));
@@ -764,9 +778,9 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(await client.rpc('give_homework_feedback', { p_submission_id: submissionId, p_feedback: feedback, p_mark: mark ?? null }));
     },
     async listResources(filter = {}) {
-      let query = client.from('resources').select('*');
-      if (filter.studentId) query = query.contains('student_ids', [filter.studentId]);
-      return check(await query.order('created_at', { ascending: false })).map(toResource);
+      // list_resources hides which other families' children a resource is shared with.
+      const rows = check<Row[] | null>(await client.rpc('list_resources', { p_student_id: filter.studentId ?? null }));
+      return (rows ?? []).map(toResource);
     },
     async saveResource(input) {
       // uploaded_by, uploaded_by_name, visibility and student_ids are set by the database.
@@ -789,15 +803,18 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return toResource(saved);
     },
     async deleteResource(id) {
-      const row = check(await client.from('resources').select('kind, path').eq('id', id).maybeSingle()) as Row | null;
-      check(await client.from('resources').delete().eq('id', id));
-      if (row?.kind === 'file' && row.path) {
+      // delete_resource returns the stored path only when no homework or hand-in still uses the file.
+      const path = check<string | null>(await client.rpc('delete_resource', { p_id: id }));
+      if (path) {
         // Best effort: the library entry is gone even if the stored file cannot be removed.
-        await client.storage.from('classwork').remove([row.path]).then(undefined, () => undefined);
+        await client.storage.from('classwork').remove([path]).then(undefined, () => undefined);
       }
     },
     async shareResource(resourceId, studentId) {
       check(await client.rpc('share_resource', { p_resource_id: resourceId, p_student_id: studentId }));
+    },
+    async unshareResource(resourceId, studentId) {
+      check(await client.rpc('unshare_resource', { p_resource_id: resourceId, p_student_id: studentId }));
     },
 
     async sellPackage(pkg) {
@@ -1190,8 +1207,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return path;
     },
     async fileUrl(bucket, path) {
-      const { data } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+      if (error) console.warn(`Could not open ${bucket}/${path}: ${error.message}`);
       return data?.signedUrl ?? null;
+    },
+    async removeFile(bucket, path) {
+      const { error } = await client.storage.from(bucket).remove([path]);
+      if (error) console.warn(`Could not remove ${bucket}/${path}: ${error.message}`);
     },
     async aiAssist(request) {
       // The AI service is optional: any failure (not deployed, no key, offline) returns null so callers use templates.

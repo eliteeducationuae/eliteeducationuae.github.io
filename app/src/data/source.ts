@@ -69,6 +69,17 @@ export interface HomeworkInput {
   attachments: Attachment[];
 }
 
+/**
+ * Thrown when the main change was saved but a follow-up step was not, for example a lesson recorded
+ * whose homework attachments could not be added. The message says what to finish by hand.
+ */
+export class PartialSaveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PartialSaveError';
+  }
+}
+
 /** A new library resource (no id) or an edit to one. */
 export interface ResourceInput {
   id?: string;
@@ -189,6 +200,8 @@ export interface DataSource {
   deleteResource(id: string): Promise<void>;
   /** Share a library resource with a student (and their family). */
   shareResource(resourceId: string, studentId: string): Promise<void>;
+  /** Stop sharing a library resource with a student. */
+  unshareResource(resourceId: string, studentId: string): Promise<void>;
 
   // Billing
   sellPackage(pkg: Omit<LessonPackage, 'id' | 'lessonsUsed' | 'purchasedAt'>): Promise<Invoice>;
@@ -269,8 +282,10 @@ export interface DataSource {
 
   /** Upload a picked file to private storage. Returns the stored path. */
   uploadFile?(bucket: StorageBucket, folder: string, file: PickedFile): Promise<string>;
-  /** A short-lived link to view a stored file (admins). */
+  /** A short-lived link to view a stored file. Null when the file cannot be reached (removed, refused or offline). */
   fileUrl?(bucket: StorageBucket, path: string): Promise<string | null>;
+  /** Remove a file the signed-in user uploaded, e.g. an attachment removed before saving. Best effort. */
+  removeFile?(bucket: StorageBucket, path: string): Promise<void>;
 
   /** AI drafting (production only). Returns null when the AI service isn't available, so callers fall back to templates. */
   aiAssist?(request: AiRequest): Promise<AiResult | null>;

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
@@ -8,11 +9,13 @@ import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row,
 import { Spacing } from '@/constants/theme';
 import { getSyllabus, topicName } from '@/data/curriculum';
 import { source } from '@/data';
+import { PartialSaveError } from '@/data/source';
 import { useAction, useLesson, useLookup, useRatings } from '@/data/hooks';
 import { addDays, formatDay, toDateKey } from '@/domain/dates';
 import { classworkFolder } from '@/domain/homework';
 import { masteryByTopic } from '@/domain/progress';
 import type { Attachment, AttendanceMark, TopicRating } from '@/domain/types';
+import { notify } from '@/lib/confirm';
 
 type Rating = TopicRating['rating'];
 
@@ -23,6 +26,7 @@ export default function CompleteLesson() {
   const lesson = useLesson(id);
   const allRatings = useRatings();
   const complete = useAction(source.completeLesson);
+  const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<'completed' | 'no-show'>('completed');
   const [attendance, setAttendance] = useState<Record<string, AttendanceMark>>({});
@@ -69,6 +73,19 @@ export default function CompleteLesson() {
   const presentStudents = students.filter((s) => status === 'completed' && mark(s.id) !== 'absent');
 
   async function save() {
+    try {
+      await record();
+    } catch (err) {
+      // The lesson itself was recorded; only some homework extras were not. Say so and move on,
+      // because the lesson cannot be recorded twice.
+      if (!(err instanceof PartialSaveError)) return; // shown by ErrorNote
+      await queryClient.invalidateQueries();
+      notify('Lesson recorded', err.message);
+    }
+    router.back();
+  }
+
+  async function record() {
     await complete.mutateAsync([
       {
         lessonId: l!.id,
@@ -97,7 +114,6 @@ export default function CompleteLesson() {
           }),
       },
     ]);
-    router.back();
   }
 
   return (

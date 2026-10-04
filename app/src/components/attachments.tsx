@@ -4,7 +4,15 @@ import { Pressable, View } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { PickedFile } from '@/data/source';
-import { attachmentKindLabel, fileAttachment, isImageAttachment, linkAttachment, normaliseLink, resourceAttachment } from '@/domain/homework';
+import {
+  attachmentKindLabel,
+  fileAttachment,
+  isImageAttachment,
+  linkAttachment,
+  normaliseLink,
+  resourceAttachment,
+  shouldDiscardUpload,
+} from '@/domain/homework';
 import type { Attachment } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -81,9 +89,15 @@ export function AttachmentList({ items, onRemove }: { items: Attachment[]; onRem
 
 type Busy = 'file' | 'library-photo' | 'camera' | null;
 
+/** Delete a stored file the signed-in user no longer needs. Best effort: failures are ignored. */
+export function discardUpload(path: string) {
+  source.removeFile?.('classwork', path).catch(() => undefined);
+}
+
 /**
  * Add files, photos, links and (optionally) library resources. Files upload straight away to the
- * private classwork bucket under `folder`, so only stored paths are kept in `value`.
+ * private classwork bucket under `folder`, so only stored paths are kept in `value`. A file uploaded
+ * here and then removed before saving is deleted again, so nothing stray stays in the student's folder.
  */
 export function AttachmentEditor({
   value,
@@ -102,6 +116,7 @@ export function AttachmentEditor({
   const [link, setLink] = useState('');
   const [linkError, setLinkError] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [uploaded, setUploaded] = useState<ReadonlySet<string>>(() => new Set());
 
   async function add(kind: Exclude<Busy, null>, pick: () => Promise<PickedFile | null>) {
     setError(null);
@@ -110,6 +125,7 @@ export function AttachmentEditor({
       const file = await pick();
       if (!file) return;
       const path = source.uploadFile ? await source.uploadFile('classwork', folder, file) : `${folder}/${file.name}`;
+      setUploaded((prev) => new Set(prev).add(path));
       onChange([...value, fileAttachment(path, file.name, file.mimeType)]);
     } catch (err) {
       setError(err);
@@ -133,7 +149,16 @@ export function AttachmentEditor({
   const working = busy !== null;
   return (
     <View style={{ gap: Spacing.two }}>
-      <AttachmentList items={value} onRemove={(i) => onChange(value.filter((_, j) => j !== i))} />
+      <AttachmentList
+        items={value}
+        onRemove={(i) => {
+          const removed = value[i];
+          onChange(value.filter((_, j) => j !== i));
+          if (removed && shouldDiscardUpload(removed, uploaded) && !value.some((a, j) => j !== i && a.path === removed.path)) {
+            discardUpload(removed.path!);
+          }
+        }}
+      />
       <Row gap={Spacing.one} wrap>
         <Button title="Add a file" icon="attach" size="sm" variant="outline" loading={busy === 'file'} disabled={working} onPress={() => add('file', () => pickFile(CLASSWORK_FILE_TYPES))} />
         <Button title="Add a photo" icon="photo" size="sm" variant="outline" loading={busy === 'library-photo'} disabled={working} onPress={() => add('library-photo', () => pickPhoto('library'))} />

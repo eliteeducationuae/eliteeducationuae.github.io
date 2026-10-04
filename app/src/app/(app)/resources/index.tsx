@@ -19,6 +19,7 @@ export default function ResourceLibrary() {
   const resources = useResources();
   const students = useStudents();
   const share = useAction(source.shareResource);
+  const unshare = useAction(source.unshareResource);
   const remove = useAction(source.deleteResource);
   const [filter, setFilter] = useState<ResourceFilterValue>({ query: '' });
   const [sharingId, setSharingId] = useState<string | null>(null);
@@ -39,13 +40,27 @@ export default function ResourceLibrary() {
 
   async function shareWith(r: Resource, studentId: string) {
     const student = myStudents.find((s) => s.id === studentId);
+    const firstName = student?.fullName.split(' ')[0] ?? 'the student';
+    if (r.studentIds.includes(studentId)) {
+      confirm(
+        'Stop sharing?',
+        `${r.title} will no longer be available to ${firstName} and their family. Homework already set keeps its copy.`,
+        () => {
+          share.reset();
+          unshare.mutate([r.id, studentId]);
+        },
+        'Stop sharing',
+      );
+      return;
+    }
+    unshare.reset();
     try {
       await share.mutateAsync([r.id, studentId]);
     } catch {
       return; // shown by ErrorNote
     }
     setSharingId(null);
-    notify('Shared', `${r.title} is now available to ${student?.fullName.split(' ')[0] ?? 'the student'} and their family.`);
+    notify('Shared', `${r.title} is now available to ${firstName} and their family.`);
   }
 
   const addButton = <Button title="Add a resource" icon="plus" variant="gold" onPress={() => router.push('/resources/edit')} />;
@@ -87,7 +102,12 @@ export default function ResourceLibrary() {
                           variant="danger"
                           loading={remove.isPending && remove.variables?.[0] === r.id}
                           onPress={() =>
-                            confirm('Delete this resource?', `${r.title} will be removed from the library and from the students with whom it has been shared.`, () => remove.mutate([r.id]), 'Delete')
+                            confirm(
+                              'Delete this resource?',
+                              `${r.title} will be removed from the library and from the students with whom it has been shared. Homework that has already been set keeps its copy.`,
+                              () => remove.mutate([r.id]),
+                              'Delete',
+                            )
                           }
                         />
                       </>
@@ -98,14 +118,18 @@ export default function ResourceLibrary() {
               {sharingId === r.id ? (
                 <Card style={{ gap: Spacing.two }}>
                   <Txt variant="label">Share with</Txt>
-                  {myStudents.length === 0 ? <Txt variant="muted">You have no students to share with yet.</Txt> : null}
+                  {myStudents.length === 0 ? (
+                    <Txt variant="muted">You have no students to share with yet.</Txt>
+                  ) : (
+                    <Txt variant="small">Tap a name to share. Tap a selected name to stop sharing.</Txt>
+                  )}
                   <Row gap={Spacing.one} wrap>
                     {myStudents.map((s) => (
                       <Chip key={s.id} label={s.fullName} selected={r.studentIds.includes(s.id)} onPress={() => shareWith(r, s.id)} />
                     ))}
                   </Row>
-                  {share.isPending ? <Loading /> : null}
-                  <ErrorNote error={share.error} />
+                  {share.isPending || unshare.isPending ? <Loading /> : null}
+                  <ErrorNote error={share.error ?? unshare.error} />
                 </Card>
               ) : null}
             </View>

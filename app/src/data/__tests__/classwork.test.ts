@@ -1,4 +1,5 @@
-import type { Profile } from '@/domain/types';
+import { resourceAttachment } from '@/domain/homework';
+import type { Attachment, Profile } from '@/domain/types';
 
 import { cw } from '../demo/classwork';
 import { AccessError, cmd, type DemoDB } from '../demo/db';
@@ -150,6 +151,40 @@ describe('resource library', () => {
     cw.deleteResource(db, who(db, 'admin'), 'res-1');
     expect(db.resources.map((r) => r.id)).toEqual(['res-3', 'res-4', 'res-5', 'res-6']);
   });
+  it('keeps a deleted library file while homework still uses it (mirrors delete_resource)', () => {
+    const db = createSeed(NOW);
+    const sarah = who(db, 'tutor');
+    const used = cw.saveResource(db, sarah, { title: 'Worksheet', kind: 'file', path: 'resources/worksheet-7.pdf', tags: [] }, NOW);
+    const unused = cw.saveResource(db, sarah, { title: 'Spare', kind: 'file', path: 'resources/spare.pdf', tags: [] }, NOW);
+    cw.saveHomework(db, sarah, { studentId: 's-layla', title: 'Worksheet 7', dueDate: '2026-10-10', attachments: [resourceAttachment(used)] }, NOW);
+    expect(cw.deleteResource(db, sarah, used.id)).toBeNull();
+    expect(cw.deleteResource(db, sarah, unused.id)).toBe('resources/spare.pdf');
+    expect(cw.deleteResource(db, sarah, 'res-2')).toBeNull(); // a link has no stored file
+    expect(db.resources.some((r) => r.id === used.id || r.id === unused.id)).toBe(false);
+  });
+  it('hides other families’ children from everyone but admins (mirrors list_resources)', () => {
+    const db = createSeed(NOW);
+    cw.shareResource(db, who(db, 'admin'), 'res-1', 's-yasmin');
+    expect(db.resources.find((r) => r.id === 'res-1')!.studentIds).toEqual(['s-omar', 's-yasmin']);
+    expect(cw.resources(db, who(db, 'admin')).find((r) => r.id === 'res-1')!.studentIds).toEqual(['s-omar', 's-yasmin']);
+    expect(cw.resources(db, who(db, 'parent')).find((r) => r.id === 'res-1')!.studentIds).toEqual(['s-omar']);
+    expect(cw.resources(db, otherParent).find((r) => r.id === 'res-1')!.studentIds).toEqual(['s-yasmin']);
+    expect(cw.resources(db, otherParent, { studentId: 's-omar' })).toEqual([]);
+    // Reading never changes what is stored.
+    expect(db.resources.find((r) => r.id === 'res-1')!.studentIds).toEqual(['s-omar', 's-yasmin']);
+  });
+  it('lets the tutor stop sharing (mirrors unshare_resource)', () => {
+    const db = createSeed(NOW);
+    const sarah = who(db, 'tutor');
+    cw.shareResource(db, sarah, 'res-2', 's-layla');
+    expect(() => cw.unshareResource(db, sarah, 'res-1', 's-omar')).toThrow(AccessError);
+    expect(() => cw.unshareResource(db, who(db, 'parent'), 'res-2', 's-layla')).toThrow();
+    cw.unshareResource(db, sarah, 'res-2', 's-layla');
+    expect(db.resources.find((r) => r.id === 'res-2')).toMatchObject({ studentIds: [], visibility: 'tutors' });
+    expect(cw.resources(db, who(db, 'parent')).map((r) => r.id)).toEqual(['res-1']);
+    cw.unshareResource(db, who(db, 'admin'), 'res-1', 's-omar');
+    expect(cw.resources(db, who(db, 'parent'))).toEqual([]);
+  });
   it('copes with an older saved database without the new collections', () => {
     const db = createSeed(NOW) as Partial<DemoDB> as DemoDB;
     delete (db as Partial<DemoDB>).resources;
@@ -190,5 +225,21 @@ describe('completing a lesson', () => {
     expect(rich).toMatchObject({ title: 'Quadratics', details: 'Questions 1 to 10.', tutorId: 't-sarah', createdAt: NOW.toISOString() });
     expect(rich.attachments).toHaveLength(1);
     expect(plain.attachments).toEqual([]);
+  });
+  it('checks lesson homework attachments as save_homework does, before anything changes', () => {
+    const input = (attachments: Attachment[]) => ({
+      lessonId: 'l1',
+      status: 'completed' as const,
+      attendance: {},
+      summary: 'x',
+      topicIds: [],
+      ratings: [],
+      homework: [{ studentId: 's-layla', title: 'Q', dueDate: '2026-10-11', attachments }],
+    });
+    expect(() => cw.checkLessonHomework(input([{ kind: 'file', name: 'x', path: 'students/s-omar/x.pdf' }]))).toThrow('right place');
+    expect(() => cw.checkLessonHomework(input([{ kind: 'link', name: 'x', url: 'javascript:alert(1)' }]))).toThrow('web address');
+    expect(cw.checkLessonHomework(input([{ kind: 'link', name: ' Notes ', url: 'example.org' }])).homework[0].attachments).toEqual([
+      { kind: 'link', name: 'Notes', url: 'https://example.org' },
+    ]);
   });
 });

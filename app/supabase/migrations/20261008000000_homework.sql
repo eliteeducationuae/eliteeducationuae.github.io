@@ -33,8 +33,9 @@ $$;
 -- ---------------------------------------------------------------------------
 
 alter table public.homework
-  add column details text,
-  add column attachments jsonb not null default '[]' check (jsonb_typeof(attachments) = 'array'),
+  add column details text check (length(details) <= 4000),
+  add column attachments jsonb not null default '[]'
+    check (jsonb_typeof(attachments) = 'array' and jsonb_array_length(attachments) <= 20),
   add column tutor_id uuid references public.tutors(id) on delete set null,
   add column created_at timestamptz not null default now();
 
@@ -63,11 +64,11 @@ create table public.homework_submissions (
   student_id uuid not null references public.students(id) on delete cascade,
   submitted_by uuid references public.profiles(id) on delete set null,
   submitted_by_name text,
-  note text,
-  files jsonb not null default '[]' check (jsonb_typeof(files) = 'array'),
+  note text check (length(note) <= 4000),
+  files jsonb not null default '[]' check (jsonb_typeof(files) = 'array' and jsonb_array_length(files) <= 20),
   submitted_at timestamptz not null default now(),
-  feedback text,
-  mark text,
+  feedback text check (length(feedback) <= 4000),
+  mark text check (length(mark) <= 20),
   feedback_at timestamptz,
   feedback_by uuid references public.profiles(id) on delete set null,
   feedback_by_name text
@@ -87,18 +88,18 @@ create policy "admin submissions" on public.homework_submissions for all to auth
 
 create table public.resources (
   id uuid primary key default gen_random_uuid(),
-  title text not null check (length(trim(title)) > 0),
-  description text,
+  title text not null check (length(trim(title)) > 0 and length(title) <= 200),
+  description text check (length(description) <= 4000),
   -- Plain text on purpose: subjects and levels are free-form labels here.
-  subject text,
-  curriculum text,
-  level text,
+  subject text check (length(subject) <= 100),
+  curriculum text check (length(curriculum) <= 100),
+  level text check (length(level) <= 100),
   kind text not null check (kind in ('file', 'link')),
-  path text,
-  url text,
-  file_name text,
-  mime_type text,
-  tags text[] not null default '{}',
+  path text check (length(path) <= 500),
+  url text check (length(url) <= 2000),
+  file_name text check (length(file_name) <= 200),
+  mime_type text check (length(mime_type) <= 200),
+  tags text[] not null default '{}' check (cardinality(tags) <= 20 and length(array_to_string(tags, ',')) <= 1000),
   uploaded_by uuid references public.profiles(id) on delete set null,
   uploaded_by_name text,
   visibility text not null default 'tutors' check (visibility in ('tutors', 'students')),
@@ -134,8 +135,9 @@ create trigger resources_before_write before insert or update on public.resource
   for each row execute function public.resources_before_write();
 
 alter table public.resources enable row level security;
+-- Families read the library through list_resources(), which hides which other students a resource is shared with.
 create policy "see resources" on public.resources for select to authenticated
-  using (public.is_admin() or public.my_tutor_id() is not null or student_ids && public.visible_student_ids());
+  using (public.is_admin() or public.my_tutor_id() is not null);
 create policy "staff add resources" on public.resources for insert to authenticated
   with check ((public.is_admin() or public.my_tutor_id() is not null)
               and (public.is_admin() or student_ids <@ public.visible_student_ids()));
@@ -205,6 +207,8 @@ begin
   end if;
   if length(trim(coalesce(p_title, ''))) = 0 then raise exception 'Please give the homework a title.'; end if;
   if p_due_date is null then raise exception 'Please choose a due date.'; end if;
+  if length(trim(p_title)) > 200 then raise exception 'Please keep the title to 200 characters or fewer.'; end if;
+  if length(coalesce(p_details, '')) > 4000 then raise exception 'Please keep the details to 4,000 characters or fewer.'; end if;
   if not public.valid_attachments(atts, p_student_id) then
     raise exception 'One of the attachments could not be accepted. Please check the files and links and try again.';
   end if;
@@ -237,6 +241,7 @@ begin
   if length(trim(coalesce(p_note, ''))) = 0 and jsonb_typeof(files) = 'array' and jsonb_array_length(files) = 0 then
     raise exception 'Please add a note or attach your work before handing it in.';
   end if;
+  if length(coalesce(p_note, '')) > 4000 then raise exception 'Please keep the note to 4,000 characters or fewer.'; end if;
   if not public.valid_attachments(files, h.student_id) then
     raise exception 'One of the files could not be accepted. Please try attaching it again.';
   end if;
@@ -278,6 +283,8 @@ begin
     raise exception 'You can only give feedback to your own students.' using errcode = '42501';
   end if;
   if length(trim(coalesce(p_feedback, ''))) = 0 then raise exception 'Please write some feedback first.'; end if;
+  if length(p_feedback) > 4000 then raise exception 'Please keep the feedback to 4,000 characters or fewer.'; end if;
+  if length(coalesce(trim(p_mark), '')) > 20 then raise exception 'Please keep the mark to 20 characters or fewer.'; end if;
   select * into me from public.profiles where id = auth.uid();
   update public.homework_submissions
      set feedback = trim(p_feedback), mark = nullif(trim(p_mark), ''), feedback_at = now(),
@@ -321,16 +328,81 @@ begin
   perform public.notify_family(st.family_id, 'A new resource from Elite Education: ' || r.title,
     first_name || '''s tutor has shared "' || r.title || '".' || coalesce(E'\n\n' || nullif(trim(r.description), ''), '')
       || E'\n\nYou can find it in the Elite Education app.',
-    'New resource for ' || first_name, r.title, '/parent/progress');
+    'New resource for ' || first_name, r.title, '/parent/progress?tab=homework');
+end $$;
+
+/** Stop sharing a library resource with a student. Same permission as sharing; nobody is notified. */
+create function public.unshare_resource(p_resource_id uuid, p_student_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not (public.is_admin() or (public.my_tutor_id() is not null and p_student_id = any (public.visible_student_ids()))) then
+    raise exception 'You can only change sharing for your own students.' using errcode = '42501';
+  end if;
+  update public.resources
+     set student_ids = array_remove(student_ids, p_student_id),
+         visibility = case when cardinality(array_remove(student_ids, p_student_id)) = 0 then 'tutors' else 'students' end
+   where id = p_resource_id;
+  if not found then raise exception 'Resource not found'; end if;
+end $$;
+
+/**
+ * The library as the caller may see it. Admins get every row as stored. Tutors get every row, but
+ * student_ids lists only the students they teach. Students and families get only what has been shared
+ * with them, and student_ids lists only their own children, never other families'.
+ */
+create function public.list_resources(p_student_id uuid default null)
+returns setof public.resources language plpgsql stable security definer set search_path = public as $$
+declare r public.resources; admin boolean := public.is_admin(); staff boolean := public.is_admin() or public.my_tutor_id() is not null;
+  mine uuid[] := public.visible_student_ids();
+begin
+  if auth.uid() is null then return; end if;
+  for r in select * from public.resources
+           where (staff or (visibility = 'students' and student_ids && mine))
+           order by created_at desc loop
+    if not admin then
+      r.student_ids := array(select s from unnest(r.student_ids) s where s = any (mine));
+    end if;
+    if p_student_id is null or p_student_id = any (r.student_ids) then
+      return next r;
+    end if;
+  end loop;
+end $$;
+
+/**
+ * Delete a library resource (its uploader or an admin). Returns the stored file's path when the
+ * caller should remove it from storage, or null when there is none or homework or a hand-in still
+ * refers to it, so that work already set keeps its copy.
+ */
+create function public.delete_resource(p_id uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare r public.resources;
+begin
+  select * into r from public.resources where id = p_id;
+  if r.id is null or not (public.is_admin() or public.my_tutor_id() is not null) then
+    raise exception 'Resource not found';
+  end if;
+  if not (public.is_admin() or r.uploaded_by = auth.uid()) then
+    raise exception 'Only the person who added this resource, or an admin, can delete it.' using errcode = '42501';
+  end if;
+  delete from public.resources where id = r.id;
+  if r.kind <> 'file' or r.path is null then return null; end if;
+  if exists (select 1 from public.homework where attachments @> jsonb_build_array(jsonb_build_object('path', r.path)))
+     or exists (select 1 from public.homework_submissions where files @> jsonb_build_array(jsonb_build_object('path', r.path)))
+     or exists (select 1 from public.resources where path = r.path) then
+    return null;
+  end if;
+  return r.path;
 end $$;
 
 revoke all on function public.save_homework(uuid, uuid, text, text, date, jsonb, uuid),
   public.submit_homework(uuid, text, jsonb), public.give_homework_feedback(uuid, text, text),
-  public.share_resource(uuid, uuid) from public, anon;
+  public.share_resource(uuid, uuid), public.unshare_resource(uuid, uuid), public.list_resources(uuid),
+  public.delete_resource(uuid) from public, anon;
 grant execute on function public.valid_attachments(jsonb, uuid),
   public.save_homework(uuid, uuid, text, text, date, jsonb, uuid),
   public.submit_homework(uuid, text, jsonb), public.give_homework_feedback(uuid, text, text),
-  public.share_resource(uuid, uuid) to authenticated;
+  public.share_resource(uuid, uuid), public.unshare_resource(uuid, uuid), public.list_resources(uuid),
+  public.delete_resource(uuid) to authenticated;
 revoke all on function public.homework_default_tutor(), public.resources_before_write(), public.on_homework_set()
   from public, anon, authenticated;
 
@@ -378,7 +450,13 @@ grant execute on function public.classwork_can_read(text), public.classwork_can_
 do $$
 begin
   if exists (select 1 from information_schema.schemata where schema_name = 'storage') then
-    insert into storage.buckets (id, name, public) values ('classwork', 'classwork', false)
+    -- 25 MB per file; documents and photos only.
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('classwork', 'classwork', false, 26214400, array[
+      'application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp', 'image/gif',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
     on conflict (id) do nothing;
     execute $p$create policy "classwork read" on storage.objects for select to authenticated
       using (bucket_id = 'classwork' and public.classwork_can_read(name))$p$;

@@ -1,17 +1,22 @@
 import {
   attachmentKindLabel,
   classworkFolder,
+  dueDateChoices,
+  dueLabel,
   fileAttachment,
   filterResources,
   HOMEWORK_STATUS_LABEL,
   homeworkStatus,
   isImageAttachment,
   latestSubmission,
+  lessonHomeworkWarning,
   linkAttachment,
   normaliseLink,
   parseTags,
   resourceAttachment,
   resourceFacets,
+  resourceMeta,
+  shouldDiscardUpload,
 } from '../homework';
 import type { Homework, HomeworkSubmission, Resource } from '../types';
 
@@ -165,5 +170,71 @@ describe('parseTags', () => {
     expect(parseTags(' revision, Past papers ,, revision , REVISION, calculus ')).toEqual(['revision', 'Past papers', 'calculus']);
     expect(parseTags('')).toEqual([]);
     expect(parseTags(' , , ')).toEqual([]);
+  });
+});
+
+describe('resourceMeta', () => {
+  it('joins subject, level and curriculum', () => {
+    expect(resourceMeta({ subject: 'Mathematics', level: 'IB Diploma', curriculum: 'IB' })).toBe('Mathematics · IB Diploma · IB');
+  });
+  it('drops a curriculum that repeats the level, ignoring case and spaces', () => {
+    expect(resourceMeta({ subject: 'Chemistry', level: 'IGCSE', curriculum: ' igcse ' })).toBe('Chemistry · IGCSE');
+    expect(resourceMeta({ subject: 'English', level: 'A-Level', curriculum: 'A-Level' })).toBe('English · A-Level');
+  });
+  it('skips blanks', () => {
+    expect(resourceMeta({ subject: ' ', curriculum: 'IB' })).toBe('IB');
+    expect(resourceMeta({})).toBe('');
+  });
+});
+
+describe('dueLabel', () => {
+  const now = new Date(2026, 9, 4, 9, 0);
+  it('lower-cases today, tomorrow and yesterday mid-sentence', () => {
+    expect(dueLabel('2026-10-04', now)).toBe('Due today');
+    expect(dueLabel('2026-10-05', now)).toBe('Due tomorrow');
+    expect(dueLabel('2026-10-03T00:00:00Z', now)).toBe('Due yesterday');
+  });
+  it('keeps the capitals of a named day', () => {
+    const label = dueLabel('2026-10-12', now);
+    expect(label.startsWith('Due ')).toBe(true);
+    expect(label.charAt(4)).toBe(label.charAt(4).toUpperCase());
+    expect(label).not.toMatch(/today|tomorrow|yesterday/i);
+  });
+});
+
+describe('dueDateChoices', () => {
+  const now = new Date(2026, 9, 4, 9, 0);
+  it('offers tomorrow, three days, a week and two weeks', () => {
+    expect(dueDateChoices(now)).toEqual([
+      { label: 'Tomorrow', date: '2026-10-05' },
+      { label: 'In 3 days', date: '2026-10-07' },
+      { label: 'In a week', date: '2026-10-11' },
+      { label: 'In two weeks', date: '2026-10-18' },
+    ]);
+  });
+  it('puts the next lesson first when one is booked after today', () => {
+    expect(dueDateChoices(now, new Date(2026, 9, 9, 16, 0).toISOString())[0]).toEqual({ label: 'Next lesson', date: '2026-10-09' });
+    expect(dueDateChoices(now, new Date(2026, 9, 4, 16, 0).toISOString())[0].label).toBe('Tomorrow');
+  });
+});
+
+describe('lessonHomeworkWarning', () => {
+  it('names the homework and says the lesson is recorded', () => {
+    const msg = lessonHomeworkWarning(['Quadratics', 'Reading']);
+    expect(msg).toContain('The lesson has been recorded');
+    expect(msg).toContain('"Quadratics", "Reading"');
+    expect(lessonHomeworkWarning([])).not.toContain(' for ');
+  });
+});
+
+describe('shouldDiscardUpload', () => {
+  const fresh = new Set(['students/s1/new.pdf']);
+  it('deletes only files uploaded in this form', () => {
+    expect(shouldDiscardUpload(fileAttachment('students/s1/new.pdf', 'new.pdf'), fresh)).toBe(true);
+    expect(shouldDiscardUpload(fileAttachment('students/s1/old.pdf', 'old.pdf'), fresh)).toBe(false);
+    expect(shouldDiscardUpload(linkAttachment('https://example.org'), fresh)).toBe(false);
+  });
+  it('never deletes a library file, which other homework may share', () => {
+    expect(shouldDiscardUpload({ kind: 'file', name: 'x', path: 'students/s1/new.pdf', resourceId: 'r1' }, fresh)).toBe(false);
   });
 });
