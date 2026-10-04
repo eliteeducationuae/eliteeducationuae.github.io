@@ -23,6 +23,10 @@ export default function SignedInLayout() {
       <Stack.Screen name="lesson/[id]" options={{ title: 'Lesson' }} />
       <Stack.Screen name="lesson/new" options={{ title: 'Schedule lessons', presentation: 'modal' }} />
       <Stack.Screen name="complete/[id]" options={{ title: 'Record lesson', presentation: 'modal' }} />
+      <Stack.Screen name="homework/[id]" options={{ title: 'Homework' }} />
+      <Stack.Screen name="homework/new" options={{ title: 'Set homework', presentation: 'modal' }} />
+      <Stack.Screen name="resources/index" options={{ title: 'Resource library' }} />
+      <Stack.Screen name="resources/edit" options={{ title: 'Resource', presentation: 'modal' }} />
       <Stack.Screen name="students/[id]" options={{ title: 'Student' }} />
       <Stack.Screen name="students/edit" options={{ title: 'Student', presentation: 'modal' }} />
       <Stack.Screen name="invoice/[id]" options={{ title: 'Invoice' }} />

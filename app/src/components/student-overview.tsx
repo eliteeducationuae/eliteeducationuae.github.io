@@ -1,19 +1,22 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { getSyllabus, topicName } from '@/data/curriculum';
-import { useAction, useHomework, useLessons, useLookup, useNotes, useRatings, useSettings } from '@/data/hooks';
+import { useAction, useHomework, useLessons, useLookup, useNotes, useRatings, useSettings, useSubmissions } from '@/data/hooks';
 import { source } from '@/data';
 import { useMe } from '@/data/session';
-import { addDays, daysUntil, formatDate, relativeDay, toDateKey } from '@/domain/dates';
+import { addDays, daysUntil, formatDate, relativeDay } from '@/domain/dates';
 import { masteryByTopic } from '@/domain/progress';
 import type { Homework, Lesson, LessonNote, Student } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { shareProgressReport } from '@/lib/report';
 
+import { HomeworkStatusBadge } from './homework';
 import { Icon } from './icon';
 import { MasteryHeatmap, ProgressSummary } from './progress';
+import { SharedResources } from './resources';
 import { Badge, Button, Card, EmptyState, Loading, Row, Section, Segmented, Stat, StatGrid, Txt } from './ui';
 
 const HISTORY_FROM = addDays(new Date(), -365);
@@ -136,7 +139,15 @@ export function StudentOverview({ student }: { student: Student }) {
       ) : null}
 
       {tab === 'notes' ? <NotesFeed notes={notes.data ?? []} lessons={studentLessons} loading={notes.isLoading} /> : null}
-      {tab === 'homework' ? <HomeworkList items={hw} loading={homework.isLoading} /> : null}
+      {tab === 'homework' ? (
+        <View style={{ gap: Spacing.three }}>
+          {me.role === 'admin' || me.role === 'tutor' ? (
+            <Button title="Set homework" icon="plus" variant="outline" onPress={() => router.push(`/homework/new?studentId=${student.id}`)} />
+          ) : null}
+          <HomeworkList items={hw} loading={homework.isLoading} />
+          <SharedResources studentId={student.id} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -185,26 +196,40 @@ export function NotesFeed({ notes, lessons, loading, limit }: { notes: LessonNot
 export function HomeworkList({ items, loading, canTick = true }: { items: Homework[]; loading?: boolean; canTick?: boolean }) {
   const theme = useTheme();
   const toggle = useAction(source.setHomeworkDone);
+  const submissions = useSubmissions();
   if (loading) return <Loading />;
   if (items.length === 0) return <EmptyState icon="book" title="No homework set" message="Homework will appear here as soon as it is set." />;
-  const today = toDateKey(new Date());
+  const subs = submissions.data ?? [];
   const sorted = [...items].sort((a, b) => Number(a.done) - Number(b.done) || b.dueDate.localeCompare(a.dueDate));
   return (
     <View style={{ gap: Spacing.two }}>
       {sorted.map((h) => {
-        const overdue = !h.done && h.dueDate < today;
+        const attachments = (h.attachments ?? []).length;
+        const tick = <Icon name={h.done ? 'check' : 'circle'} size={24} color={h.done ? theme.success : theme.textMuted} />;
         return (
-          <Card
-            key={h.id}
-            onPress={canTick ? () => toggle.mutate([h.id, !h.done]) : undefined}
-            accessibilityLabel={`${h.title}, ${h.done ? 'done' : 'not done'}`}>
+          <Card key={h.id} onPress={() => router.push(`/homework/${h.id}`)} accessibilityLabel={`${h.title}, due ${relativeDay(h.dueDate + 'T12:00:00')}`}>
             <Row gap={Spacing.three}>
-              <Icon name={h.done ? 'check' : 'circle'} size={24} color={h.done ? theme.success : theme.textMuted} />
-              <View style={{ flex: 1 }}>
+              {canTick ? (
+                <Pressable
+                  onPress={() => toggle.mutate([h.id, !h.done])}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: h.done }}
+                  accessibilityLabel={h.done ? `Mark ${h.title} as not done` : `Mark ${h.title} as done`}
+                  hitSlop={12}>
+                  {tick}
+                </Pressable>
+              ) : (
+                tick
+              )}
+              <View style={{ flex: 1, gap: 2 }}>
                 <Txt style={h.done && { textDecorationLine: 'line-through', color: theme.textMuted }}>{h.title}</Txt>
                 <Txt variant="small">Due {relativeDay(h.dueDate + 'T12:00:00')}</Txt>
+                {attachments ? <Txt variant="small">{attachments === 1 ? '1 attachment' : `${attachments} attachments`}</Txt> : null}
+                <View style={{ flexDirection: 'row', marginTop: 2 }}>
+                  <HomeworkStatusBadge homework={h} submissions={subs} />
+                </View>
               </View>
-              {overdue ? <Badge label="Overdue" tone="danger" /> : null}
+              <Icon name="chevron" size={16} color={theme.textMuted} />
             </Row>
           </Card>
         );

@@ -33,6 +33,15 @@ export const useNotes = (filter: { studentId?: string; lessonId?: string } = {})
 export const useHomework = (studentId?: string) =>
   useQuery({ queryKey: ['homework', studentId], queryFn: () => source.listHomework({ studentId }) });
 
+export const useHomeworkItem = (id: string | undefined) =>
+  useQuery({ queryKey: ['homework-item', id], queryFn: () => source.getHomework(id!), enabled: !!id });
+
+export const useSubmissions = (filter: { homeworkId?: string; studentId?: string } = {}) =>
+  useQuery({ queryKey: ['submissions', filter], queryFn: () => source.listSubmissions(filter) });
+
+export const useResources = (filter: { studentId?: string } = {}) =>
+  useQuery({ queryKey: ['resources', filter], queryFn: () => source.listResources(filter) });
+
 export const useRatings = (studentId?: string) =>
   useQuery({ queryKey: ['ratings', studentId], queryFn: () => source.listRatings({ studentId }) });
 

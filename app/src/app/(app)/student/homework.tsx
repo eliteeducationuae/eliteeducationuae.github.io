@@ -1,3 +1,4 @@
+import { SharedResources } from '@/components/resources';
 import { HomeworkList } from '@/components/student-overview';
 import { Screen } from '@/components/ui';
 import { useHomework } from '@/data/hooks';
@@ -9,6 +10,7 @@ export default function StudentHomework() {
   return (
     <Screen onRefresh={() => homework.refetch()} refreshing={homework.isRefetching}>
       <HomeworkList items={homework.data ?? []} loading={homework.isLoading} />
+      <SharedResources studentId={me.studentId} />
     </Screen>
   );
 }
