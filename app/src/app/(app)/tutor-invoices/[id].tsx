@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { CustomBadge } from '@/components/rates';
 import { periodLabel, TUTOR_INVOICE_STATUS } from '@/components/tutor-pay';
 import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -100,7 +101,10 @@ function Detail({ inv }: { inv: TutorInvoice }) {
           {lessonLines.map((i, n) => (
             <Row key={n} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
               <Txt style={{ flex: 1 }}>{i.description}</Txt>
-              <Txt variant="muted">{i.quantity}h</Txt>
+              {i.rateSource === 'custom' ? <CustomBadge /> : null}
+              <Txt variant="muted">
+                {i.quantity} × {formatAED(i.unitPrice)}
+              </Txt>
               <Txt style={{ width: 90, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{formatAED(i.quantity * i.unitPrice)}</Txt>
             </Row>
           ))}

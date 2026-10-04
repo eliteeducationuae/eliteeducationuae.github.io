@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
+import { bookingPriceNotes } from '@/components/rates';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -126,7 +127,14 @@ export default function NewLesson() {
             <Chip key={s.id} label={s.fullName} selected={studentIds.includes(s.id)} onPress={() => toggleStudent(s.id)} />
           ))}
         </Row>
-        {studentIds.length > 1 ? <Txt variant="small">Group lesson: each student is charged the service rate.</Txt> : null}
+        {studentIds.length > 1 ? (
+          <Txt variant="small">Group lesson: each family is charged its own price, and the tutor is paid the highest rate among the students.</Txt>
+        ) : null}
+        {bookingPriceNotes(studentIds, subject, allEnrolments, (id) => lookup.student(id)?.fullName).map((line) => (
+          <Txt key={line} variant="small">
+            {line}
+          </Txt>
+        ))}
       </Section>
 
       {studentIds.length ? (

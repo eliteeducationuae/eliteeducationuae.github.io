@@ -1,8 +1,9 @@
 import { useState } from 'react';
 
 import { LessonCard } from '@/components/lessons';
+import { tutorCustomRateLines } from '@/components/rates';
 import { Button, EmptyState, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
-import { useLessons, useLookup, useSettings } from '@/data/hooks';
+import { useEnrolments, useLessons, useLookup, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, tutorEarnings } from '@/domain/billing';
 import { formatMonth, startOfMonth } from '@/domain/dates';
@@ -16,12 +17,15 @@ export default function TutorEarnings() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const next = new Date(month.getFullYear(), month.getMonth() + 1, 1);
   const lessons = useLessons(month, next);
+  const enrolments = useEnrolments();
   const tutor = me.tutorId ? lookup.tutor(me.tutorId) : undefined;
 
-  if (lessons.isLoading || !settings.data || !lookup.ready) return <Loading />;
+  if (lessons.isLoading || enrolments.isLoading || !settings.data || !lookup.ready) return <Loading />;
   if (!tutor) return <Screen><EmptyState title="No tutor profile linked to this account" /></Screen>;
   const mine = (lessons.data ?? []).filter((l) => l.tutorId === tutor.id);
-  const e = tutorEarnings(tutor, mine, settings.data);
+  const e = tutorEarnings(tutor, mine, settings.data, enrolments.data ?? []);
+  // Only this tutor's own subjects, and only the pay: families' prices never reach a tutor.
+  const customRates = me.role === 'tutor' ? tutorCustomRateLines(enrolments.data ?? [], tutor.id, (id) => lookup.student(id)?.fullName) : [];
   const paid = mine.filter((l) => l.status === 'completed' || l.status === 'no-show' || (l.status === 'late-cancel' && settings.data!.payTutorForLateCancel)).sort(byStart).reverse();
   const pending = mine.filter((l) => l.status === 'scheduled');
 
@@ -38,6 +42,14 @@ export default function TutorEarnings() {
         <Stat label="Still to teach" value={String(pending.length)} hint="lessons this month" />
       </StatGrid>
       <Txt variant="small">Paid at {formatAED(tutor.hourlyPay)} per hour.</Txt>
+      {customRates.length ? (
+        <Section title="Custom rates">
+          <Txt variant="small">These students’ lessons with you are paid at an agreed rate instead of your usual rate.</Txt>
+          {customRates.map((line) => (
+            <Txt key={line}>{line}</Txt>
+          ))}
+        </Section>
+      ) : null}
       <Section title="Lessons taught">
         {paid.length ? paid.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="tutor" showDate />) : <EmptyState title="No lessons taught yet this month" message="Completed lessons will appear here as soon as they are recorded." />}
       </Section>

@@ -25,8 +25,10 @@ import {
 import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
 import { lessonSubject, studentSubjects } from '@/domain/enrolments';
+import { lessonFamilyCharge } from '@/domain/rates';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
+import type { Enrolment, Lesson, Service } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -148,7 +150,16 @@ export default function LessonDetail() {
       ) : null}
       {mode === 'cover' ? <CoverPanel lesson={l} onDone={() => setMode('view')} /> : null}
 
-      {mode === 'cancel' ? <CancelPanel lessonId={l.id} start={l.start} serviceRate={service?.rate ?? 0} studentCount={l.studentIds.filter((sid) => lookup.student(sid)).length} onDone={() => setMode('view')} /> : null}
+      {mode === 'cancel' ? (
+        <CancelPanel
+          lesson={l}
+          service={service}
+          // Families only see their own children; tutors' enrolments carry no family prices, so they see the service price.
+          studentIds={l.studentIds.filter((sid) => lookup.student(sid))}
+          enrolments={enrolments.data ?? []}
+          onDone={() => setMode('view')}
+        />
+      ) : null}
       {mode === 'move' ? <ReschedulePanel lesson={l} onDone={() => setMode('view')} /> : null}
     </Screen>
   );
@@ -251,18 +262,19 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
 }
 
 function CancelPanel({
-  lessonId,
-  start,
-  serviceRate,
-  studentCount,
+  lesson,
+  service,
+  studentIds,
+  enrolments,
   onDone,
 }: {
-  lessonId: string;
-  start: string;
-  serviceRate: number;
-  studentCount: number;
+  lesson: Lesson;
+  service?: Service;
+  studentIds: string[];
+  enrolments: Enrolment[];
   onDone: () => void;
 }) {
+  const { id: lessonId, start } = lesson;
   const me = useMe();
   const settings = useSettings();
   const cancel = useAction(source.cancelLesson);
@@ -273,7 +285,8 @@ function CancelPanel({
   const preview = cancellationOutcome({ start }, new Date(), settings.data, { waiveFee: me.role === 'tutor' || (me.role === 'admin' && waive) });
   const late = preview.hoursNotice < settings.data.cancellationHours;
   // Families only see their own children, so this is what they would be charged.
-  const fee = serviceRate * preview.fee * studentCount;
+  // Each family pays its own agreed price where it has one, otherwise the service price.
+  const fee = service ? studentIds.reduce((sum, sid) => sum + lessonFamilyCharge(lesson, service, sid, enrolments).amount * preview.fee, 0) : 0;
 
   return (
     <Card style={{ gap: Spacing.three }}>

@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { agreedPriceSentence } from '@/components/rates';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -178,7 +179,11 @@ export default function Book() {
           )}
 
           <Field label="Note for us (optional)" value={note} onChangeText={setNote} multiline placeholder="e.g. Before the mock examination on Thursday" />
-          {kind === 'new-lesson' && service ? <Txt variant="small">Extra lessons are charged at the usual rate for {service.name}.</Txt> : null}
+          {kind === 'new-lesson' && agreedPriceSentence(enrolment) ? (
+            <Txt variant="small">{agreedPriceSentence(enrolment)}</Txt>
+          ) : kind === 'new-lesson' && service ? (
+            <Txt variant="small">Extra lessons are charged at the usual rate for {service.name}.</Txt>
+          ) : null}
           <ErrorNote error={request.error} />
           <View />
         </>
