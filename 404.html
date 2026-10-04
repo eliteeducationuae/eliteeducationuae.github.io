@@ -1,21 +1,81 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<title>Elite Education</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found | Elite Education</title>
+<meta name="theme-color" content="#0A0A0A">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="96x96" href="/assets/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
 <script>
   // GitHub Pages serves this page for any unknown path. Links into the web app (/app/...) are handed to the
-  // app, which reopens the right screen; anything else goes to the home page.
+  // app, which reopens the right screen; anything else shows the message below.
   (function () {
     var l = window.location;
     if (l.pathname.indexOf('/app/') === 0) {
       try { sessionStorage.setItem('elite.redirect', l.pathname.slice(4) + l.search + l.hash); } catch (e) {}
       l.replace('/app/');
-    } else {
-      l.replace('/');
     }
   })();
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Gelasio:wght@400;700&display=swap">
+<style>
+  :root {
+    --noir: #0A0A0A; --gold: #C9A84C; --ivory: #F9F8F5; --white: #FFFFFF;
+    --bg: var(--ivory); --surface: var(--white); --text: var(--noir); --muted: #6B6B6B; --line: #E5E0D4;
+    --btn-bg: var(--noir); --btn-text: var(--white);
+    --shadow: 0 1px 2px rgba(10, 10, 10, 0.04), 0 8px 24px rgba(10, 10, 10, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: var(--noir); --surface: #141414; --text: var(--ivory); --muted: #A8A49B; --line: #2A2925;
+      --btn-bg: var(--ivory); --btn-text: var(--noir); --shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+    font-family: Calibri, Carlito, 'Segoe UI', Arial, sans-serif; font-size: 1.0625rem; line-height: 1.6; }
+  header, footer { background: var(--noir); color: #CFCBC2; }
+  header { padding: 1rem 2rem; border-bottom: 1px solid rgba(201, 168, 76, 0.35); }
+  header img { display: block; width: 132px; height: auto; padding: 0.25rem 0; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 4rem 2rem; }
+  .card { max-width: 560px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 2.5rem; box-shadow: var(--shadow); }
+  .label { display: inline-flex; align-items: center; gap: 0.75rem; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+  .label::before { content: ''; width: 32px; height: 1px; background: var(--gold); }
+  h1 { font-family: Georgia, Gelasio, 'Times New Roman', serif; font-weight: 400; font-size: clamp(1.75rem, 5vw, 2.25rem); line-height: 1.25; }
+  hr { width: 72px; height: 1px; border: 0; background: var(--gold); margin: 1.5rem 0; }
+  p { color: var(--muted); margin-bottom: 2rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0.75rem 1.5rem; border-radius: 12px; text-decoration: none; font-weight: 700; border: 1px solid transparent; }
+  .btn-primary { background: var(--btn-bg); color: var(--btn-text); border-color: var(--btn-bg); }
+  .btn-secondary { color: var(--text); border-color: var(--gold); }
+  .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+  footer { padding: 1.5rem 2rem; text-align: center; font-size: 0.9375rem; letter-spacing: 0.04em; border-top: 1px solid rgba(201, 168, 76, 0.35); }
+  @media (max-width: 640px) {
+    header, footer { padding-left: 16px; padding-right: 16px; }
+    header img { width: 112px; }
+    main { padding: 2.5rem 16px; }
+    .card { padding: 1.75rem 1.25rem; }
+    .btn { width: 100%; }
+  }
+</style>
 </head>
-<body></body>
+<body>
+<header><a href="/" aria-label="Elite Education home"><img src="/assets/logo-white-wide.png" width="132" height="50" alt="Elite Education"></a></header>
+<main>
+  <div class="card">
+    <p class="label">Page not found</p>
+    <h1>This page could not be found.</h1>
+    <hr>
+    <p>The address may have changed, or the page may no longer be available. Please return to our home page, or sign in to the Elite Education app.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/">Return to the home page</a>
+      <a class="btn btn-secondary" href="/app/">Sign in to the app</a>
+    </div>
+  </div>
+</main>
+<footer>Elite Education | eliteeducation.me</footer>
+</body>
 </html>

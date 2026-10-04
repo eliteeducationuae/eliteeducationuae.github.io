@@ -40,7 +40,7 @@ export function EnquiryForm({
   if (sent) {
     return (
       <Banner tone="success" icon="check">
-        Thanks — we’ve got your enquiry and will be in touch within one working day to arrange a free consultation.
+        Thank you. We have received your enquiry and will be in touch within one working day to arrange a complimentary consultation.
       </Banner>
     );
   }
@@ -81,7 +81,7 @@ export function EnquiryForm({
               <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
             </View>
             <View style={{ flex: 1 }}>
-              <Field label="Mobile / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+              <Field label="Mobile or WhatsApp number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             </View>
           </Row>
         </>
@@ -113,11 +113,11 @@ export function EnquiryForm({
         value={message}
         onChangeText={setMessage}
         multiline
-        placeholder="e.g. Predicted a 5, aiming for a 7. Finds calculus hard. Mocks in January."
+        placeholder="e.g. Predicted a 5 and aiming for a 7. Finds essay structure difficult. Mock examinations in January."
       />
       <ErrorNote error={error} />
       <Button title={submitLabel} variant="gold" onPress={send} loading={busy} disabled={!valid} />
-      {!hideContact ? <Txt variant="small">We only use your details to reply to this enquiry.</Txt> : null}
+      {!hideContact ? <Txt variant="small">We use your details only to reply to this enquiry.</Txt> : null}
     </Card>
   );
 }

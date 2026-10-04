@@ -177,7 +177,7 @@ export default function NewLesson() {
                 <Txt key={s.start.toISOString()} variant="muted" color={clash ? 'warning' : undefined}>
                   {formatDay(s.start)} · {formatTime(s.start)}–{formatTime(s.end)}
                   {clash
-                    ? `  ⚠ ${clash.c.reason === 'tutor' ? 'tutor busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
+                    ? ` · Clash: ${clash.c.reason === 'tutor' ? 'the tutor is busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
                     : ''}
                 </Txt>
               );

@@ -11,7 +11,7 @@ import { Badge, Card, Row, Txt, type Tone } from './ui';
 export const TUTOR_INVOICE_STATUS: Record<TutorInvoiceStatus, { label: string; tone: Tone }> = {
   draft: { label: 'Draft', tone: 'neutral' },
   submitted: { label: 'Waiting for approval', tone: 'warning' },
-  approved: { label: 'Approved — to pay', tone: 'info' },
+  approved: { label: 'Approved for payment', tone: 'info' },
   rejected: { label: 'Needs changes', tone: 'danger' },
   paid: { label: 'Paid', tone: 'success' },
 };

@@ -83,12 +83,12 @@ export default function OpportunityDetail() {
             variant="gold"
             onPress={() => router.push({ pathname: '/lesson/new', params: { tutorId: winner.id, ...(o.studentId ? { studentId: o.studentId } : {}) } })}
           />
-          {!o.studentId ? <Txt variant="small">Tip: add the student first (from the enquiry) so you can schedule them.</Txt> : null}
+          {!o.studentId ? <Txt variant="small">Add the student first, from the enquiry, so that you can schedule their lessons.</Txt> : null}
         </Card>
       ) : null}
 
       <Section title={`Tutors interested (${theirs.length})`}>
-        {theirs.length === 0 ? <EmptyState icon="people" title="No interest yet" message="Tutors were notified when you posted. Check back soon." /> : null}
+        {theirs.length === 0 ? <EmptyState icon="people" title="No interest yet" message="Tutors were notified when you posted this role. Their responses will appear here." /> : null}
         <View style={{ gap: Spacing.two }}>
           {theirs.map((b) => {
             const t = tutor(b.tutorId);
@@ -116,7 +116,7 @@ export default function OpportunityDetail() {
                     title={`Choose ${t.fullName.split(' ')[0]}`}
                     loading={award.isPending}
                     onPress={() =>
-                      confirm(`Choose ${t.fullName}?`, 'They’ll be told straight away, and everyone else will hear it’s been filled.', () => award.mutate([b.id]), 'Choose')
+                      confirm(`Choose ${t.fullName}?`, 'They will be notified immediately, and the other tutors will be told that the role has been filled.', () => award.mutate([b.id]), 'Choose')
                     }
                   />
                 ) : null}

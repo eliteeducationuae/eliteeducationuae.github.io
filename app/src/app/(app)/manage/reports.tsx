@@ -110,7 +110,7 @@ export default function AdminReports() {
           ) : null}
           <ErrorNote error={publish.error} />
           {list.length === 0 ? (
-            <EmptyState icon="doc" title="Nothing here" />
+            <EmptyState icon="doc" title="No reports in this view" message="Reports appear here as tutors write and submit them." />
           ) : (
             <View style={{ gap: Spacing.two }}>
               {list.map((r) => (

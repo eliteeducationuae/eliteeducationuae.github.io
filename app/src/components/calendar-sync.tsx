@@ -23,7 +23,7 @@ export function CalendarSyncCard() {
     const now = new Date();
     const lessons = await source.listLessons({ from: now.toISOString(), to: addDays(now, 120).toISOString() });
     const ics = lessonsToICS(lessons, (l) => ({
-      title: `Maths: ${lookup.studentNames(l.studentIds)}`,
+      title: `Elite Education: ${lookup.studentNames(l.studentIds)}`,
       description: `${lookup.service(l.serviceId)?.name ?? ''} with ${lookup.tutor(l.tutorId)?.fullName ?? ''}`,
     }));
     if (Platform.OS === 'web') {
@@ -43,7 +43,7 @@ export function CalendarSyncCard() {
       <Txt variant="h3">Calendar sync</Txt>
       <Txt variant="muted">
         {feedUrl
-          ? 'Subscribe once and your lessons stay up to date in Apple or Google Calendar, including any reschedules and cancellations.'
+          ? 'Subscribe once and your lessons will stay up to date in Apple or Google Calendar, including any changes and cancellations.'
           : 'Export your upcoming lessons to Apple or Google Calendar.'}
       </Txt>
       {feedUrl ? (

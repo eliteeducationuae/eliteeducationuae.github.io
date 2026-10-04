@@ -36,7 +36,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     const clashes = findClashes({ start, end, tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id }, lessons.data ?? []);
     confirm(
       `Move ${lookup.studentNames(lesson.studentIds)}’s lesson?`,
-      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\n⚠ This clashes with another lesson.' : ''}`,
+      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}`,
       () => move.mutate([lesson.id, start.toISOString(), end.toISOString()]),
       'Move',
     );
@@ -118,7 +118,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
           {dayLessons.length ? (
             dayLessons.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />)
           ) : (
-            <EmptyState icon="calendar" title="Nothing scheduled" />
+            <EmptyState icon="calendar" title="No lessons scheduled on this day" message="Lessons will appear here as soon as they are booked." />
           )}
         </View>
       ) : (
@@ -135,7 +135,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
               </View>
             );
           })}
-          {all.length === 0 ? <EmptyState icon="calendar" title="Nothing scheduled this week" /> : null}
+          {all.length === 0 ? <EmptyState icon="calendar" title="No lessons scheduled this week" message="Lessons will appear here as soon as they are booked." /> : null}
         </View>
       )}
     </Screen>

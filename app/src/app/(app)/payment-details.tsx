@@ -23,7 +23,7 @@ export default function PaymentDetailsScreen() {
   return (
     <Screen>
       <Stack.Screen options={{ title: own ? 'Payment details' : `${lookup.tutor(tutorId)?.fullName.split(' ')[0] ?? 'Tutor'}’s bank details` }} />
-      <Banner icon="alert">Your bank details are private: only you and Elite Education’s admins can see them, and they’re never sent by email.</Banner>
+      <Banner icon="alert">Your bank details are private. Only you and Elite Education’s administrators can see them, and they are never sent by email.</Banner>
       <Form key={details.data?.updatedAt ?? 'new'} tutorId={tutorId} existing={details.data ?? null} startEditing={own && !details.data} />
     </Screen>
   );
@@ -42,7 +42,7 @@ function Form({ tutorId, existing, startEditing }: { tutorId: string; existing: 
   if (!editing) {
     if (!existing) {
       return (
-        <EmptyState icon="money" title="No bank details yet" action={<Button title="Add bank details" variant="gold" onPress={() => setEditing(true)} />} />
+        <EmptyState icon="money" title="No bank details yet" message="Please add the account into which we should pay you." action={<Button title="Add bank details" variant="gold" onPress={() => setEditing(true)} />} />
       );
     }
     return (
@@ -81,7 +81,7 @@ function Form({ tutorId, existing, startEditing }: { tutorId: string; existing: 
         autoCapitalize="characters"
         autoCorrect={false}
         placeholder="AE07 0331 2345 6789 0123 456"
-        hint={iban && !ibanOk ? 'That IBAN doesn’t look right — please check it.' : 'UAE IBANs start with AE and have 23 characters.'}
+        hint={iban && !ibanOk ? 'That IBAN does not look right. Please check it.' : 'UAE IBANs start with AE and have 23 characters.'}
       />
       <Field label="SWIFT / BIC (optional)" value={swift} onChangeText={(t) => setSwift(t.toUpperCase())} autoCapitalize="characters" />
       <ErrorNote error={save.error} />

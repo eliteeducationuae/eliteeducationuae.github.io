@@ -28,7 +28,7 @@ export default function Applications() {
         ]}
       />
       {list.length === 0 ? (
-        <EmptyState icon="school" title="No applications here" />
+        <EmptyState icon="school" title="No applications here" message="Applications from the website and the app will appear here." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((a) => (

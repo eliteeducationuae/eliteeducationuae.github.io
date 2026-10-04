@@ -45,7 +45,7 @@ export default function Enquiries() {
         ]}
       />
       {list.length === 0 ? (
-        <EmptyState icon="inbox" title="Nothing here" message="Enquiries from the website, the app and phone calls you log appear here." />
+        <EmptyState icon="inbox" title="No enquiries in this view" message="Enquiries from the website, the app and phone calls you log appear here." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((e) => (

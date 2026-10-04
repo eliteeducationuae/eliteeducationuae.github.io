@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { LoginHint } from '@/components/login-hint';
+import { TUTOR_COLORS } from '@/components/tutor-colors';
 import { Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -10,7 +11,6 @@ import { useAction, useTutors } from '@/data/hooks';
 import type { Tutor } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
-const COLORS = ['#2b6cb0', '#c05621', '#2f855a', '#6b46c1', '#b83280', '#2c7a7b', '#975a16', '#1a365d'];
 const SUBJECTS = ['IB', 'IGCSE', 'A-Level'];
 
 export default function EditTutor() {
@@ -29,7 +29,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
   const [phone, setPhone] = useState(existing?.phone ?? '');
   const [pay, setPay] = useState(existing ? String(existing.hourlyPay) : '');
   const [subjects, setSubjects] = useState<string[]>(existing?.subjects ?? []);
-  const [color, setColor] = useState(existing?.color ?? COLORS[0]);
+  const [color, setColor] = useState(existing?.color ?? TUTOR_COLORS[0]);
   const valid = fullName.trim() && /\S+@\S+/.test(email) && Number(pay) >= 0 && pay !== '';
 
   return (
@@ -72,7 +72,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       </Section>
       <Section title="Calendar colour">
         <Row gap={Spacing.two} wrap>
-          {COLORS.map((c) => (
+          {TUTOR_COLORS.map((c) => (
             <Pressable key={c} onPress={() => setColor(c)} accessibilityLabel={`Colour ${c}`} accessibilityState={{ selected: color === c }}>
               <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c, borderWidth: 3, borderColor: color === c ? theme.text : 'transparent' }} />
             </Pressable>

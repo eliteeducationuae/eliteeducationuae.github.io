@@ -131,7 +131,7 @@ export function StudentOverview({ student }: { student: Student }) {
             <Button title="Share progress report (PDF)" icon="share" variant="secondary" onPress={share} loading={sharing} />
           </View>
         ) : (
-          <EmptyState title="No syllabus set" />
+          <EmptyState title="No syllabus set" message="Topic progress will appear here once a syllabus has been chosen." />
         )
       ) : null}
 
@@ -151,7 +151,7 @@ export function NotesFeed({ notes, lessons, loading, limit }: { notes: LessonNot
     .filter((n) => byId.has(n.lessonId))
     .sort((a, b) => byId.get(b.lessonId)!.start.localeCompare(byId.get(a.lessonId)!.start))
     .slice(0, limit);
-  if (sorted.length === 0) return <EmptyState icon="doc" title="No lesson notes yet" message="Notes appear here after each lesson." />;
+  if (sorted.length === 0) return <EmptyState icon="doc" title="No lesson notes yet" message="Notes from each lesson will appear here as soon as they are written." />;
   return (
     <View style={{ gap: Spacing.two }}>
       {sorted.map((n) => {
@@ -186,7 +186,7 @@ export function HomeworkList({ items, loading, canTick = true }: { items: Homewo
   const theme = useTheme();
   const toggle = useAction(source.setHomeworkDone);
   if (loading) return <Loading />;
-  if (items.length === 0) return <EmptyState icon="book" title="No homework set" />;
+  if (items.length === 0) return <EmptyState icon="book" title="No homework set" message="Homework will appear here as soon as it is set." />;
   const today = toDateKey(new Date());
   const sorted = [...items].sort((a, b) => Number(a.done) - Number(b.done) || b.dueDate.localeCompare(a.dueDate));
   return (

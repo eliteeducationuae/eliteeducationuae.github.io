@@ -10,11 +10,11 @@ export default function Enquire() {
   const isAdmin = profile?.role === 'admin';
   return (
     <Screen>
-      <Stack.Screen options={{ title: isAdmin ? 'Add enquiry' : 'Book a free consultation' }} />
+      <Stack.Screen options={{ title: isAdmin ? 'Add an enquiry' : 'Book a complimentary consultation' }} />
       {!isAdmin ? (
         <Txt variant="muted">
-          Tell us a little about your child and we’ll arrange a free, no-obligation consultation with one of our specialist maths
-          tutors.
+          Please tell us a little about your child, and we will arrange a complimentary, no-obligation consultation with one of our
+          specialist tutors.
         </Txt>
       ) : null}
       <EnquiryForm source={isAdmin ? 'phone' : 'app'} submitLabel={isAdmin ? 'Save enquiry' : 'Send enquiry'} />

@@ -28,7 +28,7 @@ export default function AvailabilityScreen() {
   const mine = (availability.data ?? []).filter((a) => a.tutorId === tutor.id);
   return (
     <Screen>
-      <Stack.Screen options={{ title: me.tutorId === tutor.id ? 'Availability & time off' : `${tutor.fullName.split(' ')[0]}’s availability` }} />
+      <Stack.Screen options={{ title: me.tutorId === tutor.id ? 'Availability and time off' : `${tutor.fullName.split(' ')[0]}’s availability` }} />
       <WeeklyEditor key={`${tutor.id}-${mine.length}`} tutor={tutor} initial={mine} />
       <TimeOff tutor={tutor} />
     </Screen>
@@ -47,7 +47,7 @@ function WeeklyEditor({ tutor, initial }: { tutor: Tutor; initial: Availability[
 
   return (
     <Section title="Weekly availability">
-      <Txt variant="muted">Families can request lessons in these times (in 30-minute steps), as long as you’re free.</Txt>
+      <Txt variant="muted">Families can request lessons within these times, in 30-minute steps, whenever you are free.</Txt>
       {DAYS.map((day, weekday) => {
         const rows = blocks.map((b, i) => ({ b, i })).filter(({ b }) => b.weekday === weekday);
         return (
@@ -154,7 +154,7 @@ function TimeOff({ tutor }: { tutor: Tutor }) {
             <Field label="To (optional)" value={end} onChangeText={setEnd} placeholder="YYYY-MM-DD" />
           </View>
         </Row>
-        <Field label="Reason (optional)" value={reason} onChangeText={setReason} placeholder="e.g. Holiday, conference" />
+        <Field label="Reason (optional)" value={reason} onChangeText={setReason} placeholder="e.g. Holiday or a conference" />
         <ErrorNote error={saveAbsence.error} />
         <Button
           title="Add time off"

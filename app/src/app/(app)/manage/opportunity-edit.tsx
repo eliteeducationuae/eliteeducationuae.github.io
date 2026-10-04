@@ -88,7 +88,7 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
         value={description}
         onChangeText={setDescription}
         multiline
-        placeholder="Level, goals, what they find hard. Don’t include family contact details."
+        placeholder="Level, goals, what they find hard. Please do not include family contact details."
       />
       <Section title="Curriculum">
         <Row gap={Spacing.one} wrap>

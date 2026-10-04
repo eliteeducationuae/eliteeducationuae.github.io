@@ -14,7 +14,7 @@ export default function Apply() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [curricula, setCurricula] = useState<string[]>([]);
-  const [subjects, setSubjects] = useState('Maths');
+  const [subjects, setSubjects] = useState('');
   const [experience, setExperience] = useState('');
   const [qualifications, setQualifications] = useState('');
   const [availability, setAvailability] = useState('');
@@ -52,12 +52,12 @@ export default function Apply() {
       <Stack.Screen options={{ title: 'Teach with Elite Education' }} />
       {sent ? (
         <Banner tone="success" icon="check">
-          Thank you for applying! We review every application and will be in touch soon.
+          Thank you for applying. We review every application personally and will be in touch shortly.
         </Banner>
       ) : (
         <>
           <Txt variant="muted">
-            We’re always looking for outstanding IB, IGCSE and A-Level maths tutors in the UAE. Tell us about yourself and we’ll be in touch.
+            We are always pleased to hear from outstanding tutors in every subject, phase and curriculum. Please tell us about yourself and we will be in touch.
           </Txt>
           <Card style={{ gap: Spacing.three }}>
             <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" autoComplete="name" />
@@ -66,7 +66,7 @@ export default function Apply() {
                 <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
               </View>
               <View style={{ flex: 1 }}>
-                <Field label="Mobile / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+                <Field label="Mobile or WhatsApp number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
               </View>
             </Row>
             <Section title="What can you teach?">
@@ -76,15 +76,15 @@ export default function Apply() {
                 ))}
               </Row>
             </Section>
-            <Field label="Subjects" value={subjects} onChangeText={setSubjects} placeholder="Maths, Further Maths, Additional Maths" />
-            <Field label="Teaching experience" value={experience} onChangeText={setExperience} multiline placeholder="Schools, years, results, examiner experience…" />
-            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="e.g. MSc Mathematics, PGCE" />
+            <Field label="Subjects" value={subjects} onChangeText={setSubjects} placeholder="e.g. Mathematics, Physics, English Literature" />
+            <Field label="Teaching experience" value={experience} onChangeText={setExperience} multiline placeholder="Schools, years of experience, results and any examining work" />
+            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="e.g. MSc, PGCE, QTS" />
             <Field label="Availability" value={availability} onChangeText={setAvailability} placeholder="e.g. Weekday evenings, Saturday mornings" />
             <Row gap={Spacing.two} style={{ justifyContent: 'space-between' }}>
               <Txt variant="muted" style={{ flex: 1 }} numberOfLines={1}>
                 {cv ? `CV: ${cv.name}` : 'CV (optional, PDF or Word)'}
               </Txt>
-              <Button title={cv ? 'Change' : 'Attach CV'} icon="doc" size="sm" variant="secondary" onPress={async () => setCv((await pickFile()) ?? cv)} />
+              <Button title={cv ? 'Change' : 'Attach your CV'} icon="doc" size="sm" variant="secondary" onPress={async () => setCv((await pickFile()) ?? cv)} />
             </Row>
             <ErrorNote error={error} />
             <Button title="Send application" variant="gold" loading={busy} disabled={!fullName.trim() || !email.includes('@') || curricula.length === 0} onPress={submit} />

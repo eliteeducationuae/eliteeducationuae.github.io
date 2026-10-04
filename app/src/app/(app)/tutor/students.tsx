@@ -13,14 +13,14 @@ export default function TutorStudents() {
   return (
     <Screen onRefresh={() => students.refetch()} refreshing={students.isRefetching}>
       {list.length === 0 ? (
-        <EmptyState icon="people" title="No students yet" message="Students appear here once you have lessons with them." />
+        <EmptyState icon="people" title="No students yet" message="Your students will appear here as soon as lessons with them are booked." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((s) => (
             <ListItem
               key={s.id}
               title={s.fullName}
-              subtitle={`${getSyllabus(s.syllabusId)?.name ?? s.curriculum}${s.targetGrade ? ` · target ${s.targetGrade}` : ''}`}
+              subtitle={`${getSyllabus(s.syllabusId)?.name ?? s.curriculum}${s.targetGrade ? ` · Target ${s.targetGrade}` : ''}`}
               left={<Avatar name={s.fullName} />}
               onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })}
             />

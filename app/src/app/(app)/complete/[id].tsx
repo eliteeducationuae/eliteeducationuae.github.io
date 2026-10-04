@@ -53,7 +53,7 @@ export default function CompleteLesson() {
   if (l.status !== 'scheduled') {
     return (
       <Screen>
-        <EmptyState icon="check" title="Already recorded" message="This lesson has already been completed or cancelled." />
+        <EmptyState icon="check" title="Already recorded" message="This lesson has already been recorded or cancelled." />
       </Screen>
     );
   }
@@ -91,7 +91,7 @@ export default function CompleteLesson() {
     <Screen
       footer={
         <Button
-          title={status === 'completed' ? 'Save & send to family' : 'Record no-show'}
+          title={status === 'completed' ? 'Save and send to the family' : 'Record no-show'}
           icon="check"
           variant="gold"
           style={{ flex: 1 }}
@@ -111,7 +111,7 @@ export default function CompleteLesson() {
 
       {status === 'no-show' ? (
         <Banner tone="warning" icon="alert">
-          The family will be charged according to the no-show policy. Add a note below if helpful.
+          The family will be charged according to the no-show policy. Please add a note below if it would be helpful.
         </Banner>
       ) : (
         <>
@@ -188,7 +188,7 @@ export default function CompleteLesson() {
           multiline
           value={summary}
           onChangeText={setSummary}
-          placeholder="e.g. Worked through integration by parts, then two exam questions. Confident with the method; next time we'll tackle definite integrals."
+          placeholder="e.g. Worked through integration by parts, then two exam questions. Confident with the method; next time we will tackle definite integrals."
         />
       </Section>
 

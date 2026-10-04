@@ -43,7 +43,7 @@ export default function InvoicePage() {
       await WebBrowser.openBrowserAsync(result.url);
       await invoice.refetch();
     } else if (result.paid) {
-      notify('Payment received', 'Thank you! A receipt has been recorded on this invoice.');
+      notify('Payment received', 'Thank you. A receipt has been recorded on this invoice.');
     }
   }
 
@@ -156,7 +156,7 @@ export default function InvoicePage() {
               title="Void invoice"
               variant="danger"
               onPress={() =>
-                confirm('Void this invoice?', 'Its lessons go back to “Ready to invoice” so they can be billed again.', () =>
+                confirm('Void this invoice?', 'Its lessons will return to “Ready to invoice” so that they can be billed again.', () =>
                   setStatus.mutate([inv.id, 'void']),
                 )
               }

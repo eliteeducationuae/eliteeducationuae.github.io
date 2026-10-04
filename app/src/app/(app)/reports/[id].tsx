@@ -95,7 +95,7 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
   }
 
   const runDraft = () =>
-    hasText ? confirm('Replace what you’ve written?', 'The draft will replace the three text boxes below.', draft, 'Replace') : draft();
+    hasText ? confirm('Replace what you have written?', 'The draft will replace the three text boxes below.', draft, 'Replace') : draft();
 
   const footer =
     isAuthor && report.status === 'draft' ? (
@@ -185,11 +185,11 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
             <Card style={{ gap: Spacing.three }}>
               <Button title={drafting ? 'Drafting…' : 'Draft for me'} icon="sparkle" variant="gold" loading={drafting} disabled={loadingFacts} onPress={runDraft} />
               {draftSource === 'sample' ? (
-                <Banner icon="sparkle">Sample draft written from this term’s lessons. Read it through and make it your own before submitting.</Banner>
+                <Banner icon="sparkle">Sample draft written from this term’s lessons. Please read it through and make it your own before submitting.</Banner>
               ) : draftSource === 'ai' ? (
-                <Banner icon="sparkle">AI draft from this term’s lessons, notes and ratings. Check every sentence and add your own touch.</Banner>
+                <Banner icon="sparkle">This draft was prepared from this term’s lessons, notes and ratings. Please check every sentence and add your own touch.</Banner>
               ) : (
-                <Txt variant="muted">We’ll draft all three sections from the facts above. Set effort and progress first for a better draft.</Txt>
+                <Txt variant="muted">We will draft all three sections from the facts above. Please set effort and progress first for a better draft.</Txt>
               )}
               <ErrorNote error={error} />
               <Field label="Strengths" value={strengths} onChangeText={setStrengths} multiline maxLength={3000} />
@@ -238,7 +238,7 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
             ) : report.status === 'approved' ? (
               <Button title="Send to family" variant="gold" icon="check" loading={setStatus.isPending} onPress={() => setStatus.mutateAsync([report.id, 'published'])} />
             ) : report.status === 'draft' ? (
-              <Txt variant="muted">The tutor hasn’t submitted this report yet.</Txt>
+              <Txt variant="muted">The tutor has not yet submitted this report.</Txt>
             ) : (
               <Txt variant="muted">Sent to the family {report.publishedAt ? formatDate(report.publishedAt) : ''}.</Txt>
             )}

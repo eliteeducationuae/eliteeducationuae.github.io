@@ -57,10 +57,11 @@ export function createSeed(now: Date = new Date()): DemoDB {
     version: DEMO_DB_VERSION,
     settings,
     profiles: [],
+    // Tutor colours come from TUTOR_COLORS in src/components/tutor-colors.ts (slate, bronze, forest).
     tutors: [
-      { id: 't-craig', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', hourlyPay: 300, subjects: ['IB', 'A-Level', 'IGCSE'], color: '#2b6cb0' },
-      { id: 't-sarah', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', hourlyPay: 200, subjects: ['IGCSE'], color: '#c05621' },
-      { id: 't-james', fullName: 'James Wilson', email: 'james@eliteeducation.me', hourlyPay: 220, subjects: ['IB', 'IGCSE'], color: '#2f855a' },
+      { id: 't-craig', fullName: "Craig O'Brien", email: 'craig@eliteeducation.me', hourlyPay: 300, subjects: ['IB', 'A-Level', 'IGCSE'], color: '#3F4A56' },
+      { id: 't-sarah', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', hourlyPay: 200, subjects: ['IGCSE'], color: '#7A5C1E' },
+      { id: 't-james', fullName: 'James Wilson', email: 'james@eliteeducation.me', hourlyPay: 220, subjects: ['IB', 'IGCSE'], color: '#3D6B4F' },
     ],
     families: [
       { id: 'f-mansoori', name: 'Al Mansoori', parentName: 'Fatima Al Mansoori', email: 'fatima@example.com', phone: '+971 50 000 0001' },

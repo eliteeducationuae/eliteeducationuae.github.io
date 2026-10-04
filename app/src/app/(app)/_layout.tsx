@@ -30,14 +30,14 @@ export default function SignedInLayout() {
       <Stack.Screen name="manage/tutor-edit" options={{ title: 'Tutor', presentation: 'modal' }} />
       <Stack.Screen name="manage/families" options={{ title: 'Families' }} />
       <Stack.Screen name="manage/family-edit" options={{ title: 'Family', presentation: 'modal' }} />
-      <Stack.Screen name="manage/services" options={{ title: 'Services & rates' }} />
+      <Stack.Screen name="manage/services" options={{ title: 'Services and rates' }} />
       <Stack.Screen name="manage/package-new" options={{ title: 'Sell a package', presentation: 'modal' }} />
       <Stack.Screen name="manage/payroll" options={{ title: 'Tutor pay' }} />
       <Stack.Screen name="manage/settings" options={{ title: 'Business settings' }} />
       <Stack.Screen name="manage/enquiries" options={{ title: 'Enquiries' }} />
       <Stack.Screen name="manage/enquiry/[id]" options={{ title: 'Enquiry' }} />
       <Stack.Screen name="manage/requests" options={{ title: 'Lesson requests' }} />
-      <Stack.Screen name="manage/closures" options={{ title: 'Holidays & term breaks' }} />
+      <Stack.Screen name="manage/closures" options={{ title: 'Holidays and term breaks' }} />
       <Stack.Screen name="manage/opportunities" options={{ title: 'Roles for tutors' }} />
       <Stack.Screen name="manage/opportunity/[id]" options={{ title: 'Role' }} />
       <Stack.Screen name="manage/opportunity-edit" options={{ title: 'Post a role', presentation: 'modal' }} />

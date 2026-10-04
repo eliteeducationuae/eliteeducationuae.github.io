@@ -38,7 +38,7 @@ export default function TutorEarnings() {
       </StatGrid>
       <Txt variant="small">Paid at {formatAED(tutor.hourlyPay)} per hour.</Txt>
       <Section title="Lessons taught">
-        {paid.length ? paid.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="tutor" showDate />) : <EmptyState title="No lessons taught yet this month" />}
+        {paid.length ? paid.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="tutor" showDate />) : <EmptyState title="No lessons taught yet this month" message="Completed lessons will appear here as soon as they are recorded." />}
       </Section>
     </Screen>
   );

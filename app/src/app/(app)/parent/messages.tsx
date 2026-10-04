@@ -8,7 +8,7 @@ export default function ParentMessages() {
   if (!me.familyId) {
     return (
       <Screen>
-        <EmptyState title="Messages aren’t set up for this account" />
+        <EmptyState title="Messages are not yet available for this account" message="Please contact Elite Education and we will set this up for you." />
       </Screen>
     );
   }

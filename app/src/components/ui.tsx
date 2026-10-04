@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -16,10 +16,18 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
+import { elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Icon, type IconName } from './icon';
+
+/** Set by hero cards so text inside them switches to the on-hero colours. */
+const HeroSurface = createContext(false);
+
+/** True inside a <Card variant="hero">; use it to pick on-hero colours for custom content. */
+export function useOnHero() {
+  return useContext(HeroSurface);
+}
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -88,12 +96,23 @@ export function Row({
 
 export function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <View style={{ gap: Spacing.two }}>
+    <View style={{ gap: Spacing.two + Spacing.one }}>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="label">{title}</Txt>
+        <SectionLabel>{title}</SectionLabel>
         {action}
       </Row>
       {children}
+    </View>
+  );
+}
+
+/** Uppercase tracked label with a short champagne-gold rule beneath, as in the brand guidelines. */
+export function SectionLabel({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: 6 }}>
+      <Txt variant="label">{children}</Txt>
+      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
     </View>
   );
 }
@@ -102,7 +121,7 @@ export function Section({ title, action, children }: { title: string; action?: R
 // Text
 // ---------------------------------------------------------------------------
 
-type Variant = 'title' | 'h2' | 'h3' | 'body' | 'muted' | 'small' | 'label' | 'number';
+type Variant = 'display' | 'title' | 'h2' | 'h3' | 'body' | 'muted' | 'small' | 'label' | 'number';
 
 export function Txt({
   variant = 'body',
@@ -111,20 +130,25 @@ export function Txt({
   ...rest
 }: TextProps & { variant?: Variant; color?: keyof Palette }) {
   const theme = useTheme();
+  const onHero = useContext(HeroSurface);
   const base = variantStyles[variant];
-  const defaultColor = variant === 'muted' || variant === 'label' || variant === 'small' ? theme.textMuted : theme.text;
+  const secondary = variant === 'muted' || variant === 'label' || variant === 'small';
+  const defaultColor = onHero ? (secondary ? theme.onHeroMuted : theme.onHero) : secondary ? theme.textMuted : theme.text;
   return <Text style={[base, { color: color ? theme[color] : defaultColor }, style]} {...rest} />;
 }
 
+// The brand type scale: Display Georgia bold, H1 Georgia regular, H2 Georgia bold,
+// body in Calibri (Carlito), labels in Calibri bold capitals with tracking.
 const variantStyles: Record<Variant, TextStyle> = {
-  title: { fontSize: 28, lineHeight: 34, fontWeight: '800', letterSpacing: -0.5 },
-  h2: { fontSize: 20, lineHeight: 26, fontWeight: '700' },
-  h3: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
-  body: { fontSize: 15, lineHeight: 22 },
-  muted: { fontSize: 14, lineHeight: 20 },
-  small: { fontSize: 12, lineHeight: 16 },
-  label: { fontSize: 12, lineHeight: 16, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  number: { fontSize: 24, lineHeight: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  display: { ...font('serif', 'bold'), fontSize: 34, lineHeight: 40, letterSpacing: -0.4 },
+  title: { ...font('serif', 'bold'), fontSize: 30, lineHeight: 38, letterSpacing: -0.3 },
+  h2: { ...font('serif'), fontSize: 22, lineHeight: 29 },
+  h3: { ...font('serif', 'bold'), fontSize: 16.5, lineHeight: 23 },
+  body: { ...font('sans'), fontSize: 16, lineHeight: 23 },
+  muted: { ...font('sans'), fontSize: 15, lineHeight: 21 },
+  small: { ...font('sans'), fontSize: 13, lineHeight: 18 },
+  label: { ...font('sans', 'bold'), fontSize: 11.5, lineHeight: 15, textTransform: 'uppercase', letterSpacing: 1.6 },
+  number: { ...font('serif', 'bold'), fontSize: 26, lineHeight: 32, fontVariant: ['tabular-nums'] },
 };
 
 // ---------------------------------------------------------------------------
@@ -137,6 +161,7 @@ export function Card({
   style,
   accent,
   accessibilityLabel,
+  variant = 'default',
 }: {
   children: ReactNode;
   onPress?: () => void;
@@ -144,27 +169,37 @@ export function Card({
   /** Coloured stripe on the left edge. */
   accent?: string;
   accessibilityLabel?: string;
+  /** hero: noir surface with ivory text; highlight: champagne wash with a gold left rule. */
+  variant?: 'default' | 'hero' | 'highlight';
 }) {
   const theme = useTheme();
+  const surface: ViewStyle =
+    variant === 'hero'
+      ? { backgroundColor: theme.hero, borderColor: theme.hero === theme.primary ? theme.hero : theme.gold, borderWidth: StyleSheet.hairlineWidth }
+      : variant === 'highlight'
+        ? { backgroundColor: theme.champagne, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: theme.gold }
+        : { backgroundColor: theme.surface, borderColor: theme.border };
   const body = (
     <View
       style={[
         styles.card,
-        { backgroundColor: theme.surface, borderColor: theme.border },
+        surface,
+        variant === 'hero' ? elevation(theme, 2) : elevation(theme),
         accent && { borderLeftWidth: 4, borderLeftColor: accent },
         style,
       ]}>
       {children}
     </View>
   );
-  if (!onPress) return body;
+  const content = variant === 'hero' ? <HeroSurface.Provider value>{body}</HeroSurface.Provider> : body;
+  if (!onPress) return content;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [{ flexGrow: 1 }, pressed && { opacity: 0.75 }]}>
-      {body}
+      style={({ pressed }) => [{ flexGrow: 1, borderRadius: Radius.md }, pressed && { opacity: 0.88, transform: [{ scale: 0.995 }] }]}>
+      {content}
     </Pressable>
   );
 }
@@ -226,7 +261,7 @@ export function Stat({
     <View style={styles.stat}>
       <Card style={{ flex: 1, gap: Spacing.one }} onPress={onPress} accessibilityLabel={`${label}: ${value}`}>
         <Txt variant="label">{label}</Txt>
-        <Txt variant="number" color={tone} adjustsFontSizeToFit numberOfLines={1}>
+        <Txt variant="number" color={tone} adjustsFontSizeToFit numberOfLines={1} style={value.length > 7 && styles.statLong}>
           {value}
         </Txt>
         {hint ? <Txt variant="small">{hint}</Txt> : null}
@@ -238,17 +273,30 @@ export function Stat({
 export function EmptyState({ icon = 'sparkle', title, message, action }: { icon?: IconName; title: string; message?: string; action?: ReactNode }) {
   const theme = useTheme();
   return (
-    <Card style={{ alignItems: 'center', paddingVertical: Spacing.five, gap: Spacing.two }}>
-      <Icon name={icon} size={28} color={theme.textMuted} />
-      <Txt variant="h3" style={{ textAlign: 'center' }}>
+    <Card style={{ alignItems: 'center', paddingVertical: Spacing.five, paddingHorizontal: Spacing.four, gap: Spacing.two + Spacing.one }}>
+      <View
+        style={{
+          width: 60,
+          height: 60,
+          borderRadius: 30,
+          backgroundColor: theme.champagne,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: theme.gold,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <Icon name={icon} size={26} color={theme.accent} />
+      </View>
+      <Txt variant="h2" style={{ textAlign: 'center' }}>
         {title}
       </Txt>
+      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
       {message ? (
-        <Txt variant="muted" style={{ textAlign: 'center', maxWidth: 360 }}>
+        <Txt variant="muted" style={{ textAlign: 'center', maxWidth: 380 }}>
           {message}
         </Txt>
       ) : null}
-      {action}
+      {action ? <View style={{ marginTop: Spacing.two }}>{action}</View> : null}
     </Card>
   );
 }
@@ -257,7 +305,7 @@ export function Loading() {
   const theme = useTheme();
   return (
     <View style={{ padding: Spacing.six, alignItems: 'center' }}>
-      <ActivityIndicator color={theme.accent} />
+      <ActivityIndicator color={theme.gold} />
     </View>
   );
 }
@@ -282,7 +330,7 @@ export function Banner({
 }) {
   const theme = useTheme();
   return (
-    <View style={[styles.banner, { backgroundColor: theme[`${tone}Bg`] }]}>
+    <View style={[styles.banner, { backgroundColor: theme[`${tone}Bg`], borderLeftColor: theme[tone] }]}>
       <Icon name={icon} size={18} color={theme[tone]} />
       <Txt variant="muted" style={{ flex: 1, color: theme.text }}>
         {children}
@@ -295,7 +343,7 @@ export function Banner({
 // Controls
 // ---------------------------------------------------------------------------
 
-type ButtonVariant = 'primary' | 'gold' | 'secondary' | 'danger' | 'ghost';
+type ButtonVariant = 'primary' | 'gold' | 'secondary' | 'danger' | 'ghost' | 'outline';
 
 export function Button({
   title,
@@ -319,11 +367,22 @@ export function Button({
   const theme = useTheme();
   const palette: Record<ButtonVariant, { bg: string; fg: string; border?: string }> = {
     primary: { bg: theme.primary, fg: theme.onPrimary },
-    gold: { bg: theme.gold, fg: theme.onGold },
+    // Gold stays an accent: an outlined button with a champagne wash rather than a block of gold.
+    gold: { bg: theme.champagne, fg: theme.text, border: theme.gold },
     secondary: { bg: theme.surface, fg: theme.text, border: theme.border },
     danger: { bg: theme.dangerBg, fg: theme.danger },
     ghost: { bg: 'transparent', fg: theme.accent },
+    // The brand's secondary button: transparent with a Champagne Gold hairline.
+    outline: { bg: 'transparent', fg: theme.text, border: theme.gold },
   };
+  // On a noir hero surface the light-scheme colours would vanish, so buttons invert there.
+  const onHero = useContext(HeroSurface);
+  if (onHero) {
+    palette.primary = { bg: theme.onHero, fg: theme.hero };
+    palette.secondary = { bg: 'transparent', fg: theme.onHero, border: theme.onHeroMuted };
+    palette.outline = { bg: 'transparent', fg: theme.onHero, border: theme.gold };
+    palette.ghost = { bg: 'transparent', fg: theme.onHero };
+  }
   const c = palette[variant];
   const inactive = disabled || loading;
   return (
@@ -337,7 +396,7 @@ export function Button({
         styles.button,
         size === 'sm' && styles.buttonSm,
         { backgroundColor: c.bg, borderColor: c.border ?? c.bg },
-        pressed && { opacity: 0.8 },
+        pressed && { opacity: 0.82, borderColor: theme.gold },
         inactive && { opacity: 0.5 },
         style,
       ]}>
@@ -346,7 +405,7 @@ export function Button({
       ) : icon ? (
         <Icon name={icon} size={size === 'sm' ? 16 : 18} color={c.fg} />
       ) : null}
-      <Text style={[styles.buttonText, size === 'sm' && { fontSize: 13 }, { color: c.fg }]}>{title}</Text>
+      <Text style={[styles.buttonText, size === 'sm' && { fontSize: 14 }, { color: c.fg }]}>{title}</Text>
     </Pressable>
   );
 }
@@ -361,11 +420,11 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone 
     warning: [theme.warningBg, theme.warning],
     danger: [theme.dangerBg, theme.danger],
     info: [theme.infoBg, theme.info],
-    gold: [theme.gold, theme.onGold],
+    gold: [theme.champagne, theme.accent],
   };
   const [bg, fg] = colors[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
+    <View style={[styles.badge, { backgroundColor: bg }, tone === 'gold' && { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.gold }]}>
       <Text style={[styles.badgeText, { color: fg }]}>{label}</Text>
     </View>
   );
@@ -378,11 +437,12 @@ export function Chip({ label, selected, onPress }: { label: string; selected?: b
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
-      style={[
+      style={({ pressed }) => [
         styles.chip,
-        { borderColor: selected ? theme.primary : theme.border, backgroundColor: selected ? theme.primary : theme.surface },
+        { borderColor: selected ? theme.gold : theme.border, backgroundColor: selected ? theme.primary : theme.surface },
+        pressed && { borderColor: theme.gold },
       ]}>
-      <Text style={{ color: selected ? theme.onPrimary : theme.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+      <Text style={[font('sans', 'bold'), { color: selected ? theme.onPrimary : theme.text, fontSize: 14 }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -407,8 +467,9 @@ export function Segmented<T extends string>({
             onPress={() => onChange(o.value)}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            style={[styles.segment, active && { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={{ color: active ? theme.text : theme.textMuted, fontWeight: '600', fontSize: 13 }}>{o.label}</Text>
+            style={[styles.segment, active && [{ backgroundColor: theme.surface, borderColor: theme.border }, elevation(theme)]]}>
+            <Text style={[font('sans', 'bold'), { color: active ? theme.text : theme.textMuted, fontSize: 14 }]}>{o.label}</Text>
+            {active ? <View style={[styles.segmentMarker, { backgroundColor: theme.gold }]} /> : null}
           </Pressable>
         );
       })}
@@ -424,6 +485,8 @@ export function Field({
 }: TextInputProps & { label: string; hint?: string }) {
   const theme = useTheme();
   const ref = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
+  const { onFocus, onBlur } = input;
   return (
     <Pressable onPress={() => ref.current?.focus()} style={{ gap: Spacing.one }} accessible={false}>
       <Txt variant="label">{label}</Txt>
@@ -433,11 +496,20 @@ export function Field({
         placeholderTextColor={theme.textMuted}
         style={[
           styles.input,
-          { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
+          font('sans'),
+          { backgroundColor: theme.surface, borderColor: focused ? theme.gold : theme.border, color: theme.text },
           input.multiline && { minHeight: 96, textAlignVertical: 'top' },
           style,
         ]}
         {...input}
+        onFocus={(e) => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
       />
       {hint ? <Txt variant="small">{hint}</Txt> : null}
     </Pressable>
@@ -459,10 +531,12 @@ export function Avatar({ name, color, size = 40 }: { name: string; color?: strin
         height: size,
         borderRadius: size / 2,
         backgroundColor: color ?? theme.primary,
+        borderWidth: color ? 0 : 1,
+        borderColor: theme.gold,
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-      <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.38 }}>{initials}</Text>
+      <Text style={[font('serif', 'bold'), { color: theme.onPrimary, fontSize: size * 0.38 }]}>{initials}</Text>
     </View>
   );
 }
@@ -470,9 +544,9 @@ export function Avatar({ name, color, size = 40 }: { name: string; color?: strin
 export function ProgressBar({ value, color }: { value: number; color?: string }) {
   const theme = useTheme();
   return (
-    <View style={{ height: 8, borderRadius: 4, backgroundColor: theme.surfaceAlt, overflow: 'hidden' }}>
+    <View style={{ height: 6, borderRadius: 3, backgroundColor: theme.surfaceAlt, overflow: 'hidden' }}>
       <View
-        style={{ width: `${Math.max(0, Math.min(100, value))}%`, height: '100%', backgroundColor: color ?? theme.accent, borderRadius: 4 }}
+        style={{ width: `${Math.max(0, Math.min(100, value))}%`, height: '100%', backgroundColor: color ?? theme.gold, borderRadius: 4 }}
       />
     </View>
   );
@@ -489,35 +563,38 @@ const styles = StyleSheet.create({
   },
   footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.two, paddingHorizontal: Spacing.three, alignItems: 'center' },
   footerInner: { width: '100%', maxWidth: MaxContentWidth, flexDirection: 'row', gap: Spacing.two },
-  card: { borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.three, gap: Spacing.two },
+  card: { borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.three + Spacing.one, gap: Spacing.two },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignItems: 'stretch' },
   stat: { flexGrow: 1, flexBasis: 150 },
-  banner: { flexDirection: 'row', gap: Spacing.two, padding: Spacing.three, borderRadius: Radius.md, alignItems: 'flex-start' },
+  // Web cannot shrink text to fit, so longer figures (e.g. "AED 12,400") step down a size.
+  statLong: { fontSize: 21, lineHeight: 28 },
+  banner: { flexDirection: 'row', gap: Spacing.two, padding: Spacing.three, borderRadius: Radius.sm, borderLeftWidth: 3, alignItems: 'flex-start' },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
-    minHeight: 48,
+    minHeight: 50,
     paddingHorizontal: Spacing.four,
-    borderRadius: Radius.md,
+    borderRadius: Radius.pill,
     borderWidth: 1,
   },
-  buttonSm: { minHeight: 36, paddingHorizontal: Spacing.three, borderRadius: Radius.sm },
-  buttonText: { fontSize: 15, fontWeight: '700' },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  buttonSm: { minHeight: 38, paddingHorizontal: Spacing.three + 2 },
+  buttonText: { ...font('sans', 'bold'), fontSize: 16, letterSpacing: 0.3 },
+  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: Radius.pill, alignSelf: 'flex-start' },
+  badgeText: { ...font('sans', 'bold'), fontSize: 11, lineHeight: 15, textTransform: 'uppercase', letterSpacing: 1.1 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.pill, borderWidth: 1, minHeight: 36, justifyContent: 'center' },
-  segmented: { flexDirection: 'row', borderRadius: Radius.sm, padding: 3, gap: 3 },
+  segmented: { flexDirection: 'row', borderRadius: Radius.pill, padding: 4, gap: 4 },
   segment: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'transparent',
     minHeight: 36,
   },
-  input: { borderWidth: 1, borderRadius: Radius.sm, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, minHeight: 44 },
+  segmentMarker: { position: 'absolute', bottom: 3, width: 18, height: 2, borderRadius: 1 },
+  input: { borderWidth: 1, borderRadius: Radius.sm, paddingHorizontal: 14, paddingVertical: 11, fontSize: 16, minHeight: 48 },
 });

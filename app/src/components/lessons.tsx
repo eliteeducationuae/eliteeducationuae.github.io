@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { Spacing, elevation, font } from '@/constants/theme';
 import type { Lookup } from '@/data/hooks';
 import { addDays, formatTime, isSameDay, minutesBetween, startOfDay, weekdayShort } from '@/domain/dates';
 import type { Lesson, LessonStatus } from '@/domain/types';
@@ -12,7 +12,7 @@ import { Icon } from './icon';
 import { Badge, Card, Row, Txt, type Tone } from './ui';
 
 export const LESSON_STATUS: Record<LessonStatus, { label: string; tone: Tone }> = {
-  scheduled: { label: 'Scheduled', tone: 'info' },
+  scheduled: { label: 'Scheduled', tone: 'neutral' },
   completed: { label: 'Completed', tone: 'success' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
   'late-cancel': { label: 'Late cancel', tone: 'warning' },
@@ -57,21 +57,21 @@ export function LessonCard({
       accessibilityLabel={`${title}, ${formatTime(lesson.start)}`}
       style={inactive && { opacity: 0.6 }}>
       <Row gap={Spacing.three} style={{ alignItems: 'flex-start' }}>
-        <View style={{ width: 56 }}>
+        <View style={{ width: 60 }}>
           {showDate ? (
-            <Txt variant="small" style={{ fontWeight: '700' }}>
+            <Text style={[styles.cardDay, font('sans', 'bold'), { color: theme.accent }]}>
               {weekdayShort(start)} {start.getDate()}
-            </Txt>
+            </Text>
           ) : null}
-          <Txt variant="h3" style={{ fontVariant: ['tabular-nums'] }}>
-            {formatTime(lesson.start)}
-          </Txt>
-          <Txt variant="small">{formatTime(lesson.end)}</Txt>
+          <Text style={[styles.cardTime, font('serif'), { color: theme.text }]}>{formatTime(lesson.start)}</Text>
+          <Txt variant="small">to {formatTime(lesson.end)}</Txt>
         </View>
         <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="h3" numberOfLines={1} style={inactive && { textDecorationLine: 'line-through' }}>
+          <Text
+            numberOfLines={1}
+            style={[styles.cardTitle, font('sans', 'bold'), { color: theme.text }, inactive && { textDecorationLine: 'line-through' }]}>
             {title}
-          </Txt>
+          </Text>
           <Txt variant="muted" numberOfLines={1}>
             {subtitle}
           </Txt>
@@ -203,17 +203,22 @@ function TimelineBlock({
   return (
     <View
       {...(onMove ? responder.panHandlers : {})}
-      style={[styles.block, { top: top + dy, height, zIndex: armed ? 10 : 1, backgroundColor: color + (inactive ? '33' : 'dd'), borderColor: color }, armed && styles.lifted]}>
+      style={[
+        styles.block,
+        // Solid tutor colour so the ivory text keeps WCAG AA on any background; cancelled lessons fade.
+        { top: top + dy, height, zIndex: armed ? 10 : 1, backgroundColor: inactive ? color + '33' : color, borderColor: color },
+        armed && [styles.lifted, elevation(theme, 2)],
+      ]}>
       <Pressable
         style={{ flex: 1 }}
         onPress={() => (armed ? setArmed(false) : router.push({ pathname: '/lesson/[id]', params: { id: l.id } }))}
         onLongPress={onMove ? () => setArmed(true) : undefined}
         delayLongPress={300}
         accessibilityLabel={`${lookup.studentNames(l.studentIds)} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
-        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.text : '#fff', fontWeight: '700' }}>
+        <Txt variant="small" numberOfLines={1} style={[font('sans', 'bold'), { color: inactive ? theme.text : theme.onHero }]}>
           {lookup.studentNames(l.studentIds)}
         </Txt>
-        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : '#ffffffcc' }}>
+        <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : theme.onHero, opacity: inactive ? 1 : 0.9 }}>
           {formatTime(shownStart)}–{formatTime(shownEnd)}
           {armed && !dy ? '  · drag to move' : ''}
         </Txt>
@@ -300,5 +305,8 @@ const styles = StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 3 },
   timeline: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
   block: { position: 'absolute', left: 3, right: 3, borderRadius: 6, borderLeftWidth: 3, padding: 4, overflow: 'hidden', userSelect: 'none' },
-  lifted: { shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6, transform: [{ scale: 1.03 }] },
+  lifted: { transform: [{ scale: 1.03 }] },
+  cardDay: { fontSize: 12, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase' },
+  cardTime: { fontSize: 18, lineHeight: 24, fontVariant: ['tabular-nums'] },
+  cardTitle: { fontSize: 16, lineHeight: 22 },
 });

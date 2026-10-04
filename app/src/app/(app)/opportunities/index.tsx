@@ -19,7 +19,7 @@ export default function TutorOpportunities() {
   const list = tab === 'open' ? all.filter((o) => o.status === 'open') : all.filter((o) => myBids.some((b) => b.opportunityId === o.id));
   return (
     <Screen onRefresh={() => opportunities.refetch()} refreshing={opportunities.isRefetching}>
-      <Txt variant="muted">New students looking for a tutor. Tell us why you’d be a great fit — pay is shown on each role.</Txt>
+      <Txt variant="muted">New students who are looking for a tutor. Tell us why you would be a great fit; the pay is shown on each role.</Txt>
       <Segmented
         value={tab}
         onChange={setTab}
@@ -29,7 +29,7 @@ export default function TutorOpportunities() {
         ]}
       />
       {list.length === 0 ? (
-        <EmptyState icon="school" title={tab === 'open' ? 'No open roles right now' : 'You haven’t expressed interest yet'} message="We’ll notify you when a new student comes in." />
+        <EmptyState icon="school" title={tab === 'open' ? 'No open roles at the moment' : 'You have not yet expressed interest in a role'} message="We will notify you as soon as a new student is looking for a tutor." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((o) => (

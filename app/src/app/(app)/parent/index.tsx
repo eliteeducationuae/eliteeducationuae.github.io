@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { View } from 'react-native';
 
+import { GreetingCard, NextLessonCard, QuickActions } from '@/components/dashboard';
 import { LessonCard } from '@/components/lessons';
 import { RequestCard } from '@/components/requests';
 import { NotesFeed } from '@/components/student-overview';
@@ -10,6 +10,7 @@ import { useAnnouncements, useFamilies, useInvoices, useLessons, useLookup, useN
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
 import { addDays, relativeDay, startOfDay } from '@/domain/dates';
+import { greetingLine, joinNames } from '@/domain/greeting';
 import { byStart } from '@/domain/scheduling';
 
 const today = startOfDay(new Date());
@@ -37,22 +38,32 @@ export default function ParentHome() {
 
   return (
     <Screen onRefresh={() => lessons.refetch()} refreshing={lessons.isRefetching}>
-      <View>
-        <Txt variant="title">Hello {me.fullName.split(' ')[0]}</Txt>
-        <Txt variant="muted">
-          {kids.length ? `Here’s what’s happening for ${kids.map((s) => s.fullName.split(' ')[0]).join(' & ')}.` : 'Welcome to Elite Education.'}
-        </Txt>
-      </View>
+      <GreetingCard
+        date={now}
+        title={greetingLine(now, me.fullName)}
+        subtitle={kids.length ? `Here is the latest for ${joinNames(kids.map((s) => s.fullName.split(' ')[0]))}.` : 'Welcome to Elite Education.'}
+      />
+      {upcoming[0] ? <NextLessonCard lesson={upcoming[0]} lookup={lookup} perspective="family" now={now} /> : null}
+      {kids.length ? (
+        <QuickActions
+          actions={[
+            { icon: 'calendar', label: 'Book a lesson', onPress: () => router.push('/book') },
+            { icon: 'trend', label: 'Progress', onPress: () => router.navigate('/parent/progress') },
+            { icon: 'card', label: 'Billing', onPress: () => router.navigate('/parent/billing'), badge: balance > 0 ? 1 : undefined },
+            { icon: 'chat', label: 'Message us', onPress: () => router.navigate('/parent/messages') },
+          ]}
+        />
+      ) : null}
 
       {kids.length === 0 ? (
         <Card style={{ gap: Spacing.two }}>
-          <Txt variant="h3">Let’s get started</Txt>
-          <Txt variant="muted">Add your child and tell us what they need help with. We’ll arrange a free consultation.</Txt>
+          <Txt variant="h3">Getting started</Txt>
+          <Txt variant="muted">Please add your child and tell us what they would like support with. We will then arrange a complimentary consultation.</Txt>
           <Button title="Add my child" variant="gold" icon="plus" onPress={() => router.push('/onboarding')} />
         </Card>
       ) : isNew ? (
         <Banner icon="sparkle">
-          Thanks for joining! We’ll be in touch shortly to arrange a free consultation. You can message us any time from the Messages tab.
+          Thank you for joining Elite Education. We will be in touch within one working day to arrange a complimentary consultation. You are welcome to message us at any time from the Messages tab.
         </Banner>
       ) : null}
 
@@ -77,11 +88,11 @@ export default function ParentHome() {
 
       <Section
         title="Upcoming lessons"
-        action={kids.length && !isNew ? <Button title="Book / change" icon="calendar" size="sm" variant="gold" onPress={() => router.push('/book')} /> : undefined}>
+        action={kids.length && !isNew ? <Button title="Book or change" icon="calendar" size="sm" variant="gold" onPress={() => router.push('/book')} /> : undefined}>
         {upcoming.length ? (
           upcoming.slice(0, 6).map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective="family" showDate />)
         ) : (
-          <EmptyState icon="calendar" title="No lessons booked" message={isNew ? 'Your first lesson will appear here once it’s arranged.' : 'Book an extra lesson or send us a message.'} />
+          <EmptyState icon="calendar" title="No lessons booked" message={isNew ? 'Your child’s first lesson will appear here as soon as it is arranged.' : 'You can book an additional lesson or send us a message at any time.'} />
         )}
       </Section>
 
@@ -100,8 +111,11 @@ export default function ParentHome() {
       ) : null}
 
       <Row gap={Spacing.two}>
-        <Button title="Message us" icon="chat" variant="secondary" style={{ flex: 1 }} onPress={() => router.navigate('/parent/messages')} />
-        {kids.length ? <Button title="Add a child" icon="plus" variant="secondary" style={{ flex: 1 }} onPress={() => router.push('/onboarding')} /> : null}
+        {kids.length ? (
+          <Button title="Add a child" icon="plus" variant="secondary" style={{ flex: 1 }} onPress={() => router.push('/onboarding')} />
+        ) : (
+          <Button title="Message us" icon="chat" variant="secondary" style={{ flex: 1 }} onPress={() => router.navigate('/parent/messages')} />
+        )}
       </Row>
     </Screen>
   );

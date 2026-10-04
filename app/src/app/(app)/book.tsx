@@ -41,7 +41,7 @@ export default function Book() {
   const upcoming = theirs.filter((l) => l.status === 'scheduled' && new Date(l.start) > new Date());
 
   if (students.isLoading || lessons.isLoading || !lookup.ready) return <Loading />;
-  if (kids.length === 0) return <Screen><EmptyState icon="people" title="Add your child first" action={<Button title="Add child" onPress={() => router.replace('/onboarding')} />} /></Screen>;
+  if (kids.length === 0) return <Screen><EmptyState icon="people" title="Please add your child first" message="Once your child has been added, you can request lessons here." action={<Button title="Add child" onPress={() => router.replace('/onboarding')} />} /></Screen>;
 
   const byDay = new Map<string, { start: string; end: string }[]>();
   for (const s of slots.data ?? []) {
@@ -71,9 +71,9 @@ export default function Book() {
           onPress={submit}
         />
       }>
-      <Stack.Screen options={{ title: kind === 'reschedule' ? 'Move a lesson' : 'Book an extra lesson' }} />
+      <Stack.Screen options={{ title: kind === 'reschedule' ? 'Move a lesson' : 'Book an additional lesson' }} />
       {kids.length > 1 ? (
-        <Section title="Who for?">
+        <Section title="Which child?">
           <Row gap={Spacing.one} wrap>
             {kids.map((k) => (
               <Chip key={k.id} label={k.fullName.split(' ')[0]} selected={student?.id === k.id} onPress={() => { setStudentId(k.id); setLessonId(null); setChosen(null); }} />
@@ -88,7 +88,7 @@ export default function Book() {
             value={kind}
             onChange={(k) => { setKind(k); setChosen(null); if (k === 'new-lesson') setLessonId(null); }}
             options={[
-              { value: 'new-lesson', label: 'Extra lesson' },
+              { value: 'new-lesson', label: 'Additional lesson' },
               { value: 'reschedule', label: 'Move a lesson' },
             ]}
           />
@@ -106,14 +106,14 @@ export default function Book() {
 
           {!tutorId ? (
             <Banner icon="alert">
-              {student.fullName.split(' ')[0]} doesn’t have a regular tutor yet. Send us a message and we’ll arrange the first lesson.
+              {student.fullName.split(' ')[0]} does not yet have a regular tutor. Please send us a message and we will arrange the first lesson.
             </Banner>
           ) : kind === 'reschedule' && !moving ? null : (
             <Section title={`Times with ${lookup.tutor(tutorId)?.fullName ?? 'your tutor'} · ${duration} min`}>
               {slots.isLoading ? (
                 <Loading />
               ) : days.length === 0 ? (
-                <Banner icon="calendar">No open times in the next three weeks. Send us a message and we’ll find something.</Banner>
+                <Banner icon="calendar">There are no open times in the next three weeks. Please send us a message and we will find a suitable time.</Banner>
               ) : (
                 <>
                   <Row gap={Spacing.one} wrap>
@@ -134,7 +134,7 @@ export default function Book() {
             </Section>
           )}
 
-          <Field label="Note for us (optional)" value={note} onChangeText={setNote} multiline placeholder="e.g. Before his mock on Thursday" />
+          <Field label="Note for us (optional)" value={note} onChangeText={setNote} multiline placeholder="e.g. Before the mock examination on Thursday" />
           {kind === 'new-lesson' && service ? <Txt variant="small">Extra lessons are charged at the usual rate for {service.name}.</Txt> : null}
           <ErrorNote error={request.error} />
           <View />

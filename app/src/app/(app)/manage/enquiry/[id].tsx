@@ -64,7 +64,7 @@ function Detail({ e }: { e: Enquiry }) {
           <Badge label={ENQUIRY_STATUS[e.status].label} tone={ENQUIRY_STATUS[e.status].tone} />
         </Row>
         {e.studentName || e.curriculum ? <Txt>{[e.studentName, e.curriculum, e.yearGroup].filter(Boolean).join(' · ')}</Txt> : null}
-        {e.preferredTimes ? <Txt variant="muted">Best times: {e.preferredTimes}</Txt> : null}
+        {e.preferredTimes ? <Txt variant="muted">Preferred times: {e.preferredTimes}</Txt> : null}
         {e.message ? <Txt style={{ fontStyle: 'italic' }}>“{e.message}”</Txt> : null}
         <Row gap={Spacing.two} wrap>
           {phoneDigits ? <Button title="Call" icon="phone" size="sm" variant="secondary" onPress={() => Linking.openURL(`tel:${phoneDigits}`)} /> : null}
@@ -86,7 +86,7 @@ function Detail({ e }: { e: Enquiry }) {
         {e.status === 'lost' ? (
           <Row gap={Spacing.two}>
             <View style={{ flex: 1 }}>
-              <Field label="Why lost?" value={lostReason} onChangeText={setLostReason} placeholder="e.g. Price, timing, chose another tutor" />
+              <Field label="Reason lost" value={lostReason} onChangeText={setLostReason} placeholder="e.g. Price, timing, chose another tutor" />
             </View>
             <Button title="Save" size="sm" style={{ marginTop: 18 }} onPress={() => update.mutate([e.id, { lostReason: lostReason.trim() || undefined }])} />
           </Row>
@@ -161,7 +161,7 @@ function ConvertCard({ e }: { e: Enquiry }) {
       <Txt variant="h3">Add as a family</Txt>
       <Txt variant="muted">
         {existing ? `Adds the student to the ${existing.name} family` : `Creates the ${lastName} family and the student`} so you can book a trial lesson.
-        {e.email ? ' They’ll be able to sign up with the same email.' : ''}
+        {e.email ? ' They will be able to sign up with the same email address.' : ''}
       </Txt>
       <Field label="Student’s full name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" placeholder={`e.g. ${e.studentName ?? 'Zara'} ${lastName}`} />
       <Row gap={Spacing.one} wrap>

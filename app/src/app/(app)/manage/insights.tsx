@@ -75,9 +75,9 @@ export default function Insights() {
     <Screen onRefresh={finance.refetch} refreshing={finance.refreshing}>
       {source.aiAssist ? (
         <Card style={{ gap: Spacing.two }}>
-          {summary ? <Txt>{summary}</Txt> : <Txt variant="muted">Get a plain-English read on the numbers below.</Txt>}
-          {summaryFailed ? <Txt variant="small">AI summaries aren’t available right now.</Txt> : null}
-          <Button title={summary ? 'Refresh summary' : 'Summarise for me'} icon="sparkle" variant="gold" size="sm" loading={summarising} onPress={summarise} />
+          {summary ? <Txt>{summary}</Txt> : <Txt variant="muted">Request a plain-English summary of the figures below.</Txt>}
+          {summaryFailed ? <Txt variant="small">Summaries are not available at the moment. Please try again later.</Txt> : null}
+          <Button title={summary ? 'Refresh summary' : 'Summarise the figures'} icon="sparkle" variant="gold" size="sm" loading={summarising} onPress={summarise} />
         </Card>
       ) : null}
 
@@ -99,12 +99,12 @@ export default function Insights() {
       </Section>
 
       <Section title="Revenue by curriculum (90 days)">
-        <Card>{byCurriculum.length ? <ShareBars items={byCurriculum.map((c) => ({ label: c.curriculum, value: c.revenue }))} /> : <Txt variant="muted">No lessons yet.</Txt>}</Card>
+        <Card>{byCurriculum.length ? <ShareBars items={byCurriculum.map((c) => ({ label: c.curriculum, value: c.revenue }))} /> : <Txt variant="muted">Revenue will appear here once lessons have been taught.</Txt>}</Card>
       </Section>
 
       <Section title="Tutor utilisation (4 weeks)">
         <Card style={{ gap: Spacing.three }}>
-          {utilisation.length === 0 ? <Txt variant="muted">Tutors haven’t set their availability yet.</Txt> : null}
+          {utilisation.length === 0 ? <Txt variant="muted">Utilisation will appear here once tutors have set their availability.</Txt> : null}
           {utilisation.map((u) => (
             <View key={u.tutorId} style={{ gap: 4 }}>
               <Row style={{ justifyContent: 'space-between' }}>
@@ -116,13 +116,13 @@ export default function Insights() {
               <ProgressBar value={u.rate * 100} color={u.rate > 0.85 ? theme.gold : undefined} />
             </View>
           ))}
-          {utilisation.some((u) => u.rate > 0.85) ? <Txt variant="small">Gold = nearly full. Consider offering new students to tutors with spare hours.</Txt> : null}
+          {utilisation.some((u) => u.rate > 0.85) ? <Txt variant="small">Gold bars mark tutors who are nearly fully booked. Consider offering new students to tutors with spare hours.</Txt> : null}
         </Card>
       </Section>
 
       <Section title={`Students to check on (${atRisk.list.length})`}>
         {!atRisk.ready ? <Loading /> : null}
-        {atRisk.ready && atRisk.list.length === 0 ? <Banner tone="success" icon="check">No students flagged. Everyone is attending, doing homework and booked in.</Banner> : null}
+        {atRisk.ready && atRisk.list.length === 0 ? <Banner tone="success" icon="check">No students are flagged. Every student is attending, completing homework and booked in.</Banner> : null}
         {atRisk.list.map((r) => (
           <RiskRow key={r.studentId} risk={r} />
         ))}

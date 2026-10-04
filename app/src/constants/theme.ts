@@ -1,82 +1,54 @@
 /**
- * Elite Education brand tokens — navy and gold, matching eliteeducationuae.github.io.
+ * Elite Education brand tokens, from the 2026 Brand Guidelines.
+ * Colour data lives in ./palette (pure, unit-tested for WCAG AA); this module adds fonts and platform styles.
+ * Gold is an accent — never a large background. Georgia for headings, Calibri for body text.
  */
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
-export const Colors = {
-  light: {
-    background: '#f4f6fb',
-    surface: '#ffffff',
-    surfaceAlt: '#eef2f8',
-    border: '#e2e8f0',
-    text: '#1a202c',
-    textMuted: '#64748b',
-    primary: '#1a365d',
-    onPrimary: '#ffffff',
-    accent: '#2b6cb0',
-    gold: '#d69e2e',
-    onGold: '#1a365d',
-    success: '#2f855a',
-    successBg: '#e6f4ea',
-    warning: '#b7791f',
-    warningBg: '#fdf3e1',
-    danger: '#c53030',
-    dangerBg: '#fde8e8',
-    info: '#2b6cb0',
-    infoBg: '#ebf4ff',
-    tabBar: '#ffffff',
-    tabActive: '#1a365d',
+import type { Palette } from './palette';
+
+export { Brand, Colors, MasteryColors, Radius, Spacing } from './palette';
+export type { Palette, ThemeColor } from './palette';
+
+/**
+ * Georgia (headings) and Calibri (body). Where they aren't installed we bundle their metric-compatible twins:
+ * Gelasio for Georgia (Android) and Carlito for Calibri (everywhere — Calibri can't be shipped in an app).
+ */
+type Weight = 'regular' | 'bold';
+const families = {
+  serif: {
+    regular: Platform.select({ ios: 'Georgia', web: 'Georgia, Gelasio_400Regular, serif', default: 'Gelasio_400Regular' }),
+    bold: Platform.select({ ios: 'Georgia-Bold', web: 'Georgia, Gelasio_700Bold, serif', default: 'Gelasio_700Bold' }),
   },
-  dark: {
-    background: '#0b1220',
-    surface: '#131c2e',
-    surfaceAlt: '#1b263b',
-    border: '#26324a',
-    text: '#e7edf7',
-    textMuted: '#94a3b8',
-    primary: '#3b82c4',
-    onPrimary: '#ffffff',
-    accent: '#63b3ed',
-    gold: '#ecc94b',
-    onGold: '#1a365d',
-    success: '#68d391',
-    successBg: '#163323',
-    warning: '#f6c35b',
-    warningBg: '#3a2c10',
-    danger: '#fc8181',
-    dangerBg: '#3b1717',
-    info: '#90cdf4',
-    infoBg: '#14263f',
-    tabBar: '#0f1729',
-    tabActive: '#63b3ed',
+  sans: {
+    regular: Platform.select({ web: 'Calibri, Carlito_400Regular, "Segoe UI", sans-serif', default: 'Carlito_400Regular' }),
+    bold: Platform.select({ web: 'Calibri, Carlito_700Bold, "Segoe UI", sans-serif', default: 'Carlito_700Bold' }),
   },
-} as const;
+};
 
-export type Palette = { [K in keyof typeof Colors.light]: string };
-export type ThemeColor = keyof Palette;
+export function font(kind: 'serif' | 'sans', weight: Weight = 'regular'): TextStyle {
+  // On the web the stack falls back to a regular face, so the weight still needs stating.
+  return { fontFamily: families[kind][weight], ...(Platform.OS === 'web' && weight === 'bold' ? { fontWeight: '700' } : null) };
+}
 
-/** Topic mastery 1 (red) → 5 (green). */
-export const MasteryColors = ['#e53e3e', '#ed8936', '#ecc94b', '#68b36b', '#2f855a'] as const;
+export const Fonts = {
+  sans: families.sans.regular,
+  serif: families.serif.regular,
+  mono: Platform.select({ ios: 'ui-monospace', web: 'var(--font-mono)', default: 'monospace' }),
+};
 
-export const Fonts = Platform.select({
-  ios: { sans: 'system-ui', rounded: 'ui-rounded', mono: 'ui-monospace' },
-  web: { sans: 'var(--font-display)', rounded: 'var(--font-rounded)', mono: 'var(--font-mono)' },
-  default: { sans: 'normal', rounded: 'normal', mono: 'monospace' },
-});
 
-export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
-} as const;
-
-export const Radius = { sm: 8, md: 12, lg: 16, pill: 999 } as const;
+/** Soft, low-contrast lift for cards (never applied to the logo). */
+export function elevation(palette: Palette, level: 1 | 2 = 1): ViewStyle {
+  const y = level === 1 ? 2 : 8;
+  const blur = level === 1 ? 10 : 24;
+  const opacity = level === 1 ? 0.06 : 0.1;
+  return Platform.OS === 'web'
+    ? ({ boxShadow: `0 ${y}px ${blur}px rgba(26, 20, 8, ${opacity})` } as ViewStyle)
+    : { shadowColor: palette.shadow, shadowOpacity: opacity, shadowRadius: blur / 2, shadowOffset: { width: 0, height: y }, elevation: level * 2 };
+}
 
 export const MaxContentWidth = 860;

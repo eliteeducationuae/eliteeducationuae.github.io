@@ -22,7 +22,7 @@ export default function TutorReports() {
   return (
     <Screen onRefresh={() => reports.refetch()} refreshing={reports.isRefetching}>
       {open.length === 0 && mine.length === 0 ? (
-        <EmptyState icon="doc" title="No reports to write" message="When Elite Education opens a report round, your students appear here." />
+        <EmptyState icon="doc" title="No reports to write" message="When Elite Education opens a report round, your students will appear here." />
       ) : null}
       {open.map((c) => {
         const list = mine.filter((r) => r.cycleId === c.id).sort((a, b) => (a.status === 'draft' ? 0 : 1) - (b.status === 'draft' ? 0 : 1));
@@ -40,7 +40,7 @@ export default function TutorReports() {
               <ProgressBar value={p.percent} />
               {p.written < p.total && days <= 3 ? (
                 <Banner tone="warning" icon="clock">
-                  {days < 0 ? 'These are overdue.' : days === 0 ? 'Due today.' : `Due in ${days} day${days === 1 ? '' : 's'}.`} Tap a student, then “Draft for me” to get started.
+                  {days < 0 ? 'These are overdue.' : days === 0 ? 'Due today.' : `Due in ${days} day${days === 1 ? '' : 's'}.`} Select a student, then “Draft for me” to begin.
                 </Banner>
               ) : null}
             </Card>

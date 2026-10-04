@@ -27,7 +27,7 @@ export default function Onboarding() {
       <Stack.Screen options={{ title: 'Welcome' }} />
       <View style={{ gap: Spacing.one }}>
         <Txt variant="title">Welcome, {me.fullName.split(' ')[0]}</Txt>
-        <Txt variant="muted">Two quick steps and we’ll be in touch to arrange a free consultation.</Txt>
+        <Txt variant="muted">Two short steps, and we will be in touch within one working day to arrange a complimentary consultation.</Txt>
       </View>
       <Row gap={Spacing.two}>
         {(['children', 'help'] as const).map((s, i) => (
@@ -62,7 +62,7 @@ export default function Onboarding() {
           <EnquiryForm
             hideContact
             defaults={{ parentName: me.fullName, email: me.email, studentName: kids.map((k) => k.fullName.split(' ')[0]).join(', '), curriculum: kids[0]?.curriculum, yearGroup: kids[0]?.yearGroup }}
-            submitLabel="Request a free consultation"
+            submitLabel="Request a complimentary consultation"
           />
           <Button title="Go to my home screen" variant="secondary" onPress={() => router.replace('/parent')} />
         </>
@@ -101,7 +101,7 @@ function AddChildForm({ first }: { first: boolean }) {
           <Chip key={s.id} label={s.name} selected={syllabusId === s.id} onPress={() => setSyllabusId(s.id)} />
         ))}
       </Row>
-      {!syllabusId ? <Banner>Not sure which course? Pick the closest — we’ll check it with you.</Banner> : null}
+      {!syllabusId ? <Banner>Not sure which course? Please choose the closest, and we will confirm it with you.</Banner> : null}
       <Row gap={Spacing.two}>
         <View style={{ flex: 1 }}>
           <Field label="School" value={school} onChangeText={setSchool} />

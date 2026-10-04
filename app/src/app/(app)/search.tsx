@@ -115,7 +115,7 @@ export default function Search() {
       {query.trim().length < 2 ? (
         <Txt variant="muted">Type at least two letters.</Txt>
       ) : groups.length === 0 ? (
-        <EmptyState icon="search" title="No matches" message={`Nothing found for “${query.trim()}”.`} />
+        <EmptyState icon="search" title="No matches" message={`We could not find anything for “${query.trim()}”.`} />
       ) : (
         groups.map((g) => (
           <Section key={g.title} title={g.title}>

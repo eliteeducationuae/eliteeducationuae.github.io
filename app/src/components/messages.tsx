@@ -23,7 +23,7 @@ export function ThreadList() {
   return (
     <Screen onRefresh={() => threads.refetch()} refreshing={threads.isRefetching}>
       {list.length === 0 ? (
-        <EmptyState icon="people" title="No conversations yet" message="Messages with families appear here." />
+        <EmptyState icon="people" title="No conversations yet" message="Your conversations with families will appear here." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((t) => (
@@ -96,7 +96,7 @@ export function Conversation({ familyId }: { familyId: string }) {
           {messages.isLoading ? (
             <Loading />
           ) : list.length === 0 ? (
-            <EmptyState icon="people" title="No messages yet" message="Say hello! Everyone in this conversation will be notified." />
+            <EmptyState icon="people" title="No messages yet" message="Write your first message below. Everyone in this conversation will be notified." />
           ) : (
             list.map((m, i) => <Bubble key={m.id} m={m} mine={m.senderId === me.id} showDay={i === 0 || relativeDay(list[i - 1].createdAt) !== relativeDay(m.createdAt)} />)
           )}
@@ -121,7 +121,7 @@ export function Conversation({ familyId }: { familyId: string }) {
               accessibilityRole="button"
               accessibilityLabel="Send"
               style={[styles.send, { backgroundColor: draft.trim() ? theme.primary : theme.border }]}>
-              <Icon name="forward" size={22} color="#fff" />
+              <Icon name="forward" size={22} color={draft.trim() ? theme.onPrimary : theme.textMuted} />
             </Pressable>
           </View>
         </View>
@@ -146,8 +146,8 @@ function Bubble({ m, mine, showDay }: { m: Message; mine: boolean; showDay: bool
             {m.senderRole === 'tutor' ? ' · tutor' : m.senderRole === 'admin' ? ' · Elite Education' : ''}
           </Txt>
         ) : null}
-        <Txt style={{ color: mine ? '#fff' : theme.text }}>{m.body}</Txt>
-        <Txt variant="small" style={{ color: mine ? '#ffffffaa' : theme.textMuted, alignSelf: 'flex-end' }}>
+        <Txt style={{ color: mine ? theme.onPrimary : theme.text }}>{m.body}</Txt>
+        <Txt variant="small" style={{ color: mine ? theme.onPrimary : theme.textMuted, opacity: mine ? 0.75 : 1, alignSelf: 'flex-end' }}>
           {formatTime(m.createdAt)}
         </Txt>
       </View>

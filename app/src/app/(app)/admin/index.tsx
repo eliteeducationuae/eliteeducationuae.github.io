@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { View } from 'react-native';
 
+import { GreetingCard, QuickActions } from '@/components/dashboard';
 import { LessonCard } from '@/components/lessons';
 import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -23,7 +23,8 @@ import {
 } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { chargeRevenue, displayStatus, formatAED, invoiceTotals, packageRemaining } from '@/domain/billing';
-import { addDays, formatDay, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
+import { addDays, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
+import { adminSummary, greetingLine } from '@/domain/greeting';
 import { byStart, lessonsDuringAbsence } from '@/domain/scheduling';
 import { useTheme } from '@/hooks/use-theme';
 import { plural } from '@/lib/id';
@@ -77,10 +78,19 @@ export default function AdminDashboard() {
 
   return (
     <Screen onRefresh={() => lessons.refetch()} refreshing={lessons.isRefetching}>
-      <View>
-        <Txt variant="muted">{formatDay(now)}</Txt>
-        <Txt variant="title">Hi {me.fullName.split(' ')[0]}</Txt>
-      </View>
+      <GreetingCard
+        date={now}
+        title={greetingLine(now, me.fullName.split(' ')[0])}
+        subtitle={loading ? undefined : adminSummary(today.filter((l) => l.status !== 'cancelled' && l.status !== 'late-cancel').length, attention)}
+      />
+      <QuickActions
+        actions={[
+          { icon: 'calendar', label: 'Schedule lessons', onPress: () => router.push('/lesson/new') },
+          { icon: 'people', label: 'Families', onPress: () => router.push('/manage/families') },
+          { icon: 'card', label: 'Billing', onPress: () => router.navigate('/admin/billing'), badge: overdue.length || undefined },
+          { icon: 'chat', label: 'Messages', onPress: () => router.push('/messages') },
+        ]}
+      />
 
       {loading ? (
         <Loading />
@@ -98,7 +108,7 @@ export default function AdminDashboard() {
               {pending.length ? (
                 <ListItem
                   title={`${plural(pending.length, 'lesson request')} to approve`}
-                  subtitle="Families asking for extra lessons or changes"
+                  subtitle="Families requesting additional lessons or changes"
                   left={<Icon name="calendar" size={22} color={theme.warning} />}
                   onPress={() => router.push('/manage/requests')}
                 />
@@ -122,7 +132,7 @@ export default function AdminDashboard() {
               {reportsToReview.length ? (
                 <ListItem
                   title={`${plural(reportsToReview.length, 'report')} to review`}
-                  subtitle="Approve and send to families"
+                  subtitle="Approve them before they are sent to families"
                   left={<Icon name="book" size={22} color={theme.accent} />}
                   onPress={() => router.push('/manage/reports')}
                 />
@@ -154,15 +164,15 @@ export default function AdminDashboard() {
               {needCover.length ? (
                 <ListItem
                   title={`${plural(needCover.length, 'lesson')} ${needCover.length === 1 ? 'needs' : 'need'} cover`}
-                  subtitle={`${lookup.tutor(needCover[0].tutorId)?.fullName ?? 'A tutor'} is away. Tap to choose a cover tutor.`}
+                  subtitle={`${lookup.tutor(needCover[0].tutorId)?.fullName ?? 'A tutor'} is away. Choose a cover tutor.`}
                   left={<Icon name="alert" size={22} color={theme.danger} />}
                   onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: needCover[0].id } })}
                 />
               ) : null}
               {needsNotes.length ? (
                 <ListItem
-                  title={`${needsNotes.length} lesson${needsNotes.length > 1 ? 's' : ''} waiting for notes`}
-                  subtitle="Record attendance and notes so families are updated and lessons get billed"
+                  title={`${plural(needsNotes.length, 'lesson')} awaiting notes`}
+                  subtitle="Record attendance and notes so that families are updated and lessons are billed"
                   onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: needsNotes[0].id } })}
                 />
               ) : null}
@@ -178,18 +188,18 @@ export default function AdminDashboard() {
                 <ListItem
                   key={p.id}
                   title={`${lookup.family(p.familyId)?.name ?? ''} — ${packageRemaining(p)} package lessons left`}
-                  subtitle={`${p.name}. Offer a top-up before it runs out.`}
+                  subtitle={`${p.name}. Offer a top-up before the package runs out.`}
                   onPress={() => router.push({ pathname: '/manage/package-new', params: { familyId: p.familyId } })}
                 />
               ))}
               {atRisk.list.slice(0, 3).map((r) => (
                 <RiskRow key={r.studentId} risk={r} />
               ))}
-              {atRisk.list.length > 3 ? <Button title={`See all ${atRisk.list.length} students to check on`} variant="ghost" size="sm" onPress={() => router.push('/manage/insights')} /> : null}
+              {atRisk.list.length > 3 ? <Button title={`View all ${atRisk.list.length} students to check on`} variant="ghost" size="sm" onPress={() => router.push('/manage/insights')} /> : null}
             </Section>
           ) : (
             <Banner tone="success" icon="check">
-              All caught up. No overdue invoices or missing lesson notes.
+              Everything is in order. There are no overdue invoices or missing lesson notes.
             </Banner>
           )}
 
@@ -199,15 +209,15 @@ export default function AdminDashboard() {
             {today.length ? (
               today.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} />)
             ) : (
-              <EmptyState icon="calendar" title="No lessons today" message="Enjoy the breather, or schedule something new." />
+              <EmptyState icon="calendar" title="No lessons scheduled today" message="Lessons booked for today will appear here." />
             )}
           </Section>
 
           <Card style={{ gap: Spacing.two }}>
-            <Txt variant="h3">Quick actions</Txt>
+            <Txt variant="h3">More shortcuts</Txt>
             <Row gap={Spacing.two} wrap>
               <Button title="New student" icon="plus" variant="secondary" size="sm" onPress={() => router.push('/students/edit')} />
-              <Button title="Sell package" icon="tag" variant="secondary" size="sm" onPress={() => router.push('/manage/package-new')} />
+              <Button title="Sell a package" icon="tag" variant="secondary" size="sm" onPress={() => router.push('/manage/package-new')} />
               <Button title="Tutor pay" icon="money" variant="secondary" size="sm" onPress={() => router.push('/manage/payroll')} />
             </Row>
           </Card>

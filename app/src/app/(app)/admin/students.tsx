@@ -46,7 +46,7 @@ export default function AdminStudents() {
       {students.isLoading ? (
         <Loading />
       ) : list.length === 0 ? (
-        <EmptyState icon="people" title="No students found" />
+        <EmptyState icon="people" title="No students found" message="Try another name, parent or school, or add a new student." />
       ) : (
         <View style={{ gap: Spacing.two }}>
           {list.map((s) => (

@@ -11,7 +11,7 @@ export function ChildPicker({ children }: { children: (student: Student) => Reac
   const [selected, setSelected] = useState<string | null>(null);
   if (students.isLoading) return <Loading />;
   const list = students.data ?? [];
-  if (list.length === 0) return <EmptyState icon="people" title="No students on this account yet" />;
+  if (list.length === 0) return <EmptyState icon="people" title="No student profiles on this account yet" message="Once a student has been added, their progress will appear here." />;
   const current = list.find((s) => s.id === selected) ?? list[0];
   return (
     <>
