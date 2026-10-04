@@ -1,10 +1,10 @@
 import { Redirect } from 'expo-router';
 import { View } from 'react-native';
 
-import { reportProgress, ReportRow } from '@/components/reports';
+import { reportProgress, ReportRow, sortReports } from '@/components/reports';
 import { Banner, Card, EmptyState, Loading, ProgressBar, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useReportCycles, useStudentReports } from '@/data/hooks';
+import { useEnrolments, useLookup, useReportCycles, useStudentReports } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { daysUntil, formatDate } from '@/domain/dates';
 
@@ -13,9 +13,16 @@ export default function TutorReports() {
   const me = useMe();
   const cycles = useReportCycles();
   const reports = useStudentReports();
+  const enrolments = useEnrolments();
+  const lookup = useLookup();
   if (me.role === 'admin') return <Redirect href="/manage/reports" />;
   if (cycles.isLoading || reports.isLoading) return <Loading />;
-  const mine = (reports.data ?? []).filter((r) => r.tutorId === me.tutorId);
+  // Each tutor sees their own reports, grouped by student and then subject.
+  const mine = sortReports(
+    (reports.data ?? []).filter((r) => r.tutorId === me.tutorId),
+    (id) => lookup.student(id)?.fullName ?? '',
+    enrolments.data ?? [],
+  );
   const open = (cycles.data ?? []).filter((c) => c.status === 'open').sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const past = (cycles.data ?? []).filter((c) => c.status === 'closed' || !open.includes(c));
 

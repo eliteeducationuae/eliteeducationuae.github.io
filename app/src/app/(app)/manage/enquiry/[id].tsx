@@ -3,14 +3,18 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { CataloguePicker } from '@/components/catalogue-picker';
+import { modernCurriculum, subjectLine } from '@/components/catalogue-choice';
 import { ENQUIRY_STATUS } from '@/components/enquiries';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { SYLLABUSES } from '@/data/curriculum';
+import { builtInSyllabusesFor } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAction, useEnquiries, useFamilies, useStudents } from '@/data/hooks';
+import { useAction, useEnquiries, useFamilies, useStudents, useTutors } from '@/data/hooks';
+import { CURRICULA, EXAM_BOARDS, LEVELS, PHASES, SUBJECTS, cleanChoice } from '@/domain/catalogue';
 import { addDays, formatDate, relativeDay, toDateKey } from '@/domain/dates';
-import type { Curriculum, Enquiry, EnquiryStatus } from '@/domain/types';
+import { tutorTeaches, validateEnrolments } from '@/domain/enrolments';
+import type { Enquiry, EnquiryStatus } from '@/domain/types';
 
 const NEXT: { status: EnquiryStatus; label: string }[] = [
   { status: 'new', label: 'New' },
@@ -63,7 +67,8 @@ function Detail({ e }: { e: Enquiry }) {
           </View>
           <Badge label={ENQUIRY_STATUS[e.status].label} tone={ENQUIRY_STATUS[e.status].tone} />
         </Row>
-        {e.studentName || e.curriculum ? <Txt>{[e.studentName, e.curriculum, e.yearGroup].filter(Boolean).join(' · ')}</Txt> : null}
+        {e.studentName || e.yearGroup ? <Txt>{[e.studentName, e.yearGroup].filter(Boolean).join(' · ')}</Txt> : null}
+        {subjectLine(e) ? <Txt variant="muted">{subjectLine(e)}</Txt> : null}
         {e.preferredTimes ? <Txt variant="muted">Preferred times: {e.preferredTimes}</Txt> : null}
         {e.message ? <Txt style={{ fontStyle: 'italic' }}>“{e.message}”</Txt> : null}
         <Row gap={Spacing.two} wrap>
@@ -86,7 +91,7 @@ function Detail({ e }: { e: Enquiry }) {
         {e.status === 'lost' ? (
           <Row gap={Spacing.two}>
             <View style={{ flex: 1 }}>
-              <Field label="Reason lost" value={lostReason} onChangeText={setLostReason} placeholder="e.g. Price, timing, chose another tutor" />
+              <Field label="Reason lost" value={lostReason} onChangeText={setLostReason} placeholder="For example price, timing or another provider" />
             </View>
             <Button title="Save" size="sm" style={{ marginTop: 18 }} onPress={() => update.mutate([e.id, { lostReason: lostReason.trim() || undefined }])} />
           </Row>
@@ -144,47 +149,101 @@ function Detail({ e }: { e: Enquiry }) {
   );
 }
 
-/** Turn an enquiry into a family + student so a trial lesson can be booked. */
+/** Turn an enquiry into a family, a student and their first subject, so a trial lesson can be booked. */
 function ConvertCard({ e }: { e: Enquiry }) {
   const saveFamily = useAction(source.saveFamily);
   const saveStudent = useAction(source.saveStudent);
+  const saveEnrolment = useAction(source.saveEnrolment);
   const update = useAction(source.updateEnquiry);
   const families = useFamilies();
+  const tutors = useTutors();
   const [studentName, setStudentName] = useState(e.studentName ?? '');
-  const curriculum = (['IB', 'IGCSE', 'A-Level'] as Curriculum[]).includes(e.curriculum as Curriculum) ? (e.curriculum as Curriculum) : 'IGCSE';
-  const [syllabusId, setSyllabusId] = useState(SYLLABUSES.find((s) => s.curriculum === curriculum)?.id ?? '');
+  const [yearGroup, setYearGroup] = useState(e.yearGroup ?? '');
+  const [phase, setPhase] = useState<string | undefined>(cleanChoice(e.phase));
+  const [subject, setSubject] = useState<string | undefined>(cleanChoice(e.subject));
+  const [curriculum, setCurriculum] = useState<string | undefined>(modernCurriculum(e.curriculum));
+  const [level, setLevel] = useState<string | undefined>();
+  const [examBoard, setExamBoard] = useState<string | undefined>();
+  const [tutorId, setTutorId] = useState<string | undefined>();
+  const [syllabusId, setSyllabusId] = useState<string | undefined>();
+  const [problem, setProblem] = useState<string | null>(null);
   const existing = e.familyId ? families.data?.find((f) => f.id === e.familyId) : undefined;
   const lastName = e.parentName.trim().split(' ').pop() ?? e.parentName;
+  const lists = builtInSyllabusesFor(subject, curriculum);
+  const chosenList = lists.some((l) => l.id === syllabusId) ? syllabusId : undefined;
+  const sortedTutors = [...(tutors.data ?? [])].sort(
+    (a, b) => Number(tutorTeaches(b, subject)) - Number(tutorTeaches(a, subject)) || a.fullName.localeCompare(b.fullName),
+  );
+  const busy = saveFamily.isPending || saveStudent.isPending || saveEnrolment.isPending || update.isPending;
+
+  async function create() {
+    const draft = {
+      subject: cleanChoice(subject) ?? '',
+      curriculum: cleanChoice(curriculum),
+      level: cleanChoice(level),
+      examBoard: cleanChoice(examBoard),
+      tutorId,
+      syllabusId: chosenList,
+      active: true,
+    };
+    const invalid = validateEnrolments([draft]);
+    setProblem(invalid);
+    if (invalid) return;
+    const family =
+      existing ??
+      (await saveFamily.mutateAsync([{ name: lastName, parentName: e.parentName, email: e.email ?? '', phone: e.phone, status: 'prospect' }]));
+    const student = await saveStudent.mutateAsync([
+      { familyId: family.id, fullName: studentName.trim(), yearGroup: yearGroup.trim() || undefined, phase: cleanChoice(phase) },
+    ]);
+    await saveEnrolment.mutateAsync([{ ...draft, studentId: student.id }]);
+    await update.mutateAsync([e.id, { familyId: family.id, studentId: student.id, status: e.status === 'new' ? 'contacted' : e.status }]);
+  }
 
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Add as a family</Txt>
       <Txt variant="muted">
         {existing ? `Adds the student to the ${existing.name} family` : `Creates the ${lastName} family and the student`} so you can book a trial lesson.
-        {e.email ? ' They will be able to sign up with the same email address.' : ''}
+        {e.email ? ' They will be able to sign up with the same email address.' : ''} You can add further subjects from the student’s profile.
       </Txt>
-      <Field label="Student’s full name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" placeholder={`e.g. ${e.studentName ?? 'Zara'} ${lastName}`} />
-      <Row gap={Spacing.one} wrap>
-        {SYLLABUSES.filter((s) => s.curriculum === curriculum).map((s) => (
-          <Chip key={s.id} label={s.name} selected={syllabusId === s.id} onPress={() => setSyllabusId(s.id)} />
-        ))}
-      </Row>
-      <ErrorNote error={saveFamily.error ?? saveStudent.error} />
-      <Button
-        title="Create family & student"
-        variant="gold"
-        disabled={!studentName.trim() || !syllabusId}
-        loading={saveFamily.isPending || saveStudent.isPending}
-        onPress={async () => {
-          const family =
-            existing ??
-            (await saveFamily.mutateAsync([{ name: lastName, parentName: e.parentName, email: e.email ?? '', phone: e.phone, status: 'prospect' }]));
-          const student = await saveStudent.mutateAsync([
-            { familyId: family.id, fullName: studentName.trim(), curriculum, syllabusId, yearGroup: e.yearGroup },
-          ]);
-          await update.mutateAsync([e.id, { familyId: family.id, studentId: student.id, status: e.status === 'new' ? 'contacted' : e.status }]);
-        }}
-      />
+      <Field label="Student’s full name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" placeholder={`For example ${e.studentName ?? 'Zara'} ${lastName}`} />
+      <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example Year 11" />
+      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+      <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} collapsed={10} />
+      <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
+      <CataloguePicker label="Level" options={LEVELS} value={level} onChange={setLevel} optional />
+      <CataloguePicker label="Exam board" options={EXAM_BOARDS} value={examBoard} onChange={setExamBoard} optional />
+      {sortedTutors.length ? (
+        <Section title="Tutor (optional)">
+          <Row gap={Spacing.one} wrap>
+            {sortedTutors.map((t) => (
+              <Chip
+                key={t.id}
+                label={tutorTeaches(t, subject) && subject ? `${t.fullName} ✓` : t.fullName}
+                selected={tutorId === t.id}
+                onPress={() => setTutorId(tutorId === t.id ? undefined : t.id)}
+              />
+            ))}
+          </Row>
+        </Section>
+      ) : null}
+      {lists.length ? (
+        <Section title="Topic list">
+          <Row gap={Spacing.one} wrap>
+            {lists.map((l) => (
+              <Chip key={l.id} label={l.name} selected={chosenList === l.id} onPress={() => setSyllabusId(l.id)} />
+            ))}
+            <Chip label="Build as we teach" selected={!chosenList} onPress={() => setSyllabusId(undefined)} />
+          </Row>
+        </Section>
+      ) : null}
+      {problem ? (
+        <Banner tone="danger" icon="alert">
+          {problem}
+        </Banner>
+      ) : null}
+      <ErrorNote error={saveFamily.error ?? saveStudent.error ?? saveEnrolment.error ?? update.error} />
+      <Button title="Create family and student" variant="gold" disabled={!studentName.trim() || !cleanChoice(subject)} loading={busy} onPress={create} />
     </Card>
   );
 }

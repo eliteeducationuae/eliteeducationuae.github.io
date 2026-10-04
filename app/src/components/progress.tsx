@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MasteryColors, Spacing } from '@/constants/theme';
-import { topicName } from '@/data/curriculum';
+import { useTopicLookup } from '@/data/hooks';
 import { focusTopics, RATING_LABELS, summariseSyllabus, type Syllabus, type TopicMastery } from '@/domain/progress';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -34,6 +34,7 @@ export function masteryColor(rating: number | undefined, fallback: string): stri
 /** Headline numbers + "work on next" for a student. */
 export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mastery: Map<string, TopicMastery> }) {
   const theme = useTheme();
+  const topics = useTopicLookup();
   const summary = summariseSyllabus(syllabus, mastery);
   const focus = focusTopics(mastery);
   return (
@@ -63,7 +64,7 @@ export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mas
             <Row key={t.topicId} gap={Spacing.two}>
               <View style={[styles.swatch, { backgroundColor: masteryColor(t.rating, theme.border) }]} />
               <Txt style={{ flex: 1 }} numberOfLines={1}>
-                {topicName(t.topicId)}
+                {topics.name(t.topicId)}
               </Txt>
               <Txt variant="small">{RATING_LABELS[t.rating]}</Txt>
             </Row>
@@ -77,6 +78,7 @@ export function ProgressSummary({ syllabus, mastery }: { syllabus: Syllabus; mas
 /** Units × topics grid coloured by latest rating. Tap a cell for detail. */
 export function MasteryHeatmap({ syllabus, mastery }: { syllabus: Syllabus; mastery: Map<string, TopicMastery> }) {
   const theme = useTheme();
+  const topics = useTopicLookup();
   const [selected, setSelected] = useState<string | null>(null);
   const summary = summariseSyllabus(syllabus, mastery);
   const sel = selected ? mastery.get(selected) : undefined;
@@ -119,7 +121,7 @@ export function MasteryHeatmap({ syllabus, mastery }: { syllabus: Syllabus; mast
       ))}
       {selected ? (
         <View style={[styles.detail, { backgroundColor: theme.surfaceAlt }]}>
-          <Txt variant="h3">{topicName(selected)}</Txt>
+          <Txt variant="h3">{topics.name(selected)}</Txt>
           {sel ? (
             <Row gap={Spacing.two}>
               <Badge label={RATING_LABELS[sel.rating]} tone={sel.rating >= 4 ? 'success' : sel.rating === 3 ? 'warning' : 'danger'} />

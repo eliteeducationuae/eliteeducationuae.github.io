@@ -9,6 +9,7 @@ import type { Lesson } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Icon, type IconName } from './icon';
+import { useLessonSubject, withSubject } from './lessons';
 import { Row, Txt } from './ui';
 
 /**
@@ -57,7 +58,8 @@ export function NextLessonCard({
   const theme = useTheme();
   const tutor = lookup.tutor(lesson.tutorId);
   const service = lookup.service(lesson.serviceId);
-  const students = lookup.studentNames(lesson.studentIds);
+  const subject = useLessonSubject(lesson);
+  const students = withSubject(lookup.studentNames(lesson.studentIds), subject);
   const when = `${relativeDay(lesson.start, now)}, ${formatTime(lesson.start)} to ${formatTime(lesson.end)}`;
   const who =
     perspective === 'tutor'

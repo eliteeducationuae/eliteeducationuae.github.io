@@ -7,7 +7,7 @@ Deno.serve(async () => {
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')
-    .select('*')
+    .select('*') // includes subject
     .eq('status', 'scheduled')
     .is('reminded_at', null)
     .gte('start_at', new Date(now + 23 * 3_600_000).toISOString())
@@ -20,6 +20,7 @@ Deno.serve(async () => {
 
   const messages = [];
   for (const l of lessons) {
+    const subject = (l.subject as string | null)?.trim() || null;
     const kids = (students ?? []).filter((s) => (l.student_ids as string[]).includes(s.id));
     const names = kids.map((k) => k.full_name.split(' ')[0]).join(' & ');
     const families = new Set(kids.map((k) => k.family_id));
@@ -32,7 +33,7 @@ Deno.serve(async () => {
       messages.push({
         to: p.push_token,
         title: 'Lesson tomorrow',
-        body: p.role === 'tutor' ? `${names} at ${time(l.start_at)}` : `Maths with Elite Education at ${time(l.start_at)}`,
+        body: p.role === 'tutor' ? `${subject ? `${subject} with ` : ''}${names} at ${time(l.start_at)}` : `${subject ?? 'Your lesson'} with Elite Education at ${time(l.start_at)}`,
         data: { url: `/lesson/${l.id}` },
       });
     }

@@ -1,5 +1,7 @@
+import { SYLLABUSES } from '@/data/curriculum';
 import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
+import { enrolmentTitle, sameSubject, topicListKey, type EnrolmentDraft } from '@/domain/enrolments';
 import { cancellationOutcome, type CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -15,6 +17,7 @@ import type {
   Charge,
   Closure,
   Enquiry,
+  Enrolment,
   LessonRequest,
   Message,
   TutorAbsence,
@@ -31,6 +34,8 @@ import type {
   Settings,
   Student,
   Tutor,
+  Topic,
+  TopicList,
   TopicRating,
 } from '@/domain/types';
 
@@ -69,9 +74,12 @@ export interface DemoDB {
   reportCycles: ReportCycle[];
   reports: StudentReport[];
   expenses: Expense[];
+  enrolments: Enrolment[];
+  topicLists: TopicList[];
+  topics: Topic[];
 }
 
-export const DEMO_DB_VERSION = 5;
+export const DEMO_DB_VERSION = 6;
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -90,7 +98,11 @@ export function visibleStudentIds(db: DemoDB, viewer: Profile): Set<string> {
     case 'admin':
       return new Set(db.students.map((s) => s.id));
     case 'tutor':
-      return new Set(db.lessons.filter((l) => l.tutorId === viewer.tutorId).flatMap((l) => l.studentIds));
+      // Students they have taught, plus those assigned to them for a subject (before the first lesson).
+      return new Set([
+        ...db.lessons.filter((l) => l.tutorId === viewer.tutorId).flatMap((l) => l.studentIds),
+        ...db.enrolments.filter((e) => e.active && !!viewer.tutorId && e.tutorId === viewer.tutorId).map((e) => e.studentId),
+      ]);
     case 'parent':
       return new Set(db.students.filter((s) => s.familyId === viewer.familyId).map((s) => s.id));
     case 'student':
@@ -203,7 +215,13 @@ export const cmd = {
   },
   saveStudent(db: DemoDB, viewer: Profile, student: Omit<Student, 'id'> & { id?: string }) {
     requireAdmin(viewer);
-    return upsert(db.students, student, 'stu');
+    const isNew = !student.id || !db.students.some((s) => s.id === student.id);
+    const saved = upsert(db.students, student, 'stu');
+    // Mirrors the students_enrol trigger: older app versions create students with a maths syllabus only.
+    if (isNew && saved.syllabusId && !db.enrolments.some((e) => e.studentId === saved.id)) {
+      db.enrolments.push(linkList(db, { id: newId('enr'), studentId: saved.id, ...syllabusEnrolment(saved.syllabusId, saved.curriculum), active: true }));
+    }
+    return saved;
   },
   saveService(db: DemoDB, viewer: Profile, service: Omit<Service, 'id'> & { id?: string }) {
     requireAdmin(viewer);
@@ -345,6 +363,147 @@ export const cmd = {
     if (invoiceTotals(invoice).balance <= 0) invoice.status = 'paid';
   },
 };
+
+// ---------------------------------------------------------------------------
+// Subjects: enrolments and shared topic lists (mirrors 20261007000000_subjects.sql)
+// ---------------------------------------------------------------------------
+
+/** Trims and collapses inner spaces; blank becomes undefined (as the database's tidying does). */
+export function tidy(v?: string): string | undefined {
+  const t = (v ?? '').replace(/\s+/g, ' ').trim();
+  return t || undefined;
+}
+
+/** Mirrors public.syllabus_enrolment: the Maths enrolment a legacy syllabus id stands for. */
+export function syllabusEnrolment(syllabusId: string, curriculum?: string): Pick<Enrolment, 'subject' | 'curriculum' | 'level' | 'examBoard' | 'syllabusId'> {
+  const s = SYLLABUSES.find((x) => x.id === syllabusId);
+  const legacy = tidy(curriculum);
+  return {
+    subject: s?.subject ?? 'Maths',
+    curriculum: s?.curriculum ?? (legacy === 'IB' ? 'IB DP' : legacy),
+    level: s?.level,
+    examBoard: s?.examBoard,
+    syllabusId,
+  };
+}
+
+/** The shared list for a subject, curriculum and level, if one exists. */
+export function topicListFor(db: DemoDB, e: Pick<Enrolment, 'subject' | 'curriculum' | 'level'>): TopicList | undefined {
+  const key = topicListKey(e.subject, e.curriculum, e.level);
+  return db.topicLists.find((l) => topicListKey(l.subject, l.curriculum, l.level) === key);
+}
+
+/** Mirrors the enrolments_write trigger: link an enrolment without a list to the matching shared list. */
+export function linkList<T extends Enrolment>(db: DemoDB, e: T): T {
+  if (!e.topicListId) {
+    const list = topicListFor(db, e);
+    if (list) e.topicListId = list.id;
+  }
+  return e;
+}
+
+const sameKey = (a: Pick<Enrolment, 'subject' | 'curriculum' | 'level'>, b: Pick<Enrolment, 'subject' | 'curriculum' | 'level'>) =>
+  topicListKey(a.subject, a.curriculum, a.level) === topicListKey(b.subject, b.curriculum, b.level);
+
+export const enr = {
+  enrolments(db: DemoDB, viewer: Profile, studentId?: string): Enrolment[] {
+    const ids = visibleStudentIds(db, viewer);
+    return db.enrolments
+      .filter((e) => ids.has(e.studentId) && (!studentId || e.studentId === studentId))
+      .sort((a, b) => a.subject.localeCompare(b.subject));
+  },
+
+  /** Admins only. The same rules as validateEnrolments and the partial unique index on active enrolments. */
+  saveEnrolment(db: DemoDB, viewer: Profile, draft: EnrolmentDraft & { studentId: string }, now = new Date()): Enrolment {
+    requireAdmin(viewer);
+    const subject = tidy(draft.subject);
+    if (!subject) throw new Error('Please choose a subject for every row.');
+    const curriculum = tidy(draft.curriculum);
+    const level = tidy(draft.level);
+    const examBoard = tidy(draft.examBoard);
+    if (subject.length > 80 || (curriculum?.length ?? 0) > 80 || (level?.length ?? 0) > 80 || (examBoard?.length ?? 0) > 80) {
+      throw new Error('Please shorten the subject, curriculum, level or exam board.');
+    }
+    if (!db.students.some((s) => s.id === draft.studentId)) throw new Error('Student not found');
+    const next = { subject, curriculum, level };
+    if (
+      draft.active &&
+      db.enrolments.some((e) => e.active && e.id !== draft.id && e.studentId === draft.studentId && sameKey(e, next))
+    ) {
+      throw new Error(`${subject} is listed twice. Please remove one.`);
+    }
+    const existing = draft.id ? db.enrolments.find((e) => e.id === draft.id) : undefined;
+    const saved: Enrolment = {
+      id: existing?.id ?? draft.id ?? newId('enr'),
+      studentId: draft.studentId,
+      subject,
+      curriculum,
+      level,
+      examBoard,
+      tutorId: draft.tutorId || undefined,
+      syllabusId: tidy(draft.syllabusId),
+      // The server owns the list: kept while the subject, curriculum and level stay the same.
+      topicListId: existing && sameKey(existing, next) ? existing.topicListId : undefined,
+      active: draft.active,
+      createdAt: existing?.createdAt ?? now.toISOString(),
+    };
+    linkList(db, saved);
+    if (existing) Object.assign(existing, saved);
+    else db.enrolments.push(saved);
+    return existing ?? saved;
+  },
+
+  topicLists: (db: DemoDB) => [...db.topicLists].sort((a, b) => a.name.localeCompare(b.name)),
+  topics: (db: DemoDB, listId?: string) =>
+    db.topics.filter((t) => !listId || t.listId === listId).sort((a, b) => a.listId.localeCompare(b.listId) || a.sort - b.sort),
+
+  /** Mirrors public.add_topic. */
+  addTopic(db: DemoDB, viewer: Profile, input: { enrolmentId: string; name: string; unit?: string }, now = new Date()): Topic {
+    const e = db.enrolments.find((x) => x.id === input.enrolmentId);
+    const me = viewer.tutorId;
+    const allowed =
+      !!e &&
+      (viewer.role === 'admin' ||
+        (viewer.role === 'tutor' &&
+          !!me &&
+          (e.tutorId === me || db.lessons.some((l) => l.tutorId === me && l.studentIds.includes(e.studentId)))));
+    if (!e || !allowed) throw new AccessError('You can add topics only for students you teach');
+    const name = tidy(input.name) ?? '';
+    const unit = tidy(input.unit);
+    if (name.length < 1 || name.length > 200) throw new Error('Please enter a topic name of up to 200 characters');
+    if ((unit?.length ?? 0) > 120) throw new Error('Please enter a unit name of up to 120 characters');
+
+    let list = topicListFor(db, e);
+    if (!list) {
+      list = {
+        id: newId('tl'),
+        subject: e.subject,
+        curriculum: e.curriculum,
+        level: e.level,
+        name: enrolmentTitle(e),
+        createdAt: now.toISOString(),
+      };
+      db.topicLists.push(list);
+    }
+    for (const other of db.enrolments) if (!other.topicListId && sameKey(other, e)) other.topicListId = list.id;
+
+    const same = db.topics.find(
+      (t) => t.listId === list.id && (t.unit ?? '').toLowerCase() === (unit ?? '').toLowerCase() && t.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (same) return same;
+    const sort = Math.max(0, ...db.topics.filter((t) => t.listId === list.id).map((t) => t.sort)) + 1;
+    const topic: Topic = { id: newId('top'), listId: list.id, unit, name, sort, createdAt: now.toISOString() };
+    db.topics.push(topic);
+    return topic;
+  },
+};
+
+/** Whether a lesson counts towards an enrolment: same subject, or no subject when the student studies only one. */
+export function lessonCountsFor(db: DemoDB, lesson: Lesson, e: Enrolment): boolean {
+  if (!lesson.studentIds.includes(e.studentId)) return false;
+  if (lesson.subject?.trim()) return sameSubject(lesson.subject, e.subject);
+  return db.enrolments.filter((o) => o.active && o.studentId === e.studentId).length === 1;
+}
 
 function addInvoice(db: DemoDB, familyId: string, items: Invoice['items'], now: Date): Invoice {
   const invoice: Invoice = { ...newInvoiceDraft(familyId, items, db.settings, now), id: newId('inv'), status: 'sent' };

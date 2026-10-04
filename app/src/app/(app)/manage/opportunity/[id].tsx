@@ -1,7 +1,8 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
-import { BID_STATUS, opportunityTone } from '@/components/opportunities';
+import { subjectLine } from '@/components/catalogue-choice';
+import { BID_STATUS, fitNote, opportunityTone, tutorFits } from '@/components/opportunities';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -38,7 +39,7 @@ export default function OpportunityDetail() {
     const offered = (availability.data ?? [])
       .filter((a) => a.tutorId === t.id)
       .reduce((n, a) => n + (Number(a.end.slice(0, 2)) * 60 + Number(a.end.slice(3)) - Number(a.start.slice(0, 2)) * 60 - Number(a.start.slice(3))) / 60, 0);
-    return { hours: Math.round(hours * 10) / 10, offered: Math.round(offered), fits: !o.curriculum || t.subjects.includes(o.curriculum) };
+    return { hours: Math.round(hours * 10) / 10, offered: Math.round(offered), fits: tutorFits(t, o), note: fitNote(t, o) };
   };
 
   return (
@@ -51,6 +52,7 @@ export default function OpportunityDetail() {
           </Txt>
           <Badge label={s.label} tone={s.tone} />
         </Row>
+        {subjectLine(o) ? <Txt variant="label">{subjectLine(o)}</Txt> : null}
         {o.description ? <Txt>{o.description}</Txt> : null}
         <Txt variant="muted">
           {[o.schedule, o.location, `${formatAED(o.payRate)}/hr`].filter(Boolean).join(' · ')}
@@ -105,7 +107,13 @@ export default function OpportunityDetail() {
                       <Badge label={bs.label} tone={bs.tone} />
                     </Row>
                     <Txt variant="small">
-                      {st.hours}h/week booked · {st.offered ? `${st.offered}h/week offered` : 'no availability set'} · {st.fits ? `teaches ${o.curriculum ?? 'this'}` : `not usually ${o.curriculum}`}
+                      {[`${st.hours}h/week booked`, st.offered ? `${st.offered}h/week offered` : 'no availability set'].join(' · ')}
+                      {st.note ? ' · ' : ''}
+                      {st.note ? (
+                        <Txt variant="small" color={st.fits ? 'success' : 'warning'}>
+                          {st.note}
+                        </Txt>
+                      ) : null}
                     </Txt>
                   </View>
                 </Row>

@@ -9,7 +9,7 @@ import { source } from '@/data';
 import { useAvailability, useEnquiries, useStudents } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 import { addDays, startOfDay } from '@/domain/dates';
-import { monthSeries, receivables, revenueByCurriculum } from '@/domain/finance';
+import { monthSeries, receivables, revenueBySubject } from '@/domain/finance';
 import { enquiryConversion, familyActivity, tutorUtilisation } from '@/domain/insights';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -38,7 +38,8 @@ export default function Insights() {
       .filter((u) => u.availableHours > 0 || u.taughtHours > 0);
     return {
       series,
-      byCurriculum: revenueByCurriculum(recentCharges, students.data, d.packages),
+      // d.lessons spans the last 13 months, so it covers every charge from the last 90 days.
+      bySubject: revenueBySubject(recentCharges, d.lessons, d.packages),
       utilisation,
       families: familyActivity(students.data, d.lessons, now),
       conversion: enquiryConversion(enquiries.data, addDays(now, -90).toISOString()),
@@ -47,7 +48,7 @@ export default function Insights() {
   }, [finance.data, students.data, enquiries.data, availability.data, now]);
 
   if (!computed) return <Loading />;
-  const { series, byCurriculum, utilisation, families, conversion } = computed;
+  const { series, bySubject, utilisation, families, conversion } = computed;
   const thisMonth = series[series.length - 1];
   const lastMonth = series[series.length - 2];
   const change = lastMonth.revenue ? (thisMonth.revenue - lastMonth.revenue) / lastMonth.revenue : 0;
@@ -59,7 +60,7 @@ export default function Insights() {
       today: now.toISOString().slice(0, 10),
       months: series.slice(-6).map((m) => ({ month: m.month, revenue: m.revenue, tutorCosts: m.tutorCosts, expenses: m.expenses, profit: m.profit, cashIn: m.cashIn })),
       owedByFamilies: computed!.owed,
-      revenueByCurriculumLast90Days: byCurriculum,
+      revenueBySubjectLast90Days: bySubject,
       tutorUtilisationLast4Weeks: utilisation.map((u) => ({ tutor: u.tutor.fullName.split(' ')[0], taughtHours: u.taughtHours, availableHours: u.availableHours })),
       families,
       enquiriesLast90Days: conversion,
@@ -98,8 +99,8 @@ export default function Insights() {
         </Card>
       </Section>
 
-      <Section title="Revenue by curriculum (90 days)">
-        <Card>{byCurriculum.length ? <ShareBars items={byCurriculum.map((c) => ({ label: c.curriculum, value: c.revenue }))} /> : <Txt variant="muted">Revenue will appear here once lessons have been taught.</Txt>}</Card>
+      <Section title="Revenue by subject (90 days)">
+        <Card>{bySubject.length ? <ShareBars items={bySubject.map((c) => ({ label: c.subject, value: c.revenue }))} /> : <Txt variant="muted">Revenue will appear here once lessons have been taught.</Txt>}</Card>
       </Section>
 
       <Section title="Tutor utilisation (4 weeks)">

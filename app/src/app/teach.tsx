@@ -2,11 +2,13 @@ import { Stack } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { pickFile } from '@/components/file-pick';
-import { Banner, Button, Card, Chip, ErrorNote, Field, Row, Screen, Section, Txt } from '@/components/ui';
+import { Banner, Button, Card, ErrorNote, Field, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { PickedFile } from '@/data/source';
+import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
 
 /** Public "Teach with Elite Education" application — no account needed. */
 export default function Apply() {
@@ -14,7 +16,8 @@ export default function Apply() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [curricula, setCurricula] = useState<string[]>([]);
-  const [subjects, setSubjects] = useState('');
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [phases, setPhases] = useState<string[]>([]);
   const [experience, setExperience] = useState('');
   const [qualifications, setQualifications] = useState('');
   const [availability, setAvailability] = useState('');
@@ -33,7 +36,8 @@ export default function Apply() {
         email: email.trim(),
         phone: phone.trim() || undefined,
         curricula,
-        subjects: subjects.trim() || undefined,
+        subjects: subjects.join(', ') || undefined,
+        phases,
         experience: experience.trim() || undefined,
         qualifications: qualifications.trim() || undefined,
         availability: availability.trim() || undefined,
@@ -70,16 +74,22 @@ export default function Apply() {
               </View>
             </Row>
             <Section title="What can you teach?">
-              <Row gap={Spacing.one} wrap>
-                {['IB', 'IGCSE', 'A-Level'].map((c) => (
-                  <Chip key={c} label={c} selected={curricula.includes(c)} onPress={() => setCurricula((x) => (x.includes(c) ? x.filter((y) => y !== c) : [...x, c]))} />
-                ))}
-              </Row>
+              <View style={{ gap: Spacing.three }}>
+                <CatalogueMultiPicker
+                  label="Subjects"
+                  options={SUBJECTS}
+                  values={subjects}
+                  onChange={setSubjects}
+                  collapsed={12}
+                  otherPlaceholder="For example Chemistry, English Literature, Arabic"
+                />
+                <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} otherPlaceholder="For example Australian or German Abitur" />
+                <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} otherPlaceholder="For example postgraduate" />
+              </View>
             </Section>
-            <Field label="Subjects" value={subjects} onChangeText={setSubjects} placeholder="e.g. Mathematics, Physics, English Literature" />
             <Field label="Teaching experience" value={experience} onChangeText={setExperience} multiline placeholder="Schools, years of experience, results and any examining work" />
-            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="e.g. MSc, PGCE, QTS" />
-            <Field label="Availability" value={availability} onChangeText={setAvailability} placeholder="e.g. Weekday evenings, Saturday mornings" />
+            <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="For example MSc, PGCE, QTS" />
+            <Field label="Availability" value={availability} onChangeText={setAvailability} placeholder="For example weekday evenings and Saturday mornings" />
             <Row gap={Spacing.two} style={{ justifyContent: 'space-between' }}>
               <Txt variant="muted" style={{ flex: 1 }} numberOfLines={1}>
                 {cv ? `CV: ${cv.name}` : 'CV (optional, PDF or Word)'}

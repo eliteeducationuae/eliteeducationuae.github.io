@@ -7,7 +7,7 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | | Teachworks | Elite Education app |
 |---|---|---|
 | Mobile | Mostly web pages | A native app for every role, with home-screen tabs and dark mode |
-| Progress tracking | Free-text notes | Curriculum-aware: IB AA/AI, IGCSE 4MA1/0580/0606 and A-Level syllabus topic trees, with 1–5 mastery ratings over time, heatmaps and "work on next" |
+| Progress tracking | Free-text notes | Every subject, phase and curriculum: each student has a list of subjects, each with its own topic list (built-in IB, IGCSE and A-Level maths trees, plus shared lists tutors build as they teach), with 1–5 mastery ratings over time, heatmaps and "work on next" |
 | Recording a lesson | Several screens | One pass: attendance, topics with suggestions, ratings, family summary, homework and private notes. Billing happens automatically. |
 | Parents | Invoices and a portal | Upcoming lessons, lesson notes, child progress, PDF progress reports and invoices paid by card in AED |
 | Cancellations | Manual | Your 24-hour policy is applied automatically. Parents see the fee before confirming; tutor cancellations never charge families; admins can waive fees. |
@@ -141,6 +141,22 @@ How it behaves:
 - **Demo mode:** both buttons sign in as the sample parent, Fatima Al Mansoori.
 
 **Device checklist (Craig, on a real iPhone):** sign in with Apple in both light and dark mode, and check that the busy spinner shown over the Apple button while signing in matches the button (black on light, white on dark) and is clearly visible.
+
+**Round 4, step 3: every subject.** The app now supports every subject, phase and curriculum, not only mathematics.
+
+1. Run `supabase/migrations/20261007000000_subjects.sql` in the Supabase SQL editor, after the earlier migrations.
+2. Redeploy the Edge Functions whose wording now uses the lesson's subject:
+   `npx supabase functions deploy ai-assist`, `npx supabase functions deploy ics --no-verify-jwt` and `npx supabase functions deploy send-reminders`.
+
+What the migration does:
+
+- **Enrolments.** Each student now has a list of subjects (an *enrolment* per subject, with its curriculum, level, exam board, tutor and topic list). Students gain an optional phase, and their old single curriculum and syllabus are kept only for older versions of the app.
+- **Backfill.** Every existing student receives one Maths enrolment that matches their current syllabus and tutor, so nothing is lost and progress history stays in place.
+- **Shared topic lists.** Topics are stored in shared lists for each subject, curriculum and level. A list one tutor builds is reused for every student who studies the same course, and tutors can add topics for the subjects they teach.
+- **Reports per subject.** A report round creates one report per active enrolment, written by that enrolment's tutor, so a student with Chemistry and English receives two reports.
+- **Everything else.** Lessons, services, enquiries and roles record a subject (and phase); tutors list their subjects, curricula and phases; tutor applications record phases; insights split revenue by subject.
+
+The website forms send the new subject and phase fields. If the site goes live before the migration is run, the forms fall back automatically and add the subject and phase to the message, so no enquiry is lost.
 
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 

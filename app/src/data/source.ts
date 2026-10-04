@@ -1,3 +1,4 @@
+import type { EnrolmentDraft } from '@/domain/enrolments';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
@@ -17,6 +18,7 @@ import type {
   AttendanceMark,
   Closure,
   Enquiry,
+  Enrolment,
   FamilyStatus,
   LessonRequest,
   Message,
@@ -37,6 +39,8 @@ import type {
   Settings,
   Student,
   Tutor,
+  Topic,
+  TopicList,
   TopicRating,
 } from '@/domain/types';
 
@@ -132,6 +136,19 @@ export interface DataSource {
   saveFamily(family: Omit<Family, 'id'> & { id?: string }): Promise<Family>;
   saveStudent(student: Omit<Student, 'id'> & { id?: string }): Promise<Student>;
   saveService(service: Omit<Service, 'id'> & { id?: string }): Promise<Service>;
+
+  // Subjects: enrolments and shared topic lists
+  /** Enrolments of the students the caller can see. */
+  listEnrolments(filter?: { studentId?: string }): Promise<Enrolment[]>;
+  /** Admins only. `active: false` removes the subject from use but keeps its history. */
+  saveEnrolment(e: EnrolmentDraft & { studentId: string }): Promise<Enrolment>;
+  listTopicLists(): Promise<TopicList[]>;
+  listTopics(filter?: { listId?: string }): Promise<Topic[]>;
+  /**
+   * Adds a topic to the shared list for the enrolment's subject, curriculum and level (admins, and tutors who
+   * teach that enrolment). Creates or reuses the list; the same name in the same unit returns the existing topic.
+   */
+  addTopic(input: { enrolmentId: string; name: string; unit?: string }): Promise<Topic>;
 
   // Scheduling
   createLessons(lessons: NewLesson[]): Promise<Lesson[]>;
@@ -240,6 +257,8 @@ export interface NewOpportunity {
   description?: string;
   curriculum?: string;
   syllabusId?: string;
+  subject?: string;
+  phase?: string;
   studentId?: string;
   enquiryId?: string;
   schedule?: string;
@@ -256,6 +275,7 @@ export interface NewTutorApplication {
   phone?: string;
   curricula: string[];
   subjects?: string;
+  phases?: string[];
   experience?: string;
   qualifications?: string;
   availability?: string;
@@ -287,12 +307,20 @@ export interface SignUpDetails {
   phone?: string;
 }
 
+export interface NewChildSubject {
+  subject: string;
+  curriculum?: string;
+  level?: string;
+  examBoard?: string;
+}
+
 export interface NewChild {
   fullName: string;
-  curriculum: Student['curriculum'];
-  syllabusId: string;
   school?: string;
   yearGroup?: string;
+  phase?: string;
+  /** 1 to 10 subjects. */
+  subjects: NewChildSubject[];
 }
 
 export interface NewEnquiry {
@@ -301,6 +329,8 @@ export interface NewEnquiry {
   phone?: string;
   studentName?: string;
   curriculum?: string;
+  subject?: string;
+  phase?: string;
   yearGroup?: string;
   message?: string;
   preferredTimes?: string;
@@ -313,6 +343,7 @@ export interface NewLessonRequest {
   lessonId?: string;
   tutorId: string;
   serviceId: string;
+  subject?: string;
   start: string;
   note?: string;
 }

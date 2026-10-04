@@ -1,6 +1,7 @@
 import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
+import { subjectLine } from '@/components/catalogue-choice';
 import { BID_STATUS, opportunityTone } from '@/components/opportunities';
 import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -43,6 +44,7 @@ function Detail({ o, mine }: { o: NonNullable<ReturnType<typeof useOpportunities
           </Txt>
           <Badge label={s.label} tone={s.tone} />
         </Row>
+        {subjectLine(o) ? <Txt variant="label">{subjectLine(o)}</Txt> : null}
         {o.description ? <Txt>{o.description}</Txt> : null}
         {o.schedule ? <Txt variant="muted">When: {o.schedule}</Txt> : null}
         {o.location ? <Txt variant="muted">Where: {o.location}</Txt> : null}

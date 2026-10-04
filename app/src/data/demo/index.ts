@@ -5,7 +5,7 @@ import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
-import { cmd, DEMO_DB_VERSION, newId, q, type DemoDB } from './db';
+import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
 import { createSeed } from './seed';
@@ -150,6 +150,12 @@ export function createDemoSource(): DataSource {
     saveStudent: (s) => write((d, v) => cmd.saveStudent(d, v, s)),
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
 
+    listEnrolments: (filter) => read((d, v) => enr.enrolments(d, v, filter?.studentId)),
+    saveEnrolment: (e) => write((d, v) => enr.saveEnrolment(d, v, e)),
+    listTopicLists: () => read((d) => enr.topicLists(d)),
+    listTopics: (filter) => read((d) => enr.topics(d, filter?.listId)),
+    addTopic: (input) => write((d, v) => enr.addTopic(d, v, input)),
+
     createLessons: (lessons) => write((d, v) => cmd.createLessons(d, v, lessons)),
     rescheduleLesson: (id, start, end) => write((d, v) => cmd.rescheduleLesson(d, v, id, start, end)),
     cancelLesson: (id, reason, waive) => write((d, v) => cmd.cancelLesson(d, v, id, reason, waive)),
@@ -160,7 +166,9 @@ export function createDemoSource(): DataSource {
     invoiceUnbilled: (familyId) => write((d, v) => cmd.invoiceUnbilled(d, v, familyId)),
     setInvoiceStatus: (id, status) => write((d, v) => cmd.setInvoiceStatus(d, v, id, status)),
     recordPayment: (id, amount, method, ref) => write((d, v) => cmd.recordPayment(d, v, id, amount, method, ref)),
-    addMyChild: (child) => write((d, v) => eq.addMyChild(d, v, child)),
+    addMyChild: async (child) => {
+      await write((d, v) => eq.addMyChild(d, v, child));
+    },
     setFamilyStatus: (id, status) => write((d, v) => eq.setFamilyStatus(d, v, id, status)),
     async submitEnquiry(e) {
       const d = await load();

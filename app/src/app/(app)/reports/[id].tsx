@@ -2,15 +2,27 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
-import { REPORT_STATUS } from '@/components/reports';
+import { REPORT_STATUS, reportSubject } from '@/components/reports';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { getSyllabus, topicName } from '@/data/curriculum';
-import { useAction, useHomework, useLessons, useLookup, useNotes, useRatings, useReportCycles, useSettings, useStudentReports } from '@/data/hooks';
+import {
+  useAction,
+  useEnrolments,
+  useHomework,
+  useLessons,
+  useLookup,
+  useNotes,
+  useRatings,
+  useReportCycles,
+  useSettings,
+  useStudentReports,
+  useTopicLookup,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { addDays, formatDate } from '@/domain/dates';
-import { RATING_LABELS } from '@/domain/progress';
+import { enrolmentTitle } from '@/domain/enrolments';
+import { RATING_LABELS, type Syllabus } from '@/domain/progress';
 import { EFFORT_LABELS, factsForAi, PROGRESS_LABELS, reportFacts, sampleReportDraft } from '@/domain/reports';
 import type { ReportCycle, Student, StudentReport } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
@@ -23,7 +35,9 @@ export default function ReportScreen() {
   const reports = useStudentReports();
   const cycles = useReportCycles();
   const lookup = useLookup();
-  if (reports.isLoading || cycles.isLoading || !lookup.ready) return <Loading />;
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
+  if (reports.isLoading || cycles.isLoading || enrolments.isLoading || !lookup.ready || !topics.ready) return <Loading />;
   const report = reports.data?.find((r) => r.id === id);
   const student = report && lookup.student(report.studentId);
   if (!report || !student) return <Screen><EmptyState title="Report not found" /></Screen>;
@@ -41,6 +55,8 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
   const notes = useNotes({ studentId: student.id });
   const homework = useHomework(student.id);
   const ratings = useRatings(student.id);
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
   const save = useAction(source.saveReport);
   const submit = useAction(source.submitReport);
   const setStatus = useAction(source.setReportStatus);
@@ -60,7 +76,11 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
   const isAuthor = me.role === 'tutor' && me.tutorId === report.tutorId;
   const editable = report.status !== 'published' && (isAdmin || (isAuthor && (report.status === 'draft' || report.status === 'submitted')));
   const s = REPORT_STATUS[report.status];
-  const syllabus = getSyllabus(student.syllabusId);
+  const { subject, enrolment } = reportSubject(report, enrolments.data ?? []);
+  // Reports written before subjects existed fall back to the student's original syllabus.
+  const tree: Syllabus | undefined = enrolment ? topics.treeFor(enrolment) : topics.builtIn(student.syllabusId);
+  const subjectTitle = enrolment ? enrolmentTitle(enrolment) : (subject ?? tree?.name ?? student.curriculum);
+  const treeKey = tree ? tree.units.flatMap((u) => u.topics.map((t) => t.id)).join(',') : '';
   const loadingFacts = lessons.isLoading || notes.isLoading || homework.isLoading || ratings.isLoading;
   const facts = useMemo(
     () =>
@@ -68,8 +88,9 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
         student,
         { lessons: lessons.data ?? [], notes: notes.data ?? [], homework: homework.data ?? [], ratings: ratings.data ?? [] },
         from.toISOString(),
+        { subject, topicIds: treeKey ? new Set(treeKey.split(',')) : undefined },
       ),
-    [student, lessons.data, notes.data, homework.data, ratings.data, from],
+    [student, lessons.data, notes.data, homework.data, ratings.data, from, subject, treeKey],
   );
   const fields = { attainment, effort, progress, strengths, nextSteps, comment, aiAssisted };
   const ready = !!effort && !!progress && comment.trim().length > 0;
@@ -79,9 +100,9 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
     setDrafting(true);
     setError(null);
     try {
-      const context = { curriculum: student.curriculum, syllabus: syllabus?.name, attainment, effort, progress };
-      const ai = await source.aiAssist?.({ task: 'report-draft', reportId: report.id, facts: factsForAi(facts, topicName, context) });
-      const d = ai && ai.task === 'report-draft' ? ai : sampleReportDraft(facts, topicName);
+      const context = { subject, curriculum: enrolment?.curriculum ?? student.curriculum, syllabus: tree?.name, attainment, effort, progress };
+      const ai = await source.aiAssist?.({ task: 'report-draft', reportId: report.id, facts: factsForAi(facts, topics.name, context) });
+      const d = ai && ai.task === 'report-draft' ? ai : sampleReportDraft(facts, topics.name);
       setStrengths(d.strengths);
       setNextSteps(d.nextSteps);
       setComment(d.comment);
@@ -119,13 +140,13 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
 
   return (
     <Screen footer={footer}>
-      <Stack.Screen options={{ title: student.fullName.split(' ')[0] }} />
+      <Stack.Screen options={{ title: subject ? `${student.fullName.split(' ')[0]} · ${subject} report` : student.fullName.split(' ')[0] }} />
       <Card style={{ gap: Spacing.one }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
             <Txt variant="h2">{student.fullName}</Txt>
             <Txt variant="muted">
-              {cycle?.name ?? 'Report'} · {syllabus?.name ?? student.curriculum}
+              {[cycle?.name ?? 'Report', subjectTitle].filter(Boolean).join(' · ')}
             </Txt>
             {isAdmin ? <Txt variant="small">Tutor: {lookup.tutor(report.tutorId)?.fullName}</Txt> : null}
           </View>
@@ -148,13 +169,13 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
             {facts.improved.length ? (
               <View style={{ gap: 2 }}>
                 <Txt variant="label">Strong or improving</Txt>
-                <Txt>{facts.improved.map((m) => `${topicName(m.topicId)} (${RATING_LABELS[m.rating]})`).join(', ')}</Txt>
+                <Txt>{facts.improved.map((m) => `${topics.name(m.topicId)} (${RATING_LABELS[m.rating]})`).join(', ')}</Txt>
               </View>
             ) : null}
             {facts.needsWork.length ? (
               <View style={{ gap: 2 }}>
                 <Txt variant="label">Needs work</Txt>
-                <Txt>{facts.needsWork.map((m) => `${topicName(m.topicId)} (${RATING_LABELS[m.rating]})`).join(', ')}</Txt>
+                <Txt>{facts.needsWork.map((m) => `${topics.name(m.topicId)} (${RATING_LABELS[m.rating]})`).join(', ')}</Txt>
               </View>
             ) : null}
             {facts.recentNotes.length ? (
@@ -175,7 +196,7 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
         <>
           <Section title="Grades">
             <Card style={{ gap: Spacing.three }}>
-              <Field label="Working at (grade)" value={attainment} onChangeText={setAttainment} placeholder={student.currentGrade ?? 'e.g. 6 or A'} maxLength={20} />
+              <Field label="Working at (grade)" value={attainment} onChangeText={setAttainment} placeholder={student.currentGrade ?? 'For example, 6 or A'} maxLength={20} />
               <GradePicker label="Effort" labels={EFFORT_LABELS} value={effort} onChange={setEffort} />
               <GradePicker label="Progress" labels={PROGRESS_LABELS} value={progress} onChange={setProgress} />
             </Card>

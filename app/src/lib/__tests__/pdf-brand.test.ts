@@ -74,10 +74,24 @@ describe('printable documents', () => {
     items: [{ description: 'Lessons', quantity: 3, unitPrice: 150 }],
   } as TutorInvoice;
   const bank: PaymentDetails = { tutorId: 't1', accountName: 'C O’Brien', bankName: 'Bank', iban: 'AE070331234567890123456' };
-  const report = { id: 'r1', cycleId: 'c1', studentId: 's1', tutorId: 't1', attainment: '6', strengths: `Good ${EVIL}` } as StudentReport;
+  const report = { id: 'r1', cycleId: 'c1', studentId: 's1', tutorId: 't1', subject: `Chemistry ${EVIL}`, attainment: '6', strengths: `Good ${EVIL}` } as StudentReport;
+  const topicName = (id: string) => (id === SYLLABUSES[0].units[0].topics[0].id ? `Named topic ${EVIL}` : id);
 
   const docs: Record<string, string> = {
-    progress: progressReportHTML({ student, syllabus: SYLLABUSES[0], ratings: [], notes: [], lessons: [], homework: [], businessName: 'Elite Education' }, new Date('2026-10-04T10:00:00Z')),
+    progress: progressReportHTML(
+      {
+        student,
+        syllabus: SYLLABUSES[0],
+        ratings: [{ id: 'tr1', studentId: 's1', lessonId: 'l1', topicId: SYLLABUSES[0].units[0].topics[0].id, rating: 2, ratedAt: '2026-10-01T10:00:00Z' }],
+        notes: [],
+        lessons: [],
+        homework: [],
+        businessName: 'Elite Education',
+        topicName,
+        subject: `IGCSE Chemistry ${EVIL}`,
+      },
+      new Date('2026-10-04T10:00:00Z'),
+    ),
     invoice: invoiceHTML(invoice, family, settings),
     report: studentReportHTML(report, student, tutor, undefined, 'Elite Education'),
     tutorInvoice: tutorInvoiceHTML(tutorInvoice, tutor, bank, 'Elite Education'),
@@ -100,6 +114,15 @@ describe('printable documents', () => {
     expect(docs.progress).not.toContain('Emirates NBD');
     expect(docs.report).not.toContain('Emirates NBD');
     expect(docs.tutorInvoice).not.toContain('AE070331234567890123456');
+  });
+
+  it('names the subject in the heading, escaped', () => {
+    expect(docs.progress).toContain('IGCSE Chemistry &lt;script&gt;alert(1)&lt;/script&gt; progress');
+    expect(docs.report).toContain('Chemistry &lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  it('names focus topics through the lookup it is given, escaped', () => {
+    expect(docs.progress).toContain('Named topic &lt;script&gt;');
   });
 
   it('shows unstarted units with a neutral pill', () => {

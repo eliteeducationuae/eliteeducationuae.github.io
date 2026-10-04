@@ -3,11 +3,12 @@ import { View } from 'react-native';
 
 import { Avatar, EmptyState, ListItem, Loading, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { getSyllabus } from '@/data/curriculum';
-import { useStudents } from '@/data/hooks';
+import { useEnrolments, useStudents } from '@/data/hooks';
+import { studentSubjects } from '@/domain/enrolments';
 
 export default function TutorStudents() {
   const students = useStudents();
+  const enrolments = useEnrolments();
   if (students.isLoading) return <Loading />;
   const list = [...(students.data ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName));
   return (
@@ -20,7 +21,7 @@ export default function TutorStudents() {
             <ListItem
               key={s.id}
               title={s.fullName}
-              subtitle={`${getSyllabus(s.syllabusId)?.name ?? s.curriculum}${s.targetGrade ? ` · Target ${s.targetGrade}` : ''}`}
+              subtitle={`${studentSubjects(enrolments.data ?? [], s.id) || 'No subjects yet'}${s.targetGrade ? ` · Target ${s.targetGrade}` : ''}`}
               left={<Avatar name={s.fullName} />}
               onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })}
             />

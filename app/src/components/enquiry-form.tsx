@@ -4,10 +4,11 @@ import { View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { NewEnquiry } from '@/data/source';
+import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
 
+import { CataloguePicker } from './catalogue-picker';
 import { Banner, Button, Card, Chip, ErrorNote, Field, Row, Section, Txt } from './ui';
 
-const CURRICULA = ['IB', 'IGCSE', 'A-Level', 'Other'];
 const TIMES = ['Weekday afternoons', 'Weekday evenings', 'Weekends', 'Flexible'];
 
 /** "Book a free consultation" — used without an account, by new parents in onboarding, and by admins for phone enquiries. */
@@ -29,7 +30,9 @@ export function EnquiryForm({
   const [email, setEmail] = useState(defaults?.email ?? '');
   const [phone, setPhone] = useState(defaults?.phone ?? '');
   const [studentName, setStudentName] = useState(defaults?.studentName ?? '');
-  const [curriculum, setCurriculum] = useState(defaults?.curriculum ?? '');
+  const [subject, setSubject] = useState<string | undefined>(defaults?.subject);
+  const [phase, setPhase] = useState<string | undefined>(defaults?.phase);
+  const [curriculum, setCurriculum] = useState<string | undefined>(defaults?.curriculum);
   const [yearGroup, setYearGroup] = useState(defaults?.yearGroup ?? '');
   const [message, setMessage] = useState(defaults?.message ?? '');
   const [times, setTimes] = useState<string[]>([]);
@@ -56,7 +59,9 @@ export function EnquiryForm({
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         studentName: studentName.trim() || undefined,
-        curriculum: curriculum || undefined,
+        subject: subject?.trim() || undefined,
+        phase: phase?.trim() || undefined,
+        curriculum: curriculum?.trim() || undefined,
         yearGroup: yearGroup.trim() || undefined,
         message: message.trim() || undefined,
         preferredTimes: times.join(', ') || undefined,
@@ -73,6 +78,7 @@ export function EnquiryForm({
 
   return (
     <Card style={{ gap: Spacing.three }}>
+      <Txt variant="muted">Please tell us a little about your child and the support you are looking for.</Txt>
       {!hideContact ? (
         <>
           <Field label="Your name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
@@ -91,16 +97,21 @@ export function EnquiryForm({
           <Field label="Student’s first name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" />
         </View>
         <View style={{ flex: 1 }}>
-          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="e.g. Year 11" />
+          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example Year 11" />
         </View>
       </Row>
-      <Section title="Curriculum">
-        <Row gap={Spacing.one} wrap>
-          {CURRICULA.map((c) => (
-            <Chip key={c} label={c} selected={curriculum === c} onPress={() => setCurriculum(curriculum === c ? '' : c)} />
-          ))}
-        </Row>
-      </Section>
+      <CataloguePicker
+        label="Subject"
+        options={SUBJECTS}
+        value={subject}
+        onChange={setSubject}
+        collapsed={10}
+        optional
+        otherPlaceholder="For example Latin or Music theory"
+      />
+      <Txt variant="small">One subject is enough here; please mention any others in your message below.</Txt>
+      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+      <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
       <Section title="Best times">
         <Row gap={Spacing.one} wrap>
           {TIMES.map((t) => (
@@ -113,7 +124,7 @@ export function EnquiryForm({
         value={message}
         onChangeText={setMessage}
         multiline
-        placeholder="e.g. Predicted a 5 and aiming for a 7. Finds essay structure difficult. Mock examinations in January."
+        placeholder="For example: predicted a 5 and aiming for a 7; finds essay structure difficult; mock examinations in January."
       />
       <ErrorNote error={error} />
       <Button title={submitLabel} variant="gold" onPress={send} loading={busy} disabled={!valid} />

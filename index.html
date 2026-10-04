@@ -244,7 +244,7 @@
             </div>
             <div class="card">
                 <h3>Subjects</h3>
-                <p>Every subject, including mathematics, the sciences, English, the humanities and languages. Mathematics remains a particular specialism, from IB Analysis and Approaches to A-Level Mechanics.</p>
+                <p>The sciences, English, Arabic, the humanities, modern languages and mathematics, together with early reading, entrance examinations and university admissions. Each student is taught by a specialist in their subject.</p>
             </div>
             <div class="card">
                 <h3>Examinations</h3>
@@ -329,12 +329,18 @@
                 <div><label for="e-phone">Mobile or WhatsApp</label><input id="e-phone" name="phone" type="tel" autocomplete="tel"></div>
             </div>
             <div class="row">
+                <div><label for="e-subject">Subject</label><input id="e-subject" name="subject" list="subjects-list" placeholder="For example, Chemistry" autocomplete="off"></div>
+                <div><label for="e-phase">Phase</label>
+                    <select id="e-phase" name="phase"><option value="">Please choose</option><option>Early Years</option><option>Primary</option><option>Lower Secondary</option><option>GCSE and IGCSE</option><option>Sixth Form and IB Diploma</option><option>University</option><option>Adult learner</option><option>Other</option></select></div>
+            </div>
+            <datalist id="subjects-list"><option value="Maths"></option><option value="Additional Maths"></option><option value="Further Maths"></option><option value="English"></option><option value="English Language"></option><option value="English Literature"></option><option value="Physics"></option><option value="Chemistry"></option><option value="Biology"></option><option value="Combined Science"></option><option value="Arabic"></option><option value="Islamic Studies"></option><option value="French"></option><option value="Spanish"></option><option value="German"></option><option value="Mandarin"></option><option value="History"></option><option value="Geography"></option><option value="Economics"></option><option value="Business"></option><option value="Accounting"></option><option value="Psychology"></option><option value="Computer Science"></option><option value="Global Perspectives"></option><option value="Theory of Knowledge"></option><option value="Extended Essay"></option><option value="Primary (all subjects)"></option><option value="Phonics and reading"></option><option value="11+ and entrance exams"></option><option value="SAT and ACT"></option><option value="University admissions"></option></datalist>
+            <div class="row">
                 <div><label for="e-curriculum">Curriculum</label>
-                    <select id="e-curriculum" name="curriculum"><option value="">Please choose</option><option>IB</option><option>IGCSE</option><option>GCSE</option><option>A-Level</option><option>Primary</option><option>University entrance</option><option>Other</option></select></div>
+                    <select id="e-curriculum" name="curriculum"><option value="">Please choose</option><option>British</option><option>IGCSE</option><option>GCSE</option><option>A-Level</option><option>BTEC</option><option>IB PYP</option><option>IB MYP</option><option>IB DP</option><option>American</option><option>AP</option><option>Indian CBSE</option><option>Indian ICSE</option><option>French</option><option>UAE MoE</option><option>Other</option></select></div>
                 <div><label for="e-year">Year group</label><input id="e-year" name="year" placeholder="For example, Year 11"></div>
             </div>
             <label for="e-times">Preferred times</label><input id="e-times" name="times" placeholder="For example, weekday evenings">
-            <label for="e-message">How may we help?</label><textarea id="e-message" name="message" placeholder="Subjects, current and target grades, examination dates and any areas of difficulty"></textarea>
+            <label for="e-message">How may we help?</label><textarea id="e-message" name="message" placeholder="Any further subjects, current and target grades, examination dates and areas of difficulty"></textarea>
             <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
             <button type="submit" class="btn btn-primary">Send enquiry</button>
             <div class="status" id="enquiry-status" role="status"></div>
@@ -360,14 +366,32 @@
             <label for="a-phone">Mobile or WhatsApp</label><input id="a-phone" name="phone" type="tel" autocomplete="tel">
             <label>Curricula you teach</label>
             <div class="checks">
-                <label><input type="checkbox" name="curricula" value="IB"> IB</label>
+                <label><input type="checkbox" name="curricula" value="British"> British</label>
                 <label><input type="checkbox" name="curricula" value="IGCSE"> IGCSE</label>
                 <label><input type="checkbox" name="curricula" value="GCSE"> GCSE</label>
                 <label><input type="checkbox" name="curricula" value="A-Level"> A-Level</label>
-                <label><input type="checkbox" name="curricula" value="Primary"> Primary</label>
-                <label><input type="checkbox" name="curricula" value="University entrance"> University entrance</label>
+                <label><input type="checkbox" name="curricula" value="BTEC"> BTEC</label>
+                <label><input type="checkbox" name="curricula" value="IB PYP"> IB PYP</label>
+                <label><input type="checkbox" name="curricula" value="IB MYP"> IB MYP</label>
+                <label><input type="checkbox" name="curricula" value="IB DP"> IB DP</label>
+                <label><input type="checkbox" name="curricula" value="American"> American</label>
+                <label><input type="checkbox" name="curricula" value="AP"> AP</label>
+                <label><input type="checkbox" name="curricula" value="Indian CBSE"> Indian CBSE</label>
+                <label><input type="checkbox" name="curricula" value="Indian ICSE"> Indian ICSE</label>
+                <label><input type="checkbox" name="curricula" value="French"> French</label>
+                <label><input type="checkbox" name="curricula" value="UAE MoE"> UAE MoE</label>
             </div>
-            <label for="a-subjects">Subjects and levels</label><input id="a-subjects" name="subjects" placeholder="For example, IB Chemistry HL, IGCSE English">
+            <label>Phases you teach</label>
+            <div class="checks">
+                <label><input type="checkbox" name="phases" value="Early Years"> Early Years</label>
+                <label><input type="checkbox" name="phases" value="Primary"> Primary</label>
+                <label><input type="checkbox" name="phases" value="Lower Secondary"> Lower Secondary</label>
+                <label><input type="checkbox" name="phases" value="GCSE and IGCSE"> GCSE and IGCSE</label>
+                <label><input type="checkbox" name="phases" value="Sixth Form and IB Diploma"> Sixth Form and IB Diploma</label>
+                <label><input type="checkbox" name="phases" value="University"> University</label>
+                <label><input type="checkbox" name="phases" value="Adult learner"> Adult learner</label>
+            </div>
+            <label for="a-subjects">Subjects and levels</label><input id="a-subjects" name="subjects" placeholder="For example, Chemistry, English Literature, Arabic">
             <label for="a-experience">Teaching experience</label><textarea id="a-experience" name="experience" placeholder="Schools, years of teaching and examination results"></textarea>
             <label for="a-qualifications">Qualifications</label><input id="a-qualifications" name="qualifications" placeholder="For example, degree, PGCE, examiner experience">
             <label for="a-availability">Availability</label><input id="a-availability" name="availability" placeholder="For example, weekday evenings and Saturday mornings">
@@ -393,6 +417,28 @@
     var URL = 'https://tzahajbulieoalzuzclv.supabase.co/rest/v1/rpc/submit_enquiry';
     var KEY = 'sb_publishable_GGcYrMILBwC_39aVhEiQ4w_uuQ06_Q6';
     var FALLBACK = 'You are also welcome to email craig@craigobrieneducation.com.';
+    // Posts to a database function. If the site is live before the database has been updated (the function
+    // does not yet take the new arguments), retries once with the older arguments so that nothing is lost.
+    function rpc(name, body, olderBody) {
+        function post(b) {
+            return fetch(URL.replace('submit_enquiry', name), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', apikey: KEY },
+                body: JSON.stringify(b)
+            }).then(function (r) {
+                if (r.ok) return null;
+                return r.json().catch(function () { return {}; }).then(function (j) { var e = new Error(j.message || ''); e.code = j.code; throw e; });
+            });
+        }
+        return post(body).catch(function (err) {
+            var missing = err && (err.code === 'PGRST202' || /Could not find the function/i.test(err.message || ''));
+            if (!missing || !olderBody) throw err;
+            return post(olderBody);
+        });
+    }
+    function checked(scope, name) {
+        return Array.prototype.filter.call(scope.querySelectorAll('input[name=' + name + ']'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+    }
     function failure(err) {
         var detail = err && err.message ? err.message.replace(/[.\s]+$/, '') + '. ' : '';
         return 'We could not send this just now. ' + detail + FALLBACK;
@@ -408,16 +454,18 @@
         if (!f.email.value.trim() && !f.phone.value.trim()) return show(false, 'Please provide an email address or telephone number so that we can reply.');
         var button = form.querySelector('button');
         button.disabled = true; button.textContent = 'Sending…';
-        fetch(URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: KEY },
-            body: JSON.stringify({
-                p_parent_name: f.name.value, p_email: f.email.value || null, p_phone: f.phone.value || null,
-                p_student_name: f.student.value || null, p_curriculum: f.curriculum.value || null, p_year_group: f.year.value || null,
-                p_message: f.message.value || null, p_preferred_times: f.times.value || null, p_source: 'website'
-            })
-        }).then(function (r) {
-            if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || ''); });
+        var subject = f.subject.value.trim(), phase = f.phase.value;
+        var body = {
+            p_parent_name: f.name.value, p_email: f.email.value || null, p_phone: f.phone.value || null,
+            p_student_name: f.student.value || null, p_curriculum: f.curriculum.value || null, p_year_group: f.year.value || null,
+            p_message: f.message.value || null, p_preferred_times: f.times.value || null, p_source: 'website',
+            p_subject: subject || null, p_phase: phase || null
+        };
+        var older = Object.assign({}, body);
+        delete older.p_subject; delete older.p_phase;
+        var extra = [subject ? 'Subject: ' + subject : '', phase ? 'Phase: ' + phase : ''].filter(Boolean).join(', ');
+        if (extra) older.p_message = (body.p_message ? body.p_message + '\n\n' : '') + extra;
+        rpc('submit_enquiry', body, older).then(function () {
             form.reset();
             show(true, 'Thank you. We will be in touch within one working day to arrange your consultation.');
         }).catch(function (err) {
@@ -435,19 +483,19 @@
         if (f.website.value) return;
         if (!f.name.value.trim()) return showApply(false, 'Please enter your name.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.value.trim())) return showApply(false, 'Please enter a valid email address.');
-        var curricula = Array.prototype.filter.call(apply.querySelectorAll('input[name=curricula]'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+        var curricula = checked(apply, 'curricula'), phases = checked(apply, 'phases');
         var button = apply.querySelector('button');
         button.disabled = true; button.textContent = 'Sending…';
-        fetch(URL.replace('submit_enquiry', 'submit_tutor_application'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: KEY },
-            body: JSON.stringify({
-                p_full_name: f.name.value, p_email: f.email.value, p_phone: f.phone.value || null, p_curricula: curricula,
-                p_subjects: f.subjects.value || null, p_experience: f.experience.value || null,
-                p_qualifications: f.qualifications.value || null, p_availability: f.availability.value || null
-            })
-        }).then(function (r) {
-            if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || ''); });
+        var body = {
+            p_full_name: f.name.value, p_email: f.email.value, p_phone: f.phone.value || null, p_curricula: curricula,
+            p_subjects: f.subjects.value || null, p_experience: f.experience.value || null,
+            p_qualifications: f.qualifications.value || null, p_availability: f.availability.value || null,
+            p_phases: phases
+        };
+        var older = Object.assign({}, body);
+        delete older.p_phases;
+        if (phases.length) older.p_experience = (body.p_experience ? body.p_experience + '\n\n' : '') + 'Phases: ' + phases.join(', ');
+        rpc('submit_tutor_application', body, older).then(function () {
             apply.reset();
             showApply(true, 'Thank you for your application. We will review it carefully and be in touch shortly.');
         }).catch(function (err) {

@@ -1,3 +1,4 @@
+import { sameSubject } from '@/domain/enrolments';
 import type { Syllabus, SyllabusUnit } from '@/domain/progress';
 
 /**
@@ -116,16 +117,17 @@ const AL_MECH: UnitSpec[] = [
 ];
 
 export const SYLLABUSES: Syllabus[] = [
-  { id: 'ib-aa-sl', name: 'IB Maths AA SL', curriculum: 'IB', units: build('ib-aa', IB_AA_SL) },
-  { id: 'ib-aa-hl', name: 'IB Maths AA HL', curriculum: 'IB', units: build('ib-aa', extend(IB_AA_SL, IB_AA_HL_EXTRA)) },
-  { id: 'ib-ai-sl', name: 'IB Maths AI SL', curriculum: 'IB', units: build('ib-ai', IB_AI_SL) },
-  { id: 'ib-ai-hl', name: 'IB Maths AI HL', curriculum: 'IB', units: build('ib-ai', extend(IB_AI_SL, IB_AI_HL_EXTRA)) },
-  { id: 'igcse-4ma1', name: 'IGCSE Maths (Edexcel 4MA1)', curriculum: 'IGCSE', units: build('4ma1', IGCSE_4MA1) },
-  { id: 'igcse-0580', name: 'IGCSE Maths (Cambridge 0580)', curriculum: 'IGCSE', units: build('0580', CAMBRIDGE_0580) },
-  { id: 'igcse-0606', name: 'IGCSE Additional Maths (0606)', curriculum: 'IGCSE', units: build('0606', CAMBRIDGE_0606) },
+  { id: 'ib-aa-sl', name: 'IB Maths AA SL', subject: 'Maths', curriculum: 'IB DP', level: 'AA SL', examBoard: 'IB', units: build('ib-aa', IB_AA_SL) },
+  { id: 'ib-aa-hl', name: 'IB Maths AA HL', subject: 'Maths', curriculum: 'IB DP', level: 'AA HL', examBoard: 'IB', units: build('ib-aa', extend(IB_AA_SL, IB_AA_HL_EXTRA)) },
+  { id: 'ib-ai-sl', name: 'IB Maths AI SL', subject: 'Maths', curriculum: 'IB DP', level: 'AI SL', examBoard: 'IB', units: build('ib-ai', IB_AI_SL) },
+  { id: 'ib-ai-hl', name: 'IB Maths AI HL', subject: 'Maths', curriculum: 'IB DP', level: 'AI HL', examBoard: 'IB', units: build('ib-ai', extend(IB_AI_SL, IB_AI_HL_EXTRA)) },
+  { id: 'igcse-4ma1', name: 'IGCSE Maths (Edexcel 4MA1)', subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Pearson Edexcel', units: build('4ma1', IGCSE_4MA1) },
+  { id: 'igcse-0580', name: 'IGCSE Maths (Cambridge 0580)', subject: 'Maths', curriculum: 'IGCSE', examBoard: 'Cambridge', units: build('0580', CAMBRIDGE_0580) },
+  { id: 'igcse-0606', name: 'IGCSE Additional Maths (0606)', subject: 'Additional Maths', curriculum: 'IGCSE', examBoard: 'Cambridge', units: build('0606', CAMBRIDGE_0606) },
   {
     id: 'alevel-maths',
     name: 'A-Level Maths (Pure, Stats, Mechanics)',
+    subject: 'Maths',
     curriculum: 'A-Level',
     units: [...build('al-pure', AL_PURE), ...build('al-stats', AL_STATS), ...build('al-mech', AL_MECH)],
   },
@@ -146,4 +148,18 @@ export function topicName(id: string): string {
 
 export function topicUnit(id: string): string | undefined {
   return topicIndex.get(id)?.unit;
+}
+
+/** Legacy curriculum names stored before subjects arrived, mapped to the catalogue names. */
+function normaliseCurriculum(curriculum: string): string {
+  const c = curriculum.trim();
+  return c.toLowerCase() === 'ib' ? 'IB DP' : c;
+}
+
+/** The built-in topic trees for a subject, optionally limited to one curriculum ('IB' counts as 'IB DP'). */
+export function builtInSyllabusesFor(subject?: string, curriculum?: string): Syllabus[] {
+  const wanted = curriculum?.trim() ? normaliseCurriculum(curriculum).toLowerCase() : undefined;
+  return SYLLABUSES.filter(
+    (s) => sameSubject(s.subject, subject) && (!wanted || normaliseCurriculum(s.curriculum).toLowerCase() === wanted),
+  );
 }

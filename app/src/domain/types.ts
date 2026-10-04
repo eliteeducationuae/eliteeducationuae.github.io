@@ -5,7 +5,8 @@
 
 export type Role = 'admin' | 'tutor' | 'parent' | 'student';
 
-export type Curriculum = 'IB' | 'IGCSE' | 'A-Level';
+/** Free text. The legacy values 'IB', 'IGCSE' and 'A-Level' remain valid. */
+export type Curriculum = string;
 
 export interface Profile {
   id: string;
@@ -40,9 +41,12 @@ export interface Student {
   id: string;
   familyId: string;
   fullName: string;
-  curriculum: Curriculum;
-  /** Syllabus id from `src/data/curriculum.ts`, e.g. `ib-aa-hl`. */
-  syllabusId: string;
+  /** Legacy: subjects now live on enrolments. */
+  curriculum?: string;
+  /** Legacy: syllabus id from `src/data/curriculum.ts`, e.g. `ib-aa-hl`. Enrolments carry this now. */
+  syllabusId?: string;
+  /** Phase of education, e.g. 'Primary' (see PHASES in src/domain/catalogue.ts). */
+  phase?: string;
   school?: string;
   yearGroup?: string;
   currentGrade?: string;
@@ -59,7 +63,12 @@ export interface Tutor {
   phone?: string;
   /** Pay to the tutor in AED per hour taught. */
   hourlyPay: number;
+  /** Subjects taught, e.g. 'Chemistry'. */
   subjects: string[];
+  /** Curricula taught, e.g. 'IGCSE'. */
+  curricula: string[];
+  /** Phases taught, e.g. 'Primary'. */
+  phases: string[];
   /** Calendar colour. */
   color: string;
 }
@@ -70,6 +79,44 @@ export interface Service {
   durationMin: number;
   /** Price charged per student per lesson, AED. */
   rate: number;
+  subject?: string;
+  phase?: string;
+}
+
+/** One subject a student studies with us. */
+export interface Enrolment {
+  id: string;
+  studentId: string;
+  subject: string;
+  curriculum?: string;
+  level?: string;
+  examBoard?: string;
+  tutorId?: string;
+  /** built-in maths tree id from src/data/curriculum.ts */
+  syllabusId?: string;
+  /** shared stored list, set by the server */
+  topicListId?: string;
+  active: boolean;
+  createdAt?: string;
+}
+
+/** A shared topic list for one subject, curriculum and level. */
+export interface TopicList {
+  id: string;
+  subject: string;
+  curriculum?: string;
+  level?: string;
+  name: string;
+  createdAt?: string;
+}
+
+export interface Topic {
+  id: string;
+  listId: string;
+  unit?: string;
+  name: string;
+  sort: number;
+  createdAt?: string;
 }
 
 export type LessonStatus = 'scheduled' | 'completed' | 'cancelled' | 'late-cancel' | 'no-show';
@@ -81,6 +128,7 @@ export interface Lesson {
   tutorId: string;
   studentIds: string[];
   serviceId: string;
+  subject?: string;
   /** ISO date-time. */
   start: string;
   /** ISO date-time. */
@@ -252,6 +300,8 @@ export interface Enquiry {
   phone?: string;
   studentName?: string;
   curriculum?: string;
+  subject?: string;
+  phase?: string;
   yearGroup?: string;
   message?: string;
   preferredTimes?: string;
@@ -275,6 +325,7 @@ export interface LessonRequest {
   lessonId?: string;
   tutorId: string;
   serviceId: string;
+  subject?: string;
   start: string;
   end: string;
   note?: string;
@@ -329,6 +380,8 @@ export interface Opportunity {
   description?: string;
   curriculum?: string;
   syllabusId?: string;
+  subject?: string;
+  phase?: string;
   studentId?: string;
   enquiryId?: string;
   schedule?: string;
@@ -365,6 +418,7 @@ export interface TutorApplication {
   phone?: string;
   curricula: string[];
   subjects?: string;
+  phases?: string[];
   experience?: string;
   qualifications?: string;
   availability?: string;
@@ -426,6 +480,8 @@ export interface StudentReport {
   cycleId: string;
   studentId: string;
   tutorId: string;
+  subject?: string;
+  enrolmentId?: string;
   /** Working-at grade, e.g. "6" or "A". */
   attainment?: string;
   /** 1–5 */

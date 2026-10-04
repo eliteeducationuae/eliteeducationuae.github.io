@@ -36,7 +36,7 @@ export default function Applications() {
               <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Txt variant="h3">{a.fullName}</Txt>
-                  <Txt variant="muted">{[a.curricula.join(', '), a.qualifications].filter(Boolean).join(' · ')}</Txt>
+                  <Txt variant="muted" numberOfLines={2}>{[a.subjects, a.curricula.join(', '), (a.phases ?? []).join(', '), a.qualifications].filter(Boolean).join(' · ')}</Txt>
                   {a.experience ? (
                     <Txt variant="small" numberOfLines={2}>
                       {a.experience}

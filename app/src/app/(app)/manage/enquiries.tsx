@@ -54,7 +54,7 @@ export default function Enquiries() {
                 <View style={{ flex: 1, gap: 2 }}>
                   <Txt variant="h3">{e.parentName}</Txt>
                   <Txt variant="muted" numberOfLines={1}>
-                    {[e.studentName, e.curriculum, e.yearGroup].filter(Boolean).join(' · ') || 'No student details yet'}
+                    {[e.studentName, e.subject, e.phase, e.curriculum, e.yearGroup].filter(Boolean).join(' · ') || 'No student details yet'}
                   </Txt>
                   {e.message ? (
                     <Txt variant="small" numberOfLines={2}>

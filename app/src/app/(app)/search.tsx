@@ -5,9 +5,10 @@ import { View } from 'react-native';
 import { Icon, type IconName } from '@/components/icon';
 import { EmptyState, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useApplications, useEnquiries, useFamilies, useInvoices, useOpportunities, useStudents, useTutors } from '@/data/hooks';
+import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
+import { studentSubjects } from '@/domain/enrolments';
 import { useTheme } from '@/hooks/use-theme';
 
 interface Hit {
@@ -33,6 +34,7 @@ export default function Search() {
   const enquiries = useEnquiries();
   const opportunities = useOpportunities();
   const applications = useApplications();
+  const enrolments = useEnrolments();
 
   const groups = useMemo(() => {
     const q = norm(query.trim());
@@ -43,8 +45,14 @@ export default function Search() {
         title: 'Students',
         icon: 'people',
         hits: (students.data ?? [])
-          .filter((s) => matches(q, s.fullName, s.school, s.curriculum, s.yearGroup))
-          .map((s) => ({ key: s.id, title: s.fullName, subtitle: [s.curriculum, s.yearGroup, s.school].filter(Boolean).join(' · '), href: { pathname: '/students/[id]', params: { id: s.id } } })),
+          .map((s) => ({ s, subjects: studentSubjects(enrolments.data ?? [], s.id) }))
+          .filter(({ s, subjects }) => matches(q, s.fullName, s.school, s.curriculum, s.yearGroup, s.phase, subjects))
+          .map(({ s, subjects }) => ({
+            key: s.id,
+            title: s.fullName,
+            subtitle: [subjects, s.yearGroup, s.school].filter(Boolean).join(' · '),
+            href: { pathname: '/students/[id]', params: { id: s.id } },
+          })),
       },
     ];
     if (admin) {
@@ -60,7 +68,7 @@ export default function Search() {
           title: 'Tutors',
           icon: 'school',
           hits: (tutors.data ?? [])
-            .filter((t) => matches(q, t.fullName, t.email, ...t.subjects))
+            .filter((t) => matches(q, t.fullName, t.email, ...t.subjects, ...(t.curricula ?? []), ...(t.phases ?? [])))
             .map((t) => ({ key: t.id, title: t.fullName, subtitle: t.subjects.join(', '), href: { pathname: '/manage/tutor-edit', params: { id: t.id } } })),
         },
         {
@@ -74,15 +82,15 @@ export default function Search() {
           title: 'Enquiries',
           icon: 'inbox',
           hits: (enquiries.data ?? [])
-            .filter((e) => matches(q, e.parentName, e.studentName, e.email, e.phone, e.curriculum))
-            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.curriculum, e.status].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
+            .filter((e) => matches(q, e.parentName, e.studentName, e.email, e.phone, e.subject, e.phase, e.curriculum))
+            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.subject, e.curriculum, e.status].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
         },
         {
           title: 'Roles',
           icon: 'school',
           hits: (opportunities.data ?? [])
-            .filter((o) => matches(q, o.title, o.description, o.curriculum))
-            .map((o) => ({ key: o.id, title: o.title, subtitle: o.status, href: { pathname: '/manage/opportunity/[id]', params: { id: o.id } } })),
+            .filter((o) => matches(q, o.title, o.description, o.subject, o.phase, o.curriculum))
+            .map((o) => ({ key: o.id, title: o.title, subtitle: [o.subject, o.phase, o.status].filter(Boolean).join(' · '), href: { pathname: '/manage/opportunity/[id]', params: { id: o.id } } })),
         },
         {
           title: 'Tutor applications',
@@ -94,7 +102,7 @@ export default function Search() {
       );
     }
     return out.filter((g) => g.hits.length).map((g) => ({ ...g, hits: g.hits.slice(0, 8) }));
-  }, [query, admin, students.data, families.data, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data]);
+  }, [query, admin, students.data, families.data, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
 
   return (
     <Screen>
@@ -105,7 +113,7 @@ export default function Search() {
         autoFocus
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder={admin ? 'Name, school, invoice number, email…' : 'Student name or school'}
+        placeholder={admin ? 'Name, subject, school, invoice number, email…' : 'Student name, subject or school'}
         returnKeyType="search"
         onSubmitEditing={() => {
           const first = groups[0]?.hits[0];

@@ -1,10 +1,10 @@
-import { monthFigures, revenueByCurriculum, toCSV, type FinanceData } from '../finance';
+import { monthFigures, revenueBySubject, toCSV, type FinanceData } from '../finance';
 import { AT_RISK_THRESHOLD, enquiryConversion, familyActivity, studentRisk, tutorUtilisation } from '../insights';
 import { factsForAi, reportFacts, sampleReportDraft } from '../reports';
 import { formatIban, isValidIban, maskIban, tutorInvoiceLines, tutorInvoiceNumber, tutorInvoiceTotal } from '../tutor-pay';
 import type { Charge, Homework, Invoice, Lesson, Service, Student, Tutor, TutorInvoice } from '../types';
 
-const tutor: Tutor = { id: 'abcd1234-0000', fullName: 'Tia One', email: '', hourlyPay: 200, subjects: [], color: '' };
+const tutor: Tutor = { id: 'abcd1234-0000', fullName: 'Tia One', email: '', hourlyPay: 200, subjects: [], curricula: [], phases: [], color: '' };
 const service: Service = { id: 'svc', name: 'IB 1:1', durationMin: 60, rate: 450 };
 const student: Student = { id: 's1', familyId: 'f1', fullName: 'Sami Ahmed', curriculum: 'IB', syllabusId: 'ib-aa-sl' };
 const at = (m: number, d: number, h = 16) => new Date(2026, m, d, h);
@@ -102,8 +102,14 @@ describe('profit and loss', () => {
     expect(sep).toMatchObject({ tutorCosts: 520, tutorCostsEstimated: false, profit: 280 });
   });
 
-  it('splits revenue by curriculum and exports CSV safely', () => {
-    expect(revenueByCurriculum(charges, [student], [])).toEqual([{ curriculum: 'IB', revenue: 1350 }]);
+  it('splits revenue by subject and exports CSV safely', () => {
+    const lessons = [lesson({ id: 'a', subject: 'Maths' }), lesson({ id: 'b', subject: 'Chemistry' }), lesson({ id: 'e', subject: ' maths ' })];
+    expect(revenueBySubject(charges, lessons, [])).toEqual([
+      { subject: 'Maths', revenue: 900 },
+      { subject: 'Chemistry', revenue: 450 },
+    ]);
+    // A charge whose lesson has no subject (or is unknown) counts as Other.
+    expect(revenueBySubject(charges, [lesson({ id: 'a' })], [])).toEqual([{ subject: 'Other', revenue: 1350 }]);
     expect(toCSV([['Name', 'Note'], ['Sami', 'said "hi", then left']])).toBe('Name,Note\r\nSami,"said ""hi"", then left"');
   });
 });

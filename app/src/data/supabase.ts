@@ -17,6 +17,9 @@ import {
 import { brandTutorColor } from '@/lib/tutor-colors';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
+  Enrolment,
+  Topic,
+  TopicList,
   Expense,
   Opportunity,
   OpportunityBid,
@@ -50,7 +53,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import type { DataSource, SocialProvider, SocialSignInResult } from './source';
+import type { DataSource, NewChildSubject, SocialProvider, SocialSignInResult } from './source';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -123,6 +126,8 @@ const toTutor = (r: Row): Tutor => ({
   phone: r.phone ?? undefined,
   hourlyPay: Number(r.hourly_pay),
   subjects: r.subjects ?? [],
+  curricula: r.curricula ?? [],
+  phases: r.phases ?? [],
   // Tutors created before the rebrand keep their old bright colours in the database; draw them in the brand palette.
   color: brandTutorColor(r.color, r.id),
 });
@@ -147,6 +152,8 @@ const toEnquiry = (r: Row): Enquiry => ({
   phone: r.phone ?? undefined,
   studentName: r.student_name ?? undefined,
   curriculum: r.curriculum ?? undefined,
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
   yearGroup: r.year_group ?? undefined,
   message: r.message ?? undefined,
   preferredTimes: r.preferred_times ?? undefined,
@@ -167,6 +174,7 @@ const toRequest = (r: Row): LessonRequest => ({
   lessonId: r.lesson_id ?? undefined,
   tutorId: r.tutor_id,
   serviceId: r.service_id,
+  subject: r.subject ?? undefined,
   start: new Date(r.start_at).toISOString(),
   end: new Date(r.end_at).toISOString(),
   note: r.note ?? undefined,
@@ -184,6 +192,8 @@ const toOpportunity = (r: Row): Opportunity => ({
   description: r.description ?? undefined,
   curriculum: r.curriculum ?? undefined,
   syllabusId: r.syllabus_id ?? undefined,
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
   studentId: r.student_id ?? undefined,
   enquiryId: r.enquiry_id ?? undefined,
   schedule: r.schedule ?? undefined,
@@ -219,6 +229,8 @@ const toReport = (r: Row): StudentReport => ({
   cycleId: r.cycle_id,
   studentId: r.student_id,
   tutorId: r.tutor_id,
+  subject: r.subject ?? undefined,
+  enrolmentId: r.enrolment_id ?? undefined,
   attainment: r.attainment ?? undefined,
   effort: r.effort ?? undefined,
   progress: r.progress ?? undefined,
@@ -236,8 +248,9 @@ const toStudent = (r: Row): Student => ({
   id: r.id,
   familyId: r.family_id,
   fullName: r.full_name,
-  curriculum: r.curriculum,
-  syllabusId: r.syllabus_id,
+  curriculum: r.curriculum ?? undefined,
+  syllabusId: r.syllabus_id ?? undefined,
+  phase: r.phase ?? undefined,
   school: r.school ?? undefined,
   yearGroup: r.year_group ?? undefined,
   currentGrade: r.current_grade ?? undefined,
@@ -246,13 +259,53 @@ const toStudent = (r: Row): Student => ({
   notes: r.student_notes?.notes ?? undefined,
 });
 
-const toService = (r: Row): Service => ({ id: r.id, name: r.name, durationMin: r.duration_min, rate: Number(r.rate) });
+const toService = (r: Row): Service => ({
+  id: r.id,
+  name: r.name,
+  durationMin: r.duration_min,
+  rate: Number(r.rate),
+  subject: r.subject ?? undefined,
+  phase: r.phase ?? undefined,
+});
+
+const toEnrolment = (r: Row): Enrolment => ({
+  id: r.id,
+  studentId: r.student_id,
+  subject: r.subject,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  examBoard: r.exam_board ?? undefined,
+  tutorId: r.tutor_id ?? undefined,
+  syllabusId: r.syllabus_id ?? undefined,
+  topicListId: r.topic_list_id ?? undefined,
+  active: r.active,
+  createdAt: r.created_at ?? undefined,
+});
+
+const toTopicList = (r: Row): TopicList => ({
+  id: r.id,
+  subject: r.subject,
+  curriculum: r.curriculum ?? undefined,
+  level: r.level ?? undefined,
+  name: r.name,
+  createdAt: r.created_at ?? undefined,
+});
+
+const toTopic = (r: Row): Topic => ({
+  id: r.id,
+  listId: r.list_id,
+  unit: r.unit ?? undefined,
+  name: r.name,
+  sort: r.sort ?? 0,
+  createdAt: r.created_at ?? undefined,
+});
 
 const toLesson = (r: Row): Lesson => ({
   id: r.id,
   tutorId: r.tutor_id,
   studentIds: r.student_ids,
   serviceId: r.service_id,
+  subject: r.subject ?? undefined,
   start: new Date(r.start_at).toISOString(),
   end: new Date(r.end_at).toISOString(),
   location: r.location,
@@ -335,6 +388,18 @@ const toInvoice = (r: Row): Invoice => ({
     reference: p.reference ?? undefined,
   })),
 });
+
+/** The add_my_child RPC's p_subjects: snake_case keys, blanks left out. */
+function addChildSubjects(subjects: NewChildSubject[]): Row[] {
+  return subjects.map((s) =>
+    strip({
+      subject: s.subject.trim(),
+      curriculum: s.curriculum?.trim() || undefined,
+      level: s.level?.trim() || undefined,
+      exam_board: s.examBoard?.trim() || undefined,
+    }),
+  );
+}
 
 function strip(row: Row): Row {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
@@ -587,7 +652,14 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(await client.from('settings').update(fromSettings(patch)).eq('id', 1));
     },
     async saveTutor(t) {
-      const row = strip({ id: t.id, full_name: t.fullName, email: t.email, phone: t.phone, hourly_pay: t.hourlyPay, subjects: t.subjects, color: t.color });
+      const row = strip({
+        id: t.id,
+        full_name: t.fullName, email: t.email, phone: t.phone, hourly_pay: t.hourlyPay,
+        subjects: t.subjects,
+        curricula: t.curricula,
+        phases: t.phases,
+        color: t.color,
+      });
       return toTutor(check(await client.from('tutors').upsert(row).select().single()));
     },
     async saveFamily(f) {
@@ -601,6 +673,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         full_name: s.fullName,
         curriculum: s.curriculum,
         syllabus_id: s.syllabusId,
+        phase: s.phase,
         school: s.school,
         year_group: s.yearGroup,
         current_grade: s.currentGrade,
@@ -614,8 +687,43 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return toStudent({ ...saved, student_notes: { notes: s.notes } });
     },
     async saveService(s) {
-      const row = strip({ id: s.id, name: s.name, duration_min: s.durationMin, rate: s.rate });
+      const row = strip({ id: s.id, name: s.name, duration_min: s.durationMin, rate: s.rate, subject: s.subject, phase: s.phase });
       return toService(check(await client.from('services').upsert(row).select().single()));
+    },
+
+    async listEnrolments(filter = {}) {
+      let q = client.from('enrolments').select('*');
+      if (filter.studentId) q = q.eq('student_id', filter.studentId);
+      return check(await q.order('subject')).map(toEnrolment);
+    },
+    async saveEnrolment(e) {
+      // topic_list_id is never sent: the server links each enrolment to its shared list.
+      const row = strip({
+        id: e.id,
+        student_id: e.studentId,
+        subject: e.subject.trim(),
+        curriculum: e.curriculum?.trim() || null,
+        level: e.level?.trim() || null,
+        exam_board: e.examBoard?.trim() || null,
+        tutor_id: e.tutorId ?? null,
+        syllabus_id: e.syllabusId ?? null,
+        active: e.active,
+      });
+      return toEnrolment(check(await client.from('enrolments').upsert(row).select().single()));
+    },
+    async listTopicLists() {
+      return check(await client.from('topic_lists').select('*').order('name')).map(toTopicList);
+    },
+    async listTopics(filter = {}) {
+      let q = client.from('topics').select('*');
+      if (filter.listId) q = q.eq('list_id', filter.listId);
+      return check(await q.order('list_id').order('sort')).map(toTopic);
+    },
+    async addTopic(input) {
+      const row = check(
+        await client.rpc('add_topic', { p_enrolment_id: input.enrolmentId, p_name: input.name, p_unit: input.unit ?? null }),
+      ) as Row;
+      return toTopic(row);
     },
 
     async createLessons(lessons) {
@@ -624,6 +732,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           tutor_id: l.tutorId,
           student_ids: l.studentIds,
           service_id: l.serviceId,
+          subject: l.subject,
           start_at: l.start,
           end_at: l.end,
           location: l.location,
@@ -687,10 +796,10 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(
         await client.rpc('add_my_child', {
           p_full_name: c.fullName,
-          p_curriculum: c.curriculum,
-          p_syllabus_id: c.syllabusId,
           p_school: c.school ?? null,
           p_year_group: c.yearGroup ?? null,
+          p_phase: c.phase ?? null,
+          p_subjects: addChildSubjects(c.subjects),
         }),
       );
     },
@@ -709,6 +818,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_message: e.message ?? null,
           p_preferred_times: e.preferredTimes ?? null,
           p_source: e.source ?? 'app',
+          p_subject: e.subject ?? null,
+          p_phase: e.phase ?? null,
         }),
       );
     },
@@ -724,6 +835,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         phone: p.phone,
         student_name: p.studentName,
         curriculum: p.curriculum,
+        subject: p.subject,
+        phase: p.phase,
         year_group: p.yearGroup,
         message: p.message,
         preferred_times: p.preferredTimes,
@@ -804,6 +917,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_service_id: r.serviceId,
           p_start: r.start,
           p_note: r.note ?? null,
+          p_subject: r.subject ?? null,
         }),
       );
     },
@@ -885,6 +999,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
         description: o.description,
         curriculum: o.curriculum,
         syllabus_id: o.syllabusId,
+        subject: o.subject,
+        phase: o.phase,
         student_id: o.studentId,
         enquiry_id: o.enquiryId,
         schedule: o.schedule,
@@ -919,6 +1035,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_qualifications: a.qualifications ?? null,
           p_availability: a.availability ?? null,
           p_cv_path: a.cvPath ?? null,
+          p_phases: a.phases ?? [],
         }),
       );
     },
@@ -933,6 +1050,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           phone: r.phone ?? undefined,
           curricula: r.curricula ?? [],
           subjects: r.subjects ?? undefined,
+          phases: r.phases ?? [],
           experience: r.experience ?? undefined,
           qualifications: r.qualifications ?? undefined,
           availability: r.availability ?? undefined,

@@ -7,11 +7,23 @@ import { Icon } from '@/components/icon';
 import { LessonStatusBadge } from '@/components/lessons';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { topicName } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAbsences, useAction, useAvailability, useLesson, useLessons, useLookup, useNotes, useSettings, useTutors } from '@/data/hooks';
+import {
+  useAbsences,
+  useAction,
+  useAvailability,
+  useEnrolments,
+  useLesson,
+  useLessons,
+  useLookup,
+  useNotes,
+  useSettings,
+  useTopicLookup,
+  useTutors,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
+import { lessonSubject, studentSubjects } from '@/domain/enrolments';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findClashes, isAbsent } from '@/domain/scheduling';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,6 +36,8 @@ export default function LessonDetail() {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const notes = useNotes({ lessonId: id });
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
   const [mode, setMode] = useState<'view' | 'cancel' | 'move' | 'cover'>('view');
 
   if (lesson.isLoading || !lookup.ready) return <Loading />;
@@ -33,6 +47,7 @@ export default function LessonDetail() {
   const service = lookup.service(l.serviceId);
   const tutor = lookup.tutor(l.tutorId);
   const note = notes.data?.[0];
+  const subject = lessonSubject(l, enrolments.data ?? []);
   const isStaff = me.role === 'admin' || (me.role === 'tutor' && me.tutorId === l.tutorId);
   const scheduled = l.status === 'scheduled';
   const started = new Date(l.start) <= new Date();
@@ -51,6 +66,12 @@ export default function LessonDetail() {
           </View>
           <LessonStatusBadge lesson={l} />
         </Row>
+        {subject ? (
+          <Row gap={Spacing.two}>
+            <Icon name="book" size={18} color={theme.textMuted} />
+            <Txt>Subject: {subject}</Txt>
+          </Row>
+        ) : null}
         <Row gap={Spacing.two}>
           <Avatar name={tutor?.fullName ?? '?'} color={tutor?.color} size={32} />
           <Txt>{tutor?.fullName}</Txt>
@@ -72,7 +93,7 @@ export default function LessonDetail() {
             <ListItem
               key={sid}
               title={s?.fullName ?? 'Student'}
-              subtitle={note?.attendance[sid] ? `Attendance: ${note.attendance[sid]}` : s?.curriculum}
+              subtitle={note?.attendance[sid] ? `Attendance: ${note.attendance[sid]}` : studentSubjects(enrolments.data ?? [], sid) || s?.curriculum}
               left={<Avatar name={s?.fullName ?? '?'} size={36} />}
               onPress={me.role === 'admin' || me.role === 'tutor' ? () => router.push({ pathname: '/students/[id]', params: { id: sid } }) : undefined}
             />
@@ -87,7 +108,7 @@ export default function LessonDetail() {
             {note.topicIds.length ? (
               <Row gap={4} wrap>
                 {note.topicIds.map((t) => (
-                  <Badge key={t} label={topicName(t)} />
+                  <Badge key={t} label={topics.name(t)} />
                 ))}
               </Row>
             ) : null}

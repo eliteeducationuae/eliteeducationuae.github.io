@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Spacing, elevation, font } from '@/constants/theme';
-import type { Lookup } from '@/data/hooks';
+import { useEnrolments, type Lookup } from '@/data/hooks';
 import { addDays, formatTime, isSameDay, minutesBetween, startOfDay, weekdayShort } from '@/domain/dates';
+import { lessonSubject } from '@/domain/enrolments';
 import type { Lesson, LessonStatus } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -25,6 +26,17 @@ export function LessonStatusBadge({ lesson, now = new Date() }: { lesson: Lesson
   return <Badge label={s.label} tone={s.tone} />;
 }
 
+/** The lesson's subject when it is known: its own, or the student's only subject. */
+export function useLessonSubject(lesson: Pick<Lesson, 'subject' | 'studentIds'>): string | undefined {
+  const enrolments = useEnrolments();
+  return lessonSubject(lesson, enrolments.data ?? []);
+}
+
+/** 'Layla · Chemistry', or just the names when the subject is not known. */
+export function withSubject(names: string, subject?: string): string {
+  return subject ? `${names} · ${subject}` : names;
+}
+
 /** A lesson in a list. `perspective` decides whose name leads. */
 export function LessonCard({
   lesson,
@@ -40,8 +52,9 @@ export function LessonCard({
   const theme = useTheme();
   const tutor = lookup.tutor(lesson.tutorId);
   const service = lookup.service(lesson.serviceId);
+  const subject = useLessonSubject(lesson);
   const students = lookup.studentNames(lesson.studentIds);
-  const title = perspective === 'family' ? (service?.name ?? 'Lesson') : students;
+  const title = perspective === 'family' ? (subject ?? service?.name ?? 'Lesson') : withSubject(students, subject);
   const subtitle =
     perspective === 'family'
       ? `${students} · with ${tutor?.fullName ?? 'tutor'}`
@@ -173,6 +186,7 @@ function TimelineBlock({
   onMove?: (lesson: Lesson, deltaMin: number) => void;
 }) {
   const theme = useTheme();
+  const subject = useLessonSubject(l);
   const [armed, setArmed] = useState(false);
   const [dy, setDy] = useState(0);
   const responder = useMemo(
@@ -197,6 +211,7 @@ function TimelineBlock({
   );
   const color = lookup.tutor(l.tutorId)?.color ?? theme.accent;
   const inactive = l.status === 'cancelled' || l.status === 'late-cancel';
+  const label = withSubject(lookup.studentNames(l.studentIds), subject);
   const preview = dragToMinutes(dy);
   const shownStart = new Date(new Date(l.start).getTime() + preview * 60_000);
   const shownEnd = new Date(new Date(l.end).getTime() + preview * 60_000);
@@ -214,9 +229,9 @@ function TimelineBlock({
         onPress={() => (armed ? setArmed(false) : router.push({ pathname: '/lesson/[id]', params: { id: l.id } }))}
         onLongPress={onMove ? () => setArmed(true) : undefined}
         delayLongPress={300}
-        accessibilityLabel={`${lookup.studentNames(l.studentIds)} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
+        accessibilityLabel={`${label} at ${formatTime(l.start)}${onMove ? '. Press and hold, then drag to move.' : ''}`}>
         <Txt variant="small" numberOfLines={1} style={[font('sans', 'bold'), { color: inactive ? theme.text : theme.onHero }]}>
-          {lookup.studentNames(l.studentIds)}
+          {label}
         </Txt>
         <Txt variant="small" numberOfLines={1} style={{ color: inactive ? theme.textMuted : theme.onHero, opacity: inactive ? 1 : 0.9 }}>
           {formatTime(shownStart)}–{formatTime(shownEnd)}

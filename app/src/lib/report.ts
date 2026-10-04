@@ -3,7 +3,6 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 import { MasteryColors } from '@/constants/theme';
-import { topicName } from '@/data/curriculum';
 import { formatDate } from '@/domain/dates';
 import { focusTopics, masteryByTopic, RATING_LABELS, summariseSyllabus, type Syllabus } from '@/domain/progress';
 import type { Homework, Lesson, LessonNote, Student, TopicRating } from '@/domain/types';
@@ -19,11 +18,17 @@ export interface ReportInput {
   lessons: Lesson[];
   homework: Homework[];
   businessName: string;
+  /** Resolves a topic id to its name (built-in or stored). Defaults to the id itself. */
+  topicName?: (id: string) => string;
+  /** The subject this report covers, for example 'IGCSE Chemistry'. Defaults to the syllabus name. */
+  subject?: string;
 }
 
 /** A printable progress report for parents. */
 export function progressReportHTML(input: ReportInput, now: Date = new Date()): string {
   const { student, syllabus, ratings, notes, lessons, homework } = input;
+  const topicName = input.topicName ?? ((id: string) => id);
+  const subject = input.subject?.trim() || syllabus.name;
   const mastery = masteryByTopic(ratings);
   const summary = summariseSyllabus(syllabus, mastery);
   const focus = focusTopics(mastery, 5);
@@ -43,11 +48,11 @@ export function progressReportHTML(input: ReportInput, now: Date = new Date()): 
         }</td></tr>`,
     )
     .join('');
-  const subtitle = [syllabus.name, student.school, `Prepared ${formatDate(now)}`].filter(Boolean).join(' · ');
+  const subtitle = [subject !== syllabus.name ? syllabus.name : undefined, student.school, `Prepared ${formatDate(now)}`].filter(Boolean).join(' · ');
 
-  const body = `${pdfHeader({ meta: 'Progress report', title: student.fullName, subtitle })}
+  const body = `${pdfHeader({ meta: 'Progress report', title: `${student.fullName} · ${subject} progress`, subtitle })}
   <div class="stats">
-    <div class="stat"><b>${summary.coveragePercent}%</b><span>Syllabus covered</span></div>
+    <div class="stat"><b>${summary.coveragePercent}%</b><span>Topics covered</span></div>
     <div class="stat"><b>${summary.masteryPercent}%</b><span>Average mastery</span></div>
     <div class="stat"><b>${attended}/${taught.length}</b><span>Lessons attended</span></div>
     <div class="stat"><b>${homework.length ? Math.round((hwDone / homework.length) * 100) : 0}%</b><span>Homework completed</span></div>
@@ -64,7 +69,7 @@ export function progressReportHTML(input: ReportInput, now: Date = new Date()): 
     })
     .join('')}`;
 
-  return pdfDocument({ title: `Progress report: ${student.fullName}${input.businessName ? ` | ${input.businessName}` : ''}`, body });
+  return pdfDocument({ title: `Progress report: ${student.fullName} · ${subject}${input.businessName ? ` | ${input.businessName}` : ''}`, body });
 }
 
 export async function shareProgressReport(input: ReportInput) {
@@ -75,7 +80,7 @@ export async function shareProgressReport(input: ReportInput) {
   }
   const { uri } = await Print.printToFileAsync({ html });
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: `${input.student.fullName} — progress report` });
+    await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: `${input.student.fullName} · ${input.subject?.trim() || input.syllabus.name} progress report` });
   } else {
     await Print.printAsync({ uri });
   }

@@ -5,8 +5,9 @@ import { View } from 'react-native';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useLessons, useLookup, useOpenSlots, useServices, useStudents } from '@/data/hooks';
+import { useAction, useEnrolments, useLessons, useLookup, useOpenSlots, useServices, useStudents } from '@/data/hooks';
 import { addDays, formatDay, formatTime, startOfDay, toDateKey } from '@/domain/dates';
+import { activeEnrolments, enrolmentFor, lessonSubject, sameSubject } from '@/domain/enrolments';
 import { byStart } from '@/domain/scheduling';
 
 const today = startOfDay(new Date());
@@ -19,6 +20,7 @@ export default function Book() {
   const students = useStudents();
   const services = useServices();
   const lessons = useLessons(addDays(today, -90), addDays(today, 90));
+  const enrolments = useEnrolments();
   const request = useAction(source.requestLesson);
 
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -27,15 +29,30 @@ export default function Book() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [pickedSubject, setPickedSubject] = useState<string | null>(null);
 
   const all = lessons.data ?? [];
   const moving = lessonId ? all.find((l) => l.id === lessonId) : undefined;
   const kids = students.data ?? [];
   const student = kids.find((s) => s.id === (studentId ?? moving?.studentIds[0])) ?? (kids.length === 1 ? kids[0] : undefined);
   const theirs = student ? all.filter((l) => l.studentIds.includes(student.id)).sort(byStart) : [];
-  const usual = [...theirs].reverse().find((l) => l.status === 'completed' || l.status === 'scheduled');
-  const tutorId = moving?.tutorId ?? usual?.tutorId;
-  const service = lookup.service(moving?.serviceId ?? usual?.serviceId ?? '') ?? services.data?.[0];
+  const allEnrolments = enrolments.data ?? [];
+  const studentEnrolments = student ? activeEnrolments(allEnrolments, student.id) : [];
+  const recent = [...theirs].reverse().filter((l) => l.status === 'completed' || l.status === 'scheduled');
+  const usual = recent[0];
+  // A move keeps the lesson's own subject; a new lesson uses the chosen subject, the only one, or the usual lesson's.
+  const subject =
+    kind === 'reschedule'
+      ? moving
+        ? lessonSubject(moving, allEnrolments)
+        : undefined
+      : (pickedSubject ?? (studentEnrolments.length === 1 ? studentEnrolments[0].subject : usual ? lessonSubject(usual, allEnrolments) : undefined));
+  const enrolment = student && subject ? enrolmentFor(allEnrolments, student.id, subject) : undefined;
+  // Older lessons may carry no subject; then the most recent lesson is still the best guide.
+  const subjectKnown = recent.some((l) => lessonSubject(l, allEnrolments));
+  const usualForSubject = subject && subjectKnown ? recent.find((l) => sameSubject(lessonSubject(l, allEnrolments), subject)) : usual;
+  const tutorId = moving?.tutorId ?? enrolment?.tutorId ?? usualForSubject?.tutorId;
+  const service = lookup.service(moving?.serviceId ?? usualForSubject?.serviceId ?? usual?.serviceId ?? '') ?? services.data?.[0];
   const duration = moving ? (new Date(moving.end).getTime() - new Date(moving.start).getTime()) / 60_000 : service?.durationMin;
   const slots = useOpenSlots({ tutorId, from: toDateKey(today), days: WINDOW_DAYS, durationMin: duration, ignoreLessonId: moving?.id });
   const upcoming = theirs.filter((l) => l.status === 'scheduled' && new Date(l.start) > new Date());
@@ -54,7 +71,16 @@ export default function Book() {
   async function submit() {
     if (!student || !chosen || !tutorId || !service) return;
     await request.mutateAsync([
-      { studentId: student.id, kind, lessonId: kind === 'reschedule' ? moving?.id : undefined, tutorId, serviceId: service.id, start: chosen, note: note.trim() || undefined },
+      {
+        studentId: student.id,
+        kind,
+        lessonId: kind === 'reschedule' ? moving?.id : undefined,
+        tutorId,
+        serviceId: service.id,
+        subject,
+        start: chosen,
+        note: note.trim() || undefined,
+      },
     ]);
     router.back();
   }
@@ -76,7 +102,7 @@ export default function Book() {
         <Section title="Which child?">
           <Row gap={Spacing.one} wrap>
             {kids.map((k) => (
-              <Chip key={k.id} label={k.fullName.split(' ')[0]} selected={student?.id === k.id} onPress={() => { setStudentId(k.id); setLessonId(null); setChosen(null); }} />
+              <Chip key={k.id} label={k.fullName.split(' ')[0]} selected={student?.id === k.id} onPress={() => { setStudentId(k.id); setLessonId(null); setChosen(null); setPickedSubject(null); }} />
             ))}
           </Row>
         </Section>
@@ -104,12 +130,27 @@ export default function Book() {
             </Section>
           ) : null}
 
+          {kind === 'new-lesson' && studentEnrolments.length > 1 ? (
+            <Section title="Which subject?">
+              <Row gap={Spacing.one} wrap>
+                {studentEnrolments.map((e) => (
+                  <Chip
+                    key={e.id}
+                    label={e.subject}
+                    selected={sameSubject(subject, e.subject)}
+                    onPress={() => { setPickedSubject(e.subject); setChosen(null); }}
+                  />
+                ))}
+              </Row>
+            </Section>
+          ) : null}
+
           {!tutorId ? (
             <Banner icon="alert">
-              {student.fullName.split(' ')[0]} does not yet have a regular tutor. Please send us a message and we will arrange the first lesson.
+              {student.fullName.split(' ')[0]} does not yet have a regular tutor{subject ? ` for ${subject}` : ''}. Please send us a message and we will arrange the first lesson.
             </Banner>
           ) : kind === 'reschedule' && !moving ? null : (
-            <Section title={`Times with ${lookup.tutor(tutorId)?.fullName ?? 'your tutor'} · ${duration} min`}>
+            <Section title={`${subject ? `${subject} · ` : ''}Times with ${lookup.tutor(tutorId)?.fullName ?? 'your tutor'} · ${duration} min`}>
               {slots.isLoading ? (
                 <Loading />
               ) : days.length === 0 ? (

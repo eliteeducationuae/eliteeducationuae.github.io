@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { reportProgress, ReportRow } from '@/components/reports';
+import { reportProgress, ReportRow, sortReports } from '@/components/reports';
 import { Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, ProgressBar, Row, Screen, Section, Segmented, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useLookup, useReportCycles, useStudentReports } from '@/data/hooks';
+import { useAction, useEnrolments, useLookup, useReportCycles, useStudentReports } from '@/data/hooks';
 import { addDays, formatDate, toDateKey } from '@/domain/dates';
 import type { StudentReport } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
@@ -21,13 +21,18 @@ export default function AdminReports() {
   const [filter, setFilter] = useState<Filter>('submitted');
   const [creating, setCreating] = useState(false);
   const publish = useAction(source.setReportStatus);
+  const enrolments = useEnrolments();
   if (cycles.isLoading || reports.isLoading || !lookup.ready) return <Loading />;
 
   const sorted = [...(cycles.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const cycle = sorted.find((c) => c.id === cycleId) ?? sorted[0];
   const inCycle = (reports.data ?? []).filter((r) => r.cycleId === cycle?.id);
   const count = (f: Filter) => inCycle.filter((r) => r.status === f).length;
-  const list = inCycle.filter((r) => r.status === filter).sort((a, b) => (lookup.student(a.studentId)?.fullName ?? '').localeCompare(lookup.student(b.studentId)?.fullName ?? ''));
+  const list = sortReports(
+    inCycle.filter((r) => r.status === filter),
+    (id) => lookup.student(id)?.fullName ?? '',
+    enrolments.data ?? [],
+  );
   const byTutor = new Map<string, StudentReport[]>();
   for (const r of inCycle) byTutor.set(r.tutorId, [...(byTutor.get(r.tutorId) ?? []), r]);
   const approved = inCycle.filter((r) => r.status === 'approved');
@@ -114,7 +119,7 @@ export default function AdminReports() {
           ) : (
             <View style={{ gap: Spacing.two }}>
               {list.map((r) => (
-                <ReportRow key={r.id} report={r} subtitle={lookup.tutor(r.tutorId)?.fullName} />
+                <ReportRow key={r.id} report={r} showTutor />
               ))}
             </View>
           )}
@@ -134,8 +139,8 @@ function NewCycle({ onDone, onCancel }: { onDone: () => void; onCancel?: () => v
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Open a report round</Txt>
-      <Txt variant="muted">Every student taught since the start date gets a draft report, assigned to the tutor who taught them most.</Txt>
-      <Field label="Name" value={name} onChangeText={setName} placeholder="e.g. Term 1 2026" />
+      <Txt variant="muted">Each student taught since the start date receives a draft report for every subject they study, assigned to that subject’s tutor.</Txt>
+      <Field label="Name" value={name} onChangeText={setName} placeholder="For example, Term 1 2026" />
       <Field label="Lessons since (YYYY-MM-DD)" value={startsOn} onChangeText={setStartsOn} />
       <Field label="Due (YYYY-MM-DD)" value={due} onChangeText={setDue} />
       <ErrorNote error={open.error} />

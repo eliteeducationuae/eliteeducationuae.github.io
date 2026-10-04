@@ -35,7 +35,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     const end = new Date(new Date(lesson.end).getTime() + deltaMin * 60_000);
     const clashes = findClashes({ start, end, tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id }, lessons.data ?? []);
     confirm(
-      `Move ${lookup.studentNames(lesson.studentIds)}’s lesson?`,
+      `Move ${lookup.studentNames(lesson.studentIds)}’s ${lesson.subject ? `${lesson.subject} ` : ''}lesson?`,
       `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}`,
       () => move.mutate([lesson.id, start.toISOString(), end.toISOString()]),
       'Move',

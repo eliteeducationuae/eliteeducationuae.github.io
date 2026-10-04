@@ -3,7 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { APPLICATION_STATUS } from '@/components/hiring';
+import { APPLICATION_STATUS, teachingFromApplication } from '@/components/hiring';
 import { tutorColorFor } from '@/lib/tutor-colors';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -39,7 +39,14 @@ function Detail({ a }: { a: TutorApplication }) {
 
   async function hire() {
     const tutor = await saveTutor.mutateAsync([
-      { fullName: a.fullName, email: a.email, phone: a.phone, hourlyPay: Number(pay) || 0, subjects: a.curricula, color: tutorColorFor(a.fullName) },
+      {
+        fullName: a.fullName,
+        email: a.email,
+        phone: a.phone,
+        hourlyPay: Number(pay) || 0,
+        ...teachingFromApplication(a),
+        color: tutorColorFor(a.fullName),
+      },
     ]);
     await update.mutateAsync([a.id, { status: 'hired', tutorId: tutor.id }]);
     router.push({ pathname: '/manage/tutor-edit', params: { id: tutor.id } });
@@ -59,10 +66,24 @@ function Detail({ a }: { a: TutorApplication }) {
           </View>
           <Badge label={APPLICATION_STATUS[a.status].label} tone={APPLICATION_STATUS[a.status].tone} />
         </Row>
-        <Txt>
-          <Txt style={{ fontWeight: '700' }}>Teaches: </Txt>
-          {[a.curricula.join(', '), a.subjects].filter(Boolean).join(' — ')}
-        </Txt>
+        {a.subjects ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Subjects: </Txt>
+            {a.subjects}
+          </Txt>
+        ) : null}
+        {a.curricula.length ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Curricula: </Txt>
+            {a.curricula.join(', ')}
+          </Txt>
+        ) : null}
+        {a.phases?.length ? (
+          <Txt>
+            <Txt style={{ fontWeight: '700' }}>Phases: </Txt>
+            {a.phases.join(', ')}
+          </Txt>
+        ) : null}
         {a.qualifications ? <Txt variant="muted">Qualifications: {a.qualifications}</Txt> : null}
         {a.experience ? <Txt>{a.experience}</Txt> : null}
         {a.availability ? <Txt variant="muted">Available: {a.availability}</Txt> : null}

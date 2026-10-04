@@ -128,7 +128,7 @@ describe('invoices', () => {
 });
 
 describe('tutorEarnings', () => {
-  const tutor: Tutor = { id: 't1', fullName: 'T', email: 't@x', hourlyPay: 200, subjects: [], color: '#000' };
+  const tutor: Tutor = { id: 't1', fullName: 'T', email: 't@x', hourlyPay: 200, subjects: [], curricula: [], phases: [], color: '#000' };
   it('pays completed, no-show and (optionally) late-cancelled lessons by duration', () => {
     const lessons = [
       lesson({ id: 'a' }),

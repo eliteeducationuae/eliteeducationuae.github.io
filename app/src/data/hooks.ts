@@ -1,7 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { buildTopicLookup, type TopicLookup } from '@/domain/topics';
 import type { Family, Service, Student, Tutor } from '@/domain/types';
+
+import { SYLLABUSES } from './curriculum';
 
 import { source } from './index';
 import { queryClient } from './query';
@@ -132,3 +135,27 @@ export const useTutorInvoices = () => useQuery({ queryKey: ['tutor-invoices'], q
 export const useReportCycles = () => useQuery({ queryKey: ['report-cycles'], queryFn: () => source.listReportCycles() });
 export const useStudentReports = () => useQuery({ queryKey: ['student-reports'], queryFn: () => source.listStudentReports() });
 export const useExpenses = () => useQuery({ queryKey: ['expenses'], queryFn: () => source.listExpenses() });
+
+// Subjects: enrolments and shared topic lists
+
+export const useEnrolments = (studentId?: string) =>
+  useQuery({ queryKey: ['enrolments', studentId], queryFn: () => source.listEnrolments(studentId ? { studentId } : undefined) });
+export const useTopicLists = () => useQuery({ queryKey: ['topic-lists'], queryFn: () => source.listTopicLists() });
+export const useTopics = () => useQuery({ queryKey: ['topics'], queryFn: () => source.listTopics() });
+
+/** Topic names, units and trees from the built-in syllabuses plus the shared lists stored on the server. */
+export function useTopicLookup(): TopicLookup & { ready: boolean } {
+  const lists = useTopicLists();
+  const topics = useTopics();
+  return useMemo(() => {
+    const lookup = buildTopicLookup(SYLLABUSES, lists.data ?? [], topics.data ?? []);
+    return {
+      name: lookup.name,
+      unit: lookup.unit,
+      subjectOf: lookup.subjectOf,
+      treeFor: lookup.treeFor,
+      builtIn: lookup.builtIn,
+      ready: !!(lists.data && topics.data),
+    };
+  }, [lists.data, topics.data]);
+}

@@ -1,15 +1,17 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { View } from 'react-native';
 
 import { RatingPicker } from '@/components/progress';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { getSyllabus, topicName } from '@/data/curriculum';
+import { getSyllabus } from '@/data/curriculum';
 import { source } from '@/data';
-import { useAction, useLesson, useLookup, useRatings } from '@/data/hooks';
+import { useAction, useEnrolments, useLesson, useLookup, useRatings, useTopicLookup } from '@/data/hooks';
 import { addDays, formatDay, toDateKey } from '@/domain/dates';
-import { masteryByTopic } from '@/domain/progress';
+import { enrolmentFor, enrolmentTitle, lessonSubject } from '@/domain/enrolments';
+import { masteryByTopic, type Syllabus } from '@/domain/progress';
+import { DEFAULT_UNIT } from '@/domain/topics';
 import type { AttendanceMark, TopicRating } from '@/domain/types';
 
 type Rating = TopicRating['rating'];
@@ -20,7 +22,10 @@ export default function CompleteLesson() {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const allRatings = useRatings();
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
   const complete = useAction(source.completeLesson);
+  const addTopic = useAction(source.addTopic);
 
   const [status, setStatus] = useState<'completed' | 'no-show'>('completed');
   const [attendance, setAttendance] = useState<Record<string, AttendanceMark>>({});
@@ -30,25 +35,37 @@ export default function CompleteLesson() {
   const [privateNote, setPrivateNote] = useState('');
   const [homework, setHomework] = useState<Record<string, string>>({});
   const [browseUnit, setBrowseUnit] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  // 'none' files the topic under the general list; 'new' takes the typed unit; anything else is an existing unit name.
+  const [newUnit, setNewUnit] = useState<string>('none');
+  const [typedUnit, setTypedUnit] = useState('');
 
   const l = lesson.data;
   const students = (l?.studentIds ?? []).map((sid) => lookup.student(sid)).filter((s) => !!s);
-  const syllabus = students[0] ? getSyllabus(students[0].syllabusId) : undefined;
+  const first = students[0];
+  const subject = l ? lessonSubject(l, enrolments.data ?? []) : undefined;
+  const enrolment = first ? enrolmentFor(enrolments.data ?? [], first.id, subject) : undefined;
+  const legacy = !enrolment && first ? (first.syllabusId ? getSyllabus(first.syllabusId) : undefined) : undefined;
+  const tree: Syllabus | undefined = enrolment ? topics.treeFor(enrolment) : legacy;
+  const heading = enrolment ? enrolmentTitle(enrolment) : (tree?.name ?? subject);
   const dueDate = toDateKey(addDays(l ? new Date(l.start) : new Date(), 7));
+  const firstId = first?.id;
 
   // Suggest where to pick up: the topics after the most recently rated one, plus anything still shaky.
-  const suggestions = useMemo(() => {
-    if (!syllabus || !students[0]) return [];
-    const mine = (allRatings.data ?? []).filter((r) => r.studentId === students[0]!.id);
-    const all = syllabus.units.flatMap((u) => u.topics.map((t) => t.id));
+  const suggestions = ((): string[] => {
+    if (!tree || !firstId) return [];
+    const all = tree.units.flatMap((u) => u.topics.map((t) => t.id));
+    const inTree = new Set(all);
+    const mine = (allRatings.data ?? []).filter((r) => r.studentId === firstId && inTree.has(r.topicId));
     const latest = [...mine].sort((a, b) => b.ratedAt.localeCompare(a.ratedAt))[0];
     const at = latest ? all.indexOf(latest.topicId) : -1;
     const next = all.slice(at + 1, at + 4);
     const shaky = [...masteryByTopic(mine).values()].filter((m) => m.rating <= 2).map((m) => m.topicId).slice(0, 3);
     return [...new Set([...next, ...shaky])];
-  }, [syllabus, students, allRatings.data]);
+  })();
 
-  if (lesson.isLoading || !lookup.ready) return <Loading />;
+  if (lesson.isLoading || !lookup.ready || enrolments.isLoading || !topics.ready) return <Loading />;
   if (!l) return <Screen><EmptyState title="Lesson not found" /></Screen>;
   if (l.status !== 'scheduled') {
     return (
@@ -63,6 +80,19 @@ export default function CompleteLesson() {
   const key = (studentId: string, topicId: string) => `${studentId}|${topicId}`;
   const mark = (sid: string) => attendance[sid] ?? 'present';
   const presentStudents = students.filter((s) => status === 'completed' && mark(s.id) !== 'absent');
+
+  const unitName = newUnit === 'new' ? typedUnit.trim() || undefined : newUnit === 'none' ? undefined : newUnit;
+
+  async function saveTopic() {
+    if (!enrolment || !newName.trim()) return;
+    const topic = await addTopic.mutateAsync([{ enrolmentId: enrolment.id, name: newName.trim(), unit: unitName }]);
+    setTopicIds((ids) => (ids.includes(topic.id) ? ids : [...ids, topic.id]));
+    setBrowseUnit(topic.unit?.trim() || unitName || DEFAULT_UNIT);
+    setAdding(false);
+    setNewName('');
+    setNewUnit('none');
+    setTypedUnit('');
+  }
 
   async function save() {
     await complete.mutateAsync([
@@ -128,48 +158,97 @@ export default function CompleteLesson() {
             ))}
           </Section>
 
-          {syllabus ? (
-            <Section title="Topics covered">
-              {suggestions.length ? (
-                <View style={{ gap: Spacing.one }}>
-                  <Txt variant="small">Suggested</Txt>
-                  <Row gap={Spacing.one} wrap>
-                    {suggestions.map((t) => (
-                      <Chip key={t} label={topicName(t)} selected={topicIds.includes(t)} onPress={() => toggleTopic(t)} />
+          <Section title={heading ? `${heading} topics` : 'Topics covered'}>
+            {tree && suggestions.length ? (
+              <View style={{ gap: Spacing.one }}>
+                <Txt variant="small">Suggested</Txt>
+                <Row gap={Spacing.one} wrap>
+                  {suggestions.map((t) => (
+                    <Chip key={t} label={topics.name(t)} selected={topicIds.includes(t)} onPress={() => toggleTopic(t)} />
+                  ))}
+                </Row>
+              </View>
+            ) : null}
+            {tree && tree.units.length ? (
+              <>
+                <Txt variant="small">Browse by unit</Txt>
+                <Row gap={Spacing.one} wrap>
+                  {tree.units.map((u) => (
+                    <Chip key={u.id} label={u.name} selected={browseUnit === u.name} onPress={() => setBrowseUnit(browseUnit === u.name ? null : u.name)} />
+                  ))}
+                </Row>
+              </>
+            ) : enrolment ? (
+              <Txt variant="muted">No topics have been recorded for {heading} yet. Please add the first topic covered today.</Txt>
+            ) : null}
+            {tree && browseUnit && tree.units.some((u) => u.name === browseUnit) ? (
+              <Card style={{ gap: Spacing.one }}>
+                <Row gap={Spacing.one} wrap>
+                  {tree.units
+                    .find((u) => u.name === browseUnit)!
+                    .topics.map((t) => (
+                      <Chip key={t.id} label={t.name} selected={topicIds.includes(t.id)} onPress={() => toggleTopic(t.id)} />
                     ))}
-                  </Row>
-                </View>
-              ) : null}
-              <Txt variant="small">Browse {syllabus.name}</Txt>
-              <Row gap={Spacing.one} wrap>
-                {syllabus.units.map((u) => (
-                  <Chip key={u.id} label={u.name} selected={browseUnit === u.id} onPress={() => setBrowseUnit(browseUnit === u.id ? null : u.id)} />
-                ))}
-              </Row>
-              {browseUnit ? (
-                <Card style={{ gap: Spacing.one }}>
+                </Row>
+              </Card>
+            ) : null}
+            {/* Topics chosen that are not on show (for example, just added before the list refreshed). */}
+            {topicIds.length ? (
+              <View style={{ gap: Spacing.one }}>
+                <Txt variant="small">Covered today</Txt>
+                <Row gap={Spacing.one} wrap>
+                  {topicIds.map((t) => (
+                    <Chip key={t} label={topics.name(t)} selected onPress={() => toggleTopic(t)} />
+                  ))}
+                </Row>
+              </View>
+            ) : null}
+            {enrolment ? (
+              adding ? (
+                <Card style={{ gap: Spacing.two }}>
+                  <Field label="Topic name" value={newName} onChangeText={setNewName} placeholder="For example, Rates of reaction" autoFocus />
+                  <Txt variant="label">Unit</Txt>
                   <Row gap={Spacing.one} wrap>
-                    {syllabus.units
-                      .find((u) => u.id === browseUnit)!
-                      .topics.map((t) => (
-                        <Chip key={t.id} label={t.name} selected={topicIds.includes(t.id)} onPress={() => toggleTopic(t.id)} />
-                      ))}
+                    {(tree?.units ?? []).map((u) => (
+                      <Chip key={u.id} label={u.name} selected={newUnit === u.name} onPress={() => setNewUnit(u.name)} />
+                    ))}
+                    <Chip label="New unit…" selected={newUnit === 'new'} onPress={() => setNewUnit('new')} />
+                    <Chip label="No unit" selected={newUnit === 'none'} onPress={() => setNewUnit('none')} />
+                  </Row>
+                  {newUnit === 'new' ? <Field label="Unit name" value={typedUnit} onChangeText={setTypedUnit} placeholder="For example, Organic chemistry" /> : null}
+                  <ErrorNote error={addTopic.error} />
+                  <Row gap={Spacing.two}>
+                    <Button title="Cancel" variant="ghost" size="sm" onPress={() => setAdding(false)} />
+                    <Button
+                      title="Add topic"
+                      variant="outline"
+                      size="sm"
+                      loading={addTopic.isPending}
+                      disabled={!newName.trim() || (newUnit === 'new' && !typedUnit.trim())}
+                      onPress={saveTopic}
+                    />
                   </Row>
                 </Card>
-              ) : null}
-            </Section>
-          ) : null}
+              ) : (
+                <Row>
+                  <Chip label="+ Add topic" onPress={() => setAdding(true)} />
+                </Row>
+              )
+            ) : (
+              <Txt variant="muted">Add {subject ?? 'this subject'} to the student’s subjects to build a topic list.</Txt>
+            )}
+          </Section>
 
           {topicIds.length && presentStudents.length ? (
             <Section title="How secure is each topic? (1–5)">
               {topicIds.map((tid) => (
                 <Card key={tid} style={{ gap: Spacing.two }}>
-                  <Txt variant="h3">{topicName(tid)}</Txt>
+                  <Txt variant="h3">{topics.name(tid)}</Txt>
                   {presentStudents.map((s) => (
                     <View key={s.id} style={{ gap: 4 }}>
                       {presentStudents.length > 1 ? <Txt variant="small">{s.fullName}</Txt> : null}
                       <RatingPicker
-                        label={`${topicName(tid)} for ${s.fullName}`}
+                        label={`${topics.name(tid)} for ${s.fullName}`}
                         value={ratings[key(s.id, tid)]}
                         onChange={(r) => setRatings((x) => ({ ...x, [key(s.id, tid)]: r }))}
                       />
@@ -188,7 +267,7 @@ export default function CompleteLesson() {
           multiline
           value={summary}
           onChangeText={setSummary}
-          placeholder="e.g. Worked through integration by parts, then two exam questions. Confident with the method; next time we will tackle definite integrals."
+          placeholder="For example: We reviewed last week’s work, then completed two exam-style questions. The method is now secure, and next time we will extend it to harder problems."
         />
       </Section>
 
@@ -200,7 +279,7 @@ export default function CompleteLesson() {
               label={presentStudents.length > 1 ? s.fullName : 'Homework'}
               value={homework[s.id] ?? ''}
               onChangeText={(t) => setHomework((h) => ({ ...h, [s.id]: t }))}
-              placeholder="e.g. Exercise 7C Q1–12"
+              placeholder="For example, past paper questions 1 to 5"
             />
           ))}
         </Section>

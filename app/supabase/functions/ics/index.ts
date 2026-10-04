@@ -1,6 +1,6 @@
 // Personal calendar feed: GET /functions/v1/ics?token=<profiles.ics_token>
 // Subscribed to from Apple/Google Calendar, so it authenticates by the secret token, not a session.
-// Deploy with --no-verify-jwt.
+// Deploy with --no-verify-jwt. Each event is titled with the lesson's subject (lessons.subject), e.g. 'Chemistry: Zara'.
 import { adminClient } from '../_shared/supabase.ts';
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       `DTSTAMP:${stamp(new Date().toISOString())}`,
       `DTSTART:${stamp(l.start_at)}`,
       `DTEND:${stamp(l.end_at)}`,
-      `SUMMARY:${esc(`Maths: ${who}`)}`,
+      `SUMMARY:${esc(`${(l.subject as string | null)?.trim() || 'Lesson'}: ${who}`)}`,
       `DESCRIPTION:${esc(`${name(services, l.service_id)} with ${name(tutors, l.tutor_id)}`)}`,
     );
     const where = l.location === 'online' ? l.meeting_url : l.address;
