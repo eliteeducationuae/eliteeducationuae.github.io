@@ -3,10 +3,10 @@ import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useLessons, useLookup } from '@/data/hooks';
+import { useAction, useBusyBlocks, useLessons, useLookup } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { addDays, formatDay, formatTime, relativeDay, startOfDay } from '@/domain/dates';
-import { findClashes } from '@/domain/scheduling';
+import { findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonRequest, RequestStatus } from '@/domain/types';
 
 import { Badge, Banner, Button, Card, ErrorNote, Field, Row, Txt, type Tone } from './ui';
@@ -27,12 +27,18 @@ export function RequestCard({ r }: { r: LessonRequest }) {
   const lessons = useLessons(today, addDays(today, 60));
   const decide = useAction(source.decideRequest);
   const withdraw = useAction(source.withdrawRequest);
+  // Google Calendar: a busy time is only a warning; the office may still approve.
+  const busyBlocks = useBusyBlocks(today, addDays(today, 60), r.tutorId);
   const [response, setResponse] = useState('');
   const s = REQUEST_STATUS[r.status];
   const original = r.lessonId ? (lessons.data ?? []).find((l) => l.id === r.lessonId) : undefined;
   const clash =
     r.status === 'pending' && me.role === 'admin'
       ? findClashes({ start: new Date(r.start), end: new Date(r.end), tutorId: r.tutorId, studentIds: [r.studentId], ignoreLessonId: r.lessonId }, lessons.data ?? [])
+      : [];
+  const busy =
+    r.status === 'pending' && (me.role === 'admin' || me.role === 'tutor')
+      ? findBusyClashes({ start: new Date(r.start), end: new Date(r.end), tutorId: r.tutorId }, busyBlocks.data ?? [])
       : [];
 
   return (
@@ -53,6 +59,11 @@ export function RequestCard({ r }: { r: LessonRequest }) {
       {r.note ? <Txt variant="muted">“{r.note}”</Txt> : null}
       {r.response ? <Txt variant="muted">Reply: {r.response}</Txt> : null}
       {clash.length ? <Banner tone="warning" icon="alert">This now clashes with another lesson. Please decline it and suggest another time.</Banner> : null}
+      {busy.length ? (
+        <Banner tone="warning" icon="alert">
+          Google Calendar shows the tutor as busy at this time. Please check with them before approving.
+        </Banner>
+      ) : null}
 
       {r.status === 'pending' && me.role === 'admin' ? (
         <>

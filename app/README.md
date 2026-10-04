@@ -12,7 +12,7 @@ The Elite Education app for iPhone (plus Android and web, from the same code). I
 | Parents | Invoices and a portal | Upcoming lessons, lesson notes, child progress, PDF progress reports and invoices paid by card in AED |
 | Cancellations | Manual | Your 24-hour policy is applied automatically. Parents see the fee before confirming; tutor cancellations never charge families; admins can waive fees. |
 | Packages | Add-on | Prepaid lesson bundles: credits are used automatically, with low-credit alerts on the dashboard |
-| Calendar | | Day, week and per-tutor timeline views, drag-to-reschedule, clash detection, holidays that recurring lessons skip, tutor time off with cover suggestions, and a live Apple/Google Calendar feed |
+| Calendar | | Day, week and per-tutor timeline views, drag-to-reschedule, clash detection, holidays that recurring lessons skip, tutor time off with cover suggestions, a live Apple/Google Calendar feed for families, and two-way Google Calendar sync for tutors and the office: lessons appear in Google with a Meet link, and Google busy times are kept out of bookable slots |
 | Sign-up | Admin creates every account | Parents sign up themselves (6-digit email code), add their children and request a free consultation; existing families and tutors are linked automatically by email |
 | Enquiries | Separate CRM | Built-in pipeline (new → contacted → trial booked → enrolled / lost) fed by the website form, the app and logged phone calls |
 | Booking | Admin books everything | Parents pick a real open slot from the tutor's availability to request an extra lesson or a move; one-tap approval creates or moves the lesson |
@@ -47,7 +47,8 @@ app/
   src/data/           DataSource interface, Supabase implementation, offline demo implementation, syllabus data
   supabase/
     migrations/       database schema, row-level security, server functions (complete/cancel lesson, invoicing)
-    functions/        Edge Functions: Stripe checkout + webhook, calendar feed, reminders, notifications, AI drafting
+    functions/        Edge Functions: Stripe checkout + webhook, calendar feed, reminders, notifications, AI drafting,
+                      Google Calendar connection (google-connect) and two-way sync (calendar-sync)
     tests/            permission tests run against a throwaway Postgres
 ```
 
@@ -142,6 +143,40 @@ How it behaves:
 
 **Device checklist (Craig, on a real iPhone):** sign in with Apple in both light and dark mode, and check that the busy spinner shown over the Apple button while signing in matches the button (black on light, white on dark) and is clearly visible.
 
+**Google Calendar and Meet.** Tutors and the office can connect a Google Calendar. Every lesson then appears in that calendar (tutors see their own lessons; the office sees every lesson), online lessons receive a Google Meet link automatically, and the tutor's busy times in Google are kept out of the slots families can request. This reuses the Google Cloud project and OAuth client from the sign-in step above. Set it up once, in this order:
+
+1. **Database.** Run `supabase/migrations/20261009000000_calendar.sql` in the Supabase SQL editor.
+2. **Calendar API.** In the [Google Cloud Console](https://console.cloud.google.com), open the same project and enable the **Google Calendar API** under *APIs & Services → Library*.
+3. **Consent screen.** Under *APIs & Services → OAuth consent screen → Data access*, add the scopes `https://www.googleapis.com/auth/calendar.events` and `https://www.googleapis.com/auth/calendar.freebusy`. While the app is in **Testing**, each tutor must be added as a test user, and Google expires their access after 7 days, so they would need to reconnect weekly. Publish the app and complete Google's verification for these scopes to make connections permanent.
+4. **Redirect URI.** Open the same OAuth client under *APIs & Services → Credentials* and add the authorised redirect URI `https://<project-ref>.supabase.co/functions/v1/google-connect`.
+5. **Secrets.** Copy the client ID and secret from that OAuth client:
+   ```bash
+   npx supabase secrets set GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=…
+   # If not already set: where the app lives, so people return to it after connecting.
+   npx supabase secrets set APP_URL=https://eliteeducation.me/app
+   # Optional: further comma-separated prefixes that may receive the result, for example a staging site.
+   npx supabase secrets set CALENDAR_RETURN_URLS=http://localhost:8081
+   ```
+6. **Deploy.** `npx supabase functions deploy google-connect calendar-sync`
+7. **Schedule** `calendar-sync` every 5 minutes, either in Supabase → *Edge Functions → Schedules*, or with pg_cron and pg_net (enable both under *Database → Extensions*) in the SQL editor:
+   ```sql
+   select cron.schedule('calendar-sync', '*/5 * * * *', $$
+     select net.http_post(
+       url := 'https://<project-ref>.supabase.co/functions/v1/calendar-sync',
+       headers := jsonb_build_object('Authorization', 'Bearer <anon key>')
+     )
+   $$);
+   ```
+
+How it behaves:
+
+- **Connecting.** Tutors connect from the Google Calendar card under *Me*, and Craig from the same card under *More*. Google asks for permission, then returns them to the app. Upcoming lessons for the next six months appear within a few minutes, and changes, cancellations and reassignments follow on every run.
+- **Meet links.** An online lesson without a link receives one from the tutor's calendar (or the office's, if the tutor has not connected). The link is saved on the lesson, so families see it in the app as usual. Google never emails the families: every change is written with notifications switched off.
+- **Busy times.** Every 5 minutes the tutor's busy times for the next 60 days are copied across, and those times disappear from the open slots families can request. Lessons we wrote ourselves are not counted twice.
+- **Families** keep the existing read-only calendar subscription feed; they do not connect Google.
+- **Disconnecting** removes upcoming lesson events from that calendar, withdraws our access at Google and deletes the stored tokens and busy times. If Google access is withdrawn from the Google side, the app shows that the calendar needs reconnecting.
+- **Privacy.** Only busy start and end times are copied from Google, never event titles, descriptions or attendees. Lesson events contain first names, the service, the tutor and the join link or address, never family contact or bank details. Google tokens are stored server-side only; the app can see whether a calendar is connected, but cannot read the tokens.
+
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
 ## Checks
@@ -154,7 +189,7 @@ npm run test:db    # schema, row-level security and billing functions against a 
 ## Roadmap ideas
 
 - AI worksheets on each student's weak topics
-- Two-way Google Calendar sync
+- Microsoft Outlook calendar sync, alongside the Google Calendar sync
 - Online booking of trial lessons from eliteeducation.me
 - WhatsApp reminders
 - Bank-feed import for expenses

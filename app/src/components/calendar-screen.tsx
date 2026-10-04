@@ -4,9 +4,9 @@ import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
+import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
 import { addDays, formatDay, formatMonth, formatTime, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
-import { byStart, findClashes, isClosed } from '@/domain/scheduling';
+import { byStart, findBusyClashes, findClashes, isClosed } from '@/domain/scheduling';
 import type { Lesson } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
 
@@ -26,6 +26,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const weekStart = startOfWeek(selected);
   const lessons = useLessons(weekStart, addDays(weekStart, 7));
   const closures = useClosures();
+  // Google Calendar: busy times only warn here; they never stop the office moving a lesson.
+  const busyBlocks = useBusyBlocks(weekStart, addDays(weekStart, 7));
   const move = useAction(source.rescheduleLesson);
   const closed = (closures.data ?? []).find((c) => isClosed(selected, [c]));
 
@@ -34,9 +36,12 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     const start = new Date(new Date(lesson.start).getTime() + deltaMin * 60_000);
     const end = new Date(new Date(lesson.end).getTime() + deltaMin * 60_000);
     const clashes = findClashes({ start, end, tutorId: lesson.tutorId, studentIds: lesson.studentIds, ignoreLessonId: lesson.id }, lessons.data ?? []);
+    const busy = findBusyClashes({ start, end, tutorId: lesson.tutorId }, busyBlocks.data ?? []);
     confirm(
       `Move ${lookup.studentNames(lesson.studentIds)}’s lesson?`,
-      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}`,
+      `${formatTime(lesson.start)} → ${formatTime(start)}–${formatTime(end)}${clashes.length ? '\n\nPlease note that this clashes with another lesson.' : ''}${
+        busy.length ? '\n\nPlease note that Google Calendar shows the tutor as busy at this time.' : ''
+      }`,
       () => move.mutate([lesson.id, start.toISOString(), end.toISOString()]),
       'Move',
     );
@@ -50,6 +55,9 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const dayLessons = all.filter((l) => isSameDay(new Date(l.start), selected));
+  const dayBusy = (busyBlocks.data ?? []).filter(
+    (b) => isSameDay(new Date(b.start), selected) && (!tutorFilter || b.tutorId === tutorFilter),
+  );
   const tutorIds =
     perspective === 'tutor'
       ? [...new Set(all.map((l) => l.tutorId))]
@@ -115,6 +123,12 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
       ) : view === 'day' ? (
         <View style={{ gap: Spacing.two }}>
           <Txt variant="label">{formatDay(selected)}</Txt>
+          {dayBusy.map((b) => (
+            <Txt key={b.id} variant="small">
+              {formatTime(b.start)}–{formatTime(b.end)} · Busy (Google Calendar)
+              {perspective === 'admin' ? ` · ${lookup.tutor(b.tutorId)?.fullName ?? 'Tutor'}` : ''}
+            </Txt>
+          ))}
           {dayLessons.length ? (
             dayLessons.map((l) => <LessonCard key={l.id} lesson={l} lookup={lookup} perspective={perspective} />)
           ) : (

@@ -12,7 +12,6 @@ import { SUPABASE_URL } from '@/config';
 
 import { Button, Card, Txt } from './ui';
 
-
 /** Add lessons to Apple / Google Calendar. Production uses a live subscription feed; the demo exports a file. */
 export function CalendarSyncCard() {
   const me = useMe();
@@ -38,14 +37,20 @@ export function CalendarSyncCard() {
     }
   }
 
+  const staff = me.role === 'admin' || me.role === 'tutor';
+  const title = staff ? 'Calendar subscription' : 'Add lessons to your calendar';
+  const detail = staff
+    ? feedUrl
+      ? 'Google Calendar sync above is the recommended option. Alternatively, subscribe to a read-only feed of your lessons in Apple Calendar or another calendar application.'
+      : 'Google Calendar sync above is the recommended option. Alternatively, export your upcoming lessons as a file for Apple Calendar or another calendar application.'
+    : feedUrl
+      ? 'Subscribe once and your lessons will remain up to date in Apple or Google Calendar, including any changes and cancellations.'
+      : 'Export your upcoming lessons as a file that can be added to Apple or Google Calendar.';
+
   return (
     <Card style={{ gap: Spacing.two }}>
-      <Txt variant="h3">Calendar sync</Txt>
-      <Txt variant="muted">
-        {feedUrl
-          ? 'Subscribe once and your lessons will stay up to date in Apple or Google Calendar, including any changes and cancellations.'
-          : 'Export your upcoming lessons to Apple or Google Calendar.'}
-      </Txt>
+      <Txt variant="h3">{title}</Txt>
+      <Txt variant="muted">{detail}</Txt>
       {feedUrl ? (
         <Button
           title="Subscribe in Calendar"
