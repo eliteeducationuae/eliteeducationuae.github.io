@@ -21,6 +21,10 @@ export interface Profile {
   studentId?: string;
   /** Secret token for the personal calendar feed URL. */
   icsToken?: string;
+  /** Whether this person has asked for reminders on WhatsApp (parents and tutors). */
+  whatsappOptIn?: boolean;
+  /** The WhatsApp number for reminders, in E.164 form, e.g. +971501234567. Kept when they opt out. */
+  whatsappNumber?: string;
 }
 
 export type FamilyStatus = 'prospect' | 'active' | 'archived';
