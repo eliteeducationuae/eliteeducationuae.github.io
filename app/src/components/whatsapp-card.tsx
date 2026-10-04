@@ -14,7 +14,7 @@ import {
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
-import { Badge, Button, Card, ErrorNote, Field, Row, Section, Txt } from './ui';
+import { Badge, Button, Card, ErrorNote, Field, Row, Txt } from './ui';
 
 const INVALID_NUMBER = 'Please enter your WhatsApp number with its country code, for example +971 50 123 4567.';
 
@@ -72,68 +72,72 @@ export function WhatsAppCard() {
   }
 
   return (
-    <Section title="WhatsApp reminders" action={<Badge label={savedOn ? 'On' : 'Off'} tone={savedOn ? 'gold' : 'neutral'} />}>
-      <Card style={{ gap: Spacing.three }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Txt style={{ flex: 1 }}>Send me reminders on WhatsApp</Txt>
-          <Switch
-            value={optIn}
-            onValueChange={(v) => {
-              setOptIn(v);
-              setInvalid(false);
-            }}
-            // The thumb is the text colour in both states (noir in light, ivory in dark), so it always stands out from the card;
-            // the track shows the state: deep gold (the accent, which clears 3:1 on white) when on, muted when off.
-            trackColor={{ true: theme.accent, false: theme.textMuted }}
-            thumbColor={theme.text}
-            // react-native-web paints the "on" thumb teal unless told otherwise.
-            {...({ activeThumbColor: theme.text } as object)}
-            accessibilityLabel="WhatsApp reminders"
-          />
-        </Row>
-        <View style={{ gap: Spacing.one }}>
-          {whatsAppMessageKinds(me.role).map((kind) => (
-            <Row key={kind} style={{ alignItems: 'flex-start' }}>
-              <Txt variant="muted" style={{ width: 10 }} aria-hidden>
-                •
-              </Txt>
-              <Txt variant="muted" style={{ flex: 1 }}>
-                {kind}
-              </Txt>
-            </Row>
-          ))}
-        </View>
-        {showNumber ? (
-          <Field
-            label="WhatsApp number"
-            value={number}
-            onChangeText={(t) => {
-              setNumber(t);
-              setInvalid(false);
-            }}
-            keyboardType="phone-pad"
-            autoComplete="tel"
-            textContentType="telephoneNumber"
-            // While the error shows it says the same thing, so the hint steps aside.
-            hint={invalid ? undefined : 'Include your country code, for example +971 50 123 4567.'}
-            style={invalid ? { borderColor: theme.danger } : undefined}
-            {...({ 'aria-invalid': invalid } as object)}
-          />
-        ) : null}
-        {invalid ? (
-          <Txt variant="small" color="danger" accessibilityRole="alert">
-            {INVALID_NUMBER}
-          </Txt>
-        ) : null}
-        <Txt variant="small">
-          We send only the messages listed above, during the day (UAE time). We never send marketing or bank details by
-          WhatsApp, and you can switch this off at any time.
-          {optIn ? ' By saving, you agree to receive these messages from Elite Education on WhatsApp at this number.' : ''}
+    <Card style={{ gap: Spacing.three }}>
+      {/* Same heading pattern as the Google Calendar and calendar subscription cards: the title, then the status badge. */}
+      <Row gap={Spacing.two} style={{ justifyContent: 'space-between' }}>
+        <Txt variant="h3">WhatsApp reminders</Txt>
+        <Badge label={savedOn ? 'On' : 'Off'} tone={savedOn ? 'gold' : 'neutral'} />
+      </Row>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Txt style={{ flex: 1 }}>Send me reminders on WhatsApp</Txt>
+        <Switch
+          value={optIn}
+          onValueChange={(v) => {
+            setOptIn(v);
+            setInvalid(false);
+          }}
+          // The track shows the state: gold (the accent) when on, muted when off. When on, the thumb is noir in both
+          // themes so it stands out on the gold track (an ivory thumb on dark mode's light gold was too faint); when
+          // off it is the text colour, standing out from the card.
+          trackColor={{ true: theme.accent, false: theme.textMuted }}
+          thumbColor={optIn ? theme.onGold : theme.text}
+          // react-native-web paints the "on" thumb teal unless told otherwise.
+          {...({ activeThumbColor: theme.onGold } as object)}
+          accessibilityLabel="WhatsApp reminders"
+        />
+      </Row>
+      <View style={{ gap: Spacing.one }}>
+        {whatsAppMessageKinds(me.role).map((kind) => (
+          <Row key={kind} style={{ alignItems: 'flex-start' }}>
+            <Txt variant="muted" style={{ width: 10 }} aria-hidden>
+              •
+            </Txt>
+            <Txt variant="muted" style={{ flex: 1 }}>
+              {kind}
+            </Txt>
+          </Row>
+        ))}
+      </View>
+      {showNumber ? (
+        <Field
+          label="WhatsApp number"
+          value={number}
+          onChangeText={(t) => {
+            setNumber(t);
+            setInvalid(false);
+          }}
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
+          // While the error shows it says the same thing, so the hint steps aside.
+          hint={invalid ? undefined : 'Include your country code, for example +971 50 123 4567.'}
+          style={invalid ? { borderColor: theme.danger } : undefined}
+          {...({ 'aria-invalid': invalid } as object)}
+        />
+      ) : null}
+      {invalid ? (
+        <Txt variant="small" color="danger" accessibilityRole="alert">
+          {INVALID_NUMBER}
         </Txt>
-        {source.kind === 'demo' ? <Txt variant="small">Demo mode: no WhatsApp messages are sent.</Txt> : null}
-        <ErrorNote error={error} />
-        <Button title="Save WhatsApp settings" variant="primary" loading={saving} disabled={!changed || saving} onPress={save} />
-      </Card>
-    </Section>
+      ) : null}
+      <Txt variant="small">
+        We send only the messages listed above, during the day (UAE time). We never send marketing or bank details by
+        WhatsApp, and you can switch this off at any time.
+        {optIn ? ' By saving, you agree to receive these messages from Elite Education on WhatsApp at this number.' : ''}
+      </Txt>
+      {source.kind === 'demo' ? <Txt variant="small">Demo mode: no WhatsApp messages are sent.</Txt> : null}
+      <ErrorNote error={error} />
+      <Button title="Save WhatsApp settings" variant="primary" loading={saving} disabled={!changed || saving} onPress={save} />
+    </Card>
   );
 }
