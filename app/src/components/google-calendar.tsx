@@ -1,28 +1,22 @@
+import { router, usePathname, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { source } from '@/data';
 import { useAction, useCalendarConnection } from '@/data/hooks';
 import { useMe } from '@/data/session';
-import { connectionSummary } from '@/domain/calendar-connection';
+import { type ConnectNotice, connectionSummary, connectResultNotice } from '@/domain/calendar-connection';
 import { confirm, notify } from '@/lib/confirm';
 
+import { Icon } from './icon';
 import { Badge, Banner, Button, Card, Row, Txt } from './ui';
 
-type ReturnNotice = { tone: 'success' | 'warning'; message: string } | null;
-
 /** The result Google's sign-in leaves in the address when the web page returns (?calendar=connected or =error). */
-function readReturnNotice(): ReturnNotice {
+function readReturnNotice(): ConnectNotice | null {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
-  const result = new URLSearchParams(window.location.search).get('calendar');
-  if (result === 'connected') {
-    return { tone: 'success', message: 'Your Google Calendar is now connected. Lessons will appear there within a few minutes.' };
-  }
-  if (result === 'error') {
-    return { tone: 'warning', message: 'Google Calendar could not be connected. Please try again.' };
-  }
-  return null;
+  return connectResultNotice(window.location.search);
 }
 
 const connectGoogle = () => source.connectGoogleCalendar?.() ?? Promise.resolve('cancelled' as const);
@@ -31,20 +25,20 @@ const disconnectGoogle = () => source.disconnectGoogleCalendar?.() ?? Promise.re
 /** Two-way Google Calendar link for tutors and the office: lessons and Meet links out, busy times in. */
 export function GoogleCalendarCard() {
   const me = useMe();
+  const theme = useTheme();
+  const pathname = usePathname();
   const connection = useCalendarConnection();
   const connect = useAction(connectGoogle);
   const disconnect = useAction(disconnectGoogle);
   const [mountedAt] = useState(() => Date.now());
   const [notice] = useState(readReturnNotice);
 
-  // Tidy the one-off result out of the address so a reload does not repeat it.
+  // Tidy the one-off result out of the address so a reload does not repeat it. The router owns the address on
+  // the web, so the page is replaced through it without the parameters (a direct history change would be put back).
   useEffect(() => {
-    if (!notice || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    url.searchParams.delete('calendar');
-    url.searchParams.delete('reason');
-    window.history.replaceState(window.history.state, '', url.toString());
-  }, [notice]);
+    if (!notice || Platform.OS !== 'web') return;
+    router.replace(pathname as Href);
+  }, [notice, pathname]);
 
   if (me.role !== 'admin' && me.role !== 'tutor') return null;
   if (!source.connectGoogleCalendar) return null;
@@ -94,8 +88,24 @@ export function GoogleCalendarCard() {
       ) : (
         <Txt variant="muted">{summary.detail}</Txt>
       )}
+      {summary.warning ? (
+        <Row gap={Spacing.one} style={{ alignItems: 'flex-start' }}>
+          <Icon name="alert" size={16} color={theme.warning} />
+          <Txt variant="small" style={{ flex: 1 }} accessibilityRole="alert">
+            {summary.warning}
+          </Txt>
+        </Row>
+      ) : null}
       {summary.action === 'disconnect' ? (
-        <Button title="Disconnect" variant="secondary" icon="close" loading={disconnect.isPending} disabled={busy} onPress={onDisconnect} />
+        <Button
+          title="Disconnect"
+          variant="ghost"
+          size="sm"
+          loading={disconnect.isPending}
+          disabled={busy}
+          onPress={onDisconnect}
+          style={{ alignSelf: 'flex-start', paddingHorizontal: 0 }}
+        />
       ) : (
         <Row gap={Spacing.two} wrap>
           <Button
@@ -106,7 +116,7 @@ export function GoogleCalendarCard() {
             onPress={onConnect}
           />
           {summary.action === 'reconnect' ? (
-            <Button title="Disconnect" variant="secondary" icon="close" disabled={busy} onPress={onDisconnect} />
+            <Button title="Disconnect" variant="ghost" size="sm" disabled={busy} onPress={onDisconnect} style={{ alignSelf: 'center' }} />
           ) : null}
         </Row>
       )}

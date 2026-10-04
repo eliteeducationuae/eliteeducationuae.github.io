@@ -285,7 +285,10 @@ export function createSeed(now: Date = new Date()): DemoDB {
 }
 
 // Google Calendar
-/** Sarah has connected Google Calendar; Craig (the admin) has not, so connecting can be tried. Both have busy times. */
+/**
+ * Sarah has connected Google Calendar and has busy times; Craig (the admin) has not, so connecting can be tried.
+ * Craig has no busy times until he connects, as in production, where only a connected calendar supplies them.
+ */
 function seedCalendar(db: DemoDB, now: Date) {
   db.calendarConnections = [
     {
@@ -297,10 +300,7 @@ function seedCalendar(db: DemoDB, now: Date) {
       lastSyncedAt: new Date(now.getTime() - 4 * 60_000).toISOString(),
     },
   ];
-  const sarah = sampleBusyBlocks(db, 't-sarah', now, 2, 'busy-');
-  // Craig's block keeps a busy time on the Book screen for Omar too (the demo parent books Omar with Craig).
-  const craig = sampleBusyBlocks(db, 't-craig', now, 1, 'busy-').map((b, i) => ({ ...b, id: `busy-${sarah.length + i + 1}` }));
-  db.busyBlocks = [...sarah, ...craig];
+  db.busyBlocks = sampleBusyBlocks(db, 't-sarah', now, 2, 'busy-');
   // Craig's upcoming A-level lessons with Arjun have no video link yet: connecting his calendar adds Google Meet links.
   for (const l of db.lessons) {
     if (l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > now) l.meetingUrl = undefined;

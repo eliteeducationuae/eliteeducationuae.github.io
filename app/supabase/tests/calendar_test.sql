@@ -156,3 +156,60 @@ select pg_temp.check(public.queue_calendar_backfill('a0000000-0000-0000-0000-000
 select pg_temp.check(public.queue_calendar_backfill('a0000000-0000-0000-0000-00000000000a') = 3, 'backfill queues every upcoming lesson for the admin');
 select pg_temp.check(public.queue_calendar_backfill('a0000000-0000-0000-0000-00000000000c') = 0, 'backfill does nothing for a parent');
 select pg_temp.check((select count(*) from public.calendar_sync_queue where reason = 'backfill') = 5, 'backfill rows are recorded');
+
+-- A reconnecting calendar also has its stale events removed: cancelled, deleted or reassigned lessons it still holds.
+insert into public.lesson_calendar_events (lesson_id, profile_id, google_event_id, calendar_id)
+select l.id, 'a0000000-0000-0000-0000-0000000000b1'::uuid, 'ev-cancelled', 'primary' from public.lessons l
+ where l.status = 'cancelled' and l.tutor_id = 'b0000000-0000-0000-0000-000000000002'
+union all
+select 'f0000000-0000-0000-0000-000000000002'::uuid, 'a0000000-0000-0000-0000-0000000000b1', 'ev-deleted', 'primary'
+union all
+select 'f0000000-0000-0000-0000-000000000001'::uuid, 'a0000000-0000-0000-0000-0000000000b1', 'ev-current', 'primary';
+select pg_temp.check(public.queue_calendar_backfill('a0000000-0000-0000-0000-0000000000b1') = 4,
+  'backfill also queues cancelled and deleted lessons the calendar still holds, without duplicates');
+
+-- Busy-time exclusions -----------------------------------------------------------
+-- The admin teaches too (like Craig). Their calendar holds Tom's lesson next week, which must not become their busy time.
+update public.profiles set tutor_id = 'b0000000-0000-0000-0000-000000000001' where id = 'a0000000-0000-0000-0000-00000000000a';
+insert into public.lesson_calendar_events (lesson_id, profile_id, google_event_id, calendar_id)
+select l.id, 'a0000000-0000-0000-0000-00000000000a', 'ev-tom', 'primary' from public.lessons l
+ where l.status = 'scheduled' and l.tutor_id = 'b0000000-0000-0000-0000-000000000002';
+create temp table excl as
+select * from public.calendar_lessons_for('a0000000-0000-0000-0000-00000000000a', now(), now() + interval '60 days');
+select pg_temp.check((select count(*) from excl where tutor_id = 'b0000000-0000-0000-0000-000000000002' and in_calendar) = 1,
+  'another tutor''s lesson written into the admin''s calendar is listed as ours');
+select pg_temp.check((select count(*) from excl where tutor_id = 'b0000000-0000-0000-0000-000000000001') = 2,
+  'the admin''s own lessons are listed even before they reach the calendar');
+select pg_temp.check((select count(*) from excl where tutor_id = 'b0000000-0000-0000-0000-000000000002' and not in_calendar) = 0,
+  'lessons in neither the calendar nor the tutor''s own diary are left out');
+select pg_temp.check((select count(*) from public.calendar_lessons_for('a0000000-0000-0000-0000-0000000000b2', now(), now() + interval '60 days')
+  where tutor_id = 'b0000000-0000-0000-0000-000000000001') = 0, 'a tutor''s calendar lists none of another tutor''s lessons');
+
+-- One run at a time -------------------------------------------------------------------
+select pg_temp.check(public.calendar_sync_acquire('11111111-1111-1111-1111-111111111111', 600), 'the first run takes the lease');
+select pg_temp.check(not public.calendar_sync_acquire('22222222-2222-2222-2222-222222222222', 600), 'an overlapping run is turned away');
+select public.calendar_sync_release('22222222-2222-2222-2222-222222222222');
+select pg_temp.check(not public.calendar_sync_acquire('22222222-2222-2222-2222-222222222222', 600), 'only the holder can release the lease');
+select public.calendar_sync_release('11111111-1111-1111-1111-111111111111');
+select pg_temp.check(public.calendar_sync_acquire('22222222-2222-2222-2222-222222222222', 600), 'a released lease can be taken');
+update public.calendar_sync_lock set expires_at = now() - interval '1 second';
+select pg_temp.check(public.calendar_sync_acquire('33333333-3333-3333-3333-333333333333', 600), 'an expired lease (a crashed run) can be taken');
+
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+do $$ begin
+  perform public.calendar_sync_acquire(gen_random_uuid(), 600);
+  raise exception 'took the lease';
+exception when insufficient_privilege then raise notice 'ok - the app cannot take the sync lease';
+end $$;
+do $$ begin
+  perform * from public.calendar_lessons_for('a0000000-0000-0000-0000-00000000000a', now(), now() + interval '1 day');
+  raise exception 'read calendar lessons';
+exception when insufficient_privilege then raise notice 'ok - calendar lesson lists are server-only';
+end $$;
+do $$ begin
+  perform 1 from public.calendar_sync_lock;
+  raise exception 'read the lock';
+exception when insufficient_privilege then raise notice 'ok - the sync lease is server-only';
+end $$;
+reset role;

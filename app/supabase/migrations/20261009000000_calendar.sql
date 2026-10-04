@@ -53,6 +53,9 @@ create table public.lesson_calendar_events (
   google_event_id text not null,
   calendar_id text not null,
   etag text,
+  -- The Google Meet link this event created, so that a link we generated can be cleared and recreated
+  -- when the lesson moves to another tutor, while a link someone pasted by hand is never touched.
+  meet_url text,
   synced_at timestamptz not null default now(),
   primary key (lesson_id, profile_id)
 );
@@ -124,7 +127,8 @@ create trigger lessons_queue_calendar_sync
   after insert or update or delete on public.lessons
   for each row execute function public.queue_calendar_sync();
 
-/** Queues the upcoming lessons a newly connected calendar should show. Server-only. */
+/** Queues the upcoming lessons a newly connected calendar should show, and every lesson that calendar still
+    holds an event for (cancelled, deleted or reassigned while it was disconnected), so stale events are removed. Server-only. */
 create function public.queue_calendar_backfill(p_profile uuid) returns int
 language plpgsql security definer set search_path = public as $$
 declare p public.profiles; n int;
@@ -132,14 +136,70 @@ begin
   select * into p from public.profiles where id = p_profile;
   if p is null or p.role not in ('admin', 'tutor') then return 0; end if;
   insert into public.calendar_sync_queue (lesson_id, reason)
-  select l.id, 'backfill' from public.lessons l
-   where l.status = 'scheduled'
-     and l.start_at > now() - interval '1 day' and l.start_at < now() + interval '180 days'
-     and (p.role = 'admin' or (p.tutor_id is not null and l.tutor_id = p.tutor_id));
+  select x.id, 'backfill' from (
+    select l.id from public.lessons l
+     where l.status = 'scheduled'
+       and l.start_at > now() - interval '1 day' and l.start_at < now() + interval '180 days'
+       and (p.role = 'admin' or (p.tutor_id is not null and l.tutor_id = p.tutor_id))
+    union
+    select e.lesson_id from public.lesson_calendar_events e where e.profile_id = p_profile
+  ) x;
   get diagnostics n = row_count;
   return n;
 end $$;
 revoke all on function public.queue_calendar_backfill(uuid) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Running calendar-sync: one run at a time, and its view of each calendar
+-- ---------------------------------------------------------------------------
+
+/** A lease so that only one calendar-sync run works at a time. Server-only. */
+create table public.calendar_sync_lock (
+  id int primary key default 1 check (id = 1),
+  holder uuid,
+  expires_at timestamptz
+);
+insert into public.calendar_sync_lock (id) values (1);
+alter table public.calendar_sync_lock enable row level security;
+revoke all on public.calendar_sync_lock from anon, authenticated;
+
+/** Takes the lease for p_seconds if it is free or has expired; true when this caller now holds it. */
+create function public.calendar_sync_acquire(p_holder uuid, p_seconds int default 600) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  update public.calendar_sync_lock
+     set holder = p_holder, expires_at = now() + make_interval(secs => greatest(p_seconds, 30))
+   where id = 1 and (holder is null or holder = p_holder or expires_at < now());
+  get diagnostics n = row_count;
+  return n = 1;
+end $$;
+
+/** Gives the lease back, if this caller still holds it. */
+create function public.calendar_sync_release(p_holder uuid) returns void
+language sql security definer set search_path = public as $$
+  update public.calendar_sync_lock set holder = null, expires_at = null where id = 1 and holder = p_holder;
+$$;
+
+/** The lessons in a window that matter to one connected calendar's busy times: the tutor's own lessons and
+    every lesson we have written into that calendar (in_calendar). calendar-sync removes these from Google's
+    busy times, so an office calendar holding every tutor's lessons never turns them into busy blocks. Server-only. */
+create function public.calendar_lessons_for(p_profile uuid, p_from timestamptz, p_to timestamptz)
+returns table (tutor_id uuid, status text, start_at timestamptz, end_at timestamptz, in_calendar boolean)
+language sql stable security definer set search_path = public as $$
+  select l.tutor_id, l.status, l.start_at, l.end_at, (e.lesson_id is not null)
+    from public.lessons l
+    left join public.lesson_calendar_events e on e.lesson_id = l.id and e.profile_id = p_profile
+   where l.start_at < p_to and l.end_at > p_from
+     and (e.lesson_id is not null
+          or l.tutor_id = (select p.tutor_id from public.profiles p where p.id = p_profile))
+$$;
+
+revoke all on function public.calendar_sync_acquire(uuid, int) from public, anon, authenticated;
+revoke all on function public.calendar_sync_release(uuid) from public, anon, authenticated;
+revoke all on function public.calendar_lessons_for(uuid, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.queue_calendar_backfill(uuid), public.calendar_sync_acquire(uuid, int),
+  public.calendar_sync_release(uuid), public.calendar_lessons_for(uuid, timestamptz, timestamptz) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Open slots now also respect Google busy times

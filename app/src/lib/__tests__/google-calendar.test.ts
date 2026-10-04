@@ -1,5 +1,16 @@
 import {
   base64UrlDecode,
+  busyBlocksFor,
+  findEventUrl,
+  firstEventId,
+  GIVE_UP_PREFIX,
+  giveUpMessage,
+  isAuthorisedSyncCall,
+  meetPlan,
+  mergeIntervals,
+  mustWait,
+  ownedIntervals,
+  shouldClearError,
   buildAuthUrl,
   CALENDAR_API,
   CALENDAR_SCOPES,
@@ -171,6 +182,7 @@ describe('lessonToEvent', () => {
     expect(lessonToEvent(lesson, 'tutor', { requestMeet: true }).conferenceData).toEqual({
       createRequest: { requestId: 'elite-L1', conferenceSolutionKey: { type: 'hangoutsMeet' } },
     });
+    expect(lessonToEvent(lesson, 'tutor', { requestMeet: true, requestId: 'elite-L1-x' }).conferenceData?.createRequest.requestId).toBe('elite-L1-x');
   });
 
   it('never includes contact details', () => {
@@ -304,10 +316,154 @@ describe('planTargets', () => {
 describe('organiserFor', () => {
   const tia: SyncConnection = { profileId: 'pTia', role: 'tutor', tutorId: 'T1', status: 'connected' };
   const craig: SyncConnection = { profileId: 'pCraig', role: 'admin', status: 'connected' };
-  it('prefers the lesson tutor, then the first admin', () => {
+  const craigTeaching: SyncConnection = { profileId: 'pCraig', role: 'admin', tutorId: 'T9', status: 'connected' };
+  it('hosts the Meet on the lesson tutor’s own calendar only', () => {
     expect(organiserFor({ tutorId: 'T1' }, [craig, tia])).toBe(tia);
-    expect(organiserFor({ tutorId: 'T2' }, [craig])).toBe(craig);
+    expect(organiserFor({ tutorId: 'T9' }, [tia, craigTeaching])).toBe(craigTeaching);
+  });
+  it('never falls back to the office calendar, whose owner is not in the lesson', () => {
+    expect(organiserFor({ tutorId: 'T2' }, [craig])).toBeUndefined();
+    expect(organiserFor({ tutorId: 'T2' }, [craigTeaching, tia])).toBeUndefined();
     expect(organiserFor({ tutorId: 'T2' }, [])).toBeUndefined();
+  });
+});
+
+describe('meetPlan', () => {
+  const tia: SyncConnection = { profileId: 'pTia', role: 'tutor', tutorId: 'T1', status: 'connected' };
+  const tom: SyncConnection = { profileId: 'pTom', role: 'tutor', tutorId: 'T2', status: 'connected' };
+  const office: SyncConnection = { profileId: 'pCraig', role: 'admin', tutorId: 'T9', status: 'connected' };
+  const online = { tutorId: 'T1', status: 'scheduled', location: 'online', meetingUrl: null as string | null };
+  const link = 'https://meet.google.com/abc-defg-hij';
+
+  it('creates a link on the tutor’s calendar for an online lesson without one', () => {
+    expect(meetPlan(online, [tia, office], [])).toEqual({ create: tia, clearStale: false });
+  });
+
+  it('creates nothing when the tutor has not connected, rather than hosting on the office calendar', () => {
+    expect(meetPlan({ ...online, tutorId: 'T3' }, [office], [])).toEqual({ create: undefined, clearStale: false });
+  });
+
+  it('keeps a link the tutor’s calendar generated, and never touches a pasted link', () => {
+    const existing = [{ profileId: 'pTia', googleEventId: 'e1', meetUrl: link }];
+    expect(meetPlan({ ...online, meetingUrl: link }, [tia, office], existing)).toEqual({ create: undefined, clearStale: false });
+    const zoom = { ...online, tutorId: 'T2', meetingUrl: 'https://zoom.us/j/1' };
+    expect(meetPlan(zoom, [tom, office], existing)).toEqual({ create: undefined, clearStale: false });
+  });
+
+  it('clears and recreates a generated link when the lesson moves to another tutor', () => {
+    const existing = [{ profileId: 'pTia', googleEventId: 'e1', meetUrl: link }];
+    expect(meetPlan({ ...online, tutorId: 'T2', meetingUrl: link }, [tom, office], existing)).toEqual({ create: tom, clearStale: true });
+  });
+
+  it('clears a generated link when the new tutor has no calendar connected', () => {
+    const existing = [{ profileId: 'pTia', googleEventId: 'e1', meetUrl: link }];
+    expect(meetPlan({ ...online, tutorId: 'T3', meetingUrl: link }, [office], existing)).toEqual({ create: undefined, clearStale: true });
+  });
+
+  it('clears a generated link when the lesson becomes in person, and leaves cancelled lessons alone', () => {
+    const existing = [{ profileId: 'pTia', googleEventId: 'e1', meetUrl: link }];
+    expect(meetPlan({ ...online, location: 'in-person', meetingUrl: link }, [tia], existing).clearStale).toBe(true);
+    expect(meetPlan({ ...online, status: 'cancelled', meetingUrl: link }, [], existing)).toEqual({ clearStale: false });
+    expect(meetPlan(null, [], existing)).toEqual({ clearStale: false });
+  });
+});
+
+describe('mustWait', () => {
+  const tiaDown: SyncConnection = { profileId: 'pTia', role: 'tutor', tutorId: 'T1', status: 'connected' };
+  const officeDown: SyncConnection = { profileId: 'pCraig', role: 'admin', tutorId: null, status: 'connected' };
+  const lesson = { tutorId: 'T1', status: 'scheduled' };
+
+  it('keeps a change queued while a calendar that should show it cannot be reached', () => {
+    expect(mustWait(lesson, [tiaDown], [])).toBe(true);
+    expect(mustWait({ tutorId: 'T2', status: 'scheduled' }, [officeDown], [])).toBe(true);
+  });
+
+  it('keeps a removal queued while the calendar holding the event cannot be reached', () => {
+    expect(mustWait({ ...lesson, status: 'cancelled' }, [tiaDown], [{ profileId: 'pTia', googleEventId: 'e1' }])).toBe(true);
+    expect(mustWait(null, [tiaDown], [{ profileId: 'pTia', googleEventId: 'e1' }])).toBe(true);
+  });
+
+  it('does not wait for calendars the lesson has nothing to do with', () => {
+    expect(mustWait({ tutorId: 'T2', status: 'scheduled' }, [tiaDown], [])).toBe(false);
+    expect(mustWait({ ...lesson, status: 'cancelled' }, [tiaDown], [])).toBe(false);
+    expect(mustWait(lesson, [], [])).toBe(false);
+  });
+});
+
+describe('busy blocks from a calendar', () => {
+  const at = (h: number, m = 0) => new Date(Date.UTC(2026, 9, 8, h, m)).toISOString();
+  const iv = (a: number, b: number) => ({ start: at(a), end: at(b) });
+
+  it('does not turn other tutors’ lessons in an admin-and-tutor calendar into busy time', () => {
+    // Craig is the office and also teaches (T9). His calendar holds Sarah's lesson 11:00–12:00 (written by us),
+    // his own lesson 13:00–14:00, and a personal appointment 16:00–17:00.
+    const busy = [iv(11, 12), iv(13, 14), iv(16, 17)];
+    const rows = [
+      { tutorId: 'T-sarah', status: 'scheduled', start: at(11), end: at(12), inCalendar: true },
+      { tutorId: 'T9', status: 'scheduled', start: at(13), end: at(14), inCalendar: true },
+    ];
+    expect(busyBlocksFor(busy, 'T9', rows)).toEqual([iv(16, 17)]);
+  });
+
+  it('removes the tutor’s own lessons even before they reach the calendar, but not cancelled ones', () => {
+    const rows = [
+      { tutorId: 'T1', status: 'scheduled', start: at(9), end: at(10), inCalendar: false },
+      { tutorId: 'T1', status: 'cancelled', start: at(12), end: at(13), inCalendar: false },
+      { tutorId: 'T2', status: 'scheduled', start: at(15), end: at(16), inCalendar: false },
+    ];
+    expect(ownedIntervals('T1', rows)).toEqual([iv(9, 10)]);
+    expect(busyBlocksFor([iv(9, 10), iv(12, 13), iv(15, 16)], 'T1', rows)).toEqual([iv(12, 13), iv(15, 16)]);
+  });
+
+  it('still removes a cancelled lesson whose event has not yet been taken out of the calendar', () => {
+    const rows = [{ tutorId: 'T2', status: 'cancelled', start: at(12), end: at(13), inCalendar: true }];
+    expect(busyBlocksFor([iv(12, 13)], 'T1', rows)).toEqual([]);
+  });
+
+  it('merges busy times from two calendars of the same tutor', () => {
+    expect(mergeIntervals([iv(15, 16), iv(9, 10), iv(9, 11), iv(11, 12)])).toEqual([iv(9, 12), iv(15, 16)]);
+    expect(mergeIntervals([])).toEqual([]);
+  });
+});
+
+describe('isAuthorisedSyncCall', () => {
+  const secret = 'a-long-shared-secret-value';
+  it('accepts only the shared secret', () => {
+    expect(isAuthorisedSyncCall(secret, secret)).toBe(true);
+    expect(isAuthorisedSyncCall('a-long-shared-secret-valuf', secret)).toBe(false);
+    expect(isAuthorisedSyncCall(`${secret}x`, secret)).toBe(false);
+    expect(isAuthorisedSyncCall(null, secret)).toBe(false);
+    expect(isAuthorisedSyncCall('', secret)).toBe(false);
+  });
+  it('refuses everyone when the secret is missing or too short', () => {
+    expect(isAuthorisedSyncCall('', '')).toBe(false);
+    expect(isAuthorisedSyncCall('short', 'short')).toBe(false);
+    expect(isAuthorisedSyncCall(undefined, undefined)).toBe(false);
+  });
+});
+
+describe('finding an event we already wrote', () => {
+  it('searches the calendar by the lesson’s private property', () => {
+    const url = new URL(findEventUrl('primary', 'L1'));
+    expect(`${url.origin}${url.pathname}`).toBe(`${CALENDAR_API}/calendars/primary/events`);
+    expect(url.searchParams.get('privateExtendedProperty')).toBe('eliteLessonId=L1');
+    expect(url.searchParams.get('showDeleted')).toBe('false');
+  });
+  it('reads the first live event id', () => {
+    expect(firstEventId({ items: [{ id: 'gone', status: 'cancelled' }, { id: 'e2', status: 'confirmed' }] })).toBe('e2');
+    expect(firstEventId({ items: [] })).toBeUndefined();
+    expect(firstEventId(null)).toBeUndefined();
+  });
+});
+
+describe('calendar card warnings', () => {
+  const now = new Date(Date.UTC(2026, 9, 8, 12));
+  it('keeps a recent give-up notice for a day and clears other warnings', () => {
+    expect(giveUpMessage(5)).toMatch(new RegExp(`^${GIVE_UP_PREFIX} after 5 attempts`));
+    expect(shouldClearError(giveUpMessage(5), new Date(now.getTime() - 3_600_000).toISOString(), now)).toBe(false);
+    expect(shouldClearError(giveUpMessage(5), new Date(now.getTime() - 25 * 3_600_000).toISOString(), now)).toBe(true);
+    expect(shouldClearError('We could not reach Google. We will try again shortly.', now.toISOString(), now)).toBe(true);
+    expect(shouldClearError(null, null, now)).toBe(false);
   });
 });
 

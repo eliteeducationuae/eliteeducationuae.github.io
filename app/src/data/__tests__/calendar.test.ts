@@ -13,7 +13,8 @@ describe('Google busy blocks (mirrors the busy_blocks policies)', () => {
     const db = createSeed(NOW);
     const all = db.busyBlocks ?? [];
     expect(all.some((b) => b.tutorId === 't-sarah')).toBe(true);
-    expect(all.some((b) => b.tutorId === 't-craig')).toBe(true);
+    // Craig has not connected, so he has no Google busy times yet.
+    expect(all.some((b) => b.tutorId === 't-craig')).toBe(false);
     expect(all.map((b) => b.id)).toEqual(expect.arrayContaining(['busy-1']));
 
     const tutor = cal.busyBlocks(db, who(db, 'tutor'));
@@ -32,14 +33,19 @@ describe('Google busy blocks (mirrors the busy_blocks policies)', () => {
       expect(clash).toBe(false);
     }
     const admin = who(db, 'admin');
+    expect(cal.busyBlocks(db, admin, { tutorId: 't-craig' })).toEqual([]);
+    cal.connect(db, admin, NOW);
     const craig = cal.busyBlocks(db, admin, { tutorId: 't-craig' });
-    expect(craig.length).toBe(1);
-    expect(cal.busyBlocks(db, admin, { tutorId: 't-craig', from: craig[0].end })).toEqual([]);
+    expect(craig.length).toBe(2);
+    for (const b of craig) expect(new Date(b.start).getTime()).toBeGreaterThanOrEqual(addDays(NOW, 2).getTime());
+    expect(cal.busyBlocks(db, admin, { tutorId: 't-craig', from: craig[1].end })).toEqual([]);
     expect(cal.busyBlocks(db, admin, { tutorId: 't-craig', to: craig[0].start })).toEqual([]);
+    expect(cal.busyBlocks(db, admin, { tutorId: 't-craig', from: craig[0].end })).toEqual([craig[1]]);
   });
 
   it('hides booking slots that overlap a busy block, and refuses requests then', () => {
     const db = createSeed(NOW);
+    cal.connect(db, who(db, 'admin'), NOW);
     const block = (db.busyBlocks ?? []).find((b) => b.tutorId === 't-craig')!;
     const day = new Date(block.start);
     day.setHours(0, 0, 0, 0);
@@ -82,8 +88,10 @@ describe('connecting Google Calendar', () => {
     for (const l of online) expect(l.meetingUrl).toMatch(/^https:\/\/meet\.google\.com\/demo-/);
     // Other tutors' lessons are left alone.
     expect(otherLesson.meetingUrl).toBeUndefined();
-    // Craig already had a busy block, so no samples are added.
-    expect((db.busyBlocks ?? []).filter((b) => b.tutorId === 't-craig')).toHaveLength(1);
+    // Connecting brings in Craig's busy times; connecting again adds no more.
+    expect((db.busyBlocks ?? []).filter((b) => b.tutorId === 't-craig')).toHaveLength(2);
+    cal.connect(db, admin, NOW);
+    expect((db.busyBlocks ?? []).filter((b) => b.tutorId === 't-craig')).toHaveLength(2);
   });
 
   it('seeds Craig’s upcoming online lessons without a link, so connecting visibly adds Meet links', () => {
@@ -97,6 +105,7 @@ describe('connecting Google Calendar', () => {
 
   it('disconnects, removing the connection and the tutor’s busy times', () => {
     const db = createSeed(NOW);
+    cal.connect(db, who(db, 'admin'), NOW);
     const tutor = who(db, 'tutor');
     cal.disconnect(db, tutor);
     expect(cal.connection(db, tutor)).toBeNull();

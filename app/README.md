@@ -149,33 +149,44 @@ How it behaves:
 2. **Calendar API.** In the [Google Cloud Console](https://console.cloud.google.com), open the same project and enable the **Google Calendar API** under *APIs & Services → Library*.
 3. **Consent screen.** Under *APIs & Services → OAuth consent screen → Data access*, add the scopes `https://www.googleapis.com/auth/calendar.events` and `https://www.googleapis.com/auth/calendar.freebusy`. While the app is in **Testing**, each tutor must be added as a test user, and Google expires their access after 7 days, so they would need to reconnect weekly. Publish the app and complete Google's verification for these scopes to make connections permanent.
 4. **Redirect URI.** Open the same OAuth client under *APIs & Services → Credentials* and add the authorised redirect URI `https://<project-ref>.supabase.co/functions/v1/google-connect`.
-5. **Secrets.** Copy the client ID and secret from that OAuth client:
+5. **Secrets.** Copy the client ID and secret from that OAuth client, and create a long random value that only the scheduler knows (`openssl rand -hex 32` produces one):
    ```bash
    npx supabase secrets set GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=…
+   # Required: calendar-sync refuses every call that does not carry this value.
+   npx supabase secrets set CALENDAR_SYNC_SECRET=<random value>
    # If not already set: where the app lives, so people return to it after connecting.
    npx supabase secrets set APP_URL=https://eliteeducation.me/app
    # Optional: further comma-separated prefixes that may receive the result, for example a staging site.
    npx supabase secrets set CALENDAR_RETURN_URLS=http://localhost:8081
    ```
 6. **Deploy.** `npx supabase functions deploy google-connect calendar-sync`
-7. **Schedule** `calendar-sync` every 5 minutes, either in Supabase → *Edge Functions → Schedules*, or with pg_cron and pg_net (enable both under *Database → Extensions*) in the SQL editor:
+7. **Schedule** `calendar-sync` every 5 minutes with pg_cron and pg_net (enable both under *Database → Extensions*). In the SQL editor, keep the secret in Vault and send it in the `x-sync-secret` header. The anon key is only there to pass the platform's own login check; on its own it cannot start a sync.
    ```sql
+   select vault.create_secret('<the same random value>', 'calendar_sync_secret');
    select cron.schedule('calendar-sync', '*/5 * * * *', $$
      select net.http_post(
        url := 'https://<project-ref>.supabase.co/functions/v1/calendar-sync',
-       headers := jsonb_build_object('Authorization', 'Bearer <anon key>')
+       headers := jsonb_build_object(
+         'Authorization', 'Bearer <anon key>',
+         'x-sync-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'calendar_sync_secret')
+       )
      )
    $$);
    ```
+   Only one run works at a time: if a run is still going when the next one starts, the later one stands aside.
 
 How it behaves:
 
 - **Connecting.** Tutors connect from the Google Calendar card under *Me*, and Craig from the same card under *More*. Google asks for permission, then returns them to the app. Upcoming lessons for the next six months appear within a few minutes, and changes, cancellations and reassignments follow on every run.
-- **Meet links.** An online lesson without a link receives one from the tutor's calendar (or the office's, if the tutor has not connected). The link is saved on the lesson, so families see it in the app as usual. Google never emails the families: every change is written with notifications switched off.
-- **Busy times.** Every 5 minutes the tutor's busy times for the next 60 days are copied across, and those times disappear from the open slots families can request. Lessons we wrote ourselves are not counted twice.
+- **Meet links.** An online lesson without a link receives one from the lesson tutor's own calendar, so the tutor is the Meet's host and can admit the student. The link is saved on the lesson, so families see it in the app as usual. If the tutor has not connected a calendar, no link is created automatically (the office calendar never hosts a Meet, because its owner is not in the lesson); add a link on the lesson as before. When a lesson moves to another tutor, or becomes in person, a link we generated is cleared and, where the new tutor is connected, replaced with one on their calendar. A link someone pasted by hand (for example Zoom) is never changed. Google never emails the families: every change is written with notifications switched off.
+- **Busy times.** Every 5 minutes the tutor's busy times for the next 60 days are copied across, and those times disappear from the open slots families can request. Lessons we wrote ourselves are never counted as busy, including the other tutors' lessons in Craig's calendar (he is both the office and a tutor). In the app, busy times show as quiet "Busy" bands on the *Tutors* timeline and as a line in the Day and Week views.
+- **If Google is unreachable.** A change waits in the queue until every calendar it belongs in can be reached, so nothing is lost. A lesson that still fails after five attempts is reported on that person's Google Calendar card. Reconnecting a calendar also removes any events for lessons cancelled or reassigned while it was disconnected.
 - **Families** keep the existing read-only calendar subscription feed; they do not connect Google.
 - **Disconnecting** removes upcoming lesson events from that calendar, withdraws our access at Google and deletes the stored tokens and busy times. If Google access is withdrawn from the Google side, the app shows that the calendar needs reconnecting.
-- **Privacy.** Only busy start and end times are copied from Google, never event titles, descriptions or attendees. Lesson events contain first names, the service, the tutor and the join link or address, never family contact or bank details. Google tokens are stored server-side only; the app can see whether a calendar is connected, but cannot read the tokens.
+- **Privacy.** Only busy start and end times are copied from Google, never event titles, descriptions or attendees. Lesson events contain first names, the service, the tutor and the join link or, for an in-person lesson, the lesson address, never family contact or bank details. **Craig to confirm:** the address of an in-person lesson is written into the tutor's and the office's Google calendars so they can navigate there; if that is not acceptable, it can be left out. Google tokens are stored server-side only; the app can see whether a calendar is connected, but cannot read the tokens.
+- **Demo.** Sarah's calendar is connected and has two busy times; Craig's is not, so he has none until he presses *Connect Google Calendar*, which then adds his Meet links and two sample busy times.
+
+**Device checklist (Craig, with real Google accounts):** connect a tutor's calendar and the office calendar, then check that (1) a new online lesson receives a Meet link within five minutes and appears in both calendars without any email being sent; (2) a student signed in with a personal Gmail account can join the Meet straight away, or is admitted by the tutor, for a lesson whose tutor is connected; (3) for a lesson whose tutor has not connected, no Meet is created on the office calendar; (4) reassigning an online lesson to another connected tutor replaces the link with one the new tutor hosts; (5) a personal appointment in a tutor's calendar disappears from the Book screen, while other tutors' lessons in the office calendar do not block Craig's own slots.
 
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 

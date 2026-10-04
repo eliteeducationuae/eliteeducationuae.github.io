@@ -15,6 +15,7 @@ import {
   type SocialProviderName,
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
+import { connectResultNotice } from '@/domain/calendar-connection';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Expense,
@@ -363,8 +364,6 @@ const toCalendarConnection = (r: Row): CalendarConnection => ({
 
 /** Only these columns are granted to the app; the tokens are not, so select('*') would fail. */
 const CALENDAR_CONNECTION_COLUMNS = 'profile_id, provider, google_email, calendar_id, status, last_synced_at, last_error';
-
-const CALENDAR_CONNECT_FAILED = 'Google Calendar could not be connected. Please try again.';
 
 /** The current page without any calendar=… result left by a previous connection attempt. */
 function calendarReturnTo(href: string): string {
@@ -1125,8 +1124,9 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       const data = check<{ url: string }>(await client.functions.invoke('google-connect', { body: { action: 'start', returnTo } }));
       const res = await WebBrowser.openAuthSessionAsync(data.url, returnTo);
       if (res.type !== 'success') return 'cancelled';
-      if (res.url.includes('calendar=connected')) return 'connected';
-      if (res.url.includes('calendar=error')) throw new Error(CALENDAR_CONNECT_FAILED);
+      const notice = connectResultNotice(res.url);
+      if (notice?.tone === 'success') return 'connected';
+      if (notice) throw new Error(notice.message);
       return 'cancelled';
     },
     async disconnectGoogleCalendar() {

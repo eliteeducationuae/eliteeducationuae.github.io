@@ -7,6 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { slotWarning } from '@/domain/calendar-connection';
 import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey } from '@/domain/dates';
 import { expandWeeklySkipping, findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
@@ -54,7 +55,11 @@ export default function NewLesson() {
   const busyClashes = tutorId
     ? slots.flatMap((slot) => findBusyClashes({ ...slot, tutorId }, busyBlocks.data ?? []).map((b) => ({ slot, b })))
     : [];
-  const clashCount = clashes.length + busyClashes.length;
+  // Count dates, not clashes: one date may clash with a lesson and fall in a busy time.
+  const clashSlots = new Set(clashes.map((x) => x.slot));
+  const busySlots = new Set(busyClashes.map((x) => x.slot));
+  const clashCount = new Set([...clashSlots, ...busySlots]).size;
+  const warning = slotWarning({ affected: clashCount, lessonClashes: clashSlots.size, googleBusy: busySlots.size });
 
   const ready = studentIds.length > 0 && tutorId && service && start;
   const toggleStudent = (id: string) => setStudentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
@@ -169,8 +174,7 @@ export default function NewLesson() {
           ) : null}
           {clashCount ? (
             <Banner tone="warning" icon="alert">
-              {clashCount} clash{clashCount === 1 ? '' : 'es'} found{busyClashes.length ? ', including Google Calendar busy times' : ''}. Check the
-              dates below before scheduling.
+              {warning}
             </Banner>
           ) : tutorId ? (
             <Banner tone="success" icon="check">
