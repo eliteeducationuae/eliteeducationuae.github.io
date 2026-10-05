@@ -11,7 +11,7 @@ import type { Enrolment, Service, Student, Tutor } from '@/domain/types';
 
 import { CataloguePicker } from './catalogue-picker';
 import { RateField, rateFieldError, rateFieldText } from './rates';
-import { Button, Card, Chip, Row, Txt } from './ui';
+import { Banner, Button, Card, Chip, Row, Txt } from './ui';
 
 /** Tutors who teach the subject first, then everyone else, each group in name order. */
 export function orderTutorsForSubject(tutors: Tutor[], subject?: string): { tutor: Tutor; teaches: boolean }[] {
@@ -108,8 +108,8 @@ function SubjectCard({
   // Warn before saving that a different tutor does not inherit the pay agreed with the saved tutor.
   const savedTutor = saved?.tutorId ? tutors?.find((t) => t.id === saved.tutorId) : undefined;
   const lostPay =
-    savedTutor && typeof saved?.tutorPay === 'number' && draft.tutorId !== saved.tutorId
-      ? `Changing the tutor removes the custom pay of ${formatAED(saved.tutorPay)} per hour agreed with ${savedTutor.fullName}.`
+    saved?.tutorId && typeof saved.tutorPay === 'number' && draft.tutorId !== saved.tutorId
+      ? `Changing the tutor removes the custom pay of ${formatAED(saved.tutorPay)} per hour agreed with ${savedTutor?.fullName ?? 'the previous tutor'}.`
       : undefined;
 
   return (
@@ -176,7 +176,11 @@ function SubjectCard({
             ))}
           </Row>
           {subject && ordered.some((t) => t.teaches) ? <Txt variant="small">✓ Teaches {subject}</Txt> : null}
-          {rates && lostPay ? <Txt variant="small">{lostPay}</Txt> : null}
+          {rates && lostPay ? (
+            <Banner tone="warning" icon="alert">
+              {lostPay}
+            </Banner>
+          ) : null}
         </View>
       ) : null}
 
