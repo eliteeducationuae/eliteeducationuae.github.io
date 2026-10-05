@@ -522,8 +522,11 @@ const GENERIC_INSTITUTION_WORDS = new Set([
 
 /** True when a key date's title already names its institution ('Oxford open day' for the University of Oxford). */
 export function titleNamesInstitution(title: string, institution: string): boolean {
-  const said = new Set(title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
-  const own = institution.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w && !GENERIC_INSTITUTION_WORDS.has(w));
+  // Possessives ('King’s', "Omar's") would otherwise leave a stray 's' token that matches any other possessive.
+  const words = (text: string) =>
+    text.toLowerCase().replace(/['\u2019]s\b/g, '').split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1);
+  const said = new Set(words(title));
+  const own = words(institution).filter((w) => !GENERIC_INSTITUTION_WORDS.has(w));
   if (own.length === 0) return title.toLowerCase().includes(institution.trim().toLowerCase());
   return own.some((w) => said.has(w));
 }

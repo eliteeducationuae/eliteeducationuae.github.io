@@ -159,6 +159,18 @@ describe('key date lists', () => {
   it('lists every date in a range, done or not', () => {
     expect(keyDatesInRange(dates, '2026-10-04', '2026-10-10').map((d) => d.id)).toEqual(['today', 'done', 'untimed', 'timed']);
   });
+  it('ignores possessives when deciding whether a title already names its institution', () => {
+    const targets = [target('k', "King's College London", 'applying'), target('j', 'St John\u2019s College', 'applying')];
+    expect(keyDateTitle(date('a', '2026-10-10', { kind: 'interview', title: "Omar's interview", targetId: 'k' }), targets)).toBe(
+      "Omar's interview · King's College London",
+    );
+    expect(keyDateTitle(date('b', '2026-10-10', { kind: 'interview', title: "King's interview day", targetId: 'k' }), targets)).toBe(
+      "King's interview day",
+    );
+    expect(keyDateTitle(date('c', '2026-10-10', { kind: 'interview', title: 'Omar\u2019s interview', targetId: 'j' }), targets)).toBe(
+      'Omar\u2019s interview · St John\u2019s College',
+    );
+  });
   it('titles a date with its kind and institution, without repeating either', () => {
     const targets = [target('t1', 'University of Oxford', 'researching'), target('t2', 'Benenden School', 'applying')];
     expect(keyDateTitle(date('a', '2026-10-10', { kind: 'open-day', title: 'Visit', targetId: 't1' }), targets)).toBe(

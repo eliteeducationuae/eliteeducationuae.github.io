@@ -283,8 +283,8 @@ function BillingCard({ c }: { c: AdmissionsCase }) {
   return (
     <Section title="Billing">
       <Card style={{ gap: Spacing.two }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <View style={{ gap: 2 }}>
+        <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.two }}>
+          <View style={{ gap: 2, flexShrink: 1 }}>
             <Txt variant="label">Advisory fees billed</Txt>
             <Txt variant="number">{formatAED(totals.billed)}</Txt>
           </View>

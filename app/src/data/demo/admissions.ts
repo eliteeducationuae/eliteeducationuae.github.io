@@ -661,7 +661,7 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
   const dates: AdmissionsKeyDate[] = [
     { id: 'adt-ps-draft', caseId: ucas, kind: 'deadline', title: 'Personal statement first draft', dueOn: day(12), done: false },
     { id: 'adt-oxford-open', caseId: ucas, targetId: 'atg-oxford', kind: 'open-day', title: 'Oxford open day', dueOn: day(25), done: false },
-    { id: 'adt-tsa-reg', caseId: ucas, kind: 'deadline', title: 'TSA/admissions test registration closes', dueOn: day(40), done: false },
+    { id: 'adt-tsa-reg', caseId: ucas, kind: 'deadline', title: 'Admissions test registration closes', dueOn: day(40), done: false },
     {
       id: 'adt-ucas-oxbridge',
       caseId: ucas,
@@ -675,7 +675,7 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
       id: 'adt-maths-test',
       caseId: ucas,
       kind: 'test',
-      title: 'Mathematics admissions test practice paper',
+      title: 'Mathematics Admissions Test practice paper',
       dueOn: day(30),
       done: false,
       enrolmentId: omarMaths,
