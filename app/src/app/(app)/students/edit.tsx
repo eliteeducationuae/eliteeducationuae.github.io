@@ -3,14 +3,14 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
-import { EnrolmentEditor } from '@/components/enrolment-editor';
+import { draftRatesInvalid, EnrolmentEditor } from '@/components/enrolment-editor';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
-import { useEnrolments, useFamilies, useStudents, useTutors } from '@/data/hooks';
+import { useEnrolments, useFamilies, useServices, useStudents, useTutors } from '@/data/hooks';
 import { PHASES } from '@/domain/catalogue';
-import { activeEnrolments, draftFromEnrolment, validateEnrolments, type EnrolmentDraft } from '@/domain/enrolments';
+import { activeEnrolments, draftFromEnrolment, ratesChanged, validateEnrolments, type EnrolmentDraft } from '@/domain/enrolments';
 import type { Enrolment, Student } from '@/domain/types';
 
 export default function EditStudent() {
@@ -33,6 +33,7 @@ export default function EditStudent() {
 function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Student; enrolments: Enrolment[]; defaultFamilyId?: string }) {
   const families = useFamilies();
   const tutors = useTutors();
+  const services = useServices();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [fullName, setFullName] = useState(existing?.fullName ?? '');
@@ -49,13 +50,18 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
   // Remembered after the first write, so retrying after a failed subject save updates rather than duplicates.
   const [savedId, setSavedId] = useState<string | undefined>(existing?.id);
 
-  const valid = fullName.trim() && familyId && (!examDate || /^\d{4}-\d{2}-\d{2}$/.test(examDate));
+  const ratesInvalid = drafts.some((d) => d.active && draftRatesInvalid(d));
+  const valid = fullName.trim() && familyId && (!examDate || /^\d{4}-\d{2}-\d{2}$/.test(examDate)) && !ratesInvalid;
 
   const submit = async () => {
     setError(null);
     const active = drafts.filter((d) => d.active);
     if (!savedId && !active.length) {
       setError(new Error('Please add at least one subject.'));
+      return;
+    }
+    if (ratesInvalid) {
+      setError(new Error('Please correct the rates marked below before saving.'));
       return;
     }
     const problem = validateEnrolments(drafts);
@@ -85,6 +91,11 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
       for (const [i, d] of next.entries()) {
         if (!d.id && !d.active) continue;
         const e = await source.saveEnrolment({ ...d, subject: d.subject.trim(), studentId: saved.id });
+        // Rates are kept apart from the subject itself and set only when they have changed.
+        const original = d.id ? enrolments.find((x) => x.id === d.id) : undefined;
+        if (d.active && ratesChanged(d, original)) {
+          await source.setEnrolmentRates({ enrolmentId: e.id, tutorPay: d.tutorPay ?? null, familyPrice: d.familyPrice ?? null });
+        }
         next[i] = { ...d, id: e.id };
         setDrafts([...next]);
       }
@@ -123,7 +134,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
       </Section>
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <Section title="Subjects">
-        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} />
+        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }} />
       </Section>
       <Field label="School" value={school} onChangeText={setSchool} />
       <Row gap={Spacing.two}>

@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import { subjectLine } from '@/components/catalogue-choice';
 import { BID_STATUS, fitNote, opportunityTone, tutorFits } from '@/components/opportunities';
+import { awardPaySentence } from '@/components/rates';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -90,6 +91,7 @@ export default function OpportunityDetail() {
       ) : null}
 
       <Section title={`Tutors interested (${theirs.length})`}>
+        {o.studentId && o.status === 'open' ? <Txt variant="small">{awardPaySentence(o.payRate, o.subject)}</Txt> : null}
         {theirs.length === 0 ? <EmptyState icon="people" title="No interest yet" message="Tutors were notified when you posted this role. Their responses will appear here." /> : null}
         <View style={{ gap: Spacing.two }}>
           {theirs.map((b) => {

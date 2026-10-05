@@ -358,6 +358,20 @@ The office can see the app exactly as a particular parent, student or tutor sees
 4. Return to your own account, and confirm that `view_as_audit` shows a `start` and an `end` row for the view and that `view_as_sessions` shows an `ended_at` time and a `revoked_at` time. If `revoked_at` is empty, the database could not delete the session from `auth.sessions` in this project; the view is still refused, and the person stays protected for 65 minutes after the view.
 5. On an iPhone or the iOS simulator, view a tutor, open *Record lesson* and a parent's *Book a lesson*: the compact gold strip with *Exit* should appear at the top of each sheet, and tapping save should show the *Viewing only* note inside the sheet.
 
+## Per-student rates
+
+Tutor pay and family prices may be the same for every student or set individually. Run `supabase/migrations/20261102000000_rates.sql` once in the Supabase SQL editor (or `npx supabase db push`).
+
+- **Defaults.** Unless an override is set, a tutor is paid their usual hourly rate (set on the tutor) and a family is charged the price of the lesson's service.
+- **Custom overrides.** An admin may set, for one student's subject (an enrolment), a custom hourly pay for that subject's tutor and a custom hourly price for the family. Either may be cleared at any time to return to the default. Tutor pay can only be set once the subject has a tutor. A custom family price is charged per hour, so a 90-minute lesson at AED 600 an hour is charged AED 900. Package credits are still used first, because a package is lessons the family has already paid for.
+- **Who can see what.** Admins see everything. A tutor sees only the custom pay for subjects they teach, and never sees family prices. A parent sees their own family's custom prices, and never sees tutor pay. Students see neither.
+- **Group lessons.** Each family pays its own price for its own child. The tutor is paid the highest effective rate among the students in the lesson.
+- **Cover tutors.** Custom pay belongs to the student, the subject and the tutor together. A tutor covering a lesson is paid their own usual rate, and changing a subject's tutor removes the previous tutor's custom pay.
+- **Snapshots.** Each charge records the price used when it was created, and submitted, approved and paid tutor invoices keep the rates they were submitted with. Changing a rate therefore affects only lessons charged afterwards and tutor invoices still in draft, which are rebuilt with the current rates.
+- **Awarding a role.** When a role for a named student is awarded, the student's enrolment in that subject (created if it does not yet exist) is given the chosen tutor, and the role's pay becomes that tutor's custom pay for the subject.
+
+Please note that each tutor's usual hourly rate, held on `public.tutors`, remains readable by any signed-in user. This predates per-student rates and is flagged for a later tightening.
+
 ## Checks
 
 ```bash

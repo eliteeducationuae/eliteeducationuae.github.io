@@ -106,6 +106,12 @@ export interface Enrolment {
   topicListId?: string;
   active: boolean;
   createdAt?: string;
+  /** Custom AED per hour paid to the tutor for this student and subject. Only present for admins and the teaching tutor. */
+  tutorPay?: number;
+  /** 'opportunity' when the pay was set by awarding an opportunity and not changed since. */
+  tutorPaySource?: 'custom' | 'opportunity';
+  /** Custom AED per hour charged to the family for this subject. Only present for admins and the family. */
+  familyPrice?: number;
 }
 
 /** A shared topic list for one subject, curriculum and level. */
@@ -269,6 +275,10 @@ export interface Charge {
   invoiceId?: string;
   packageId?: string;
   date: string;
+  /** 'custom' when the enrolment's family price was used instead of the service price. */
+  priceSource?: 'service' | 'custom';
+  /** The custom AED per hour the amount was worked out from (custom prices only). */
+  hourlyPrice?: number;
 }
 
 export interface InvoiceItem {
@@ -541,6 +551,8 @@ export interface TutorInvoiceItem {
   quantity: number;
   unitPrice: number;
   lessonId?: string;
+  /** 'custom' when a per-student pay rate set the unit price. */
+  rateSource?: 'usual' | 'custom';
 }
 
 export interface TutorInvoice {

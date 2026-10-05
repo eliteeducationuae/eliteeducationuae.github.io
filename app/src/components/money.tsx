@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { useCharges, useExpenses, useInvoices, useLessons, usePackages, useSettings, useTutorInvoices, useTutors } from '@/data/hooks';
+import { useCharges, useEnrolments, useExpenses, useInvoices, useLessons, usePackages, useSettings, useTutorInvoices, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 import { addDays, startOfMonth } from '@/domain/dates';
 import type { FinanceData } from '@/domain/finance';
@@ -23,8 +23,10 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
   const tutorInvoices = useTutorInvoices();
   const expenses = useExpenses();
   const settings = useSettings();
+  // Custom tutor pay per student, so the tutor-cost estimates match payroll.
+  const enrolments = useEnrolments();
   const data = useMemo(() => {
-    if (!charges.data || !packages.data || !invoices.data || !lessons.data || !tutors.data || !tutorInvoices.data || !expenses.data || !settings.data) return null;
+    if (!charges.data || !packages.data || !invoices.data || !lessons.data || !tutors.data || !tutorInvoices.data || !expenses.data || !settings.data || !enrolments.data) return null;
     return {
       charges: charges.data,
       packages: packages.data,
@@ -34,8 +36,9 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
       tutorInvoices: tutorInvoices.data,
       expenses: expenses.data,
       settings: settings.data,
+      enrolments: enrolments.data,
     };
-  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data]);
+  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data, enrolments.data]);
   return {
     data,
     refetch: () => {

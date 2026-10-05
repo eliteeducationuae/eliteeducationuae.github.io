@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { CustomBadge } from '@/components/rates';
 import { periodLabel, TUTOR_INVOICE_STATUS } from '@/components/tutor-pay';
 import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -14,6 +15,7 @@ import { formatIban, maskIban, tutorInvoiceTotal } from '@/domain/tutor-pay';
 import type { TutorInvoice } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
+import { plural } from '@/lib/id';
 import { shareTutorInvoice } from '@/lib/tutor-invoice-pdf';
 
 export default function TutorInvoiceScreen() {
@@ -95,12 +97,20 @@ function Detail({ inv }: { inv: TutorInvoice }) {
       <Section
         title={`Lessons (${lessonLines.length})`}
         action={editable ? <Button title="Refresh from lessons" size="sm" variant="ghost" loading={refresh.isPending} onPress={() => refresh.mutate([inv.tutorId, inv.periodStart])} /> : undefined}>
-        <Card style={{ gap: Spacing.one }}>
+        <Card style={{ gap: Spacing.two }}>
           {lessonLines.length === 0 ? <Txt variant="muted">No taught lessons this month yet.</Txt> : null}
           {lessonLines.map((i, n) => (
-            <Row key={n} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
-              <Txt style={{ flex: 1 }}>{i.description}</Txt>
-              <Txt variant="muted">{i.quantity}h</Txt>
+            <Row key={n} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.two}>
+              {/* The description keeps the full width; the hours, rate and any Custom badge sit beneath it. */}
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt>{i.description}</Txt>
+                <Row gap={Spacing.two} wrap>
+                  <Txt variant="muted">
+                    {plural(i.quantity, 'hour')} at {formatAED(i.unitPrice)} per hour
+                  </Txt>
+                  {i.rateSource === 'custom' ? <CustomBadge /> : null}
+                </Row>
+              </View>
               <Txt style={{ width: 90, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{formatAED(i.quantity * i.unitPrice)}</Txt>
             </Row>
           ))}

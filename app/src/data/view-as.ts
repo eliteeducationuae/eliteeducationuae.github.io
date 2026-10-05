@@ -258,6 +258,9 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   buyPackageOffer: 'write',
   openBillingPortal: 'write',
   chargeSavedCard: 'write',
+
+  // Per-student rates
+  setEnrolmentRates: 'write',
 };
 
 const refuse = async (): Promise<never> => {

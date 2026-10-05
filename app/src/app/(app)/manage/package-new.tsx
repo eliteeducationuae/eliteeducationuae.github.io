@@ -2,10 +2,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { packagePriceNotes } from '@/components/rates';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useFamilies, useServices } from '@/data/hooks';
+import { useAction, useEnrolments, useFamilies, useServices, useStudents } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 
 /** Prepaid lesson bundles: the family is invoiced now and lessons draw credits automatically. */
@@ -13,6 +14,8 @@ export default function NewPackage() {
   const params = useLocalSearchParams<{ familyId?: string }>();
   const families = useFamilies();
   const services = useServices();
+  const students = useStudents();
+  const enrolments = useEnrolments();
   const sell = useAction(source.sellPackage);
   const [familyId, setFamilyId] = useState(params.familyId ?? '');
   const [serviceId, setServiceId] = useState<string | undefined>();
@@ -25,6 +28,7 @@ export default function NewPackage() {
   const count = parseInt(lessons, 10) || 0;
   const pct = Math.max(0, Math.min(100, Number(discount) || 0));
   const price = service ? Math.round(service.rate * count * (1 - pct / 100)) : 0;
+  const priceNotes = familyId ? packagePriceNotes(students.data ?? [], familyId, enrolments.data ?? []) : [];
   const valid = familyId && service && count > 0 && (!expiresAt || /^\d{4}-\d{2}-\d{2}$/.test(expiresAt));
 
   return (
@@ -51,6 +55,11 @@ export default function NewPackage() {
           ))}
         </Row>
       </Section>
+      {priceNotes.map((note) => (
+        <Banner key={note} icon="alert">
+          {note}
+        </Banner>
+      ))}
       <Section title="Lesson type">
         <Row gap={Spacing.one} wrap>
           {(services.data ?? []).map((s) => (

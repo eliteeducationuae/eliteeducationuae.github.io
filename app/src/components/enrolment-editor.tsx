@@ -1,13 +1,17 @@
+import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { builtInSyllabusesFor, courseStillFits, enrolmentFieldsFor } from '@/data/curriculum';
 import { CURRICULA, EXAM_BOARDS, levelsFor, SUBJECTS } from '@/domain/catalogue';
-import { enrolmentTitle, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
-import type { Tutor } from '@/domain/types';
+import { enrolmentTitle, tutorChoicePatch, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
+import { familyPricePlaceholder, parseRate, serviceForEnrolment, tutorPayPlaceholder } from '@/domain/rates';
+import { formatAED } from '@/domain/money';
+import type { Enrolment, Service, Student, Tutor } from '@/domain/types';
 
 import { CataloguePicker } from './catalogue-picker';
-import { Button, Card, Chip, Row, Txt } from './ui';
+import { RateField, rateFieldError, rateFieldText } from './rates';
+import { Banner, Button, Card, Chip, Row, Txt } from './ui';
 
 /** Tutors who teach the subject first, then everyone else, each group in name order. */
 export function orderTutorsForSubject(tutors: Tutor[], subject?: string): { tutor: Tutor; teaches: boolean }[] {
@@ -28,21 +32,32 @@ export function emptyDraft(): EnrolmentDraft {
   return { subject: '', active: true };
 }
 
+/** Optional rate fields under the tutor choice; only the admin student editor passes them. */
+export interface EnrolmentRatesOptions {
+  services: Service[];
+  student?: Pick<Student, 'phase'>;
+  /** The saved enrolments, so choosing the saved tutor again restores their agreed pay. */
+  saved?: Pick<Enrolment, 'id' | 'tutorId' | 'tutorPay'>[];
+}
+
 /**
  * The list of subjects a student studies: subject, curriculum, level, exam board and (for staff) the tutor.
  * Omit `tutors` for families, which hides the tutor choice. `forFamily` words the built-in topic lists as
- * courses and drops the staff-only 'Build as we teach' choice.
+ * courses and drops the staff-only 'Build as we teach' choice. `rates` (admins only) adds the custom tutor pay
+ * and family price per hour for each subject.
  */
 export function EnrolmentEditor({
   value,
   onChange,
   tutors,
   forFamily,
+  rates,
 }: {
   value: EnrolmentDraft[];
   onChange: (v: EnrolmentDraft[]) => void;
   tutors?: Tutor[];
   forFamily?: boolean;
+  rates?: EnrolmentRatesOptions;
 }) {
   const update = (index: number, patch: Partial<EnrolmentDraft>) => onChange(value.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   const visible = value.map((d, index) => ({ d, index })).filter(({ d }) => d.active);
@@ -56,6 +71,7 @@ export function EnrolmentEditor({
           number={n + 1}
           tutors={tutors}
           forFamily={forFamily}
+          rates={rates}
           onChange={(patch) => update(index, patch)}
           onRemove={() => onChange(removeDraft(value, index))}
         />
@@ -71,6 +87,7 @@ function SubjectCard({
   number,
   tutors,
   forFamily,
+  rates,
   onChange,
   onRemove,
 }: {
@@ -78,6 +95,7 @@ function SubjectCard({
   number: number;
   tutors?: Tutor[];
   forFamily?: boolean;
+  rates?: EnrolmentRatesOptions;
   onChange: (patch: Partial<EnrolmentDraft>) => void;
   onRemove: () => void;
 }) {
@@ -85,6 +103,14 @@ function SubjectCard({
   const lists = subject ? builtInSyllabusesFor(subject, draft.curriculum) : [];
   const title = subject ? enrolmentTitle({ ...draft, subject }) : 'New subject';
   const ordered = tutors ? orderTutorsForSubject(tutors, subject) : [];
+  const saved = draft.id ? rates?.saved?.find((e) => e.id === draft.id) : undefined;
+  const choose = (tutorId?: string) => onChange(tutorChoicePatch(draft, tutorId, saved));
+  // Warn before saving that a different tutor does not inherit the pay agreed with the saved tutor.
+  const savedTutor = saved?.tutorId ? tutors?.find((t) => t.id === saved.tutorId) : undefined;
+  const lostPay =
+    saved?.tutorId && typeof saved.tutorPay === 'number' && draft.tutorId !== saved.tutorId
+      ? `Changing the tutor removes the custom pay of ${formatAED(saved.tutorPay)} per hour agreed with ${savedTutor?.fullName ?? 'the previous tutor'}.`
+      : undefined;
 
   return (
     <Card style={{ gap: Spacing.three }}>
@@ -138,18 +164,33 @@ function SubjectCard({
         <View style={{ gap: Spacing.one }}>
           <Txt variant="label">Tutor</Txt>
           <Row wrap>
-            <Chip label="Not yet assigned" selected={!draft.tutorId} onPress={() => onChange({ tutorId: undefined })} />
+            <Chip label="Not yet assigned" selected={!draft.tutorId} onPress={() => choose(undefined)} />
             {ordered.map(({ tutor, teaches }) => (
               <Chip
                 key={tutor.id}
                 label={teaches ? `${tutor.fullName} ✓` : tutor.fullName}
                 selected={draft.tutorId === tutor.id}
-                onPress={() => onChange({ tutorId: tutor.id })}
+                // Custom pay belongs to the student, subject and tutor together, so a new tutor starts at their usual rate.
+                onPress={() => choose(tutor.id)}
               />
             ))}
           </Row>
           {subject && ordered.some((t) => t.teaches) ? <Txt variant="small">✓ Teaches {subject}</Txt> : null}
+          {rates && lostPay ? (
+            <Banner tone="warning" icon="alert">
+              {lostPay}
+            </Banner>
+          ) : null}
         </View>
+      ) : null}
+
+      {rates && tutors ? (
+        <SubjectRates
+          draft={draft}
+          tutor={draft.tutorId ? tutors.find((t) => t.id === draft.tutorId) : undefined}
+          service={serviceForEnrolment(rates.services, draft, rates.student)}
+          onChange={onChange}
+        />
       ) : null}
 
       {lists.length ? (
@@ -176,5 +217,78 @@ function SubjectCard({
         <Button title="Remove subject" variant="ghost" size="sm" onPress={onRemove} />
       </Row>
     </Card>
+  );
+}
+
+/**
+ * A rate field holding text that is not a valid amount is stored as NaN, so the form can refuse to save it
+ * (and the problem disappears with the subject if it is removed). Only the admin student editor sees this.
+ */
+export function draftRatesInvalid(d: Pick<EnrolmentDraft, 'tutorPay' | 'familyPrice'>): boolean {
+  return Number.isNaN(d.tutorPay) || Number.isNaN(d.familyPrice);
+}
+
+const isSet = (n?: number) => typeof n === 'number' && !Number.isNaN(n);
+
+function SubjectRates({
+  draft,
+  tutor,
+  service,
+  onChange,
+}: {
+  draft: EnrolmentDraft;
+  tutor?: Tutor;
+  service?: Service;
+  onChange: (patch: Partial<EnrolmentDraft>) => void;
+}) {
+  // The raw text is kept locally so that typing '1' and then '.' is not rewritten while the amount is half-typed.
+  const [price, setPrice] = useState(() => rateFieldText(draft.familyPrice));
+
+  return (
+    <View style={{ gap: Spacing.three }}>
+      <TutorPayField
+        // Only the pay field remounts when the tutor changes, so its text follows the cleared or restored pay while
+        // the family price keeps whatever was typed.
+        key={draft.tutorId ?? 'none'}
+        tutorPay={draft.tutorPay}
+        tutor={tutor}
+        onChange={(tutorPay) => onChange({ tutorPay })}
+      />
+      <RateField
+        label="Family price per hour"
+        value={price}
+        placeholder={familyPricePlaceholder(service)}
+        custom={isSet(draft.familyPrice)}
+        error={rateFieldError(price)}
+        onChange={(t) => {
+          setPrice(t);
+          onChange({ familyPrice: storeRate(t) });
+        }}
+      />
+    </View>
+  );
+}
+
+/** Field text to draft value: blank is undefined (the default applies), text that is not an amount is NaN. */
+function storeRate(text: string): number | undefined {
+  const r = parseRate(text);
+  return r === 'invalid' ? NaN : (r ?? undefined);
+}
+
+function TutorPayField({ tutorPay, tutor, onChange }: { tutorPay?: number; tutor?: Tutor; onChange: (pay: number | undefined) => void }) {
+  const [pay, setPay] = useState(() => rateFieldText(tutorPay));
+  return (
+    <RateField
+      label="Tutor pay per hour"
+      value={pay}
+      placeholder={tutorPayPlaceholder(tutor)}
+      disabled={!tutor}
+      custom={isSet(tutorPay)}
+      error={rateFieldError(pay)}
+      onChange={(t) => {
+        setPay(t);
+        onChange(storeRate(t));
+      }}
+    />
   );
 }

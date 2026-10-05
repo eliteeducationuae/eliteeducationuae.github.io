@@ -1,5 +1,5 @@
 import { SYLLABUSES } from '@/data/curriculum';
-import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
+import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft, roundMoney } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
 import { enrolmentTitle, sameSubject, topicListKey, type EnrolmentDraft } from '@/domain/enrolments';
 import { cancellationOutcome, type CancellationOutcome } from '@/domain/scheduling';
@@ -448,12 +448,32 @@ export function linkList<T extends Enrolment>(db: DemoDB, e: T): T {
 const sameKey = (a: Pick<Enrolment, 'subject' | 'curriculum' | 'level'>, b: Pick<Enrolment, 'subject' | 'curriculum' | 'level'>) =>
   topicListKey(a.subject, a.curriculum, a.level) === topicListKey(b.subject, b.curriculum, b.level);
 
+/**
+ * A copy of an enrolment with the custom rates the viewer may not see removed. Mirrors the RLS on
+ * enrolment_tutor_pay (admin and the enrolment's tutor) and enrolment_family_price (admin and the family).
+ */
+function withVisibleRates(db: DemoDB, viewer: Profile, e: Enrolment): Enrolment {
+  const copy: Enrolment = { ...e };
+  if (viewer.role === 'admin') return copy;
+  const ownTutor = viewer.role === 'tutor' && !!viewer.tutorId && e.tutorId === viewer.tutorId;
+  if (!ownTutor) {
+    delete copy.tutorPay;
+    delete copy.tutorPaySource;
+  }
+  const family =
+    viewer.role === 'parent' && !!viewer.familyId && db.students.some((s) => s.id === e.studentId && s.familyId === viewer.familyId);
+  if (!family) delete copy.familyPrice;
+  return copy;
+}
+
 export const enr = {
+  /** Copies, with the custom rates stripped to what the viewer may see. */
   enrolments(db: DemoDB, viewer: Profile, studentId?: string): Enrolment[] {
     const ids = visibleStudentIds(db, viewer);
     return db.enrolments
       .filter((e) => ids.has(e.studentId) && (!studentId || e.studentId === studentId))
-      .sort((a, b) => a.subject.localeCompare(b.subject));
+      .sort((a, b) => a.subject.localeCompare(b.subject))
+      .map((e) => withVisibleRates(db, viewer, e));
   },
 
   /** Admins only. The same rules as validateEnrolments and the partial unique index on active enrolments. */
@@ -491,9 +511,40 @@ export const enr = {
       createdAt: existing?.createdAt ?? now.toISOString(),
     };
     linkList(db, saved);
+    // A new tutor starts on their usual rate: changing the tutor removes the custom pay (the family price stays).
+    if (existing && (existing.tutorId ?? null) !== (saved.tutorId ?? null)) {
+      delete existing.tutorPay;
+      delete existing.tutorPaySource;
+    }
     if (existing) Object.assign(existing, saved);
     else db.enrolments.push(saved);
     return existing ?? saved;
+  },
+
+  /** Admins only. Mirrors public.set_enrolment_rates: null clears a rate. */
+  setEnrolmentRates(db: DemoDB, viewer: Profile, input: { enrolmentId: string; tutorPay: number | null; familyPrice: number | null }): void {
+    requireAdmin(viewer);
+    const e = db.enrolments.find((x) => x.id === input.enrolmentId);
+    if (!e) throw new Error('Subject not found');
+    const round = (v: number | null) => (v === null || v === undefined ? null : roundMoney(v));
+    const pay = round(input.tutorPay);
+    const price = round(input.familyPrice);
+    const negative = (v: number | null) => v !== null && !(Number.isFinite(v) && v >= 0);
+    if (negative(pay) || negative(price)) throw new Error('Please enter a rate of zero or more.');
+    if ((pay ?? 0) >= 100000 || (price ?? 0) >= 100000) throw new Error('Please enter a rate below 100,000.');
+    if (pay !== null && !e.tutorId) throw new Error('Please choose a tutor for this subject before setting their pay.');
+
+    if (pay === null) {
+      delete e.tutorPay;
+      delete e.tutorPaySource;
+    } else {
+      // An unchanged pay keeps its source, so pay set by awarding an opportunity stays marked as such.
+      const unchanged = e.tutorPay === pay && !!e.tutorPaySource;
+      e.tutorPaySource = unchanged ? e.tutorPaySource : 'custom';
+      e.tutorPay = pay;
+    }
+    if (price === null) delete e.familyPrice;
+    else e.familyPrice = price;
   },
 
   topicLists: (db: DemoDB) => [...db.topicLists].sort((a, b) => a.name.localeCompare(b.name)),
@@ -566,7 +617,15 @@ function addInvoice(db: DemoDB, familyId: string, items: Invoice['items'], now: 
 export function applyCharges(db: DemoDB, lesson: Lesson, attendance: CompleteLessonInput['attendance'] = {}) {
   const service = db.services.find((s) => s.id === lesson.serviceId);
   if (!service) return;
-  const { charges, packageDraws } = chargesForLesson(lesson, service, db.students, db.packages, db.settings, attendance);
+  const { charges, packageDraws } = chargesForLesson(
+    lesson,
+    service,
+    db.students,
+    db.packages,
+    db.settings,
+    attendance,
+    db.enrolments,
+  );
   for (const c of charges) db.charges.push({ ...c, id: newId('chg') });
   for (const pid of packageDraws) {
     const p = db.packages.find((x) => x.id === pid);
