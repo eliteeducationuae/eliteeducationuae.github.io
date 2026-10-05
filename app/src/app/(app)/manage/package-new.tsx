@@ -41,8 +41,10 @@ export default function NewPackage() {
           disabled={!valid}
           loading={sell.isPending}
           onPress={async () => {
+            // Guarded rather than asserted: the compiled screen reads this while no lesson type is chosen.
+            if (!service) return;
             const inv = await sell.mutateAsync([
-              { familyId, serviceId, name: `${service!.name} ${count}-lesson bundle`, lessonsTotal: count, price, expiresAt: expiresAt || undefined },
+              { familyId, serviceId, name: `${service.name} bundle`, lessonsTotal: count, price, expiresAt: expiresAt || undefined },
             ]);
             router.replace({ pathname: '/invoice/[id]', params: { id: inv.id } });
           }}

@@ -4,7 +4,7 @@ import { AUTOPAY_CHARGING_MESSAGE, AUTOPAY_NO_CARD_MESSAGE, packageReceiptLine, 
 import type { Family, Invoice, LessonPackage, PackageOffer, Profile, SavedCard } from '@/domain/types';
 
 import type { AutopayChargeResult, CardPaymentResult } from '../source';
-import { AccessError, newId, requireAdmin, type DemoDB } from './db';
+import { AccessError, newId, requireAdmin, stampTaxDetails, withTax, type DemoDB } from './db';
 
 /**
  * Demo versions of saved cards, autopay and package top-ups. Each mirrors a database function, policy or Edge
@@ -23,8 +23,8 @@ function findFamily(db: DemoDB, familyId: string): Family {
 }
 
 /** Record a card payment for whatever is still owed. Checkout payments carry no reference (production keeps only the Stripe id). */
-function payBalance(invoice: Invoice, reference: string | undefined, now: Date) {
-  const { balance } = invoiceTotals(invoice);
+function payBalance(db: DemoDB, invoice: Invoice, reference: string | undefined, now: Date) {
+  const { balance } = invoiceTotals(withTax(db, invoice));
   if (balance <= 0) return;
   invoice.payments.push({
     id: newId('pay'),
@@ -33,6 +33,8 @@ function payBalance(invoice: Invoice, reference: string | undefined, now: Date) 
     method: 'card',
     ...(reference ? { reference } : {}),
     paidAt: now.toISOString(),
+    // Taken through Stripe, so it can be refunded to the card.
+    viaStripe: true,
   });
   invoice.status = 'paid';
 }
@@ -108,9 +110,10 @@ export const pay = {
     const draft = newInvoiceDraft(familyId, items, db.settings, now);
     // A receipt is due the day it is issued, as in fulfil_package_offer.
     const invoice: Invoice = { ...draft, dueDate: draft.issueDate, id: newId('inv'), status: 'sent' };
+    stampTaxDetails(db, invoice);
     db.settings.nextInvoiceNumber += 1;
     db.invoices.push(invoice);
-    payBalance(invoice, undefined, now);
+    payBalance(db, invoice, undefined, now);
 
     pay.saveDemoCard(db, familyId);
     return { paid: true };
@@ -129,8 +132,8 @@ export const pay = {
       stored.autopayStatus = undefined;
       stored.autopayError = undefined;
     }
-    if (invoiceTotals(stored).balance <= 0) throw new Error('Nothing left to pay');
-    payBalance(stored, undefined, now);
+    if (invoiceTotals(withTax(db, stored)).balance <= 0) throw new Error('Nothing left to pay');
+    payBalance(db, stored, undefined, now);
     pay.saveDemoCard(db, stored.familyId);
     return { paid: true };
   },
@@ -151,8 +154,8 @@ export const pay = {
     if (stored.status !== 'sent') return stored;
     const family = db.families.find((f) => f.id === stored.familyId);
     if (!family?.autopay || !family.savedCard) return stored;
-    if (invoiceTotals(stored).balance <= 0) return stored;
-    payBalance(stored, 'Autopay', now);
+    if (invoiceTotals(withTax(db, stored)).balance <= 0) return stored;
+    payBalance(db, stored, 'Autopay', now);
     stored.autopayStatus = 'succeeded';
     stored.autopayError = undefined;
     return stored;
@@ -167,19 +170,19 @@ export const pay = {
     const family = db.families.find((f) => f.id === invoice.familyId);
     if (!family?.autopay) return { status: 'skipped', error: 'Autopay is switched off for this family.' };
     if (!family.savedCard) return { status: 'skipped', error: 'This family has no saved card.' };
-    if (invoiceTotals(invoice).balance <= 0) return { status: 'skipped' };
-    payBalance(invoice, 'Autopay', now);
+    if (invoiceTotals(withTax(db, invoice)).balance <= 0) return { status: 'skipped' };
+    payBalance(db, invoice, 'Autopay', now);
     invoice.autopayStatus = 'succeeded';
     invoice.autopayError = undefined;
     return { status: 'succeeded' };
   },
 
-  /** family_billing RLS: only admins and the family itself see autopay and the saved card. */
+  /** family_billing RLS: only admins and the family itself see autopay, the saved card, TRN and billing address. */
   stripBilling(families: Family[], viewer: Profile): Family[] {
     if (viewer.role === 'admin') return families;
     return families.map((f) => {
       if (viewer.role === 'parent' && viewer.familyId === f.id) return f;
-      const { autopay: _autopay, savedCard: _card, ...rest } = f;
+      const { autopay: _autopay, savedCard: _card, trn: _trn, billingAddress: _address, billingName: _billingName, ...rest } = f;
       return rest;
     });
   },

@@ -623,7 +623,8 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.two, paddingHorizontal: Spacing.three, alignItems: 'center' },
-  footerInner: { width: '100%', maxWidth: MaxContentWidth, flexDirection: 'row', gap: Spacing.two },
+  // Matches the content column: MaxContentWidth less the content's side padding.
+  footerInner: { width: '100%', maxWidth: MaxContentWidth - 2 * Spacing.three, flexDirection: 'row', gap: Spacing.two },
   card: { borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.three + Spacing.one, gap: Spacing.two },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignItems: 'stretch' },
   stat: { flexGrow: 1, flexBasis: 150 },

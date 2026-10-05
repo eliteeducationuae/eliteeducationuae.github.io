@@ -42,6 +42,9 @@ const SETTLE_MINUTES = 10;
 /** Pages of a customer's payment intents read when looking an attempt up (100 each). */
 const LOOKUP_PAGES = 5;
 
+/** Credit notes and refunds, embedded with each invoice so every balance here matches invoice_balance in the database. */
+const ADJUSTMENTS = 'credit_notes!credit_notes_invoice_id_fkey(total), refunds!refunds_invoice_id_fkey(amount, status)';
+
 const NO_CARD = 'No saved card is available';
 /** Stripe could not be reached during a charge. */
 const UNREACHABLE = 'The card processor could not be reached, so it is not yet known whether the payment went through.';
@@ -173,7 +176,7 @@ async function charge(db: Db, inv: any): Promise<Result> {
     return { invoiceId: id, status: 'skipped', error: 'Autopay is switched off for this family.' };
   }
 
-  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? []);
+  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? [], { credits: inv.credit_notes, refunds: inv.refunds });
   if (balance <= 0) {
     await db.from('invoices').update({ autopay_status: 'succeeded', autopay_error: null }).eq('id', id);
     return { invoiceId: id, status: 'skipped' };
@@ -248,14 +251,14 @@ async function resolve(db: Db, inv: any): Promise<Result> {
 
   // The invoice as it is now: the office may have voided it or recorded a payment, or the family switched autopay off,
   // since the charge was sent. Resending is only safe while it still wants exactly that charge.
-  const { data: now } = await db.from('invoices').select('status, family_id, items, vat_rate, payments(amount)').eq('id', id).maybeSingle();
+  const { data: now } = await db.from('invoices').select(`status, family_id, items, vat_rate, payments(amount), ${ADJUSTMENTS}`).eq('id', id).maybeSingle();
   if (!now) return { invoiceId: id, status: 'skipped', error: 'This invoice no longer exists.' };
   const { data: billing } = await db.from('family_billing').select('stripe_customer_id, autopay').eq('family_id', now.family_id).maybeSingle();
   const chargeable = now.status === 'sent' && billing?.autopay === true;
   const replay = autopayReplayAllowed({
     invoiceStatus: now.status,
     autopay: billing?.autopay,
-    balanceFils: invoiceBalanceFils(now.items, now.vat_rate, now.payments ?? []),
+    balanceFils: invoiceBalanceFils(now.items, now.vat_rate, now.payments ?? [], { credits: now.credit_notes, refunds: now.refunds }),
     requestAmountFils: amount,
     sentAt: sent.sent_at,
     now: Date.now(),
@@ -308,7 +311,9 @@ Deno.serve(async (req) => {
     const db = adminClient();
     let query = db
       .from('invoices')
-      .select('id, number, status, family_id, items, vat_rate, autopay_status, autopay_attempts, autopay_claimed_at, payments(amount)');
+      .select(
+        `id, number, status, family_id, items, vat_rate, autopay_status, autopay_attempts, autopay_claimed_at, payments(amount), ${ADJUSTMENTS}`,
+      );
     if (who === 'admin') query = query.eq('id', invoiceId!).in('autopay_status', ['pending', 'failed', 'unknown', 'processing']);
     else {
       const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();

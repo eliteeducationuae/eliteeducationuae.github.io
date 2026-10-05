@@ -1,15 +1,17 @@
 import { SYLLABUSES } from '@/data/curriculum';
-import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
+import { formatInvoiceNumber, invoiceTotals, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
 import { contactsFromFamily } from '@/domain/contacts';
+import { round2 } from '@/domain/tax';
 import { buildTopicLookup } from '@/domain/topics';
 import type { Enrolment, FamilyContact, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
 import { seedClasswork } from './classwork';
 import { sampleBusyBlocks } from './calendar';
-import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
+import { applyCharges, DEMO_DB_VERSION, stampTaxDetails, type DemoDB } from './db';
 import { ops } from './operations';
+import { tax } from './tax';
 
 const SUMMARIES = [
   'We worked through {t1} from first principles, followed by exam-style questions on {t2}. Engagement was excellent and understanding is now considerably more secure.',
@@ -104,7 +106,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   const settings: Settings = {
     businessName: 'Elite Education',
     currency: 'AED',
-    vatRate: 0,
+    vatRate: 0.05,
     cancellationHours: 24,
     lateCancelFee: 1,
     noShowFee: 1,
@@ -116,6 +118,13 @@ export function createSeed(now: Date = new Date()): DemoDB {
     emailInvoices: true,
     emailMessages: true,
     bookingNoticeHours: 24,
+    // Tax: a VAT-registered business (demo details only).
+    legalName: 'Elite Education (demo legal name)',
+    trn: '100000000000003',
+    registeredAddress: 'Office 0000, Demo Business Tower, Dubai, United Arab Emirates',
+    invoiceFooter: undefined,
+    vatQuarterStartMonth: 1,
+    nextCreditNoteNumber: 1,
   };
 
   const db: DemoDB = {
@@ -145,7 +154,11 @@ export function createSeed(now: Date = new Date()): DemoDB {
       { id: 'f-mansoori', name: 'Al Mansoori', parentName: 'Fatima Al Mansoori', email: 'fatima@example.com', phone: '+971 50 000 0001' },
       { id: 'f-sharma', name: 'Sharma', parentName: 'Priya Sharma', email: 'priya@example.com', phone: '+971 50 000 0002' },
       { id: 'f-hughes', name: 'Hughes', parentName: 'Emma Hughes', email: 'emma@example.com', phone: '+971 50 000 0003' },
-      { id: 'f-haddad', name: 'Haddad', parentName: 'Rami Haddad', email: 'rami@example.com', phone: '+971 50 000 0004' },
+      // Tax: the Haddads' fees are paid by Rami's company, so its name, address and TRN appear on their tax invoices.
+      {
+        id: 'f-haddad', name: 'Haddad', parentName: 'Rami Haddad', email: 'rami@example.com', phone: '+971 50 000 0004',
+        billingName: 'Haddad Trading LLC (demo)', billingAddress: 'PO Box 00000, Dubai, United Arab Emirates', trn: '100000000000012',
+      },
     ],
     students: [
       { id: 's-omar', familyId: 'f-mansoori', fullName: 'Omar Al Mansoori', curriculum: 'IB', syllabusId: 'ib-aa-hl', phase: 'Sixth Form and IB Diploma', school: 'Dubai College', yearGroup: 'Year 12', currentGrade: '5', targetGrade: '7', examDate: '2027-05-04', notes: 'Strong algebra; rushes calculus. Prefers worked examples first.' },
@@ -243,6 +256,8 @@ export function createSeed(now: Date = new Date()): DemoDB {
     { id: 'u-student', role: 'student', fullName: 'Omar Al Mansoori', email: 'omar@example.com', studentId: 's-omar' },
     // Listed after the demo buttons' accounts so their order, and the sample parent for Apple and Google, stay the same.
     { id: 'u-parent2', role: 'parent', fullName: 'Khalid Al Mansoori', email: 'khalid@example.com', familyId: 'f-mansoori' },
+    // Tax: the accountant reads the books only.
+    { id: 'u-accountant', role: 'accountant', fullName: 'Amira Haddad', email: 'accounts@example.com' },
   ];
   db.profiles = profiles;
 
@@ -251,7 +266,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   db.packages.push({
     id: 'pkg-sharma',
     familyId: 'f-sharma',
-    name: 'A-Level 10-lesson bundle',
+    name: 'A-Level bundle',
     serviceId: 'svc-alevel',
     lessonsTotal: 10,
     lessonsUsed: 0,
@@ -419,9 +434,10 @@ export function createSeed(now: Date = new Date()): DemoDB {
       id: `inv-${family.id}`,
       status: 'sent',
     };
+    stampTaxDetails(db, invoice);
     db.settings.nextInvoiceNumber += 1;
     if (family.id !== 'f-hughes') {
-      const total = invoice.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+      const { total } = invoiceTotals(invoice);
       invoice.payments.push({ id: `pay-${family.id}`, invoiceId: invoice.id, amount: total, method: 'bank-transfer', paidAt: addDays(issued, 2).toISOString(), reference: 'Bank transfer' });
       invoice.status = 'paid';
     }
@@ -443,8 +459,14 @@ export function createSeed(now: Date = new Date()): DemoDB {
     dueDate: pkg.purchasedAt,
     status: 'paid',
     items: [{ description: `${pkg.name} (${pkg.lessonsTotal} lessons)`, quantity: 1, unitPrice: pkg.price, packageId: pkg.id }],
-    vatRate: 0,
-    payments: [{ id: 'pay-pkg', invoiceId: 'inv-pkg-sharma', amount: pkg.price, method: 'card', paidAt: packageStart.toISOString() }],
+    vatRate: db.settings.vatRate,
+    payments: [],
+  });
+  const pkgInvoice = db.invoices[db.invoices.length - 1];
+  stampTaxDetails(db, pkgInvoice);
+  // Paid by card through Stripe, so it can be refunded to the card.
+  pkgInvoice.payments.push({
+    id: 'pay-pkg', invoiceId: 'inv-pkg-sharma', amount: invoiceTotals(pkgInvoice).total, method: 'card', paidAt: packageStart.toISOString(), viaStripe: true,
   });
   db.settings.nextInvoiceNumber += 1;
 
@@ -454,7 +476,51 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedCalendar(db, now);
   seedPayments(db);
   seedContacts(db, now);
+  seedTax(db, now);
   return db;
+}
+
+/**
+ * Tax: a partial credit note with a bank-transfer refund on a paid lesson invoice, a partial card refund with a credit
+ * note on the package invoice, and the accountant's accepted invitation. The Hughes invoice stays unpaid and uncredited.
+ */
+function seedTax(db: DemoDB, now: Date) {
+  const admin = db.profiles.find((p) => p.role === 'admin')!;
+  const lessons = db.invoices.find((i) => i.id === 'inv-f-mansoori' && i.status === 'paid' && i.items.length > 0);
+  if (lessons) {
+    const line = lessons.items[0];
+    const gross = round2(round2(line.quantity * line.unitPrice) * (1 + lessons.vatRate));
+    tax.refundPayment(
+      db,
+      admin,
+      {
+        paymentId: `pay-${lessons.familyId}`,
+        amount: gross,
+        reason: 'Lesson cancelled by Elite Education. One lesson refunded.',
+        reference: 'FT-DEMO-0001',
+        withCreditNote: true,
+        requestKey: 'seed-refund-mansoori',
+      },
+      addDays(now, -5),
+    );
+  }
+  if (db.invoices.some((i) => i.id === 'inv-pkg-sharma')) {
+    tax.refundPayment(
+      db,
+      admin,
+      {
+        paymentId: 'pay-pkg',
+        amount: 1050,
+        reason: 'Two lessons of the package were no longer needed. Partial refund.',
+        withCreditNote: true,
+        requestKey: 'seed-refund-sharma',
+      },
+      addDays(now, -3),
+    );
+  }
+  db.accountantInvites = [
+    { email: 'accounts@example.com', fullName: 'Amira Haddad', invitedAt: addDays(now, -20).toISOString(), acceptedAt: addDays(now, -19).toISOString() },
+  ];
 }
 
 // Google Calendar

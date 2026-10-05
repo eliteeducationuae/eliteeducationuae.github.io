@@ -2,6 +2,7 @@ import { SYLLABUSES } from '@/data/curriculum';
 import type { AuditEvent } from '@/domain/audit';
 import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft, roundMoney } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
+import { creditableLines, creditRemaining, formatCreditNoteNumber, normaliseTrn, planCreditNote, round2, type CreditNotePlan } from '@/domain/tax';
 import { enrolmentTitle, sameSubject, topicListKey, type EnrolmentDraft } from '@/domain/enrolments';
 import { cancellationOutcome, type CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -44,6 +45,10 @@ import type {
   TopicList,
   TopicRating,
   PackageOffer,
+  AccountantInvite,
+  CreditNote,
+  Refund,
+  TaxParty,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -99,7 +104,14 @@ export interface DemoDB {
   familyContacts?: FamilyContact[];
   /** Audit trail (mirrors public.audit_events). Optional: databases saved before it lack the field. */
   audit?: AuditEvent[];
+  // Tax: credit notes, refunds and accountant access. Optional because older saved databases lack them: read with `?? []`.
+  creditNotes?: CreditNote[];
+  refunds?: DemoRefund[];
+  accountantInvites?: AccountantInvite[];
 }
+
+/** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */
+export type DemoRefund = Refund & { requestKey?: string };
 
 export interface OutboxMessage {
   id: string;
@@ -143,6 +155,9 @@ export function visibleStudentIds(db: DemoDB, viewer: Profile): Set<string> {
       return new Set(db.students.filter((s) => s.familyId === viewer.familyId).map((s) => s.id));
     case 'student':
       return new Set(viewer.studentId ? [viewer.studentId] : []);
+    case 'accountant':
+      // Accountants read the books only: no students, lessons or notes.
+      return new Set();
   }
 }
 
@@ -157,6 +172,16 @@ function canSeeFamily(db: DemoDB, viewer: Profile, familyId: string): boolean {
   if (viewer.role === 'admin') return true;
   if (viewer.role === 'parent') return viewer.familyId === familyId;
   return false;
+}
+
+/** Admins and accountants read every invoice, payment, credit note, refund, expense and tutor invoice. */
+export function isFinanceReader(viewer: Profile): boolean {
+  return viewer.role === 'admin' || viewer.role === 'accountant';
+}
+
+/** Read access to a family's money (invoices, charges, packages, credit notes, refunds). Writes still use canSeeFamily. */
+function canReadFinance(db: DemoDB, viewer: Profile, familyId: string): boolean {
+  return isFinanceReader(viewer) || canSeeFamily(db, viewer, familyId);
 }
 
 export function requireAdmin(viewer: Profile) {
@@ -181,7 +206,8 @@ export const q = {
       .map((s) => (viewer.role === 'admin' || viewer.role === 'tutor' ? s : { ...s, notes: undefined }));
   },
   families(db: DemoDB, viewer: Profile): Family[] {
-    if (viewer.role === 'admin') return db.families;
+    // Accountants see every family (billing details are stripped by pay.stripBilling).
+    if (isFinanceReader(viewer)) return db.families;
     const familyIds = new Set(q.students(db, viewer).map((s) => s.familyId));
     // Mirrors the "see families" policy: a parent always sees their own family, even before a child is added.
     if (viewer.familyId) familyIds.add(viewer.familyId);
@@ -211,19 +237,21 @@ export const q = {
     return db.ratings.filter((r) => ids.has(r.studentId) && (!studentId || r.studentId === studentId));
   },
   packages(db: DemoDB, viewer: Profile, familyId?: string): LessonPackage[] {
-    return db.packages.filter((p) => canSeeFamily(db, viewer, p.familyId) && (!familyId || p.familyId === familyId));
+    return db.packages.filter((p) => canReadFinance(db, viewer, p.familyId) && (!familyId || p.familyId === familyId));
   },
   charges(db: DemoDB, viewer: Profile, familyId?: string): Charge[] {
-    return db.charges.filter((c) => canSeeFamily(db, viewer, c.familyId) && (!familyId || c.familyId === familyId));
+    return db.charges.filter((c) => canReadFinance(db, viewer, c.familyId) && (!familyId || c.familyId === familyId));
   },
   invoices(db: DemoDB, viewer: Profile, familyId?: string): Invoice[] {
-    return db.invoices.filter(
-      (i) =>
-        canSeeFamily(db, viewer, i.familyId) &&
-        (!familyId || i.familyId === familyId) &&
-        // Families never see drafts.
-        (viewer.role === 'admin' || i.status !== 'draft'),
-    );
+    return db.invoices
+      .filter(
+        (i) =>
+          canReadFinance(db, viewer, i.familyId) &&
+          (!familyId || i.familyId === familyId) &&
+          // Families never see drafts.
+          (isFinanceReader(viewer) || i.status !== 'draft'),
+      )
+      .map((i) => withTax(db, i));
   },
 };
 
@@ -380,19 +408,43 @@ export const cmd = {
     return invoice;
   },
 
-  setInvoiceStatus(db: DemoDB, viewer: Profile, id: string, status: InvoiceStatus) {
+  setInvoiceStatus(db: DemoDB, viewer: Profile, id: string, status: InvoiceStatus, now = new Date()) {
     requireAdmin(viewer);
     const invoice = db.invoices.find((i) => i.id === id);
     if (!invoice) throw new Error('Invoice not found');
+    if (invoice.status === status) return;
+    // Tax: an issued invoice is a tax document. It is cancelled with a credit note and never reopened or redrafted.
+    if (invoice.status === 'void') throw new Error('A cancelled invoice cannot be reopened.');
+    if (status === 'draft') throw new Error('An issued tax invoice cannot be returned to draft. Issue a credit note instead.');
+    if (status === 'void' && invoice.status !== 'draft') {
+      // Mirrors invoices_cancel_with_credit_note: a closing credit note for everything not yet credited (per line, in
+      // order, then any remainder on its own line), with the lessons released to be invoiced again. Only the lines whose
+      // lesson is still on the invoice (and so is released below) are rebilled; package sales and ad hoc lines are credits.
+      const notes = creditNotesOf(db).filter((n) => n.invoiceId === id);
+      const target = creditRemaining(invoice, notes).net;
+      if (target > 0) {
+        const lines: { description: string; invoiceLine?: number; net: number }[] = [];
+        let taken = 0;
+        for (const l of creditableLines(invoice, notes)) {
+          const rem = Math.min(l.remaining, round2(target - taken));
+          if (rem > 0) {
+            lines.push({ description: l.description, invoiceLine: l.index, net: rem });
+            taken = round2(taken + rem);
+          }
+        }
+        if (round2(target - taken) > 0) lines.push({ description: 'Invoice cancelled', net: round2(target - taken) });
+        const rebilledLines = new Set<number>();
+        invoice.items.forEach((item, k) => {
+          if (item.chargeId && db.charges.some((c) => c.id === item.chargeId && c.invoiceId === id)) rebilledLines.add(k);
+        });
+        addCreditNote(db, invoice, planCreditNote(invoice, notes, lines), { reason: 'Invoice cancelled', rebilledLines, now });
+      }
+    }
+    stampTaxDetails(db, invoice);
     invoice.status = status;
     if (status === 'void') {
       // Voiding releases the charges so they can be billed again.
-      for (const c of db.charges) {
-        if (c.invoiceId === id) {
-          c.status = 'unbilled';
-          c.invoiceId = undefined;
-        }
-      }
+      releaseCharges(db, id);
     }
   },
 
@@ -412,8 +464,10 @@ export const cmd = {
       throw new AccessError('Not allowed');
     }
     if (amount <= 0) throw new Error('Amount must be positive');
-    invoice.payments.push({ id: newId('pay'), invoiceId, amount, method, reference, paidAt: now.toISOString() });
-    if (invoiceTotals(invoice).balance <= 0) invoice.status = 'paid';
+    // A family paying by card does so through Stripe (the webhook records it), so it can be refunded by card.
+    const viaStripe = viewer.role !== 'admin' && method === 'card';
+    invoice.payments.push({ id: newId('pay'), invoiceId, amount, method, reference, paidAt: now.toISOString(), ...(viaStripe ? { viaStripe } : {}) });
+    if (invoice.status === 'sent' && invoiceTotals(withTax(db, invoice)).balance <= 0) invoice.status = 'paid';
   },
 };
 
@@ -618,6 +672,7 @@ export function lessonCountsFor(db: DemoDB, lesson: Lesson, e: Enrolment): boole
 
 function addInvoice(db: DemoDB, familyId: string, items: Invoice['items'], now: Date): Invoice {
   const invoice: Invoice = { ...newInvoiceDraft(familyId, items, db.settings, now), id: newId('inv'), status: 'sent' };
+  stampTaxDetails(db, invoice);
   db.settings.nextInvoiceNumber += 1;
   db.invoices.push(invoice);
   return invoice;
@@ -640,5 +695,129 @@ export function applyCharges(db: DemoDB, lesson: Lesson, attendance: CompleteLes
   for (const pid of packageDraws) {
     const p = db.packages.find((x) => x.id === pid);
     if (p) p.lessonsUsed += 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tax: credit notes, refunds and accountant access (mirrors 20261105000000_tax.sql)
+// ---------------------------------------------------------------------------
+
+export const creditNotesOf = (db: DemoDB): CreditNote[] => (db.creditNotes ??= []);
+export const refundsOf = (db: DemoDB): DemoRefund[] => (db.refunds ??= []);
+export const accountantInvitesOf = (db: DemoDB): AccountantInvite[] => (db.accountantInvites ??= []);
+
+/** A refund as screens see it (without the request key). */
+export function publicRefund(r: DemoRefund): Refund {
+  const { requestKey: _key, ...rest } = r;
+  return rest;
+}
+
+/** The invoice with its credit notes (summaries) and refunds attached, as the invoice queries return it. */
+export function withTax(db: DemoDB, invoice: Invoice): Invoice {
+  const creditNotes = (db.creditNotes ?? [])
+    .filter((n) => n.invoiceId === invoice.id)
+    .map(({ id, number, issueDate, subtotal, vat, total, rebilled, rebilledNet }) => ({ id, number, issueDate, subtotal, vat, total, rebilled, rebilledNet }));
+  const refunds = (db.refunds ?? []).filter((r) => r.invoiceId === invoice.id).map(publicRefund);
+  return { ...invoice, creditNotes, refunds };
+}
+
+/** The business as printed on tax documents now. */
+export function supplierSnapshot(settings: Settings): TaxParty {
+  return {
+    name: settings.legalName?.trim() || settings.businessName,
+    ...(settings.registeredAddress?.trim() ? { address: settings.registeredAddress.trim() } : {}),
+    ...(settings.trn ? { trn: normaliseTrn(settings.trn) } : {}),
+    ...(settings.notifyEmail ? { email: settings.notifyEmail } : {}),
+  };
+}
+
+/** The family as printed on tax documents now. */
+export function customerSnapshot(family: Family | undefined): TaxParty | undefined {
+  if (!family) return undefined;
+  return {
+    name: family.billingName?.trim() || family.parentName || family.name,
+    ...(family.billingAddress?.trim() ? { address: family.billingAddress.trim() } : {}),
+    ...(family.trn ? { trn: normaliseTrn(family.trn) } : {}),
+    ...(family.email ? { email: family.email } : {}),
+  };
+}
+
+/**
+ * Mirrors invoices_snapshot_tax: when an invoice is issued, freeze the supplier and customer and set the date of supply
+ * (the last lesson charged on it, otherwise the issue date). Kept if already set.
+ */
+export function stampTaxDetails(db: DemoDB, invoice: Invoice) {
+  if (invoice.supplier) return;
+  invoice.supplier = supplierSnapshot(db.settings);
+  const customer = customerSnapshot(db.families.find((f) => f.id === invoice.familyId));
+  if (!invoice.customer && customer) invoice.customer = customer;
+  const chargeIds = new Set(invoice.items.map((i) => i.chargeId).filter(Boolean));
+  const lessonDates = db.charges.filter((c) => chargeIds.has(c.id)).map((c) => toDateKey(new Date(c.date)));
+  invoice.supplyDate ??= lessonDates.length ? lessonDates.sort()[lessonDates.length - 1] : invoice.issueDate;
+}
+
+/** Put an invoice's charges back to unbilled (all of them, or just those given). */
+export function releaseCharges(db: DemoDB, invoiceId: string, only?: Set<string>) {
+  for (const c of db.charges) {
+    if (c.invoiceId === invoiceId && (!only || only.has(c.id))) {
+      c.status = 'unbilled';
+      c.invoiceId = undefined;
+    }
+  }
+}
+
+/**
+ * Mirrors _make_credit_note: record a planned credit note against an invoice, numbered from settings (the counter only
+ * ever goes up), with the invoice's frozen supplier and customer. Does not change the invoice (see settleInvoice).
+ */
+export function addCreditNote(
+  db: DemoDB,
+  invoice: Invoice,
+  plan: CreditNotePlan,
+  opts: { reason: string; rebilledLines?: Set<number>; now?: Date },
+): CreditNote {
+  const now = opts.now ?? new Date();
+  // Mirrors _make_credit_note's p_rebilled_lines: lines crediting an invoice line whose lesson is released are rebilled.
+  const lines = plan.lines.map((l) =>
+    l.invoiceLine !== undefined && opts.rebilledLines?.has(l.invoiceLine) ? { ...l, rebilled: true } : l,
+  );
+  const rebilledNet = round2(lines.reduce((s, l) => s + (l.rebilled ? l.net : 0), 0));
+  const family = db.families.find((f) => f.id === invoice.familyId);
+  const note: CreditNote = {
+    id: newId('cn'),
+    number: formatCreditNoteNumber(db.settings.nextCreditNoteNumber),
+    issueDate: toDateKey(now),
+    subtotal: plan.subtotal,
+    vat: plan.vat,
+    total: plan.total,
+    rebilled: rebilledNet > 0,
+    rebilledNet,
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.number,
+    familyId: invoice.familyId,
+    reason: opts.reason,
+    vatRate: invoice.vatRate,
+    lines,
+    supplier: invoice.supplier ?? supplierSnapshot(db.settings),
+    customer: invoice.customer ?? customerSnapshot(family),
+    createdAt: now.toISOString(),
+  };
+  db.settings.nextCreditNoteNumber = (db.settings.nextCreditNoteNumber ?? 1) + 1;
+  creditNotesOf(db).push(note);
+  return note;
+}
+
+/**
+ * Mirrors _tax_settle_invoice: after a credit note or refund, an invoice whose net is fully credited is cancelled
+ * (its lessons released only when asked); a sent invoice with nothing left to pay is paid.
+ */
+export function settleInvoice(db: DemoDB, invoice: Invoice, releaseAll: boolean) {
+  const subtotal = invoiceTotals({ ...invoice, payments: [] }).subtotal;
+  const creditedNet = round2(creditNotesOf(db).filter((n) => n.invoiceId === invoice.id).reduce((s, n) => s + n.subtotal, 0));
+  if ((invoice.status === 'sent' || invoice.status === 'paid') && subtotal > 0 && creditedNet >= subtotal) {
+    invoice.status = 'void';
+    if (releaseAll) releaseCharges(db, invoice.id);
+  } else if (invoice.status === 'sent' && invoiceTotals(withTax(db, invoice)).balance <= 0) {
+    invoice.status = 'paid';
   }
 }

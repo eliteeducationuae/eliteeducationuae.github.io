@@ -2,6 +2,7 @@ import {
   chargesForLesson,
   displayStatus,
   formatAED,
+  formatPercent,
   invoiceTotals,
   itemsFromCharges,
   newInvoiceDraft,
@@ -98,7 +99,7 @@ describe('invoices', () => {
   };
 
   it('totals with VAT and payments', () => {
-    expect(invoiceTotals(invoice)).toEqual({ subtotal: 999.99, vat: 50, total: 1049.99, paid: 500, balance: 549.99 });
+    expect(invoiceTotals(invoice)).toEqual({ subtotal: 999.99, vat: 50, total: 1049.99, paid: 500, credited: 0, refunded: 0, balance: 549.99 });
   });
 
   it('derives part-paid, overdue and paid', () => {
@@ -124,6 +125,11 @@ describe('invoices', () => {
   it('formats AED', () => {
     expect(formatAED(12500)).toBe('AED 12,500');
     expect(formatAED(99.5)).toBe('AED 99.50');
+    // Negative amounts take a true minus sign before the currency, as on invoices.
+    expect(formatAED(-2480)).toBe('−AED 2,480');
+    expect(formatAED(-0.004)).toBe('AED 0');
+    expect(formatPercent(-2.07)).toBe('−207%');
+    expect(formatPercent(0.305)).toBe('31%');
   });
 });
 

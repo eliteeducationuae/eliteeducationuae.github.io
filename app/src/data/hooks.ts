@@ -228,3 +228,15 @@ export const useAuditHistory = (filter: AuditFilter, pageSize = 20, enabled = tr
 /** Everyone who appears in the audit trail, for the person filter. */
 export const useAuditActors = (enabled = true) =>
   useQuery({ queryKey: ['audit-actors'], queryFn: () => source.listAuditActors?.() ?? Promise.resolve([]), enabled });
+// Tax: credit notes, refunds and accountant access
+
+export const useCreditNotes = (filter?: { familyId?: string; invoiceId?: string }) =>
+  useQuery({ queryKey: ['credit-notes', filter], queryFn: () => source.listCreditNotes(filter) });
+
+export const useCreditNote = (id: string | undefined) =>
+  useQuery({ queryKey: ['credit-note', id], queryFn: () => source.getCreditNote(id!), enabled: !!id });
+
+export const useRefunds = (filter?: { familyId?: string; invoiceId?: string }) =>
+  useQuery({ queryKey: ['refunds', filter], queryFn: () => source.listRefunds(filter) });
+
+export const useAccountants = () => useQuery({ queryKey: ['accountants'], queryFn: () => source.listAccountants() });

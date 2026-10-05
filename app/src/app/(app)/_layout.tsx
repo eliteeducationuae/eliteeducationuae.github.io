@@ -5,6 +5,7 @@ import { Loading } from '@/components/ui';
 import { ViewAsFrame, viewAsScreenLayout } from '@/components/view-as';
 import { useSession } from '@/data/session';
 import { useTheme } from '@/hooks/use-theme';
+import { useAccountantOffLimits } from '@/lib/accountant-routes';
 
 /**
  * Everything behind sign-in. Waits for the saved session before rendering, so deep links and
@@ -13,14 +14,18 @@ import { useTheme } from '@/hooks/use-theme';
 export default function SignedInLayout() {
   const palette = useTheme();
   const status = useSession((s) => s.status);
+  const accountantOffLimits = useAccountantOffLimits();
   if (status === 'loading') return <Loading />;
   if (status === 'signed-out') return <Redirect href="/sign-in" />;
+  // Tax: the accountant only sees the books.
+  if (accountantOffLimits) return <Redirect href="/accountant" />;
   const stack = (
     <Stack screenOptions={stackOptions(palette)} screenLayout={viewAsScreenLayout}>
       <Stack.Screen name="admin" options={{ headerShown: false }} />
       <Stack.Screen name="tutor" options={{ headerShown: false }} />
       <Stack.Screen name="parent" options={{ headerShown: false }} />
       <Stack.Screen name="student" options={{ headerShown: false }} />
+      <Stack.Screen name="accountant" options={{ headerShown: false }} />
       <Stack.Screen name="lesson/[id]" options={{ title: 'Lesson' }} />
       <Stack.Screen name="lesson/new" options={{ title: 'Schedule lessons', presentation: 'modal' }} />
       <Stack.Screen name="complete/[id]" options={{ title: 'Record lesson', presentation: 'modal' }} />
@@ -70,6 +75,11 @@ export default function SignedInLayout() {
       <Stack.Screen name="messages/index" options={{ title: 'Messages' }} />
       <Stack.Screen name="messages/[familyId]" options={{ title: 'Messages' }} />
       <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
+      <Stack.Screen name="credit-note/[id]" options={{ title: 'Credit note' }} />
+      <Stack.Screen name="credit-note/new" options={{ title: 'Issue a credit note', presentation: 'modal' }} />
+      <Stack.Screen name="refund" options={{ title: 'Refund a payment', presentation: 'modal' }} />
+      <Stack.Screen name="manage/vat" options={{ title: 'VAT returns' }} />
+      <Stack.Screen name="manage/accountants" options={{ title: 'Accountant access' }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

@@ -52,6 +52,9 @@ import type {
   TopicRating,
   AutopayStatus,
   PackageOffer,
+  AccountantInvite,
+  CreditNote,
+  Refund,
 } from '@/domain/types';
 
 import type { ViewAsSession, ViewTarget } from './view-as';
@@ -374,6 +377,64 @@ export interface DataSource {
   listAuditEvents?(filter: AuditFilter, page?: { before?: AuditCursor; limit?: number }): Promise<AuditPage>;
   /** Admins only: everyone who appears in the audit trail, for the person filter. */
   listAuditActors?(): Promise<AuditActor[]>;
+  // Tax: credit notes, refunds and accountant access
+  /** Admins and accountants see every credit note; parents their family's; others none. */
+  listCreditNotes(filter?: { familyId?: string; invoiceId?: string }): Promise<CreditNote[]>;
+  getCreditNote(id: string): Promise<CreditNote | null>;
+  /** Admin: credit all or part of a sent or paid invoice. A full credit voids the invoice. */
+  issueCreditNote(input: CreditNoteInput): Promise<CreditNote>;
+  /** Admins and accountants see every refund; parents their family's; others none. */
+  listRefunds(filter?: { familyId?: string; invoiceId?: string }): Promise<Refund[]>;
+  /** Admin: return money against a payment. Card payments go back through Stripe; others are recorded. */
+  refundPayment(input: RefundInput): Promise<Refund>;
+  /** Admin: accountants invited to read the books. */
+  listAccountants(): Promise<AccountantInvite[]>;
+  /** Admin: invite an accountant. 'linked' when an accountant login with that email already exists. */
+  inviteAccountant(email: string, fullName?: string): Promise<'invited' | 'linked'>;
+  /** Admin: remove an accountant's invite and access. */
+  removeAccountant(email: string): Promise<void>;
+}
+
+// Tax: credit notes, refunds and accountant access
+
+export interface CreditNoteLineInput {
+  description: string;
+  /** 0-based index of the invoice line being credited. */
+  invoiceLine?: number;
+  /** Net amount (before VAT) to credit. */
+  net: number;
+}
+
+export interface CreditNoteInput {
+  invoiceId: string;
+  reason: string;
+  /** Net amounts by line. Ignored when `gross` is given. */
+  lines: CreditNoteLineInput[];
+  /**
+   * Credit this amount including VAT instead of by line: one line with the VAT worked out from the gross, so the
+   * note's total is exactly this amount.
+   */
+  gross?: number;
+  /**
+   * Put the lessons on lines credited in full back to unbilled so they can be invoiced again. The note is marked
+   * rebilled only when a lesson is actually released (never for a gross amount).
+   */
+  releaseCharges?: boolean;
+}
+
+export interface RefundInput {
+  paymentId: string;
+  /** Gross amount to return, AED. */
+  amount: number;
+  reason: string;
+  /** Bank or cash reference for manual refunds. */
+  reference?: string;
+  /** How a refund recorded by hand went back. Defaults to the payment's own method. Ignored for card refunds. */
+  method?: 'bank-transfer' | 'cash';
+  /** Issue a credit note for the refunded amount at the same time. */
+  withCreditNote: boolean;
+  /** Unique per attempt so a retried request never refunds twice. */
+  requestKey: string;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */

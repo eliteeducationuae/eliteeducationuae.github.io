@@ -36,6 +36,7 @@ const ROLE_NAMES: Record<Role, string> = {
   tutor: 'Tutor',
   parent: 'Parent',
   student: 'Student',
+  accountant: 'Accountant',
 };
 
 function HeaderButton({ icon, label, onPress, badge }: { icon: IconName; label: string; onPress: () => void; badge?: number }) {

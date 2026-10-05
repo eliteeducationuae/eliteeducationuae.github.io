@@ -270,6 +270,16 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   // Audit log (administrators only; a viewed person cannot read it)
   listAuditEvents: 'read',
   listAuditActors: 'read',
+
+  // Tax: credit notes, refunds and accountant access
+  listCreditNotes: 'read',
+  getCreditNote: 'read',
+  issueCreditNote: 'write',
+  listRefunds: 'read',
+  refundPayment: 'write',
+  listAccountants: 'read',
+  inviteAccountant: 'write',
+  removeAccountant: 'write',
 };
 
 const refuse = async (): Promise<never> => {

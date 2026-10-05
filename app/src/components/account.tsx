@@ -22,6 +22,8 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
   const exitViewAs = useSession((s) => s.exitViewAs);
   const settings = useSettings();
   const [resetting, setResetting] = useState(false);
+  // The accountant reads the books only: no lessons to sync and no lesson policies.
+  const books = me.role === 'accountant';
 
   return (
     <Screen>
@@ -38,10 +40,10 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
       </Card>
 
       <GoogleCalendarCard />
-      <CalendarSyncCard />
+      {books ? null : <CalendarSyncCard />}
       <WhatsAppCard />
 
-      {settings.data ? (
+      {settings.data && !books ? (
         <Section title="Policies">
           <Card>
             <Txt>

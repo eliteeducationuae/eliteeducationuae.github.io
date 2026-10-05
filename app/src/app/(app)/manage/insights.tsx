@@ -7,7 +7,7 @@ import { Banner, Button, Card, Loading, ProgressBar, Row, Screen, Section, Stat,
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAvailability, useEnquiries, useStudents } from '@/data/hooks';
-import { formatAED } from '@/domain/billing';
+import { formatAED, formatPercent } from '@/domain/billing';
 import { addDays, startOfDay } from '@/domain/dates';
 import { monthSeries, receivables, revenueBySubject } from '@/domain/finance';
 import { enquiryConversion, familyActivity, tutorUtilisation } from '@/domain/insights';
@@ -83,7 +83,7 @@ export default function Insights() {
       ) : null}
 
       <StatGrid>
-        <Stat label={`Revenue ${thisMonth.label}`} value={formatAED(thisMonth.revenue)} hint={lastMonth.revenue ? `${change >= 0 ? '+' : ''}${Math.round(change * 100)}% vs ${lastMonth.label} (month to date)` : undefined} />
+        <Stat label={`Revenue ${thisMonth.label}`} value={formatAED(thisMonth.revenue)} hint={lastMonth.revenue ? `${change >= 0 ? '+' : ''}${formatPercent(change)} vs ${lastMonth.label} (month to date)` : undefined} />
         <Stat label="Active families" value={String(families.active)} hint={`${families.new} new in 60 days`} tone="success" />
         <Stat label="Lapsed families" value={String(families.lapsed)} hint="no lessons in 30 days, none booked" tone={families.lapsed ? 'warning' : undefined} />
         <Stat

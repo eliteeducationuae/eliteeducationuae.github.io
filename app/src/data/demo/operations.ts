@@ -4,7 +4,7 @@ import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoic
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
 import type { NewOpportunity, NewTutorApplication, ReportFields } from '../source';
-import { AccessError, lessonCountsFor, linkList, newId, requireAdmin, type DemoDB } from './db';
+import { AccessError, isFinanceReader, lessonCountsFor, linkList, newId, requireAdmin, type DemoDB } from './db';
 
 /** Demo versions of roles, hiring, tutor pay, reports and expenses. Each mirrors a database function or policy. */
 
@@ -135,7 +135,8 @@ export const ops = {
     db.paymentDetails.push({ ...d, iban, swift: d.swift?.trim().toUpperCase() || undefined, updatedAt: now.toISOString() });
   },
 
-  tutorInvoices: (db: DemoDB, viewer: Profile) => db.tutorInvoices.filter((i) => isStaffTutor(viewer, i.tutorId)),
+  // Accountants read every tutor invoice (but never tutors' bank details).
+  tutorInvoices: (db: DemoDB, viewer: Profile) => db.tutorInvoices.filter((i) => isFinanceReader(viewer) || isStaffTutor(viewer, i.tutorId)),
   createTutorInvoice(db: DemoDB, viewer: Profile, tutorId: string, month: string, now = new Date()): string {
     if (!isStaffTutor(viewer, tutorId)) throw new AccessError('Not allowed');
     const tutor = db.tutors.find((t) => t.id === tutorId)!;
@@ -258,7 +259,7 @@ export const ops = {
   },
 
   expenses(db: DemoDB, viewer: Profile): Expense[] {
-    requireAdmin(viewer);
+    if (!isFinanceReader(viewer)) throw new AccessError('Only an admin can do that.');
     return db.expenses;
   },
   saveExpense(db: DemoDB, viewer: Profile, e: Omit<Expense, 'id'> & { id?: string }) {

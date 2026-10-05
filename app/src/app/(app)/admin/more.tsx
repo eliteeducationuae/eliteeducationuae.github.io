@@ -39,6 +39,7 @@ export default function AdminMore() {
     { title: 'Money', subtitle: 'Profit, expenses, pay run and exports', icon: 'money', href: '/manage/money' },
     { title: 'Insights', subtitle: 'Trends, tutor capacity and students to check on', icon: 'trend', href: '/manage/insights' },
     { title: 'Activity log', subtitle: 'Who changed what, and when', icon: 'clock', href: '/manage/activity' },
+    { title: 'VAT returns', subtitle: 'Quarterly VAT summary and exports for the FTA return', icon: 'doc', href: '/manage/vat' },
   ] as const;
   const links = [
     { title: 'Tutors', subtitle: 'Profiles, pay rates and calendar colours', icon: 'school', href: '/manage/tutors' },
@@ -47,6 +48,7 @@ export default function AdminMore() {
     { title: 'Holidays and term breaks', subtitle: 'Dates with no lessons', icon: 'sun', href: '/manage/closures' },
     { title: 'Tutor pay', subtitle: 'Hours taught and pay owed by month', icon: 'money', href: '/manage/payroll' },
     { title: 'Business settings', subtitle: 'Cancellation policy, VAT, invoicing', icon: 'settings', href: '/manage/settings' },
+    { title: 'Accountant access', subtitle: 'Invite your accountant to view the accounts, read only', icon: 'person', href: '/manage/accountants' },
   ] as const;
   return (
     <AccountScreen>

@@ -16,25 +16,45 @@ import type {
 
 export { formatAED, roundMoney };
 
+/** A share (0–1) as a whole percentage with a true minus sign, e.g. -2.07 -> '−207%'. */
+export function formatPercent(share: number): string {
+  const p = Math.round(share * 100);
+  return `${p < 0 ? '−' : ''}${Math.abs(p)}%`;
+}
+
 export interface InvoiceTotals {
   subtotal: number;
   vat: number;
   total: number;
   paid: number;
+  /** Credit notes issued against the invoice (VAT included). */
+  credited: number;
+  /** Money returned to the family (failed refunds are left out). */
+  refunded: number;
+  /** total - credited - paid + refunded. Negative when the family has paid more than it owes. */
   balance: number;
 }
 
-export function invoiceTotals(invoice: Pick<Invoice, 'items' | 'vatRate' | 'payments'>): InvoiceTotals {
+export function invoiceTotals(
+  invoice: Pick<Invoice, 'items' | 'vatRate' | 'payments'> & Partial<Pick<Invoice, 'creditNotes' | 'refunds'>>,
+): InvoiceTotals {
   const subtotal = roundMoney(invoice.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0));
   const vat = roundMoney(subtotal * invoice.vatRate);
   const total = roundMoney(subtotal + vat);
   const paid = roundMoney(invoice.payments.reduce((sum, p) => sum + p.amount, 0));
-  return { subtotal, vat, total, paid, balance: roundMoney(total - paid) };
+  const credited = roundMoney((invoice.creditNotes ?? []).reduce((sum, c) => sum + c.total, 0));
+  const refunded = roundMoney((invoice.refunds ?? []).filter((r) => r.status !== 'failed').reduce((sum, r) => sum + r.amount, 0));
+  return { subtotal, vat, total, paid, credited, refunded, balance: roundMoney(total - credited - paid + refunded) };
 }
 
-export type DisplayInvoiceStatus = Invoice['status'] | 'overdue' | 'part-paid';
+/** 'credited': cancelled by credit notes covering the whole invoice. 'void' remains for invoices voided before credit notes. */
+export type DisplayInvoiceStatus = Invoice['status'] | 'overdue' | 'part-paid' | 'credited';
 
 export function displayStatus(invoice: Invoice, now: Date = new Date()): DisplayInvoiceStatus {
+  if (invoice.status === 'void') {
+    const { total, credited } = invoiceTotals(invoice);
+    return (invoice.creditNotes?.length ?? 0) > 0 && credited >= total - 0.005 ? 'credited' : 'void';
+  }
   if (invoice.status !== 'sent') return invoice.status;
   const { paid, balance } = invoiceTotals(invoice);
   if (balance <= 0) return 'paid';
