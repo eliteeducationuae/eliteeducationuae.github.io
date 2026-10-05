@@ -67,6 +67,13 @@ select pg_temp.check(public.normalise_message('  Hello,  WORLD!!  مرحبا ') 
 select pg_temp.check(public.message_similarity('a b c', 'a b d') = 0.5, 'similarity is the share of shared words');
 select pg_temp.check(public.message_similarity('', 'anything') = 1, 'an empty message matches anything');
 select pg_temp.check(public.count_links('HTTP://a.example, https://b.example and WWW.c.example') = 3, 'links are counted case-insensitively');
+select pg_temp.check(public.merge_message('Hello', null, now()) = 'Hello' and public.merge_message(null, 'Hi', now()) = 'Hi'
+  and public.merge_message('Hello there, friend', 'hello there friend!', now()) = 'Hello there, friend'
+  and public.merge_message('We need help with maths and physics', 'help with maths', now()) = 'We need help with maths and physics',
+  'a repeat message that adds nothing leaves the original untouched');
+select pg_temp.check(public.merge_message('Help with maths', 'Help with maths please, urgently', '2026-10-05 22:00:00+00')
+  = E'Help with maths\n\nRe-sent on 6 October 2026: Help with maths please, urgently', 'a different repeat is added as a dated paragraph in UAE time');
+select pg_temp.check((select length(salt) >= 64 from public.spam_salt), 'a random fingerprint salt is created');
 
 -- Private tables and functions --------------------------------------------------
 set role anon;
@@ -90,6 +97,16 @@ do $$ begin
   perform public.consume_captcha_pass(gen_random_uuid(), 'enquiry');
   raise exception 'anon called consume_captcha_pass';
 exception when insufficient_privilege then raise notice 'ok - the public cannot use up passes directly';
+end $$;
+do $$ begin
+  perform salt from public.spam_salt;
+  raise exception 'anon read the salt';
+exception when insufficient_privilege then raise notice 'ok - the public cannot read the fingerprint salt';
+end $$;
+do $$ begin
+  perform public.normalise_message('x'), public.message_similarity('a', 'b'), public.count_links('x');
+  raise exception 'anon called the text helpers';
+exception when insufficient_privilege then raise notice 'ok - the public cannot call the text helpers';
 end $$;
 reset role;
 
@@ -115,6 +132,25 @@ select pg_temp.check((select repeat_count from public.enquiries where id = (sele
 select pg_temp.check((select count(*) from public.enquiries where email = 'amira@x') = 1, 'still one enquiry');
 select pg_temp.check((select count(*) from public.notification_outbox) = (select n from counts where k = 'outbox'), 'a merged re-send sends nothing');
 select pg_temp.check(exists (select 1 from public.submission_log where email = 'amira@x' and outcome = 'merged'), 'the merge is logged');
+
+-- A repeat only adds to the earlier enquiry, and a flagged repeat is kept separately
+set role anon;
+insert into ids select 'm1', pg_temp.enquire('merge@x', 'Help with IGCSE chemistry for my daughter please');
+insert into ids select 'm2', pg_temp.enquire('merge@x', 'Help with IGCSE chemistry for my daughter please, ideally on Saturdays');
+insert into ids select 'm3', pg_temp.enquire('merge@x', 'Help with IGCSE chemistry for my daughter please http://a.example http://b.example http://c.example');
+reset role;
+select pg_temp.check((select id from ids where k = 'm2') = (select id from ids where k = 'm1'), 'a longer, similar repeat is merged');
+select pg_temp.check((select message from public.enquiries where id = (select id from ids where k = 'm1'))
+  = 'Help with IGCSE chemistry for my daughter please' || E'\n\nRe-sent on '
+    || to_char(now() at time zone 'Asia/Dubai', 'FMDD FMMonth YYYY') || ': Help with IGCSE chemistry for my daughter please, ideally on Saturdays',
+  'the original message is kept and the new one is added as a dated paragraph');
+select pg_temp.check((select id from ids where k = 'm3') <> (select id from ids where k = 'm1')
+  and (select spam_status from public.enquiries where id = (select id from ids where k = 'm3')) = 'suspected'
+  and (select message not like '%http%' and spam_status = 'clean' from public.enquiries where id = (select id from ids where k = 'm1')),
+  'a link-laden repeat is kept separately for review and the clean enquiry is untouched');
+delete from public.enquiries where email = 'merge@x';
+delete from public.submission_log where email = 'merge@x';
+delete from public.notification_outbox where email = 'merge@x' or subject like '%merge@x%' or body like '%merge@x%';
 
 -- A different message from the same person is a new enquiry
 set role anon;
@@ -143,15 +179,17 @@ select pg_temp.enquire('ip' || i || '@x', 'Question number ' || i || ' about ' |
 select pg_temp.limited($q$select pg_temp.enquire('ip6@x', 'A sixth question entirely')$q$, 'a sixth enquiry from one connection within the hour is paused');
 reset role;
 select pg_temp.check((select count(*) from public.submission_log
-  where ip_hash = encode(sha256(convert_to('elite-education:203.0.113.9', 'UTF8')), 'hex')) = 5,
+  where ip_hash = encode(sha256(convert_to((select salt from public.spam_salt) || ':203.0.113.9', 'UTF8')), 'hex')) = 5,
   'the first forwarded address is fingerprinted');
 select pg_temp.check(not exists (select 1 from public.submission_log where ip_hash like '%203.0.113%'), 'raw addresses are never stored');
+select pg_temp.check(not exists (select 1 from public.submission_log
+  where ip_hash = encode(sha256(convert_to('elite-education:203.0.113.9', 'UTF8')), 'hex')), 'the fingerprint is not the old published-salt hash');
 select set_config('request.headers', '{"cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.9"}', false);
 set role anon;
 select pg_temp.check(pg_temp.enquire('ip7@x', 'A question from another connection') is not null, 'a different connection is still accepted');
 reset role;
 select pg_temp.check(exists (select 1 from public.submission_log
-  where email = 'ip7@x' and ip_hash = encode(sha256(convert_to('elite-education:198.51.100.7', 'UTF8')), 'hex')),
+  where email = 'ip7@x' and ip_hash = encode(sha256(convert_to((select salt from public.spam_salt) || ':198.51.100.7', 'UTF8')), 'hex')),
   'the Cloudflare address header comes first');
 select set_config('request.headers', 'not json', false);
 select pg_temp.check(public.request_ip_hash() is null, 'unreadable headers give no fingerprint');
@@ -180,6 +218,21 @@ select pg_temp.check((select spam_status from public.enquiries where id = (selec
   'an unknown completion time is never flagged');
 select pg_temp.check((select count(*) from public.submission_log where outcome = 'flagged') = 4, 'flagged submissions are logged');
 
+-- A signed-in family is never flagged ------------------------------------------------------------
+insert into counts select 'outbox_parent', count(*) from public.notification_outbox;
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+insert into ids select 'parentfast', public.submit_enquiry('Mona Ahmed', 'mum@x', null, 'Sami', 'IB', 'Year 5',
+  'Consultation request http://a http://b http://c', 'Weekends', 'app', p_elapsed_ms => 500);
+reset role;
+select pg_temp.as_user('');
+select pg_temp.check((select spam_status = 'clean' and spam_reasons = '{}' and family_id = 'c0000000-0000-0000-0000-000000000001'
+  from public.enquiries where id = (select id from ids where k = 'parentfast')),
+  'a signed-in parent sending a pre-filled form within half a second stays clean');
+select pg_temp.check(exists (select 1 from public.notification_outbox where subject = 'New enquiry: Mona Ahmed')
+  and exists (select 1 from public.notification_outbox where email = 'mum@x' and subject = 'Thank you for contacting Elite Education'),
+  'the office is alerted and the family is thanked');
+
 -- Security check (Cloudflare Turnstile) ----------------------------------------------------
 update public.settings set captcha_required = true;
 insert into public.captcha_passes (id, form) values ('90000000-0000-0000-0000-000000000001', 'enquiry');
@@ -200,8 +253,15 @@ select pg_temp.check((select spam_status from public.enquiries where id = (selec
 select pg_temp.check((select used_at is not null from public.captcha_passes where id = '90000000-0000-0000-0000-000000000001'), 'the pass is used up');
 select pg_temp.check((select spam_reasons from public.enquiries where id = (select id from ids where k = 'cap3')) = '{captcha}',
   'a pass cannot be used twice');
-select pg_temp.check((select spam_status from public.enquiries where id = (select id from ids where k = 'cap4')) = 'clean',
-  'the app is not asked for the security check');
+select pg_temp.check((select spam_reasons from public.enquiries where id = (select id from ids where k = 'cap4')) = '{captcha}',
+  'claiming to be the app does not skip the security check for someone who is not signed in');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+insert into ids select 'cap7', pg_temp.enquire('mum@x', 'A separate question about chess club', p_source => 'website', p_student => 'Sami');
+reset role;
+select pg_temp.as_user('');
+select pg_temp.check((select spam_status from public.enquiries where id = (select id from ids where k = 'cap7')) = 'clean',
+  'a signed-in user is never asked for the security check');
 select pg_temp.check((select spam_reasons from public.enquiries where id = (select id from ids where k = 'cap5')) = '{captcha}',
   'a pass only works for its own form');
 select pg_temp.check((select spam_reasons from public.enquiries where id = (select id from ids where k = 'cap6')) = '{captcha}',
@@ -276,6 +336,13 @@ select public.set_submission_spam('enquiry', (select id from ids where k = 'link
 reset role;
 select pg_temp.check((select spam_status = 'clean' and spam_reasons = '{links}' from public.enquiries where id = (select id from ids where k = 'links')),
   'not spam returns it to clean and keeps the reasons on record');
+select pg_temp.check(not exists (select 1 from public.notification_outbox where email = 'links@x'), 'not spam alone sends nothing');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.set_submission_spam('enquiry', (select id from ids where k = 'fast'), false, true);
+reset role;
+select pg_temp.check((select count(*) from public.notification_outbox where email = 'fast@x' and subject = 'Thank you for contacting Elite Education'
+  and body like 'Dear Amira,%Elite Education | eliteeducation.me') = 1, 'not spam with the acknowledgement sends the usual thank-you');
 
 -- Tutor applications ----------------------------------------------------------------------------------
 set role anon;
@@ -295,8 +362,28 @@ insert into ids select 'app2', pg_temp.apply('NORA@x', '{IGCSE,IB}', '{Lower Sec
 reset role;
 select pg_temp.check((select id from ids where k = 'app2') = (select id from ids where k = 'app'), 'a second application within a day is merged');
 select pg_temp.check((select curricula::text || phases::text || repeat_count || cv_path || experience from public.tutor_applications
-  where email = 'nora@x') = '{IB,IGCSE}{Primary,"Lower Secondary"}1cv/nora.pdfFive years teaching IB Mathematics and three years of IGCSE Physics',
-  'curricula and phases are combined, the longer experience and the CV are kept');
+  where email = 'nora@x') = '{IB,IGCSE}{Primary,"Lower Secondary"}1cv/nora.pdfFive years teaching IB Mathematics',
+  'curricula and phases are combined, a missing CV is filled in and the existing experience is kept');
+-- Someone else who knows the applicant's email cannot replace what is there.
+delete from public.submission_log where email = 'nora@x';
+set role anon;
+insert into ids select 'app3', pg_temp.apply('nora@x', p_experience => 'Completely different and much longer text written by somebody else entirely',
+  p_cv => 'cv/attacker.pdf');
+reset role;
+select pg_temp.check((select id from ids where k = 'app3') = (select id from ids where k = 'app'), 'a clean repeat is still merged');
+select pg_temp.check((select cv_path = 'cv/nora.pdf' and experience = 'Five years teaching IB Mathematics' from public.tutor_applications
+  where id = (select id from ids where k = 'app')), 'an existing CV and experience are never replaced by a repeat');
+delete from public.submission_log where email = 'nora@x';
+set role anon;
+insert into ids select 'app4', pg_temp.apply('nora@x', p_experience => 'See http://a.example http://b.example http://c.example');
+reset role;
+select pg_temp.check((select id from ids where k = 'app4') <> (select id from ids where k = 'app'), 'a link-laden repeat is not merged into a clean application');
+select pg_temp.check((select spam_status = 'suspected' and spam_reasons = '{links}' from public.tutor_applications where id = (select id from ids where k = 'app4'))
+  and (select spam_status = 'clean' and experience = 'Five years teaching IB Mathematics' from public.tutor_applications where id = (select id from ids where k = 'app')),
+  'it is kept separately for review and the genuine application is untouched');
+delete from public.tutor_applications where id = (select id from ids where k = 'app4');
+delete from public.submission_log where email = 'nora@x';
+insert into public.submission_log (kind, email, outcome) values ('application', 'nora@x', 'accepted'), ('application', 'nora@x', 'merged');
 select pg_temp.check((select count(*) from public.notification_outbox) = (select n from counts where k = 'outbox'), 'a merged application sends nothing');
 set role anon;
 select pg_temp.limited($q$select pg_temp.apply('nora@x')$q$, 'a third application from one email within the hour is paused');
@@ -326,8 +413,8 @@ insert into ids select 'appcapapp', pg_temp.apply('capapp@x', p_source => 'app')
 reset role;
 select pg_temp.check((select spam_reasons from public.tutor_applications where id = (select id from ids where k = 'appcap')) = '{captcha}',
   'a website application without the security check is flagged when required');
-select pg_temp.check((select spam_status from public.tutor_applications where id = (select id from ids where k = 'appcapapp')) = 'clean',
-  'an application from the app is not asked for the security check');
+select pg_temp.check((select spam_reasons from public.tutor_applications where id = (select id from ids where k = 'appcapapp')) = '{captcha}',
+  'an anonymous application claiming to come from the app still needs the security check');
 update public.settings set captcha_required = false;
 
 -- Application size limits

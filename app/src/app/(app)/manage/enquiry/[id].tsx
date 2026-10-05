@@ -104,7 +104,9 @@ function Detail({ e }: { e: Enquiry }) {
       </Section>
 
       <Section title="Next steps">
-        {family && student ? (
+        {isPossibleSpam(e) ? (
+          <Txt variant="muted">Next steps will appear here once this enquiry has been marked as not spam.</Txt>
+        ) : family && student ? (
           <Card style={{ gap: Spacing.two }}>
             <Txt>
               {family.name} family{family.status === 'prospect' ? ' (prospect)' : ''} · {student.fullName}

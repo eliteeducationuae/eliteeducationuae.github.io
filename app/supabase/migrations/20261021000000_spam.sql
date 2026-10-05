@@ -12,7 +12,10 @@
 --     notify the office or email the address given, so the forms cannot be used to email a stranger.
 --     Nothing is rejected for looking like spam, and the website is never told it was flagged.
 --   * The office can mark a submission as spam (or not spam) with set_submission_spam.
---   * Connection addresses (IP addresses) are never stored; only a one-way fingerprint is kept for 30 days.
+--   * Connection addresses (IP addresses) are never stored in readable form; only a salted fingerprint
+--     (with a random salt created by this migration and kept private) is kept, for 30 days.
+--   * Signed-in families are never flagged, and a repeat only fills blanks in the earlier submission: it never
+--     replaces a CV, a message or an experience statement that is already there.
 
 -- ---------------------------------------------------------------------------
 -- Columns
@@ -58,6 +61,7 @@ create index if not exists submission_log_ip_idx on public.submission_log (kind,
 create index if not exists submission_log_created_idx on public.submission_log (created_at);
 alter table public.submission_log enable row level security;
 revoke all on public.submission_log from anon, authenticated;
+drop policy if exists "admin reads submission log" on public.submission_log;
 create policy "admin reads submission log" on public.submission_log for select to authenticated using (public.is_admin());
 grant select on public.submission_log to authenticated;
 
@@ -76,17 +80,33 @@ alter table public.captcha_passes enable row level security;
 revoke all on public.captcha_passes from anon, authenticated;
 grant select, insert, update on public.captcha_passes to service_role;
 
+/**
+ * A random salt for the connection fingerprints, created once by this migration. Nobody but the database's
+ * own functions can read it (RLS on, no grants), so a fingerprint cannot be matched against a list of addresses.
+ */
+create table if not exists public.spam_salt (
+  id integer primary key default 1 check (id = 1),
+  salt text not null
+);
+alter table public.spam_salt enable row level security;
+revoke all on public.spam_salt from public, anon, authenticated;
+insert into public.spam_salt (id, salt)
+values (1, replace(gen_random_uuid()::text || gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
+on conflict (id) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
 
 /**
- * A one-way fingerprint of the visitor's connection, taken from the headers Supabase passes through.
+ * A salted one-way fingerprint of the visitor's connection, taken from the headers Supabase passes through.
  * The raw address is never stored. Returns null when there are no headers (for example in tests or cron).
+ * The Cloudflare and proxy headers are preferred; the first x-forwarded-for entry is a last resort, because
+ * a visitor can set it themselves (see the README: confirm which headers arrive on the live project).
  */
 create or replace function public.request_ip_hash() returns text
 language plpgsql stable security definer set search_path = public as $$
-declare raw text; h json; ip text;
+declare raw text; h json; ip text; pepper text;
 begin
   raw := current_setting('request.headers', true);
   if raw is null or raw = '' then return null; end if;
@@ -99,7 +119,8 @@ begin
   ip := coalesce(nullif(trim(h ->> 'cf-connecting-ip'), ''), nullif(trim(h ->> 'x-real-ip'), ''),
                  nullif(trim(split_part(h ->> 'x-forwarded-for', ',', 1)), ''));
   if ip is null then return null; end if;
-  return encode(sha256(convert_to('elite-education:' || ip, 'UTF8')), 'hex');
+  select salt into pepper from public.spam_salt where id = 1;
+  return encode(sha256(convert_to(coalesce(pepper, '') || ':' || ip, 'UTF8')), 'hex');
 end $$;
 revoke execute on function public.request_ip_hash() from public, anon, authenticated;
 
@@ -133,6 +154,27 @@ create or replace function public.count_links(t text) returns integer
 language sql immutable set search_path = public as $$
   select count(*)::integer from regexp_matches(coalesce(t, ''), '(https?://|www\.)', 'gi')
 $$;
+-- Harmless, but there is no reason for visitors to call these directly.
+revoke execute on function public.normalise_message(text) from public, anon, authenticated;
+revoke execute on function public.message_similarity(text, text) from public, anon, authenticated;
+revoke execute on function public.count_links(text) from public, anon, authenticated;
+
+/**
+ * The text kept when a repeat enquiry is folded into an earlier one: the earlier message stays as it was, and a
+ * different new message is added underneath as a dated 'Re-sent' paragraph, so nothing the family wrote is lost
+ * and nothing they wrote earlier is overwritten. Mirrored in src/domain/spam.ts (mergeMessage).
+ */
+create or replace function public.merge_message(p_old text, p_new text, p_at timestamptz) returns text
+language sql immutable set search_path = public as $$
+  select case
+    when nullif(trim(p_new), '') is null then p_old
+    when nullif(trim(p_old), '') is null then trim(p_new)
+    when public.normalise_message(p_old) = public.normalise_message(p_new) then p_old
+    when position(public.normalise_message(p_new) in public.normalise_message(p_old)) > 0 then p_old
+    else p_old || E'\n\nRe-sent on ' || to_char(p_at at time zone 'Asia/Dubai', 'FMDD FMMonth YYYY') || ': ' || trim(p_new)
+  end
+$$;
+revoke execute on function public.merge_message(text, text, timestamptz) from public, anon, authenticated;
 
 /** Uses up a security-check pass. True only for an unused pass for this form, less than ten minutes old. */
 create or replace function public.consume_captcha_pass(p_pass uuid, p_form text) returns boolean
@@ -188,6 +230,7 @@ create or replace function public.enforce_submission_rate_limit(p_kind text, p_e
 language plpgsql security definer set search_path = public as $$
 begin
   delete from public.submission_log where created_at < now() - interval '30 days';
+  delete from public.captcha_passes where created_at < now() - interval '1 day';
   if public.submission_rate_limited(p_kind, p_email, p_ip_hash) then
     raise exception using errcode = 'PT429', hint = 'rate_limited',
       message = 'Thank you. We have received several messages from you in a short time, so we have paused further '
@@ -203,13 +246,18 @@ language sql security definer set search_path = public as $$
 $$;
 revoke execute on function public.log_submission(text, text, text, text) from public, anon, authenticated;
 
-/** The security check applies only to the website, only when the office has switched it on, and never to an admin. */
-create or replace function public.captcha_needed(p_source text) returns boolean
+/**
+ * The security check applies only when the office has switched it on, and then to everyone who is not signed in,
+ * whatever the request says about where it came from (a bot can claim to be the app). Signed-in users and admins
+ * are never asked. The app's own forms do not show the check, so while it is on, anonymous submissions from the
+ * app are kept under Possible spam for review.
+ */
+create or replace function public.captcha_needed() returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce((select captcha_required from public.settings where id = 1), false)
-     and p_source = 'website' and not public.is_admin()
+     and auth.uid() is null and not public.is_admin()
 $$;
-revoke execute on function public.captcha_needed(text) from public, anon, authenticated;
+revoke execute on function public.captcha_needed() from public, anon, authenticated;
 
 /**
  * Why a submission looks automated, in a fixed order: 'link-in-name', 'links', 'too-fast', 'captcha'.
@@ -236,22 +284,51 @@ revoke execute on function public.submission_spam_reasons(text[], text, integer,
 -- The office marks a submission as spam, or not spam
 -- ---------------------------------------------------------------------------
 
-/** Marking as not spam returns it to 'clean' but keeps the original reasons on record. */
-create or replace function public.set_submission_spam(p_kind text, p_id uuid, p_spam boolean) returns void
+/** The thank-you email a clean enquiry receives; also sent when the office marks a flagged one as not spam. */
+create or replace function public.send_enquiry_ack(p_name text, p_email text) returns void
 language plpgsql security definer set search_path = public as $$
-declare st text := case when p_spam then 'spam' else 'clean' end;
+begin
+  if nullif(trim(p_email), '') is null then return; end if;
+  perform public.notify(null, lower(trim(p_email)), 'Thank you for contacting Elite Education',
+    'Dear ' || split_part(trim(p_name), ' ', 1) || E',\n\nThank you for contacting Elite Education. '
+    || E'We will be in touch within one working day to arrange a complimentary consultation.\n\n'
+    || E'With kind regards,\nElite Education\n\nElite Education | eliteeducation.me');
+end $$;
+revoke execute on function public.send_enquiry_ack(text, text) from public, anon, authenticated;
+
+/** The thank-you email a clean tutor application receives; also sent when the office marks one as not spam. */
+create or replace function public.send_application_ack(p_name text, p_email text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if nullif(trim(p_email), '') is null then return; end if;
+  perform public.notify(null, lower(trim(p_email)), 'Thank you for applying to Elite Education',
+    'Dear ' || split_part(trim(p_name), ' ', 1) || E',\n\nThank you for applying to teach with Elite Education. '
+    || E'We review every application carefully and will be in touch shortly.\n\n'
+    || E'With kind regards,\nElite Education\n\nElite Education | eliteeducation.me');
+end $$;
+revoke execute on function public.send_application_ack(text, text) from public, anon, authenticated;
+
+/**
+ * Marking as not spam returns it to 'clean' but keeps the original reasons on record. With p_send_ack, the
+ * family or applicant also receives the usual thank-you email that was held back when it was flagged.
+ */
+create or replace function public.set_submission_spam(p_kind text, p_id uuid, p_spam boolean, p_send_ack boolean default false)
+returns void language plpgsql security definer set search_path = public as $$
+declare st text := case when p_spam then 'spam' else 'clean' end; nm text; em text;
 begin
   if not public.is_admin() then raise exception 'Only an administrator can do this' using errcode = '42501'; end if;
   if p_kind = 'enquiry' then
-    update public.enquiries set spam_status = st where id = p_id;
+    update public.enquiries set spam_status = st where id = p_id returning parent_name, email into nm, em;
+    if not p_spam and coalesce(p_send_ack, false) then perform public.send_enquiry_ack(nm, em); end if;
   elsif p_kind = 'application' then
-    update public.tutor_applications set spam_status = st where id = p_id;
+    update public.tutor_applications set spam_status = st where id = p_id returning full_name, email into nm, em;
+    if not p_spam and coalesce(p_send_ack, false) then perform public.send_application_ack(nm, em); end if;
   else
     raise exception 'Unknown submission type';
   end if;
 end $$;
-revoke execute on function public.set_submission_spam(text, uuid, boolean) from public, anon;
-grant execute on function public.set_submission_spam(text, uuid, boolean) to authenticated;
+revoke execute on function public.set_submission_spam(text, uuid, boolean, boolean) from public, anon;
+grant execute on function public.set_submission_spam(text, uuid, boolean, boolean) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- The public forms
@@ -259,9 +336,10 @@ grant execute on function public.set_submission_spam(text, uuid, boolean) to aut
 -- NOTE FOR THE MERGE LEAD: other round-4 branches may also redefine submit_enquiry and
 -- submit_tutor_application. The screening steps are factored into helper functions
 -- (request_ip_hash, enforce_submission_rate_limit, consume_captcha_pass, captcha_needed,
--- submission_spam_reasons, log_submission, message_similarity) so they can be re-applied to any
--- newer definition: validate, skip everything for admins, enforce the limit, merge duplicates,
--- compute the reasons, insert with spam_status/spam_reasons, log, and notify only when clean.
+-- submission_spam_reasons, log_submission, message_similarity, merge_message, send_*_ack) so they can be
+-- re-applied to any newer definition: validate, skip everything for admins, enforce the limit, compute the
+-- reasons (none for a signed-in family), merge only a clean repeat (filling blanks only), insert with
+-- spam_status/spam_reasons, log, and notify only when clean.
 -- ---------------------------------------------------------------------------
 
 drop function if exists public.submit_enquiry(text, text, text, text, text, text, text, text, text, text, text);
@@ -279,6 +357,7 @@ declare
   eid uuid; fam uuid; subj text; ph text; src text; em text; ip text;
   admin boolean := public.is_admin(); captcha_ok boolean := false; reasons text[] := '{}';
   new_message text := nullif(trim(p_message), '');
+  family_member boolean;
 begin
   if nullif(trim(p_parent_name), '') is null then raise exception 'Please enter your name'; end if;
   if nullif(trim(p_email), '') is null and nullif(trim(p_phone), '') is null then
@@ -301,6 +380,9 @@ begin
   src := case when p_source in ('app', 'website', 'referral', 'phone', 'other') then p_source else 'other' end;
   em := nullif(lower(trim(p_email)), '');
   fam := public.my_family_id();
+  -- A signed-in parent with a confirmed account is a known family, not a bot: their forms arrive pre-filled
+  -- (for example the consultation request at the end of onboarding), so they are never flagged.
+  family_member := auth.uid() is not null and fam is not null;
 
   -- The office entering an enquiry by hand is never limited, merged or flagged.
   if not admin then
@@ -308,9 +390,15 @@ begin
     perform public.enforce_submission_rate_limit('enquiry', em, ip);
     -- A pass is used up as soon as it is presented, so it can never be replayed.
     captcha_ok := public.consume_captcha_pass(p_captcha_pass, 'enquiry');
+    if not family_member then
+      reasons := public.submission_spam_reasons(
+        array[p_parent_name, p_student_name], concat_ws(' ', p_message, p_preferred_times), p_elapsed_ms,
+        public.captcha_needed(), captcha_ok);
+    end if;
 
-    -- The same person re-sending much the same enquiry within a day: fold it into the earlier one.
-    if em is not null then
+    -- The same person re-sending much the same enquiry within a day: fold it into the earlier one. Only a clean
+    -- repeat is folded in (a flagged one is kept separately for review), and it only fills blanks.
+    if em is not null and cardinality(reasons) = 0 then
       select e.id into eid from public.enquiries e
       where e.email = em
         and greatest(e.created_at, coalesce(e.last_submitted_at, e.created_at)) > now() - interval '24 hours'
@@ -331,8 +419,7 @@ begin
           phase = coalesce(e.phase, ph),
           year_group = coalesce(e.year_group, nullif(trim(p_year_group), '')),
           preferred_times = coalesce(e.preferred_times, nullif(trim(p_preferred_times), '')),
-          message = case when e.message is null or length(new_message) > length(e.message) then coalesce(new_message, e.message)
-                         else e.message end,
+          message = public.merge_message(e.message, new_message, now()),
           repeat_count = e.repeat_count + 1,
           last_submitted_at = now()
         where e.id = eid;
@@ -340,10 +427,6 @@ begin
         return eid;
       end if;
     end if;
-
-    reasons := public.submission_spam_reasons(
-      array[p_parent_name, p_student_name], concat_ws(' ', p_message, p_preferred_times), p_elapsed_ms,
-      public.captcha_needed(src), captcha_ok);
   end if;
 
   insert into public.enquiries (parent_name, email, phone, student_name, curriculum, year_group, message, preferred_times, source, family_id,
@@ -365,12 +448,7 @@ begin
         || coalesce(E'\nSubject: ' || subj, '') || coalesce(E'\nPhase: ' || ph, '')
         || coalesce(E'\n\n' || nullif(trim(p_message), ''), ''),
       'New enquiry', trim(p_parent_name), '/admin/enquiries');
-    if em is not null then
-      perform public.notify(null, em, 'Thank you for contacting Elite Education',
-        'Dear ' || split_part(trim(p_parent_name), ' ', 1) || E',\n\nThank you for contacting Elite Education. '
-        || E'We will be in touch within one working day to arrange a complimentary consultation.\n\n'
-        || E'With kind regards,\nElite Education\n\nElite Education | eliteeducation.me');
-    end if;
+    perform public.send_enquiry_ack(p_parent_name, em);
   end if;
   return eid;
 end $$;
@@ -379,8 +457,9 @@ grant execute on function public.submit_enquiry(text, text, text, text, text, te
 
 drop function if exists public.submit_tutor_application(text, text, text, text[], text, text, text, text, text, text[]);
 /**
- * Anyone can apply to teach. A second application from the same email within a day (while still 'applied')
- * is folded into the first. The same id is returned whether it was saved, merged or flagged.
+ * Anyone can apply to teach. A second, clean application from the same email within a day (while still 'applied')
+ * is folded into the first, filling only blanks: a CV or experience statement already there is never replaced.
+ * The same id is returned whether it was saved, merged or flagged. p_source is kept for older callers.
  */
 create function public.submit_tutor_application(
   p_full_name text, p_email text, p_phone text, p_curricula text[], p_subjects text,
@@ -411,10 +490,15 @@ begin
     ip := public.request_ip_hash();
     perform public.enforce_submission_rate_limit('application', em, ip);
     captcha_ok := public.consume_captcha_pass(p_captcha_pass, 'application');
+    reasons := public.submission_spam_reasons(
+      array[p_full_name], concat_ws(' ', p_experience, p_qualifications, p_subjects, p_availability), p_elapsed_ms,
+      public.captcha_needed(), captcha_ok);
 
-    -- The same person applying again within a day: fold the new details into the earlier application.
+    -- The same person applying again within a day: fold a clean repeat into the earlier application.
+    -- Anyone who knows an applicant's email could send this, so it only fills blanks.
     select a.id into aid from public.tutor_applications a
-    where a.email = em
+    where cardinality(reasons) = 0
+      and a.email = em
       and greatest(a.created_at, coalesce(a.last_submitted_at, a.created_at)) > now() - interval '24 hours'
       and a.status = 'applied'
       and a.spam_status <> 'spam'
@@ -427,13 +511,12 @@ begin
         subjects = coalesce(a.subjects, nullif(trim(p_subjects), '')),
         qualifications = coalesce(a.qualifications, nullif(trim(p_qualifications), '')),
         availability = coalesce(a.availability, nullif(trim(p_availability), '')),
-        experience = case when a.experience is null or length(new_experience) > length(a.experience)
-                          then coalesce(new_experience, a.experience) else a.experience end,
+        experience = coalesce(a.experience, new_experience),
         curricula = array(select c from unnest(a.curricula || coalesce(p_curricula, '{}')) with ordinality u(c, n)
                           group by c order by min(n)),
         phases = array(select p from unnest(a.phases || coalesce(p_phases, '{}')) with ordinality u(p, n)
                        group by p order by min(n)),
-        cv_path = coalesce(nullif(p_cv_path, ''), a.cv_path),
+        cv_path = coalesce(a.cv_path, nullif(p_cv_path, '')),
         repeat_count = a.repeat_count + 1,
         last_submitted_at = now()
       where a.id = aid;
@@ -444,12 +527,6 @@ begin
 
   if (select count(*) from public.tutor_applications where lower(email) = em and created_at > now() - interval '30 days') >= 2 then
     raise exception 'We already have your application — we''ll be in touch soon';
-  end if;
-
-  if not admin then
-    reasons := public.submission_spam_reasons(
-      array[p_full_name], concat_ws(' ', p_experience, p_qualifications, p_subjects, p_availability), p_elapsed_ms,
-      public.captcha_needed(p_source), captcha_ok);
   end if;
 
   insert into public.tutor_applications (full_name, email, phone, curricula, subjects, experience, qualifications, availability, cv_path, phases,
@@ -471,10 +548,7 @@ begin
         || coalesce(E'\nPhases: ' || nullif(array_to_string(p_phases, ', '), ''), '')
         || coalesce(E'\n\n' || nullif(trim(p_experience), ''), ''),
       'New tutor application', trim(p_full_name), '/manage/applications');
-    perform public.notify(null, em, 'Thank you for applying to Elite Education',
-      'Dear ' || split_part(trim(p_full_name), ' ', 1) || E',\n\nThank you for applying to teach with Elite Education. '
-        || E'We review every application carefully and will be in touch shortly.\n\n'
-        || E'With kind regards,\nElite Education\n\nElite Education | eliteeducation.me');
+    perform public.send_application_ack(p_full_name, em);
   end if;
   return aid;
 end $$;

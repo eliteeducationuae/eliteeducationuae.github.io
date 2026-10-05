@@ -8,7 +8,8 @@ import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
 
 import { CataloguePicker } from './catalogue-picker';
 import { Honeypot } from './honeypot';
-import { Banner, Button, Card, Chip, ErrorNote, Field, Row, Section, Txt } from './ui';
+import { FormError } from './spam';
+import { Banner, Button, Card, Chip, Field, Row, Section, Txt } from './ui';
 
 const TIMES = ['Weekday afternoons', 'Weekday evenings', 'Weekends', 'Flexible'];
 
@@ -76,7 +77,8 @@ export function EnquiryForm({
         message: message.trim() || undefined,
         preferredTimes: times.join(', ') || undefined,
         source: origin,
-        elapsedMs: Date.now() - startedAt,
+        // Signed-in parents arrive with the form already filled in, so the time taken says nothing about them.
+        elapsedMs: hideContact ? undefined : Date.now() - startedAt,
       });
       setSent(true);
       onSent?.();
@@ -138,7 +140,7 @@ export function EnquiryForm({
         multiline
         placeholder="For example: predicted a 5 and aiming for a 7; finds essay structure difficult; mock examinations in January."
       />
-      <ErrorNote error={error} />
+      <FormError error={error} />
       <Button title={submitLabel} variant="gold" onPress={send} loading={busy} disabled={!valid} />
       {!hideContact ? <Txt variant="small">We use your details only to reply to this enquiry.</Txt> : null}
     </Card>

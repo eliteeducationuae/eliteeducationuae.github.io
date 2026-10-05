@@ -152,7 +152,7 @@ export default function AdminDashboard() {
               {newEnquiries.length ? (
                 <ListItem
                   title={`${plural(newEnquiries.length, 'new enquiry', 'new enquiries')}`}
-                  subtitle={newEnquiries.map((e) => e.parentName).join(', ')}
+                  subtitle={newEnquiries.map((e) => (e.repeatCount ? `${e.parentName} (received ${e.repeatCount + 1} times)` : e.parentName)).join(', ')}
                   left={<Icon name="inbox" size={22} color={theme.gold} />}
                   onPress={() => router.push('/manage/enquiries')}
                 />

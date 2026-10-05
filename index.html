@@ -505,14 +505,14 @@
         return 'We could not send this just now. ' + detail + FALLBACK;
     }
 
-    // Time to submit: people take a while to fill in a form, bots do not. The clock starts when someone first moves
-    // into the form (or when the page loaded) and the elapsed time is sent so that the server can flag instant submissions.
-    function timer(f) {
-        var start = Date.now(), touched = false;
-        f.addEventListener('focusin', function () { if (!touched) { touched = true; start = Date.now(); } });
+    // Time to submit: people take a while to fill in a form, bots do not. The clock runs from when the page loaded
+    // (or from the last successful send), so a family who accepts browser autofill is not mistaken for a bot,
+    // and the elapsed time is sent so that the server can flag instant submissions.
+    function timer() {
+        var start = Date.now();
         return {
             elapsed: function () { return Math.round(Date.now() - start); },
-            restart: function () { touched = false; start = Date.now(); }
+            restart: function () { start = Date.now(); }
         };
     }
 
@@ -529,7 +529,7 @@
         if (!window.turnstile) return;
         Object.keys(widgets).forEach(function (action) {
             var w = widgets[action];
-            try { w.id = window.turnstile.render(w.box, { sitekey: SITE_KEY, action: action, theme: 'light', size: 'flexible' }); } catch (e) { w.id = null; }
+            try { w.id = window.turnstile.render(w.box, { sitekey: SITE_KEY, action: action, theme: 'auto', size: 'flexible' }); } catch (e) { w.id = null; }
         });
     }
     function loadCaptcha() {
@@ -566,7 +566,7 @@
 
     var form = document.getElementById('enquiry');
     var status = document.getElementById('enquiry-status');
-    var enquiryClock = timer(form);
+    var enquiryClock = timer();
     setUpCaptcha(form, 'enquiry');
     revealOther(form.elements.phase, form.elements.phaseOther);
     revealOther(form.elements.curriculum, form.elements.curriculumOther);
@@ -609,7 +609,7 @@
     // Tutor applications go straight into the app's hiring pipeline.
     var apply = document.getElementById('apply');
     var applyStatus = document.getElementById('apply-status');
-    var applyClock = timer(apply);
+    var applyClock = timer();
     setUpCaptcha(apply, 'application');
     Array.prototype.forEach.call(apply.querySelectorAll('input[data-other]'), function (c) { revealOther(c, document.getElementById(c.getAttribute('data-other'))); });
     apply.addEventListener('reset', function () { applyClock.restart(); setTimeout(function () { apply.elements.curriculaOther.hidden = true; apply.elements.phasesOther.hidden = true; }); });

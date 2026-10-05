@@ -1343,8 +1343,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async updateApplication(id, p) {
       check(await client.from('tutor_applications').update(strip({ status: p.status, notes: p.notes, tutor_id: p.tutorId })).eq('id', id));
     },
-    async setSpamStatus(kind, id, spam) {
-      check(await client.rpc('set_submission_spam', { p_kind: kind, p_id: id, p_spam: spam }));
+    async setSpamStatus(kind, id, spam, sendAck) {
+      check(await client.rpc('set_submission_spam', { p_kind: kind, p_id: id, p_spam: spam, p_send_ack: !spam && !!sendAck }));
     },
 
     async getPaymentDetails(tutorId) {

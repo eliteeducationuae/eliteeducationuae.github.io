@@ -89,19 +89,19 @@ export const ops = {
     const log = (db.formSubmissions ??= []);
     if (rateLimited(log.filter((x) => x.kind === 'application'), { email }, SPAM_LIMITS.application, now)) throw new RateLimitError();
     log.push({ kind: 'application', email, at });
-    const dup = findDuplicateApplication(db.applications, { email }, now);
+    const reasons = spamReasons({ names: [a.fullName], text: [a.experience, a.qualifications, a.subjects, a.availability], elapsedMs });
+    // Only a clean repeat is folded in, and it only fills blanks: anyone who knows the email could send it.
+    const dup = reasons.length ? undefined : findDuplicateApplication(db.applications, { email }, now);
     if (dup) {
-      for (const k of ['phone', 'subjects', 'qualifications', 'availability', 'cvPath'] as const) {
+      for (const k of ['phone', 'subjects', 'qualifications', 'availability', 'cvPath', 'experience'] as const) {
         if (!dup[k]?.trim() && a[k]?.trim()) dup[k] = a[k]!.trim();
       }
-      if ((a.experience?.trim().length ?? 0) > (dup.experience?.length ?? 0)) dup.experience = a.experience!.trim();
       dup.curricula = [...new Set([...dup.curricula, ...a.curricula])];
       dup.phases = [...new Set([...(dup.phases ?? []), ...(a.phases ?? [])])];
       dup.repeatCount = (dup.repeatCount ?? 0) + 1;
       dup.lastSubmittedAt = at;
       return;
     }
-    const reasons = spamReasons({ names: [a.fullName], text: [a.experience, a.qualifications, a.subjects, a.availability], elapsedMs });
     db.applications.push({
       ...a,
       phases: a.phases ?? [],

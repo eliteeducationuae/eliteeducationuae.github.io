@@ -45,6 +45,7 @@ export default function Enquiries() {
         <Stat label="Conversion" value={conversion === null ? '–' : `${conversion}%`} hint="enrolled vs lost" tone="success" />
       </StatGrid>
       <Segmented
+        fit
         value={filter}
         onChange={setFilter}
         options={[

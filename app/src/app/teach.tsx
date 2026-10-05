@@ -5,7 +5,8 @@ import { View } from 'react-native';
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { pickFile } from '@/components/file-pick';
 import { Honeypot } from '@/components/honeypot';
-import { Banner, Button, Card, ErrorNote, Field, Row, Screen, Section, Txt } from '@/components/ui';
+import { FormError } from '@/components/spam';
+import { Banner, Button, Card, Field, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { PickedFile } from '@/data/source';
@@ -107,7 +108,7 @@ export default function Apply() {
               </Txt>
               <Button title={cv ? 'Change' : 'Attach your CV'} icon="doc" size="sm" variant="secondary" onPress={async () => setCv((await pickFile()) ?? cv)} />
             </Row>
-            <ErrorNote error={error} />
+            <FormError error={error} />
             <Button title="Send application" variant="gold" loading={busy} disabled={!fullName.trim() || !email.includes('@') || curricula.length === 0} onPress={submit} />
           </Card>
         </>

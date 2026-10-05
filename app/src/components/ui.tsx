@@ -462,12 +462,15 @@ export function Segmented<T extends string>({
   value,
   onChange,
   disabled,
+  fit,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
   /** Shown but not changeable (e.g. autopay before a card is saved). */
   disabled?: boolean;
+  /** Size each segment to its label (spare room shared out), for labels of very different lengths. */
+  fit?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -491,10 +494,13 @@ export function Segmented<T extends string>({
             aria-disabled={!!disabled}
             style={[
               styles.segment,
+              fit && styles.segmentFit,
               active && [{ backgroundColor: theme.surface, borderColor: theme.border }, !disabled && elevation(theme)],
               disabled && Platform.OS === 'web' && ({ cursor: 'not-allowed' } as object),
             ]}>
-            <Text style={[font('sans', 'bold'), { color: active ? theme.text : theme.textMuted, fontSize: 14 }]}>{o.label}</Text>
+            <Text numberOfLines={1} style={[font('sans', 'bold'), { color: active ? theme.text : theme.textMuted, fontSize: 14, textAlign: 'center' }]}>
+              {o.label}
+            </Text>
             {active ? <View style={[styles.segmentMarker, { backgroundColor: theme.gold }]} /> : null}
           </Pressable>
         );
@@ -621,6 +627,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     minHeight: 36,
   },
+  segmentFit: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 10 },
   segmentMarker: { position: 'absolute', bottom: 3, width: 18, height: 2, borderRadius: 1 },
   input: { borderWidth: 1, borderRadius: Radius.sm, paddingHorizontal: 14, paddingVertical: 11, fontSize: 16, minHeight: 48 },
 });

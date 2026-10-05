@@ -1,4 +1,4 @@
-import { RATE_LIMIT_MESSAGE } from '@/domain/spam';
+import { mergeMessage, RATE_LIMIT_MESSAGE } from '@/domain/spam';
 
 import { AccessError } from '../demo/db';
 import { eq } from '../demo/engagement';
@@ -34,11 +34,35 @@ describe('public enquiries (mirrors submit_enquiry spam protection)', () => {
     const e = db.enquiries[db.enquiries.length - 1];
     expect(e.repeatCount).toBe(2);
     expect(e.phone).toBe('+971 50 000 0000');
-    expect(e.message).toBe(`${layla.message} and Physics`);
+    // The earlier message is kept; the different one is added underneath.
+    expect(e.message).toBe(mergeMessage(layla.message, `${layla.message} and Physics`, at(10)));
+    expect(e.message).toMatch(/^We would like help with IB Maths for our daughter\n\nRe-sent on \d+ October 2026: We would like help with IB Maths for our daughter and Physics$/);
     expect(e.lastSubmittedAt).toBe(at(10).toISOString());
     expect(() => eq.submitEnquiry(db, null, { ...layla, elapsedMs: 5000 }, at(15))).toThrow(RATE_LIMIT_MESSAGE);
     // An hour after the first, there is room again.
     expect(() => eq.submitEnquiry(db, null, { ...layla, elapsedMs: 5000 }, at(61))).not.toThrow();
+  });
+
+  it('never flags a signed-in family, whose form arrives pre-filled', () => {
+    const db = createSeed(NOW);
+    const parent = who(db, 'parent');
+    eq.submitEnquiry(db, parent, { parentName: parent.fullName, email: 'family@example.com', message: 'Consultation please', elapsedMs: 400 }, NOW);
+    const e = db.enquiries[db.enquiries.length - 1];
+    expect(e.spamStatus).toBe('clean');
+    expect(e.familyId).toBe(parent.familyId);
+  });
+
+  it('keeps a repeat that looks automated apart from the genuine enquiry', () => {
+    const db = createSeed(NOW);
+    const before = db.enquiries.length;
+    eq.submitEnquiry(db, null, { ...layla, elapsedMs: 5000 }, at(0));
+    eq.submitEnquiry(db, null, { ...layla, message: `${layla.message} http://a.example http://b.example http://c.example`, elapsedMs: 5000 }, at(1));
+    expect(db.enquiries.length).toBe(before + 2);
+    const [first, second] = db.enquiries.slice(before);
+    expect(first.message).toBe(layla.message);
+    expect(first.spamStatus).toBe('clean');
+    expect(first.repeatCount).toBe(0);
+    expect(second.spamStatus).toBe('suspected');
   });
 
   it('keeps enquiries about different children apart', () => {
@@ -94,11 +118,28 @@ describe('tutor applications (mirrors submit_tutor_application spam protection)'
     expect(a.repeatCount).toBe(1);
     expect(a.curricula).toEqual(['IB', 'A Level']);
     expect(a.phases).toEqual(['Secondary', 'Sixth form']);
-    expect(a.experience).toBe('Five years of IB and A Level teaching');
+    // Only blanks are filled: the experience already given is kept.
+    expect(a.experience).toBe('Five years');
     expect(a.qualifications).toBe('PGCE');
     expect(a.spamStatus).toBe('suspected');
 
     expect(() => ops.submitApplication(db, sam, at(10))).toThrow(RATE_LIMIT_MESSAGE);
+  });
+
+  it('never replaces an existing CV or experience, and keeps a link-laden repeat apart', () => {
+    const db = createSeed(NOW);
+    const before = db.applications.length;
+    ops.submitApplication(db, { ...sam, cvPath: 'cv/sam.pdf' }, at(0));
+    ops.submitApplication(db, { ...sam, cvPath: 'cv/other.pdf', experience: 'Something much longer written by somebody else' }, at(1));
+    const a = db.applications[before];
+    expect(db.applications.length).toBe(before + 1);
+    expect(a.cvPath).toBe('cv/sam.pdf');
+    expect(a.experience).toBe('Five years');
+    db.formSubmissions = [];
+    ops.submitApplication(db, { ...sam, experience: 'http://a.example http://b.example http://c.example' }, at(2));
+    expect(db.applications.length).toBe(before + 2);
+    expect(db.applications[before + 1].spamReasons).toEqual(['links']);
+    expect(a.experience).toBe('Five years');
   });
 
   it('lets admins mark applications as spam', () => {

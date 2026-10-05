@@ -34,6 +34,14 @@ export class RateLimitError extends Error {
   }
 }
 
+/** Whether an error from either data source is the polite "please wait" limit, which is not a fault. */
+export function isRateLimitError(e: unknown): boolean {
+  if (e instanceof RateLimitError) return true;
+  if (!e || typeof e !== 'object') return false;
+  const x = e as { code?: unknown; message?: unknown };
+  return x.code === RATE_LIMIT_CODE || x.message === RATE_LIMIT_MESSAGE;
+}
+
 export const SPAM_REASON_LABEL: Record<SpamReason, string> = {
   'link-in-name': 'Link in the name',
   links: 'Several links',
@@ -72,6 +80,28 @@ export function messageSimilarity(a: string | undefined | null, b: string | unde
   return both / (sa.size + sb.size - both);
 }
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "6 October 2026", in UAE time (UTC+4, no daylight saving). */
+function uaeDate(at: Date): string {
+  const d = new Date(at.getTime() + 4 * 3_600_000);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * The message kept when a repeat enquiry is folded into an earlier one (mirrors public.merge_message): the earlier
+ * message is never overwritten; a different new message is added underneath as a dated 'Re-sent' paragraph.
+ */
+export function mergeMessage(old: string | undefined, incoming: string | undefined, at: Date): string | undefined {
+  const next = incoming?.trim();
+  if (!next) return old;
+  if (!old?.trim()) return next;
+  const a = normaliseMessage(old);
+  const b = normaliseMessage(next);
+  if (a === b || a.includes(b)) return old;
+  return `${old}\n\nRe-sent on ${uaeDate(at)}: ${next}`;
+}
+
 /** Why a submission looks automated, in a fixed order. Empty means it looks genuine. */
 export function spamReasons(input: {
   names: (string | undefined)[];
@@ -92,12 +122,22 @@ export function isPossibleSpam(x: { spamStatus?: SpamStatus }): boolean {
   return x.spamStatus === 'suspected' || x.spamStatus === 'spam';
 }
 
+/** A short marker for lists such as search results; undefined for a genuine item. */
+export function spamLabel(x: { spamStatus?: SpamStatus }): string | undefined {
+  return x.spamStatus === 'spam' ? 'Marked as spam' : x.spamStatus === 'suspected' ? 'Possible spam' : undefined;
+}
+
 export function withoutSpam<T extends { spamStatus?: SpamStatus }>(list: T[]): T[] {
   return list.filter((x) => !isPossibleSpam(x));
 }
 
 export function spamSummary(reasons: SpamReason[] | undefined): string {
   return (reasons ?? []).map((r) => SPAM_REASON_LABEL[r]).join(' · ');
+}
+
+/** The reasons as a lower-case phrase for use inside a sentence, e.g. "sent very quickly; several links". */
+export function spamReasonPhrase(reasons: SpamReason[] | undefined): string {
+  return (reasons ?? []).map((r) => SPAM_REASON_LABEL[r].toLowerCase()).join('; ');
 }
 
 const HOUR = 3_600_000;

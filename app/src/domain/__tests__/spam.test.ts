@@ -6,6 +6,8 @@ import {
   findDuplicateApplication,
   findDuplicateEnquiry,
   isPossibleSpam,
+  isRateLimitError,
+  mergeMessage,
   messageSimilarity,
   normaliseMessage,
   PAYLOAD_MESSAGES,
@@ -14,6 +16,8 @@ import {
   RateLimitError,
   rateLimited,
   SPAM_LIMITS,
+  spamLabel,
+  spamReasonPhrase,
   spamReasons,
   spamSummary,
   withoutSpam,
@@ -209,5 +213,32 @@ describe('enquiryConversion and possible spam', () => {
       { createdAt: '2026-09-04', status: 'new' as const, spamStatus: 'clean' as const },
     ];
     expect(enquiryConversion(list, '2026-08-01')).toEqual({ total: 2, enrolled: 1, lost: 0, open: 1, rate: 1 });
+  });
+});
+
+describe('mergeMessage', () => {
+  const at = new Date('2026-10-05T22:00:00Z'); // 6 October in the UAE
+  it('never overwrites the earlier message', () => {
+    expect(mergeMessage('Hello', undefined, at)).toBe('Hello');
+    expect(mergeMessage(undefined, ' Hi ', at)).toBe('Hi');
+    expect(mergeMessage('Hello there, friend', 'hello there friend!', at)).toBe('Hello there, friend');
+    expect(mergeMessage('We need help with maths and physics', 'help with maths', at)).toBe('We need help with maths and physics');
+    expect(mergeMessage('Help with maths', 'Help with maths please, urgently', at)).toBe('Help with maths\n\nRe-sent on 6 October 2026: Help with maths please, urgently');
+  });
+});
+
+describe('isRateLimitError and spamLabel', () => {
+  it('recognises the limit from either data source', () => {
+    expect(isRateLimitError(new RateLimitError())).toBe(true);
+    expect(isRateLimitError(new Error(RATE_LIMIT_MESSAGE))).toBe(true);
+    expect(isRateLimitError({ code: 'PT429', message: 'x' })).toBe(true);
+    expect(isRateLimitError(new Error('Please enter your name'))).toBe(false);
+    expect(isRateLimitError(null)).toBe(false);
+  });
+  it('marks possible spam in lists', () => {
+    expect(spamLabel({ spamStatus: 'suspected' })).toBe('Possible spam');
+    expect(spamLabel({ spamStatus: 'spam' })).toBe('Marked as spam');
+    expect(spamLabel({ spamStatus: 'clean' })).toBeUndefined();
+    expect(spamReasonPhrase(['too-fast', 'links'])).toBe('sent very quickly; several links');
   });
 });

@@ -1,7 +1,7 @@
 import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
-import { enquiryPayloadProblem, findDuplicateEnquiry, RateLimitError, rateLimited, SPAM_LIMITS, spamReasons } from '@/domain/spam';
-import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
+import { enquiryPayloadProblem, findDuplicateEnquiry, mergeMessage, RateLimitError, rateLimited, SPAM_LIMITS, spamReasons } from '@/domain/spam';
+import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, SpamReason, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
@@ -99,6 +99,7 @@ export const eq = {
     if (!e.email?.trim() && !e.phone?.trim()) throw new Error('Please give an email address or phone number');
     const isAdmin = viewer?.role === 'admin';
     const at = now.toISOString();
+    let reasons: SpamReason[] = [];
     if (!isAdmin) {
       // Mirrors public.submit_enquiry: size limits, rate limits, merging repeats and flagging possible spam.
       const problem = enquiryPayloadProblem(e);
@@ -107,16 +108,20 @@ export const eq = {
       const log = (db.formSubmissions ??= []);
       if (rateLimited(log.filter((x) => x.kind === 'enquiry'), { email }, SPAM_LIMITS.enquiry, now)) throw new RateLimitError();
       log.push({ kind: 'enquiry', email, at });
-      const dup = findDuplicateEnquiry(db.enquiries, { ...e, email }, now);
+      // A signed-in family is never flagged: their forms arrive pre-filled, so a quick tap is normal.
+      if (viewer?.role !== 'parent' || !viewer.familyId) {
+        reasons = spamReasons({ names: [e.parentName, e.studentName], text: [e.message, e.preferredTimes], elapsedMs });
+      }
+      // Only a clean repeat is folded in, and it only fills blanks.
+      const dup = reasons.length ? undefined : findDuplicateEnquiry(db.enquiries, { ...e, email }, now);
       if (dup) {
         for (const k of MERGE_FIELDS) if (!dup[k]?.trim() && e[k]?.trim()) dup[k] = e[k]!.trim();
-        if ((e.message?.trim().length ?? 0) > (dup.message?.length ?? 0)) dup.message = e.message!.trim();
+        dup.message = mergeMessage(dup.message, e.message, now);
         dup.repeatCount = (dup.repeatCount ?? 0) + 1;
         dup.lastSubmittedAt = at;
         return;
       }
     }
-    const reasons = isAdmin ? [] : spamReasons({ names: [e.parentName, e.studentName], text: [e.message, e.preferredTimes], elapsedMs });
     db.enquiries.push({
       id: newId('enq'),
       createdAt: at,
@@ -138,7 +143,7 @@ export const eq = {
     if (viewer.role === 'parent') return db.enquiries.filter((e) => e.familyId && e.familyId === viewer.familyId);
     return [];
   },
-  /** Mirrors public.set_submission_spam. */
+  /** Mirrors public.set_submission_spam. The demo sends no emails, so the acknowledgement option has nothing to send. */
   setSpamStatus(db: DemoDB, viewer: Profile, kind: 'enquiry' | 'application', id: string, spam: boolean) {
     requireAdmin(viewer);
     const item = kind === 'enquiry' ? db.enquiries.find((x) => x.id === id) : db.applications.find((x) => x.id === id);

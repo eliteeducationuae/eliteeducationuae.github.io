@@ -26,6 +26,7 @@ export default function Applications() {
     <Screen onRefresh={() => applications.refetch()} refreshing={applications.isRefetching}>
       <Txt variant="muted">Applications from the “Teach with us” form on the website and in the app.</Txt>
       <Segmented
+        fit
         value={filter}
         onChange={setFilter}
         options={[
