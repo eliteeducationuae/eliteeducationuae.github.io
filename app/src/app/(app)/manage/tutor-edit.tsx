@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
+import { HistorySection } from '@/components/history';
 import { LoginHint } from '@/components/login-hint';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
 import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
@@ -94,6 +95,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
         </Row>
       </Section>
       <ErrorNote error={save.error} />
+      {existing ? <HistorySection filter={{ tutorId: existing.id }} /> : null}
     </Screen>
   );
 }

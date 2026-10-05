@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
+import { HistorySection } from '@/components/history';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
@@ -90,6 +91,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
           <Section title="Card and autopay">
             <FamilyCardAdmin family={existing} />
           </Section>
+          <HistorySection filter={{ familyId: existing.id }} />
         </>
       ) : null}
     </Screen>

@@ -271,6 +271,22 @@ Complete these once, in this order. The function names come from the round 4 pla
 6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
+## Audit log
+
+Every change to the records that matter is written to a permanent audit log (`public.audit_events`, created by `20261016000000_audit.sql`). Each entry records when the change was made, who made it (their name and role at the time, or *System* for automated jobs and payment webhooks), what was added, changed or removed, and the family, student, tutor and related records it belongs to. For an update, only the fields that changed are stored, with their previous and new values.
+
+**What is recorded.** Lessons, lesson notes, charges, invoices, payments, packages, tutor invoices, enrolments, students, families, tutors, settings, services and homework, together with status changes to student reports and the award of tutoring opportunities. Routine housekeeping, such as reminder timestamps and invoice numbering, is not recorded.
+
+**What is never recorded.** Bank details and IBANs, SWIFT codes and account numbers, tokens, secrets and passwords, and payment-provider references. A change to any of these is still logged, so it is clear that, for example, the bank details were changed and by whom, but the values themselves appear only as *[redacted]*. Card data is never held by Elite Education at all, and tutors' private lesson notes, private student notes, tutor payment details, sign-in profiles and calendar connections are not audited.
+
+**Who can see it.** Administrators only, in the *History* section of each record and under *Admin → More → Activity log*. Tutors, parents and students cannot read the log, and the reading functions (`list_audit_events`, `audit_actors`) refuse anyone who is not an administrator.
+
+**Immutability.** Entries are written automatically by a database trigger and cannot be added, edited or deleted by anyone through the app or the API, including administrators and the service role. Database triggers also block updates, deletions and truncation by the table owner.
+
+**Retention.** The log is kept indefinitely by default; there is no automatic expiry. To export it, run `copy (select * from public.audit_events order by at) to stdout with csv header` in the Supabase SQL editor (or `\copy` from `psql` to save a file), or use *Export to CSV* in the Table editor. Should a purge ever be legally required, a database owner must carry it out deliberately, outside the app, in the SQL editor: `alter table public.audit_events disable trigger audit_events_no_change;`, then the specific `delete`, then `alter table public.audit_events enable trigger audit_events_no_change;`. Record the reason for the purge separately.
+
+**Adding tables.** A later migration adds a table to the log with `select public.audit_attach('public.<table>');`. The entry is filed under the row's `family_id`, `student_id` and `tutor_id` columns when it has them, and any column whose name suggests bank details, tokens or secrets is redacted automatically. Keep the rules in the migration's header comment and `AUDIT_RULES` in `src/domain/audit.ts` in step.
+
 ## Checks
 
 ```bash

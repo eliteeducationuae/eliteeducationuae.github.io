@@ -1,6 +1,7 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import type { AuditCursor, AuditFilter, AuditPage } from '@/domain/audit';
 import { buildTopicLookup, type TopicLookup } from '@/domain/topics';
 import type { Family, Service, Student, Tutor } from '@/domain/types';
 
@@ -200,3 +201,22 @@ export function useCalendarConnection() {
 // Card payments: saved cards, autopay and top-ups
 
 export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });
+
+// Audit trail (admins only)
+
+/** Admin audit trail, newest first, a page at a time. */
+export const useAuditHistory = (filter: AuditFilter, pageSize = 20, enabled = true) =>
+  useInfiniteQuery({
+    queryKey: ['audit', filter, pageSize],
+    queryFn: ({ pageParam }): Promise<AuditPage> =>
+      source.listAuditEvents
+        ? source.listAuditEvents(filter, { before: pageParam ?? undefined, limit: pageSize })
+        : Promise.resolve({ events: [], next: null }),
+    initialPageParam: null as AuditCursor | null,
+    getNextPageParam: (last) => last.next,
+    enabled,
+  });
+
+/** Everyone who appears in the audit trail, for the person filter. */
+export const useAuditActors = (enabled = true) =>
+  useQuery({ queryKey: ['audit-actors'], queryFn: () => source.listAuditActors?.() ?? Promise.resolve([]), enabled });

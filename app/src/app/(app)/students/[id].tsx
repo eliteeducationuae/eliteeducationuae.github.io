@@ -1,5 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
+import { HistorySection } from '@/components/history';
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
 import { StudentOverview } from '@/components/student-overview';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
@@ -59,6 +60,7 @@ export default function StudentPage() {
           />
         </Row>
       ) : null}
+      <HistorySection filter={{ studentId: student.id }} />
     </Screen>
   );
 }

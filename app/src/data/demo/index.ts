@@ -4,6 +4,7 @@ import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
+import { auditedWrite, ensureAuditSeed, listAuditActorsDemo, listAuditEventsDemo } from './audit';
 import { cw } from './classwork';
 import { cal } from './calendar';
 import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
@@ -36,6 +37,7 @@ export function createDemoSource(): DataSource {
     } catch {
       db = createSeed();
     }
+    ensureAuditSeed(db);
     return db;
   }
 
@@ -61,7 +63,9 @@ export function createDemoSource(): DataSource {
 
   const write = async <T>(fn: (db: DemoDB, viewer: Profile) => T): Promise<T> => {
     const d = await load();
-    const result = fn(d, me());
+    const v = me();
+    // Record what the write changed, as the database's audit triggers do.
+    const result = auditedWrite(d, v, () => fn(d, v));
     await save();
     return structuredClone(result);
   };
@@ -137,6 +141,7 @@ export function createDemoSource(): DataSource {
     },
     async resetDemo() {
       db = createSeed();
+      ensureAuditSeed(db);
       await save();
     },
 
@@ -302,5 +307,9 @@ export function createDemoSource(): DataSource {
     setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
     buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
     chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
+
+    // Audit trail (admins only)
+    listAuditEvents: (filter, page) => read((d, v) => listAuditEventsDemo(d, v, filter, page)),
+    listAuditActors: () => read((d, v) => listAuditActorsDemo(d, v)),
   };
 }

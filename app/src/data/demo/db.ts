@@ -1,4 +1,5 @@
 import { SYLLABUSES } from '@/data/curriculum';
+import type { AuditEvent } from '@/domain/audit';
 import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
 import { enrolmentTitle, sameSubject, topicListKey, type EnrolmentDraft } from '@/domain/enrolments';
@@ -91,6 +92,8 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  /** Audit trail (mirrors public.audit_events). Optional: databases saved before it lack the field. */
+  audit?: AuditEvent[];
 }
 
 export interface OutboxMessage {

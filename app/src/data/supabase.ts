@@ -16,6 +16,7 @@ import {
 } from '@/lib/social-auth';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
+import { auditEventFromRow } from '@/domain/audit';
 import { connectResultNotice } from '@/domain/calendar-connection';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -1510,6 +1511,33 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       );
       const first = data?.results?.[0];
       return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
+    },
+
+    // Audit trail (admins only; the RPCs refuse everyone else)
+    async listAuditEvents(filter, page) {
+      const limit = page?.limit ?? 30;
+      const rows = check<Row[] | null>(
+        await client.rpc('list_audit_events', {
+          p_entity_id: filter.entityId ?? null,
+          p_family_id: filter.familyId ?? null,
+          p_student_id: filter.studentId ?? null,
+          p_tutor_id: filter.tutorId ?? null,
+          p_actor_id: filter.actorId ?? null,
+          p_tables: filter.tables?.length ? filter.tables : null,
+          p_from: filter.from ?? null,
+          p_to: filter.to ?? null,
+          p_before_at: page?.before?.at ?? null,
+          p_before_id: page?.before?.id ?? null,
+          p_limit: limit,
+        }),
+      ) ?? [];
+      const events = rows.map(auditEventFromRow);
+      const last = events[events.length - 1];
+      return { events, next: rows.length === limit && last ? { at: last.at, id: last.id } : null };
+    },
+    async listAuditActors() {
+      const rows = check<Row[] | null>(await client.rpc('audit_actors')) ?? [];
+      return rows.map((r) => ({ id: String(r.actor_id), name: r.actor_name ?? 'Unknown', role: r.actor_role ?? 'unknown' }));
     },
   };
 }
