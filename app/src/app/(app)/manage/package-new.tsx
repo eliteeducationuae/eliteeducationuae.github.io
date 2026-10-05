@@ -7,6 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useFamilies, useServices } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 /** Prepaid lesson bundles: the family is invoiced now and lessons draw credits automatically. */
 export default function NewPackage() {
@@ -46,7 +47,7 @@ export default function NewPackage() {
       }>
       <Section title="Family">
         <Row gap={Spacing.one} wrap>
-          {(families.data ?? []).map((f) => (
+          {withoutClosed(families.data).map((f) => (
             <Chip key={f.id} label={f.name} selected={familyId === f.id} onPress={() => setFamilyId(f.id)} />
           ))}
         </Row>

@@ -10,12 +10,12 @@ Nothing in this document is a secret. Never paste a service-role key, Stripe sec
 
 | Target date | Milestone |
 |---|---|
-| Mid-October | Apple Developer (organisation) enrolment submitted; Google Play Console organisation account created; Expo account ready |
-| End of October | First production-profile builds on EAS; production Supabase checks complete (section 3) |
-| **Mid-November** | **TestFlight build in the hands of tutors**; Google Play internal testing live |
-| Late November | Store listings, screenshots, privacy answers and reviewer account complete |
+| 15 October | Apple Developer (organisation) enrolment submitted; Google Play Console organisation account created; Expo account ready |
+| 31 October | First production-profile builds on EAS; production Supabase checks complete (section 3) |
+| **14 November** | **TestFlight build in the hands of tutors**; Google Play internal testing live |
+| 24 November | Store listings, screenshots, privacy answers and reviewer account complete |
 | **1 December** | **Submitted for App Store review and Google Play production review** |
-| December | Buffer for review questions, fixes and resubmission; go-live on a quiet weekday |
+| 2 to 31 December | Buffer for review questions, fixes and resubmission; go-live on a quiet weekday |
 | 1 January (latest) | Families using the store apps |
 
 Apple review usually takes one to three days, and Google Play review for a new organisation account can take up to a week or more. A first submission is often returned once with questions, so the December buffer matters.
@@ -196,10 +196,10 @@ Use **demo data only** (`EXPO_PUBLIC_DEMO=1`), never real families, students or 
 
 ## 11. Legal and accountant sign-off
 
-- [ ] **11.1 [Legal review]** Privacy policy against UAE PDPL (Federal Decree-Law No. 45 of 2021), including children's data, parental consent, cross-border transfers and the processor list.
+- [ ] **11.1 [Legal review]** Privacy policy against UAE PDPL (Federal Decree-Law No. 45 of 2021), including children's data, parental consent, cross-border transfers and the processor list. **Before the policy goes live, confirm the two retention promises in section 10:** enquiries that do not lead to lessons deleted after 24 months, and unsuccessful tutor applications after 12 months. The app does not yet delete these automatically, so either the office clears them by hand each quarter (Admin → Enquiries and Applications), an automatic clear-out is added before launch, or the wording is changed.
 - [ ] **11.2 [Legal review]** Terms of service, including tutors' status as independent contractors, liability and governing law (UAE, Dubai courts).
 - [ ] **11.3 [Accountant review]** Retention period for invoices, credit notes and payment records under UAE VAT law (the app keeps them, anonymised, when an account is closed; the policy currently says five years), and whether the bill-to surname must be retained on tax invoices.
-- [ ] **11.4 [Legal review]** The data processing terms of Supabase, Stripe, Resend, Twilio, Google, Apple and Expo are accepted under the business account.
+- [ ] **11.4 [Legal review]** The data processing terms of Supabase, Stripe, Resend, Twilio, Google, Apple, Expo and Anthropic are accepted under the business account.
 - [ ] **11.5 [Legal review]** Safeguarding wording and the vetting process described to families.
 
 ## 12. Version and build numbering

@@ -152,6 +152,21 @@ end $$;
 reset role;
 
 -- A parent closes their account -------------------------------------------------
+-- Lesson details that must not outlive the account: a home address and link on Sami's past lesson, a past group lesson
+-- of Sami and Ollie with notes and attendance, and an opportunity written about Sami.
+update public.lessons set address = 'Villa 12, Emirates Hills', meeting_url = 'https://meet.example/sami'
+ where id = 'f0000000-0000-0000-0000-000000000001';
+insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location, address, status) values
+  ('f0000000-0000-0000-0000-000000000005', 'b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000001,d0000000-0000-0000-0000-000000000003}',
+   'e0000000-0000-0000-0000-000000000001', now() - interval '3 days', now() - interval '3 days' + interval '1 hour', 'in-person',
+   'Villa 12, Emirates Hills', 'completed');
+insert into public.lesson_notes (lesson_id, summary, attendance) values
+  ('f0000000-0000-0000-0000-000000000005', 'Group work on titrations.',
+   '{"d0000000-0000-0000-0000-000000000001":"present","d0000000-0000-0000-0000-000000000003":"late"}');
+insert into public.opportunities (id, title, description, student_id, location, pay_rate) values
+  ('60000000-0000-0000-0000-000000000001', 'IB Maths AA SL', 'Sami needs help before his mocks.', 'd0000000-0000-0000-0000-000000000001',
+   'Emirates Hills', 200);
+
 create temp table totals as
   select (select count(*) from public.invoices) as invoices, (select sum(public.invoice_total(i)) from public.invoices i) as invoiced,
          (select count(*) from public.charges) as charges, (select sum(amount) from public.charges) as charged,
@@ -185,6 +200,24 @@ select pg_temp.check((select status = 'cancelled' and cancel_reason = 'Account c
 select pg_temp.check((select status = 'scheduled' and student_ids = '{d0000000-0000-0000-0000-000000000003}'
                         from public.lessons where id = 'f0000000-0000-0000-0000-000000000003'), 'the child is removed from an upcoming group lesson');
 select pg_temp.check((select status = 'completed' from public.lessons where id = 'f0000000-0000-0000-0000-000000000001'), 'past lessons are kept');
+select pg_temp.check((select bool_and(address is null and meeting_url is null) from public.lessons
+                        where student_ids && '{d0000000-0000-0000-0000-000000000001,d0000000-0000-0000-0000-000000000002}'
+                           or id in ('f0000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000005')),
+  'no lesson the children were in keeps a home address or meeting link');
+select pg_temp.check((select tutor_id = 'b0000000-0000-0000-0000-000000000002' and status = 'completed'
+                             and student_ids = '{d0000000-0000-0000-0000-000000000001,d0000000-0000-0000-0000-000000000003}'
+                        from public.lessons where id = 'f0000000-0000-0000-0000-000000000005'), 'a past group lesson keeps its date, tutor and status');
+select pg_temp.check(not exists (select 1 from public.lesson_notes where lesson_id = 'f0000000-0000-0000-0000-000000000001')
+  and not exists (select 1 from public.lesson_private_notes where lesson_id = 'f0000000-0000-0000-0000-000000000001'),
+  'notes and private notes on the family''s own lessons are deleted');
+select pg_temp.check((select attendance = '{"d0000000-0000-0000-0000-000000000003":"late"}' and summary = 'Group work on titrations.'
+                        from public.lesson_notes where lesson_id = 'f0000000-0000-0000-0000-000000000005'),
+  'in a group lesson only the child''s attendance is removed');
+select pg_temp.check((select summary = 'Ollie only note.' from public.lesson_notes where lesson_id = 'f0000000-0000-0000-0000-000000000004'),
+  'another family''s lesson notes are untouched');
+select pg_temp.check((select status = 'closed' and student_id is null and description is null and location is null
+                        from public.opportunities where id = '60000000-0000-0000-0000-000000000001'),
+  'an opportunity written about the child is closed and its details cleared');
 select pg_temp.check(not exists (select 1 from public.student_notes where student_id = 'd0000000-0000-0000-0000-000000000001')
   and not exists (select 1 from public.homework where student_id = 'd0000000-0000-0000-0000-000000000001')
   and not exists (select 1 from public.homework_submissions where student_id = 'd0000000-0000-0000-0000-000000000001')
@@ -300,3 +333,26 @@ exception when raise_exception then
   raise notice 'ok - the only administrator cannot close their account';
 end $$;
 reset role;
+
+-- Closed accounts cannot be booked ------------------------------------------------------
+do $$ begin
+  insert into public.lessons (tutor_id, student_ids, service_id, start_at, end_at, location)
+  values ('b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000003}', 'e0000000-0000-0000-0000-000000000001',
+          now() + interval '9 days', now() + interval '9 days' + interval '1 hour', 'online');
+  raise exception 'booked a closed tutor';
+exception when raise_exception then
+  if sqlerrm <> 'This tutor''s account has been closed. Please choose another tutor.' then raise; end if;
+  raise notice 'ok - a lesson cannot be booked with a closed tutor';
+end $$;
+do $$ begin
+  insert into public.lessons (tutor_id, student_ids, service_id, start_at, end_at, location)
+  values ('b0000000-0000-0000-0000-000000000002', '{d0000000-0000-0000-0000-000000000002}', 'e0000000-0000-0000-0000-000000000001',
+          now() + interval '9 days', now() + interval '9 days' + interval '1 hour', 'online');
+  raise exception 'booked a closed student';
+exception when raise_exception then
+  if sqlerrm <> 'This student''s account has been closed and cannot be booked.' then raise; end if;
+  raise notice 'ok - a lesson cannot be booked for a closed student';
+end $$;
+update public.lessons set tutor_id = 'b0000000-0000-0000-0000-000000000002' where id = 'f0000000-0000-0000-0000-000000000004';
+select pg_temp.check((select tutor_id = 'b0000000-0000-0000-0000-000000000002' from public.lessons where id = 'f0000000-0000-0000-0000-000000000004'),
+  'a closed tutor''s upcoming lesson can be given to another tutor');

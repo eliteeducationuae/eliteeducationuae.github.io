@@ -74,6 +74,7 @@ export default function SignedInLayout() {
       <Stack.Screen name="account-delete" options={{ title: 'Delete my account' }} />
       <Stack.Screen name="manage/system-health" options={{ title: 'System health' }} />
       <Stack.Screen name="manage/deletion-requests" options={{ title: 'Deletion requests' }} />
+      <Stack.Screen name="demo-error" options={{ title: 'Elite Education' }} />
     </Stack>
   );
 }

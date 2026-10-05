@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { font, Spacing } from '@/constants/theme';
 import { useAppErrors, useFunctionErrors, useSystemHealth } from '@/data/hooks';
 import { formatDate, formatTime } from '@/domain/dates';
 import { attentionCount, firstLine, jobStatus, jobSummary, overallHeadline, sinceLabel, statusLabel, statusTone } from '@/domain/system-health';
@@ -14,12 +14,12 @@ import { Badge, Button, Card, EmptyState, ErrorNote, ListItem, Loading, Row, Scr
 const when = (iso: string) => `${formatDate(iso)}, ${formatTime(iso)}`;
 
 const JOB_NAMES: Record<string, string> = {
-  'send-notifications': 'Email and push notifications',
+  'send-notifications': 'Emails and push notifications',
   'send-reminders': 'Lesson reminders',
   'calendar-sync': 'Google Calendar sync',
   'charge-invoice': 'Automatic card payments',
   'purge-app-errors': 'Error log tidy-up',
-  backups: 'Database backups',
+  backups: 'Nightly backups',
 };
 
 function Expandable({ title, subtitle, detail, badge }: { title: string; subtitle: string; detail?: string; badge?: string }) {
@@ -38,7 +38,7 @@ function Expandable({ title, subtitle, detail, badge }: { title: string; subtitl
       </Row>
       {open && detail ? (
         <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: 8, padding: Spacing.two }}>
-          <Txt variant="small" selectable style={{ fontFamily: 'monospace' }}>
+          <Txt variant="small" selectable style={{ ...font('sans'), fontVariant: ['tabular-nums'] }}>
             {detail}
           </Txt>
         </View>
@@ -153,7 +153,7 @@ export function SystemHealthScreen() {
               {showMigrations
                 ? data.database.migrations.map((m) => (
                     <Row key={m.version} gap={Spacing.two} style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                      <Txt variant="small" style={{ fontFamily: 'monospace' }}>
+                      <Txt variant="small" style={{ ...font('sans'), fontVariant: ['tabular-nums'] }}>
                         {m.version}
                       </Txt>
                       <Txt variant="small" style={{ flexShrink: 1 }}>

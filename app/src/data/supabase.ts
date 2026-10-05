@@ -147,6 +147,7 @@ const toTutor = (r: Row): Tutor => ({
   phases: r.phases ?? [],
   // Tutors created before the rebrand keep their old bright colours in the database; draw them in the brand palette.
   color: brandTutorColor(r.color, r.id),
+  deletedAt: r.deleted_at ?? undefined,
 });
 
 const toFamily = (r: Row): Family => ({
@@ -157,6 +158,7 @@ const toFamily = (r: Row): Family => ({
   phone: r.phone ?? undefined,
   status: r.status ?? 'active',
   createdAt: r.created_at ?? undefined,
+  deletedAt: r.deleted_at ?? undefined,
   ...toBilling(r.family_billing),
 });
 
@@ -298,6 +300,7 @@ const toStudent = (r: Row): Student => ({
   targetGrade: r.target_grade ?? undefined,
   examDate: r.exam_date ?? undefined,
   notes: r.student_notes?.notes ?? undefined,
+  deletedAt: r.deleted_at ?? undefined,
 });
 
 const toService = (r: Row): Service => ({

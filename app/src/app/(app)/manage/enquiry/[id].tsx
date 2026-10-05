@@ -15,6 +15,7 @@ import { CURRICULA, EXAM_BOARDS, LEVELS, PHASES, SUBJECTS, cleanChoice } from '@
 import { addDays, formatDate, relativeDay, toDateKey } from '@/domain/dates';
 import { tutorTeaches, validateEnrolments } from '@/domain/enrolments';
 import type { Enquiry, EnquiryStatus } from '@/domain/types';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 const NEXT: { status: EnquiryStatus; label: string }[] = [
   { status: 'new', label: 'New' },
@@ -173,7 +174,7 @@ function ConvertCard({ e }: { e: Enquiry }) {
   const lastName = e.parentName.trim().split(' ').pop() ?? e.parentName;
   const lists = builtInSyllabusesFor(subject, curriculum);
   const chosenList = lists.some((l) => l.id === syllabusId) ? syllabusId : undefined;
-  const sortedTutors = [...(tutors.data ?? [])].sort(
+  const sortedTutors = withoutClosed(tutors.data).sort(
     (a, b) => Number(tutorTeaches(b, subject)) - Number(tutorTeaches(a, subject)) || a.fullName.localeCompare(b.fullName),
   );
   const busy = saveFamily.isPending || saveStudent.isPending || saveEnrolment.isPending || update.isPending;

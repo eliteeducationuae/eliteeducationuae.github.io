@@ -43,6 +43,8 @@ export interface Family {
   autopay?: boolean;
   /** The card kept on file for this family. Only present for admins and the family itself. */
   savedCard?: SavedCard;
+  /** Set when the family's account was closed and anonymised. */
+  deletedAt?: string;
 }
 
 export interface Student {
@@ -62,6 +64,8 @@ export interface Student {
   examDate?: string;
   /** Tutor-only notes (never shown to families). */
   notes?: string;
+  /** Set when the student's record was anonymised because the account was closed. */
+  deletedAt?: string;
 }
 
 export interface Tutor {
@@ -79,6 +83,8 @@ export interface Tutor {
   phases: string[];
   /** Calendar colour. */
   color: string;
+  /** Set when the tutor's account was closed and anonymised. */
+  deletedAt?: string;
 }
 
 export interface Service {

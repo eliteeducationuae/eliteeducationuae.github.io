@@ -14,7 +14,7 @@ export interface DeletionConsequences {
 
 /** Shown when the only administrator tries to delete their account (the server says the same). */
 export const LAST_ADMIN_MESSAGE =
-  'You are the only administrator, so this account cannot be deleted. Please make another person an administrator first.';
+  'You are the only administrator. Please appoint another administrator before deleting this account.';
 
 /** The word a person types to confirm deletion. */
 export const DELETE_CONFIRM_WORD = 'DELETE';
@@ -25,24 +25,32 @@ export function deletionConsequences(role: Role): DeletionConsequences {
       return {
         removed: [
           'Your login and contact details',
+          "Your children's logins and any other parent login for your family",
           "Your children's profiles",
           'Lesson notes, homework and submissions',
+          'Lesson addresses and meeting links',
           'Your messages with Elite Education',
           'All future lessons, which will be cancelled',
         ],
-        kept: ['Invoices and payment records, kept for the period UAE law requires, without your contact details'],
-        note: 'Your invoices and payment records are kept for the period UAE law requires, without your contact details. Everything else is removed and cannot be recovered.',
+        kept: [
+          'Lesson dates and invoices, without contact details',
+          'Payment records, kept for the period UAE law requires',
+        ],
+        note: 'Everything else is removed straight away and cannot be recovered.',
       };
     case 'tutor':
       return {
         removed: ['Your login and contact details', 'Your weekly availability', 'Your bank details', 'Your Google Calendar link'],
         kept: ['Your invoices and lesson history, kept for tax and pay records'],
-        note: 'Your upcoming lessons will be reassigned to another tutor by Elite Education. Your invoices and lesson history are kept for tax and pay records.',
+        note: 'Elite Education will reassign your upcoming lessons to another tutor. Everything else is removed straight away and cannot be recovered.',
       };
     case 'student':
       return {
-        removed: ['Your login', 'Your messages'],
-        kept: ["Your lessons, notes and reports, which stay with your parent's account"],
+        removed: ['Your login'],
+        kept: [
+          "Messages you sent stay in your family's conversation without your name",
+          "Your lessons, notes and reports, which stay with your parent's account",
+        ],
         note: "The family's records stay with your parent's account. Your parent can ask us to remove them.",
       };
     case 'admin':

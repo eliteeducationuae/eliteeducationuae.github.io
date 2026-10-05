@@ -631,8 +631,9 @@ revoke all on function public.anonymise_student(uuid) from public, anon, authent
 
 /**
  * A family closes its account: the whole family is anonymised. Upcoming lessons for only this family's children are
- * cancelled ('Account closed'); in group lessons the children are removed instead. Invoices, charges, payments and
- * packages are kept for tax records.
+ * cancelled ('Account closed'); in group lessons the children are removed instead. Past lessons keep their date, tutor,
+ * service and status for invoicing, without address, meeting link, notes or the children's attendance. Invoices,
+ * charges, payments and packages are kept for tax records.
  *
  * LEGAL REVIEW (Craig): families.name (the surname) is kept as the bill-to name on retained tax invoices, which UAE VAT
  * law may require for the retention period. Please confirm with the accountant; if not required it can be replaced too.
@@ -663,6 +664,24 @@ begin
      set student_ids = array(select x from unnest(student_ids) x where x <> all (sids))
    where status = 'scheduled' and start_at > now() and student_ids && sids and not (student_ids <@ sids);
   get diagnostics n = row_count;
+
+  -- Lesson records keep only what invoicing needs (date, tutor, service, status). The home address and meeting link go
+  -- from every lesson the children were in; notes go from lessons that were only theirs; in the group lessons they were
+  -- in, their attendance is removed. Opportunities written about a child are closed and their details cleared.
+  if cardinality(sids) > 0 then
+    update public.lessons set address = null, meeting_url = null
+     where student_ids && sids and (address is not null or meeting_url is not null);
+    delete from public.lesson_notes where lesson_id in (select id from public.lessons where student_ids <@ sids);
+    delete from public.lesson_private_notes where lesson_id in (select id from public.lessons where student_ids <@ sids);
+    update public.lesson_notes
+       set attendance = attendance - array(select x::text from unnest(sids) x)
+     where lesson_id in (select id from public.lessons where student_ids && sids)
+       and attendance ?| array(select x::text from unnest(sids) x);
+    update public.opportunities
+       set student_id = null, description = null, location = null,
+           status = case when status = 'open' then 'closed' else status end
+     where student_id = any (sids);
+  end if;
 
   foreach sid in array sids loop
     part := public.anonymise_student(sid);
@@ -963,7 +982,7 @@ begin
     when (v_summary->>'familyAnonymised')::boolean then
       E'\n\nWhat was kept, for tax records: ' || public.deletion_count(v_summary, 'invoicesRetained', 'invoice', 'invoices')
       || ' and ' || public.deletion_count(v_summary, 'paymentsRetained', 'payment', 'payments')
-      || E'. Personal details, messages, notes and homework have been removed.'
+      || E'. Lesson dates, tutors and statuses are kept for invoicing. Personal details, lesson addresses, lesson notes, messages and homework have been removed.'
       || case when (v_summary->>'futureLessonsCancelled')::int > 0
            then E'\n\n' || public.deletion_count(v_summary, 'futureLessonsCancelled', 'upcoming lesson was', 'upcoming lessons were')
                 || ' cancelled.' else '' end
@@ -1001,6 +1020,25 @@ language sql security definer set search_path = public as $$
 $$;
 revoke all on function public.fail_account_deletion(uuid, text) from public, anon, authenticated;
 grant execute on function public.fail_account_deletion(uuid, text) to service_role;
+
+/** No new lessons with a closed tutor or a closed student's record (the office reassigns or cancels instead). */
+create function public.refuse_closed_lesson_people() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if (tg_op = 'INSERT' or new.tutor_id is distinct from old.tutor_id)
+     and exists (select 1 from public.tutors where id = new.tutor_id and deleted_at is not null) then
+    raise exception 'This tutor''s account has been closed. Please choose another tutor.';
+  end if;
+  if exists (select 1 from public.students
+              where id = any (new.student_ids) and deleted_at is not null
+                and (tg_op = 'INSERT' or id <> all (old.student_ids))) then
+    raise exception 'This student''s account has been closed and cannot be booked.';
+  end if;
+  return new;
+end $$;
+revoke all on function public.refuse_closed_lesson_people() from public, anon, authenticated;
+create trigger lessons_refuse_closed_people before insert or update of tutor_id, student_ids on public.lessons
+  for each row execute function public.refuse_closed_lesson_people();
 
 -- ---------------------------------------------------------------------------
 -- 7. Backups bucket: private, written and read by the service role only (no policies for anon or authenticated).

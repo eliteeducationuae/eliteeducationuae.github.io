@@ -50,7 +50,8 @@ export function DataPrivacyCard() {
       onPress={() => openLink(url)}
       accessibilityRole="link"
       accessibilityLabel={label}
-      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 6 }, pressed && { opacity: 0.7 }]}>
+      hitSlop={6}
+      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: Spacing.two, minHeight: 44 }, pressed && { opacity: 0.7 }]}>
       <Icon name="link" size={16} color={theme.accent} />
       <Txt style={{ color: theme.accent, textDecorationLine: 'underline' }}>{label}</Txt>
     </Pressable>
@@ -74,8 +75,9 @@ export function DataPrivacyCard() {
           onPress={() => router.push('/account-delete')}
           accessibilityRole="button"
           accessibilityLabel="Delete my account"
+          hitSlop={6}
           style={({ pressed }) => [
-            { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingTop: Spacing.two, borderTopWidth: 1, borderTopColor: theme.border },
+            { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, minHeight: 44, paddingTop: Spacing.two, borderTopWidth: 1, borderTopColor: theme.border },
             pressed && { opacity: 0.7 },
           ]}>
           <Txt style={{ color: theme.danger, flex: 1 }}>Delete my account</Txt>

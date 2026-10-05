@@ -27,6 +27,7 @@ import { formatAED } from '@/domain/billing';
 import { lessonSubject, studentSubjects } from '@/domain/enrolments';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -217,7 +218,7 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   const reassign = useAction(source.reassignLesson);
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
-  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
+  const options = coverOptions(lesson, withoutClosed(tutors.data), sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Choose a tutor</Txt>

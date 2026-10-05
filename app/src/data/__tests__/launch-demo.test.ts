@@ -93,9 +93,15 @@ describe('deleteMyAccount (mirrors delete-account)', () => {
     expect(db.profiles.some((p) => p.id === parent.id)).toBe(false);
     expect(db.messages.some((m) => m.familyId === familyId)).toBe(false);
     expect(db.homework.some((h) => childIds.has(h.studentId))).toBe(false);
+    expect(family.deletedAt).toBeTruthy();
+    expect(db.students.filter((s) => childIds.has(s.id)).every((s) => !!s.deletedAt)).toBe(true);
+    // Lessons keep their date and tutor, but no address, meeting link or attendance for the children.
+    const theirs = db.lessons.filter((l) => l.studentIds.some((id) => childIds.has(id)));
+    expect(theirs.every((l) => l.address === undefined && l.meetingUrl === undefined)).toBe(true);
+    expect(db.notes.every((n) => Object.keys(n.attendance).every((id) => !childIds.has(id)))).toBe(true);
 
     const requests = deletionRequests(db, who(db, 'admin'));
-    expect(requests[0]).toMatchObject({ status: 'completed', targetKind: 'family', role: 'parent' });
+    expect(requests[0]).toMatchObject({ status: 'completed', targetKind: 'profile', role: 'parent', label: 'Parent account (closed)' });
     expect(requests[0].summary.invoicesRetained).toBe(invoicesBefore);
   });
 
@@ -108,7 +114,20 @@ describe('deleteMyAccount (mirrors delete-account)', () => {
     expect(db.paymentDetails.some((p) => p.tutorId === tutor.tutorId)).toBe(false);
     expect(db.availability.some((a) => a.tutorId === tutor.tutorId)).toBe(false);
     expect(db.tutors.find((t) => t.id === tutor.tutorId)!.fullName).toBe('Former tutor');
+    expect(db.tutors.find((t) => t.id === tutor.tutorId)!.deletedAt).toBeTruthy();
     expect(db.profiles.some((p) => p.id === tutor.id)).toBe(false);
+  });
+
+  it('keeps a student\'s messages in the family conversation without their name', () => {
+    const db = createSeed();
+    const student = who(db, 'student');
+    const familyId = db.students.find((x) => x.id === student.studentId)!.familyId;
+    db.messages.push({ id: 'm-test', familyId, senderId: student.id, senderName: student.fullName, senderRole: 'student', body: 'Thank you', createdAt: NOW.toISOString() });
+    deleteMyAccount(db, student, NOW);
+    const kept = db.messages.find((m) => m.id === 'm-test')!;
+    expect(kept).toMatchObject({ senderName: 'Former student', body: 'Thank you' });
+    expect(kept.senderId).toBeUndefined();
+    expect(deletionRequests(db, who(db, 'admin'))[0].label).toBe('Student login (closed)');
   });
 
   it('refuses to delete the last administrator', () => {

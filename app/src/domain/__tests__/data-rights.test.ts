@@ -5,19 +5,25 @@ describe('deletionConsequences', () => {
     const c = deletionConsequences('parent');
     expect(c.removed.join(' ')).toMatch(/children's profiles/);
     expect(c.removed.join(' ')).toMatch(/future lessons/i);
-    expect(c.kept.join(' ')).toMatch(/Invoices and payment records/);
-    expect(c.note).toMatch(/UAE law/);
+    expect(c.removed.join(' ')).toMatch(/children's logins and any other parent login/);
+    expect(c.kept.join(' ')).toMatch(/Lesson dates and invoices, without contact details/);
+    expect(c.kept.join(' ')).toMatch(/UAE law/);
+    // The note adds something new rather than repeating a kept item.
+    for (const item of c.kept) expect(c.note).not.toContain(item);
   });
 
   it('tells tutors their bank details go and upcoming lessons are reassigned', () => {
     const c = deletionConsequences('tutor');
     expect(c.removed).toContain('Your bank details');
     expect(c.kept.join(' ')).toMatch(/tax and pay records/);
-    expect(c.note).toMatch(/reassigned/);
+    expect(c.note).toMatch(/reassign/);
   });
 
   it('tells students the family records stay with the parent', () => {
-    expect(deletionConsequences('student').note).toMatch(/parent's account/);
+    const c = deletionConsequences('student');
+    expect(c.note).toMatch(/parent's account/);
+    expect(c.removed).toEqual(['Your login']);
+    expect(c.kept.join(' ')).toMatch(/without your name/);
   });
 
   it('warns administrators about the last-administrator rule', () => {

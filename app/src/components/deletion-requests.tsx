@@ -10,6 +10,7 @@ import {
   DELETION_STATUS_ORDER,
   deletionSummaryText,
 } from '@/domain/data-rights';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { formatDate } from '@/domain/dates';
 import type { DeletionRequest } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
@@ -107,8 +108,8 @@ function RecordRequestForm({ onDone }: { onDone: () => void }) {
     const term = search.trim().toLowerCase();
     const all =
       kind === 'family'
-        ? (families.data ?? []).filter((f) => f.status !== 'archived').map((f) => ({ id: f.id, label: `${f.name} family`, hint: f.parentName }))
-        : (tutors.data ?? []).filter((t) => t.fullName !== 'Former tutor').map((t) => ({ id: t.id, label: t.fullName, hint: t.email }));
+        ? withoutClosed(families.data).filter((f) => f.status !== 'archived').map((f) => ({ id: f.id, label: `${f.name} family`, hint: f.parentName }))
+        : withoutClosed(tutors.data).map((t) => ({ id: t.id, label: t.fullName, hint: t.email }));
     return all.filter((o) => !term || o.label.toLowerCase().includes(term) || o.hint.toLowerCase().includes(term)).slice(0, 12);
   }, [kind, search, families.data, tutors.data]);
 

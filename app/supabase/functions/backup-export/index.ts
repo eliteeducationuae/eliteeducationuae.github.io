@@ -3,7 +3,9 @@
 // Writes <YYYY-MM-DD>/<table>.json for each table in BACKUP_TABLES (UAE date; tables missing from the database are
 // skipped) and <YYYY-MM-DD>/manifest.json (row counts, database version, time), then deletes folders older than 35 days.
 // Never exports calendar tokens, OAuth states, tutor bank details, autopay requests or push tokens.
-// This complements Supabase's own database backups: it gives the office a readable copy of the records it can restore from.
+// This complements Supabase's own database backups: it is a readable copy of the business records, from which single
+// tables or rows can be restored. It is not a full backup (no auth users, storage files or secrets); point-in-time
+// recovery or Supabase's daily backups are the way to restore the whole database.
 // Returns { folder, tables, rows, deleted }.
 import { adminClient, json } from '../_shared/supabase.ts';
 import { BACKUP_TABLES, backupPrefix, expiredBackupPrefixes, withMonitoring } from '../_shared/monitoring.ts';
