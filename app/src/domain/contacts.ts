@@ -83,6 +83,19 @@ export function describeRecipients(contacts: FamilyContact[], kind: NoticeKind):
   return names.length ? joinNames(names) : 'Nobody';
 }
 
+/**
+ * Who receives WhatsApp messages (lesson reminders and the notices ticked for them), as a phrase, or 'Nobody'.
+ * A contact with a login chooses for themselves under Account, so they are marked '(own settings)'.
+ * Mirrors SQL public.queue_whatsapp_family.
+ */
+export function describeWhatsAppRecipients(contacts: FamilyContact[]): string {
+  const names = contacts
+    .filter((c) => c.receivesWhatsApp)
+    .sort(byPrimaryThenAge)
+    .map((c) => (c.hasLogin ? `${c.name} (own settings)` : c.name));
+  return names.length ? joinNames(names) : 'Nobody';
+}
+
 /** Short labels describing a contact's role and preferences, for chips on a contact card. */
 export function contactFlagsSummary(c: FamilyContact): string[] {
   const flags: string[] = [];
@@ -162,9 +175,18 @@ export const CONTACT_ERRORS = {
   primaryNeedsEmail: 'The main contact needs an email address.',
   whatsappNumber: 'Please enter a mobile number with its country code, for example +971 50 123 4567, to send WhatsApp messages.',
   duplicateEmail: 'Another contact in this family already uses that email address.',
+  /** For the office only: the address signs in to another family. */
   emailElsewhere: 'That email address already signs in to another family. Please use a different address.',
-  /** For a parent: the address already has a login in a prospect family, which only the office may move. */
+  /** For the office only: the address has a login in a prospect family, which the office may move. */
   existingAccount: 'That email address already has an Elite Education account. Please ask the office to add this contact for you.',
+  /**
+   * For a parent, whatever the reason sign-in could not be given (another family, an existing account): the family is
+   * never told who else is a client. Nothing is saved and the office is told (save_family_contact returns null).
+   */
+  loginReferred:
+    'We could not give sign-in access to that email address. The office has been told and will be in touch to add this contact for you.',
+  emailLocked:
+    'This is the address the contact signs in with, so it cannot be changed. To use a different address, switch off their sign-in and save first.',
   lastLogin: 'At least one contact must be able to sign in.',
   primaryRequired: 'Please choose another main contact first.',
   removePrimary: 'Please choose another main contact before removing this one.',
@@ -185,7 +207,7 @@ export function isWhatsAppCapable(phone: string | undefined): boolean {
  * Check a contact before saving. `others` are the family's other contacts (not this one).
  * Returns the first problem as a message for the form, or null when the contact can be saved.
  * Pass `hasLogin` on the draft for an existing contact who has signed in: their WhatsApp number comes from their own settings.
- * Whether the email signs in to another family is checked by the server (CONTACT_ERRORS.emailElsewhere).
+ * Whether the email signs in to another family is checked by the server (CONTACT_ERRORS.loginReferred for a parent).
  */
 export function validateContactDraft(
   draft: FamilyContactDraft & { hasLogin?: boolean },

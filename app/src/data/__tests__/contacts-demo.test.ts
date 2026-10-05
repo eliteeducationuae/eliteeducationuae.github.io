@@ -84,10 +84,31 @@ describe('parents', () => {
     const db = createSeed();
     const fatima = profile(db, 'u-parent');
     expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Grace again', email: 'GRACE@example.com' }))).toThrow(CONTACT_ERRORS.duplicateEmail);
-    expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Priya', email: 'priya@example.com', canLogIn: true }))).toThrow(CONTACT_ERRORS.emailElsewhere);
-    expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Sarah', email: 'sarah@eliteeducation.me', canLogIn: true }))).toThrow(CONTACT_ERRORS.emailElsewhere);
+    // A parent is never told that an address belongs to another client or an account: one neutral message, and the
+    // office is told so it can follow up.
+    const before = db.familyContacts!.length;
+    expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Priya', email: 'priya@example.com', canLogIn: true }))).toThrow(CONTACT_ERRORS.loginReferred);
+    expect(db.outbox.at(-1)?.subject).toBe('Contact sign-in to review: Al Mansoori family');
+    expect(db.outbox.at(-1)?.body).toContain('Fatima Al Mansoori asked to give Priya (priya@example.com) sign-in access');
+    expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Sarah', email: 'sarah@eliteeducation.me', canLogIn: true }))).toThrow(CONTACT_ERRORS.loginReferred);
+    expect(db.familyContacts!.length).toBe(before);
+    // The office is told the reason.
+    const admin = profile(db, 'u-admin');
+    expect(() => saveFamilyContact(db, admin, 'f-mansoori', draft({ name: 'Priya', email: 'priya@example.com', canLogIn: true }))).toThrow(CONTACT_ERRORS.emailElsewhere);
     // A contact who does not sign in may share an address with another family (a family office, say).
     expect(saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Office', relationship: 'family_office', email: 'priya@example.com' })).email).toBe('priya@example.com');
+  });
+
+  it('never changes the address a login signs in with', () => {
+    const db = createSeed();
+    const khalidContact = db.familyContacts!.find((c) => c.id === 'fc-khalid')!;
+    for (const who of ['u-parent', 'u-admin']) {
+      expect(() =>
+        saveFamilyContact(db, profile(db, who), 'f-mansoori', { ...draftFromContact(khalidContact), email: 'khalid.new@example.com' }),
+      ).toThrow(CONTACT_ERRORS.emailLocked);
+    }
+    // Saving with the same address, in any case, is fine.
+    expect(saveFamilyContact(db, profile(db, 'u-parent'), 'f-mansoori', { ...draftFromContact(khalidContact), email: khalidContact.email!.toUpperCase() }).hasLogin).toBe(true);
   });
 
   it('renaming a linked contact renames their login', () => {

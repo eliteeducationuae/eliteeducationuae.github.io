@@ -11,6 +11,7 @@ import {
   CHANNEL_LABELS,
   contactFlagsSummary,
   describeRecipients,
+  describeWhatsAppRecipients,
   draftFromContact,
   emptyContactDraft,
   NOTICE_KIND_LABELS,
@@ -88,6 +89,12 @@ export function FamilyContactsSection({ familyId, editable, intro }: { familyId:
                 {describeRecipients(list, kind)}
               </Txt>
             ))}
+            <Txt variant="muted">
+              <Txt variant="muted" style={{ fontWeight: '700' }}>
+                WhatsApp (lesson reminders and the notices above):
+              </Txt>{' '}
+              {describeWhatsAppRecipients(list)}
+            </Txt>
             {list.some((c) => !c.canLogIn && !c.hasLogin && !!c.email) ? (
               <Txt variant="small">
                 Email only: these contacts receive emails but no app notifications, and cannot sign in.
@@ -257,6 +264,8 @@ export function ContactEditor({
         autoCorrect={false}
         keyboardType="email-address"
         autoComplete="email"
+        editable={!existing?.hasLogin}
+        hint={existing?.hasLogin ? 'This is the address they sign in with.' : undefined}
       />
       <Field
         label="Telephone"

@@ -275,6 +275,33 @@ select pg_temp.check((select whatsapp_status from public.notification_outbox whe
   and contact_id = pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Ali Haddad')
   and url = '/invoice/10000000-0000-0000-0000-000000000002') = 'skipped', 'paying the invoice skips a contact''s held WhatsApp');
 
+-- Lesson reminders by WhatsApp reach a driver who cannot sign in and is not the main contact, once they agree to it.
+select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Dev Driver","relationship":"driver","phone":"+971 50 444 5555","can_log_in":false,"receives_whatsapp":true,
+    "receives_invoices":false,"receives_reports":false,"receives_lesson_notes":false}');
+select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Nadia Nophone","relationship":"other","phone":"+971 50 666 7777","can_log_in":false,"receives_whatsapp":false,
+    "receives_invoices":false,"receives_reports":false,"receives_lesson_notes":false}');
+select public.queue_whatsapp_family('c0000000-0000-0000-0000-000000000001', 'lesson_reminder',
+  '{"2":"Sami","3":"Tia Tutor","4":"Mon 12 Oct, 16:00"}', '/lesson/reminder-test');
+select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and url = '/lesson/reminder-test'
+  and whatsapp_template = 'lesson_reminder' and profile_id is null
+  and contact_id = pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Dev Driver') and whatsapp_to = '+971504445555'
+  and whatsapp_vars->>'1' = 'Dev') = 1,
+  'a driver without a login who agreed to WhatsApp gets the lesson reminder at their own number');
+select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and url = '/lesson/reminder-test'
+  and profile_id = 'a0000000-0000-0000-0000-000000000011') = 1
+  and not exists (select 1 from public.notification_outbox where whatsapp and url = '/lesson/reminder-test'
+    and (whatsapp_to = '+971506667777' or profile_id = 'a0000000-0000-0000-0000-000000000012')),
+  'a login gets the reminder by their own opt-in; nobody who has not agreed to WhatsApp is messaged');
+select pg_temp.check(public.whatsapp_template_kind('lesson_reminder') = 'reminders'
+  and not exists (select 1 from public.notification_outbox where not whatsapp and url = '/lesson/reminder-test'),
+  'lesson reminders are their own kind and are sent by WhatsApp only');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.remove_family_contact(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Dev Driver'));
+select public.remove_family_contact(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Nadia Nophone'));
+delete from public.notification_outbox where url = '/lesson/reminder-test';
+
 -- The email-only wording for each kind of family notice a contact without a sign-in can receive
 select pg_temp.check(public.contact_email_body('A new invoice for AED 900.00 is ready in the Elite Education app. As autopay is on, '
     || 'it will be paid automatically from your saved Visa ending 4242. There is nothing you need to do; we will let you know if '
@@ -287,8 +314,12 @@ select pg_temp.check(public.contact_email_body('A new invoice for AED 900.00 is 
 select pg_temp.check(public.contact_email_body('We tried to take AED 450.00 for invoice INV-1 using your saved card, but the payment '
     || 'did not go through: your card has expired. Please update your card with Manage cards in the Billing tab, or pay the invoice '
     || 'in the Elite Education app.', 'Haddad', 'invoices')
-  like 'We tried to take AED 450.00 for invoice INV-1 using the family''s saved card, but the payment did not go through: your card has expired.' || E'\n\nYou are receiving%',
-  'a failed autopay notice drops the in-app instructions');
+  like 'We tried to take AED 450.00 for invoice INV-1 using the family''s saved card, but the payment did not go through: the family''s card has expired.' || E'\n\nYou are receiving%',
+  'a failed autopay notice drops the in-app instructions and speaks of the family''s card');
+select pg_temp.check(public.contact_email_body('We tried to take AED 450.00 for invoice INV-1 using your saved card, but the payment '
+    || 'did not go through: your card was declined by your bank.', 'Haddad', 'invoices')
+  like '%did not go through: the family''s card was declined by the family''s bank.' || E'\n\nYou are receiving%',
+  'a declined payment speaks of the family''s card and bank, not "your"');
 select pg_temp.check(public.contact_email_body('As there is no longer a card saved to your account, autopay has been switched off. '
     || 'New invoices will not be charged automatically; you can pay them in the Billing tab of the Elite Education app, and switch '
     || 'autopay on again once a card is saved.', 'Haddad', 'invoices')
@@ -341,7 +372,7 @@ select pg_temp.check(public.family_notice_kind('/invoice/x') = 'invoices' and pu
   and public.family_notice_kind('/messages/1') = 'general' and public.family_notice_kind(null) = 'general',
   'notice kinds follow the link they open');
 select pg_temp.check(public.whatsapp_template_kind('invoice_overdue') = 'invoices'
-  and public.whatsapp_template_kind('homework_due') = 'lesson_notes' and public.whatsapp_template_kind('lesson_reminder') = 'general',
+  and public.whatsapp_template_kind('homework_due') = 'lesson_notes' and public.whatsapp_template_kind('lesson_reminder') = 'reminders',
   'WhatsApp templates map to the same kinds');
 select pg_temp.check(not exists (select 1 from public.notification_outbox o, public.settings s
   where s.id = 1 and (position(s.bank_details in o.body) > 0 or o.body ilike '%IBAN%')),
@@ -430,11 +461,26 @@ insert into auth.users (id, email, email_confirmed_at, raw_app_meta_data, raw_us
 select family_id as stranger_fam from public.profiles where id = 'a0000000-0000-0000-0000-000000000016' \gset
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
-select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
-  '{"name":"Typo Contact","email":"stranger@privaterelay.appleid.com","can_log_in":true}')$$,
-  'That email address already has an Elite Education account. Please ask the office to add this contact for you.',
-  'a parent cannot pull another person''s login into their family');
+select pg_temp.check(public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Typo Contact","email":"stranger@privaterelay.appleid.com","can_log_in":true}') is null,
+  'a parent cannot pull another person''s login into their family (nothing saved, no reason given)');
 reset role;
+select pg_temp.admin_save('c0000000-0000-0000-0000-000000000003',
+  '{"name":"Olga Sync","relationship":"mother","email":"olga@x.ae","can_log_in":true}');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
+select pg_temp.check(public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Otto Again","email":"olga@x.ae","can_log_in":true}') is null,
+  'a parent is not told that an address signs in to another family');
+reset role;
+select pg_temp.check(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Typo Contact') is null
+  and pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Otto Again') is null, 'neither contact is saved');
+select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-00000000000a'
+  and subject = 'Contact sign-in to review: Haddad'
+  and body like 'Rana Haddad asked to give % sign-in access to the Haddad family''s account. That address already has a '
+    || 'sign-in elsewhere, so nothing was saved.%') = 2,
+  'the office is told each time so it can follow up');
+select pg_temp.check(not exists (select 1 from public.notification_outbox where email = 'stranger@privaterelay.appleid.com' and subject = 'Your access to Elite Education'), 'nobody is invited');
 select pg_temp.check((select family_id from public.profiles where id = 'a0000000-0000-0000-0000-000000000016') = :'stranger_fam'
   and (select status from public.families where id = :'stranger_fam') = 'prospect',
   'the other login and its prospect family are left untouched');
@@ -514,6 +560,21 @@ select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
 select pg_temp.check((select family_id from public.profiles where id = 'a0000000-0000-0000-0000-000000000012')
   = 'c0000000-0000-0000-0000-000000000001' and (pg_temp.contact('omar@x')).profile_id = 'a0000000-0000-0000-0000-000000000012',
   'allowing sign-in again brings the login back');
+
+-- The email of a contact with a login is the address they sign in with, and is not changed under them.
+select pg_temp.raises($$select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
+  jsonb_build_object('id', (pg_temp.contact('omar@x')).id, 'email', 'omar.new@x.ae'))$$,
+  'This is the address the contact signs in with, so it cannot be changed. To use a different address, switch off their sign-in and save first.',
+  'the office cannot change a linked login''s email');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
+select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  jsonb_build_object('id', (pg_temp.contact('omar@x')).id, 'email', 'omar.new@x.ae'))$$,
+  'This is the address the contact signs in with, so it cannot be changed. To use a different address, switch off their sign-in and save first.',
+  'nor can another parent in the family');
+reset role;
+select pg_temp.check((pg_temp.contact('omar@x')).profile_id = 'a0000000-0000-0000-0000-000000000012',
+  'the login stays linked to its own address');
 
 -- Renaming a linked contact renames the login; set_my_name renames the caller's contact.
 select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',

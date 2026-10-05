@@ -103,11 +103,24 @@ export function saveFamilyContact(db: DemoDB, viewer: Profile, familyId: string,
 
   const problem = validateContactDraft({ ...d, hasLogin: existing?.hasLogin }, others, viewer.role);
   if (problem) throw new Error(problem);
+  // The address a login signs in with is not changed under them.
+  if (existing?.hasLogin && !sameEmail(existing.email, d.email)) throw new Error(CONTACT_ERRORS.emailLocked);
   // A login email may belong to one family only (and never to a tutor or the office).
   if (d.canLogIn && d.email) {
     const elsewhere =
       db.profiles.some((p) => sameEmail(p.email, d.email) && !(p.role === 'parent' && p.familyId === familyId)) ||
       allContacts(db).some((c) => c.familyId !== familyId && c.canLogIn && sameEmail(c.email, d.email));
+    if (elsewhere && viewer.role !== 'admin') {
+      // Discretion: a parent is never told why, so they cannot learn who else is a client. The office follows up.
+      notifyAdmins(
+        db,
+        `Contact sign-in to review: ${familyLabel(family)}`,
+        `${viewer.fullName} asked to give ${d.name} (${d.email}) sign-in access to the ${familyLabel(family)}'s account. That address already has a sign-in elsewhere, so nothing was saved. Please follow up with the family and add the contact if appropriate.`,
+        `/manage/family-edit?id=${familyId}`,
+        now,
+      );
+      throw new Error(CONTACT_ERRORS.loginReferred);
+    }
     if (elsewhere) throw new Error(CONTACT_ERRORS.emailElsewhere);
   }
 

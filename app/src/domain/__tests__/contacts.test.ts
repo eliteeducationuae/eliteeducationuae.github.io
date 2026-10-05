@@ -6,6 +6,7 @@ import {
   contactReceives,
   contactsFromFamily,
   describeRecipients,
+  describeWhatsAppRecipients,
   draftFromContact,
   emptyContactDraft,
   formatPhoneForDisplay,
@@ -106,6 +107,13 @@ describe('who receives what', () => {
     expect(describeRecipients([fatima], 'reports')).toBe('Fatima Al Mansoori');
     expect(describeRecipients([grace], 'reports')).toBe('Nobody');
     expect(describeRecipients([], 'invoices')).toBe('Nobody');
+  });
+
+  it('lists who receives WhatsApp, marking those who choose for themselves', () => {
+    const driver = contact({ id: 'c7', name: 'Ahmed', relationship: 'driver', email: undefined, canLogIn: false, hasLogin: false, profileId: undefined, isPrimary: false, receivesWhatsApp: true, createdAt: '2026-01-10T00:00:00Z' });
+    const fatimaWa = { ...fatima, receivesWhatsApp: true, hasLogin: true };
+    expect(describeWhatsAppRecipients([driver, fatimaWa, grace])).toBe('Fatima Al Mansoori (own settings) and Ahmed');
+    expect(describeWhatsAppRecipients([grace])).toBe('Nobody');
   });
 });
 
@@ -223,6 +231,11 @@ describe('validateContactDraft', () => {
 
   it('leaves the cross-family email check to the server', () => {
     expect(CONTACT_ERRORS.emailElsewhere).toBe('That email address already signs in to another family. Please use a different address.');
+    // A parent is given one neutral message that never says whether the address belongs to another client.
+    expect(CONTACT_ERRORS.loginReferred).toBe(
+      'We could not give sign-in access to that email address. The office has been told and will be in touch to add this contact for you.',
+    );
+    expect(CONTACT_ERRORS.loginReferred).not.toMatch(/another family|already has/);
   });
 });
 

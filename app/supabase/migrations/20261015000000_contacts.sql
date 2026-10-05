@@ -594,7 +594,9 @@ begin
 end $$;
 
 /**
- * Add (no id) or update (id) a family contact. Admins, or a parent of the family. Returns the contact's id.
+ * Add (no id) or update (id) a family contact. Admins, or a parent of the family. Returns the contact's id, or null when
+ * a parent asked to give sign-in access to an address that already signs in elsewhere: nothing is saved, the office is
+ * told, and the parent sees one neutral message (CONTACT_ERRORS.loginReferred) that does not say why.
  * Keys: id, name, relationship, email, phone, preferred_channel, can_log_in, receives_invoices, receives_reports,
  * receives_lesson_notes, receives_whatsapp, emergency_contact, is_primary. Missing keys keep the current value (or the
  * default for a new contact). A linked login's WhatsApp flag mirrors their own consent and is not changed here.
@@ -664,8 +666,25 @@ begin
       where family_id = p_family_id and email = v_email and id is distinct from v_id) then
     raise exception 'Another contact in this family already uses that email address.';
   end if;
+  -- A login's email is the address they sign in with: changing it would leave the login linked to a contact whose
+  -- address is no longer theirs. Switch the sign-in off first (which unlinks the login), or ask them to change it.
+  if cur.profile_id is not null and v_email is distinct from cur.email then
+    raise exception 'This is the address the contact signs in with, so it cannot be changed. To use a different address, switch off their sign-in and save first.';
+  end if;
   if v_login and public.login_email_taken(v_email, p_family_id) then
-    if not is_adm and exists (select 1 from public.family_contacts o where o.email = v_email and o.can_log_in
+    if not is_adm then
+      -- Discretion: a family is never told whether an address belongs to another client or has an account. Nothing is
+      -- saved; the office is told (this commits, so the RPC returns null rather than raising) and the app shows
+      -- CONTACT_ERRORS.loginReferred.
+      select * into me from public.profiles where id = auth.uid();
+      perform public.notify_admins('Contact sign-in to review: ' || fam.name,
+        coalesce(nullif(btrim(me.full_name), ''), 'A parent') || ' asked to give ' || v_name || ' (' || v_email
+          || ') sign-in access to the ' || fam.name || ' family''s account. That address already has a sign-in elsewhere, '
+          || 'so nothing was saved. Please follow up with the family and add the contact if appropriate.',
+        'Contact sign-in to review', v_name || ' for the ' || fam.name || ' family', '/manage/family-edit?id=' || p_family_id);
+      return null;
+    end if;
+    if exists (select 1 from public.family_contacts o where o.email = v_email and o.can_log_in
         and o.family_id <> p_family_id and public.contact_login_releasable(o, true)) then
       raise exception 'That email address already has an Elite Education account. Please ask the office to add this contact for you.';
     end if;
@@ -782,13 +801,18 @@ language sql immutable set search_path = public as $$
   end
 $$;
 
-/** Whether a contact receives a kind of notice. General notices go to contacts who can sign in and the main contact. */
+/**
+ * Whether a contact receives a kind of notice. General notices go to contacts who can sign in and the main contact.
+ * Lesson reminders ('reminders', WhatsApp only) go to every contact who has agreed to WhatsApp messages, such as a
+ * driver or PA, and to a contact with a login, whose own WhatsApp opt-in then decides (queue_whatsapp).
+ */
 create function public.contact_receives(c public.family_contacts, p_kind text) returns boolean
 language sql immutable set search_path = public as $$
   select case p_kind
     when 'invoices' then c.receives_invoices
     when 'reports' then c.receives_reports
     when 'lesson_notes' then c.receives_lesson_notes
+    when 'reminders' then c.receives_whatsapp or c.profile_id is not null
     else c.can_log_in or c.is_primary
   end
 $$;
@@ -814,6 +838,11 @@ begin
   b := regexp_replace(b, '\s+(to read\s+)?in the Elite Education app', '', 'g');
   b := replace(b, 'from your saved ', 'from the family''s saved ');
   b := replace(b, 'using your saved card', 'using the family''s saved card');
+  -- A failed-payment reason ("your card has expired", "declined by your bank") is about the family's card, as in the
+  -- office's copy (20261010000000_payments.sql).
+  b := regexp_replace(b, '\myour card\M', 'the family''s card', 'g');
+  b := regexp_replace(b, '\mYour card\M', 'The family''s card', 'g');
+  b := regexp_replace(b, '\myour bank\M', 'the family''s bank', 'g');
   b := replace(b, 'to your account', 'to the family''s account');
   b := regexp_replace(b, '^Your payment ', 'The family''s payment ');
   b := btrim(b, E' \n');
@@ -897,12 +926,13 @@ end $$;
 -- 10. WhatsApp for contacts
 -- ---------------------------------------------------------------------------
 
-/** The kind of notice each WhatsApp template is, matching family_notice_kind. */
+/** The kind of notice each WhatsApp template is, matching family_notice_kind; lesson reminders are their own kind. */
 create function public.whatsapp_template_kind(p_template text) returns text
 language sql immutable set search_path = public as $$
   select case
     when p_template in ('invoice_sent', 'invoice_autopay', 'invoice_overdue') then 'invoices'
     when p_template in ('lesson_notes', 'homework_due') then 'lesson_notes'
+    when p_template = 'lesson_reminder' then 'reminders'
     else 'general'
   end
 $$;
