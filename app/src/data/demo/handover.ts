@@ -6,7 +6,7 @@ import type { Enrolment, Handover, HandoverReason, Lesson, LessonPlan, Profile }
 import type { LessonPlanInput } from '../source';
 import { AccessError, canSeeLesson, newId, visibleStudentIds, type DemoDB } from './db';
 
-// Session plans and tutor handover packs. Mirrors the rules in the 20261022000000_handover migration
+// Session plans and tutor handover packs. Mirrors the rules in the 20261110000000_handover migration
 // (lesson_plans policies, save_lesson_plan, delete_lesson_plan, handovers policies, handover_pack,
 // save_handover_note, mark_handover_viewed and the triggers that create handovers).
 
