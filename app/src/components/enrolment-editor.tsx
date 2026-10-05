@@ -4,9 +4,10 @@ import { View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { builtInSyllabusesFor, courseStillFits, enrolmentFieldsFor } from '@/data/curriculum';
 import { CURRICULA, EXAM_BOARDS, levelsFor, SUBJECTS } from '@/domain/catalogue';
-import { enrolmentTitle, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
+import { enrolmentTitle, tutorChoicePatch, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
 import { familyPricePlaceholder, parseRate, serviceForEnrolment, tutorPayPlaceholder } from '@/domain/rates';
-import type { Service, Student, Tutor } from '@/domain/types';
+import { formatAED } from '@/domain/money';
+import type { Enrolment, Service, Student, Tutor } from '@/domain/types';
 
 import { CataloguePicker } from './catalogue-picker';
 import { RateField, rateFieldError, rateFieldText } from './rates';
@@ -35,6 +36,8 @@ export function emptyDraft(): EnrolmentDraft {
 export interface EnrolmentRatesOptions {
   services: Service[];
   student?: Pick<Student, 'phase'>;
+  /** The saved enrolments, so choosing the saved tutor again restores their agreed pay. */
+  saved?: Pick<Enrolment, 'id' | 'tutorId' | 'tutorPay'>[];
 }
 
 /**
@@ -100,6 +103,14 @@ function SubjectCard({
   const lists = subject ? builtInSyllabusesFor(subject, draft.curriculum) : [];
   const title = subject ? enrolmentTitle({ ...draft, subject }) : 'New subject';
   const ordered = tutors ? orderTutorsForSubject(tutors, subject) : [];
+  const saved = draft.id ? rates?.saved?.find((e) => e.id === draft.id) : undefined;
+  const choose = (tutorId?: string) => onChange(tutorChoicePatch(draft, tutorId, saved));
+  // Warn before saving that a different tutor does not inherit the pay agreed with the saved tutor.
+  const savedTutor = saved?.tutorId ? tutors?.find((t) => t.id === saved.tutorId) : undefined;
+  const lostPay =
+    savedTutor && typeof saved?.tutorPay === 'number' && draft.tutorId !== saved.tutorId
+      ? `Changing the tutor removes the custom pay of ${formatAED(saved.tutorPay)} per hour agreed with ${savedTutor.fullName}.`
+      : undefined;
 
   return (
     <Card style={{ gap: Spacing.three }}>
@@ -153,25 +164,24 @@ function SubjectCard({
         <View style={{ gap: Spacing.one }}>
           <Txt variant="label">Tutor</Txt>
           <Row wrap>
-            <Chip label="Not yet assigned" selected={!draft.tutorId} onPress={() => onChange({ tutorId: undefined, tutorPay: undefined })} />
+            <Chip label="Not yet assigned" selected={!draft.tutorId} onPress={() => choose(undefined)} />
             {ordered.map(({ tutor, teaches }) => (
               <Chip
                 key={tutor.id}
                 label={teaches ? `${tutor.fullName} ✓` : tutor.fullName}
                 selected={draft.tutorId === tutor.id}
                 // Custom pay belongs to the student, subject and tutor together, so a new tutor starts at their usual rate.
-                onPress={() => onChange(draft.tutorId === tutor.id ? { tutorId: tutor.id } : { tutorId: tutor.id, tutorPay: undefined })}
+                onPress={() => choose(tutor.id)}
               />
             ))}
           </Row>
           {subject && ordered.some((t) => t.teaches) ? <Txt variant="small">✓ Teaches {subject}</Txt> : null}
+          {rates && lostPay ? <Txt variant="small">{lostPay}</Txt> : null}
         </View>
       ) : null}
 
       {rates && tutors ? (
         <SubjectRates
-          // Remounted when the tutor changes, so the cleared pay also clears the typed text.
-          key={draft.tutorId ?? 'none'}
           draft={draft}
           tutor={draft.tutorId ? tutors.find((t) => t.id === draft.tutorId) : undefined}
           service={serviceForEnrolment(rates.services, draft, rates.student)}
@@ -228,26 +238,17 @@ function SubjectRates({
   onChange: (patch: Partial<EnrolmentDraft>) => void;
 }) {
   // The raw text is kept locally so that typing '1' and then '.' is not rewritten while the amount is half-typed.
-  const [pay, setPay] = useState(() => rateFieldText(draft.tutorPay));
   const [price, setPrice] = useState(() => rateFieldText(draft.familyPrice));
-  const store = (text: string) => {
-    const r = parseRate(text);
-    return r === 'invalid' ? NaN : (r ?? undefined);
-  };
 
   return (
     <View style={{ gap: Spacing.three }}>
-      <RateField
-        label="Tutor pay per hour"
-        value={pay}
-        placeholder={tutorPayPlaceholder(tutor)}
-        disabled={!tutor}
-        custom={isSet(draft.tutorPay)}
-        error={rateFieldError(pay)}
-        onChange={(t) => {
-          setPay(t);
-          onChange({ tutorPay: store(t) });
-        }}
+      <TutorPayField
+        // Only the pay field remounts when the tutor changes, so its text follows the cleared or restored pay while
+        // the family price keeps whatever was typed.
+        key={draft.tutorId ?? 'none'}
+        tutorPay={draft.tutorPay}
+        tutor={tutor}
+        onChange={(tutorPay) => onChange({ tutorPay })}
       />
       <RateField
         label="Family price per hour"
@@ -257,9 +258,33 @@ function SubjectRates({
         error={rateFieldError(price)}
         onChange={(t) => {
           setPrice(t);
-          onChange({ familyPrice: store(t) });
+          onChange({ familyPrice: storeRate(t) });
         }}
       />
     </View>
+  );
+}
+
+/** Field text to draft value: blank is undefined (the default applies), text that is not an amount is NaN. */
+function storeRate(text: string): number | undefined {
+  const r = parseRate(text);
+  return r === 'invalid' ? NaN : (r ?? undefined);
+}
+
+function TutorPayField({ tutorPay, tutor, onChange }: { tutorPay?: number; tutor?: Tutor; onChange: (pay: number | undefined) => void }) {
+  const [pay, setPay] = useState(() => rateFieldText(tutorPay));
+  return (
+    <RateField
+      label="Tutor pay per hour"
+      value={pay}
+      placeholder={tutorPayPlaceholder(tutor)}
+      disabled={!tutor}
+      custom={isSet(tutorPay)}
+      error={rateFieldError(pay)}
+      onChange={(t) => {
+        setPay(t);
+        onChange(storeRate(t));
+      }}
+    />
   );
 }

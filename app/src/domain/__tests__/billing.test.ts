@@ -176,8 +176,27 @@ describe('chargesForLesson with per-student family prices', () => {
     expect(charges[0]).toMatchObject({ amount: 0, status: 'package', priceSource: 'service' });
   });
 
+  it('describes a custom-priced charge with the subject, hours and agreed price', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 415 }), enrol({ id: 'e2', studentId: 's2' })];
+    const { charges } = chargesForLesson(maths(['s1', 's2']), service, students, [], settings, {}, enrolments);
+    expect(charges.map((c) => c.description)).toEqual([
+      'IB AA HL 1:1 (Maths) — Omar, 2026-10-05 · 1.5 hours at the agreed price of AED 415 per hour',
+      'IB AA HL 1:1 — Lina, 2026-10-05',
+    ]);
+    expect(charges[0].amount).toBe(622.5);
+  });
+
+  it('describes a 60-minute custom-priced charge with its agreed price and keeps the fee label', () => {
+    const enrolments = [enrol({ id: 'e1', studentId: 's1', familyPrice: 480 })];
+    const hour = maths(['s1'], { end: new Date(2026, 9, 5, 17).toISOString(), status: 'late-cancel' });
+    const { charges } = chargesForLesson(hour, service, students, [], { lateCancelFee: 0.5, noShowFee: 1 }, {}, enrolments);
+    expect(charges[0].description).toBe('IB AA HL 1:1 (Maths) — Omar, 2026-10-05 (late cancellation) · agreed price AED 480 per hour');
+    expect(charges[0].amount).toBe(240);
+  });
+
   it('is unchanged when enrolments are omitted', () => {
     const { charges } = chargesForLesson(maths(), service, students, [], settings);
+    expect(charges[0].description).toBe('IB AA HL 1:1 — Omar, 2026-10-05');
     expect(charges[0]).toMatchObject({ amount: 450, priceSource: 'service' });
     expect(charges[0].hourlyPrice).toBeUndefined();
   });

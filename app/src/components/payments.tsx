@@ -266,6 +266,11 @@ export function BuyLessons({ offers, services, vatRate }: { offers: PackageOffer
   return (
     <Section title="Buy more lessons">
       <Txt variant="muted">Prepaid lessons are used automatically, before anything is added to your next invoice.</Txt>
+      {agreedPrice ? (
+        <Txt variant="muted">
+          Package lessons are used before your agreed hourly price applies. Please contact us if you would like advice on the best option for your family.
+        </Txt>
+      ) : null}
       <View style={{ gap: Spacing.two }}>
         {shown.map((o) => (
           <OfferCard

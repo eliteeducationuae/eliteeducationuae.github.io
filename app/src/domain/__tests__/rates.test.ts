@@ -1,4 +1,4 @@
-import { draftFromEnrolment, ratesChanged } from '../enrolments';
+import { draftFromEnrolment, ratesChanged, tutorChoicePatch } from '../enrolments';
 import { monthFigures, type FinanceData } from '../finance';
 import {
   familyPricePlaceholder,
@@ -236,6 +236,18 @@ describe('enrolment drafts and rates', () => {
     expect(ratesChanged(draft, saved)).toBe(false);
     expect(ratesChanged({ ...draft, tutorPay: 250 }, saved)).toBe(true);
     expect(ratesChanged({ ...draft, familyPrice: undefined }, saved)).toBe(true);
+  });
+
+  it('clears custom pay for a different tutor and restores it for the saved tutor', () => {
+    const draft = draftFromEnrolment(saved);
+    expect(tutorChoicePatch(draft, 't-sarah', saved)).toEqual({ tutorId: 't-sarah' });
+    const changed = { ...draft, ...tutorChoicePatch(draft, 't-james', saved) };
+    expect(changed).toMatchObject({ tutorId: 't-james', tutorPay: undefined });
+    const back = { ...changed, ...tutorChoicePatch(changed, 't-sarah', saved) };
+    expect(back).toMatchObject({ tutorId: 't-sarah', tutorPay: 240 });
+    expect(ratesChanged(back, saved)).toBe(false);
+    expect(tutorChoicePatch(draft, undefined, saved)).toEqual({ tutorId: undefined, tutorPay: undefined });
+    expect(tutorChoicePatch({}, 't-james')).toEqual({ tutorId: 't-james', tutorPay: undefined });
   });
 
   it('for a new enrolment, is true only when a rate is set', () => {

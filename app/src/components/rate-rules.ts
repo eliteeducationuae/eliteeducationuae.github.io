@@ -89,12 +89,12 @@ export function payrollSubtitle(r: { lessons: number; hours: number; customLesso
   return r.customLessons ? `${base} · includes ${r.customLessons} at custom rates` : base;
 }
 
-/** A tutor's own custom rates: 'Layla Al Mansoori · Chemistry: AED 265 per hour (Custom)'. */
+/** A tutor's own custom rates: 'Layla Al Mansoori · Chemistry: AED 265 per hour — custom'. */
 export function tutorCustomRateLines(enrolments: Enrolment[], tutorId: string | undefined, studentName: (id: string) => string | undefined): string[] {
   if (!tutorId) return [];
   return enrolments
     .filter((e) => e.active && e.tutorId === tutorId && typeof e.tutorPay === 'number')
-    .map((e) => `${studentName(e.studentId) ?? 'A student'} · ${e.subject}: ${formatAED(e.tutorPay!)} per hour (${customBadgeLabel(e.tutorPaySource)})`)
+    .map((e) => `${studentName(e.studentId) ?? 'A student'} · ${e.subject}: ${formatAED(e.tutorPay!)} per hour — ${customBadgeLabel(e.tutorPaySource).toLowerCase()}`)
     .sort((a, b) => a.localeCompare(b));
 }
 

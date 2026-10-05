@@ -134,7 +134,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
       </Section>
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <Section title="Subjects">
-        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} rates={{ services: services.data ?? [], student: { phase } }} />
+        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }} />
       </Section>
       <Field label="School" value={school} onChangeText={setSchool} />
       <Row gap={Spacing.two}>

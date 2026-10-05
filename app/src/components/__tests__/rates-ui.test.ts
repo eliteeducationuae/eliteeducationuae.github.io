@@ -122,8 +122,8 @@ describe('tutorCustomRateLines', () => {
       enr({ id: 'e5', subject: 'Biology', tutorPay: 250, active: false }),
     ];
     expect(tutorCustomRateLines(all, 'tut-sarah', name)).toEqual([
-      'Layla Al Mansoori · Chemistry: AED 265 per hour (Custom)',
-      'Omar Al Mansoori · Maths: AED 240 per hour (Agreed role rate)',
+      'Layla Al Mansoori · Chemistry: AED 265 per hour — custom',
+      'Omar Al Mansoori · Maths: AED 240 per hour — agreed role rate',
     ]);
     expect(tutorCustomRateLines(all, undefined, name)).toEqual([]);
   });

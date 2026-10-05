@@ -133,3 +133,18 @@ export function draftFromEnrolment(e: Enrolment): EnrolmentDraft {
 export function ratesChanged(draft: EnrolmentDraft, saved?: Enrolment): boolean {
   return (draft.tutorPay ?? null) !== (saved?.tutorPay ?? null) || (draft.familyPrice ?? null) !== (saved?.familyPrice ?? null);
 }
+
+/**
+ * The draft change when an admin chooses a tutor (or none). Custom pay belongs to the student, subject and tutor
+ * together, so a different tutor starts at their usual rate; choosing the saved tutor again restores the saved pay,
+ * so a mistaken tap never deletes an agreed rate. Choosing the current tutor again changes nothing.
+ */
+export function tutorChoicePatch(
+  draft: Pick<EnrolmentDraft, 'tutorId'>,
+  tutorId: string | undefined,
+  saved?: Pick<Enrolment, 'tutorId' | 'tutorPay'>,
+): Partial<EnrolmentDraft> {
+  if (draft.tutorId === tutorId) return { tutorId };
+  if (saved && (saved.tutorId ?? undefined) === tutorId) return { tutorId, tutorPay: saved.tutorPay };
+  return { tutorId, tutorPay: undefined };
+}

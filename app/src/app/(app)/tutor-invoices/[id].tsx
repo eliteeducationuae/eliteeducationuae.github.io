@@ -15,6 +15,7 @@ import { formatIban, maskIban, tutorInvoiceTotal } from '@/domain/tutor-pay';
 import type { TutorInvoice } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
+import { plural } from '@/lib/id';
 import { shareTutorInvoice } from '@/lib/tutor-invoice-pdf';
 
 export default function TutorInvoiceScreen() {
@@ -105,7 +106,7 @@ function Detail({ inv }: { inv: TutorInvoice }) {
                 <Txt>{i.description}</Txt>
                 <Row gap={Spacing.two} wrap>
                   <Txt variant="muted">
-                    {i.quantity} × {formatAED(i.unitPrice)}
+                    {plural(i.quantity, 'hour')} at {formatAED(i.unitPrice)} per hour
                   </Txt>
                   {i.rateSource === 'custom' ? <CustomBadge /> : null}
                 </Row>

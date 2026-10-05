@@ -126,6 +126,10 @@ export function chargesForLesson(
       const full = lessonFamilyCharge(lesson, service, studentId, enrolments);
       result.charges.push({
         ...base,
+        // A charge at the family's agreed price says so, so it never reads like an inconsistent service-priced line.
+        ...(full.source === 'custom'
+          ? { description: customChargeDescription(service.name, lesson, student.fullName, toDateKey(date), label, full.hourly) }
+          : null),
         amount: roundMoney(full.amount * fee),
         status: 'unbilled',
         priceSource: full.source,
@@ -134,6 +138,33 @@ export function chargesForLesson(
     }
   }
   return result;
+}
+
+/** Lesson hours as written on an invoice: '1.5', '0.75'. */
+function hoursText(lesson: Pick<Lesson, 'start' | 'end'>): string {
+  return String(Math.round((minutesBetween(new Date(lesson.start), new Date(lesson.end)) / 60) * 100) / 100);
+}
+
+/**
+ * Description of a charge at the family's agreed hourly price, e.g.
+ * 'IB Diploma 1:1 (Arabic) — Omar Al Mansoori, 2026-09-21 · agreed price AED 480 per hour', or for a lesson that is
+ * not 60 minutes '… · 1.5 hours at the agreed price of AED 415 per hour'. Mirrors apply_charges in the rates migration.
+ */
+export function customChargeDescription(
+  serviceName: string,
+  lesson: Pick<Lesson, 'start' | 'end' | 'subject'>,
+  studentName: string,
+  dateKey: string,
+  label: string,
+  hourly: number,
+): string {
+  const subject = lesson.subject?.trim();
+  const minutes = minutesBetween(new Date(lesson.start), new Date(lesson.end));
+  const price =
+    minutes === 60
+      ? `agreed price ${formatAED(hourly)} per hour`
+      : `${hoursText(lesson)} hours at the agreed price of ${formatAED(hourly)} per hour`;
+  return `${serviceName}${subject ? ` (${subject})` : ''} — ${studentName}, ${dateKey}${label ? ` (${label})` : ''} · ${price}`;
 }
 
 /** Turn a family's unbilled charges into invoice line items. */

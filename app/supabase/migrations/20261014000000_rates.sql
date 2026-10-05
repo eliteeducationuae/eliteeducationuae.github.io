@@ -237,6 +237,9 @@ declare
   pkg public.packages;
   sid uuid;
   fp record;
+  mins numeric;
+  price_text text;
+  descr text;
 begin
   select * into l from public.lessons where id = p_lesson_id;
   select * into svc from public.services where id = l.service_id;
@@ -269,9 +272,22 @@ begin
               0, 'package', pkg.id, l.start_at, 'service', null);
     else
       select * into fp from public.lesson_family_price(l.id, sid);
+      if fp.source = 'custom' then
+        -- A charge at the family's agreed price says so (subject, hours when not 60 minutes, agreed price), so it never
+        -- reads like an inconsistent service-priced line. Mirrors customChargeDescription() in src/domain/billing.ts.
+        mins := extract(epoch from (l.end_at - l.start_at)) / 60;
+        price_text := 'AED ' || to_char(fp.hourly_price,
+          case when fp.hourly_price = trunc(fp.hourly_price) then 'FM999,999,990' else 'FM999,999,990.00' end);
+        descr := svc.name || coalesce(' (' || nullif(trim(l.subject), '') || ')', '') || ' — ' || st.full_name || ', '
+          || to_char(l.start_at at time zone 'Asia/Dubai', 'YYYY-MM-DD') || label || ' · '
+          || case when mins = 60 then 'agreed price ' || price_text || ' per hour'
+                  else trim(trailing '.' from trim(trailing '0' from round(mins / 60, 2)::text))
+                       || ' hours at the agreed price of ' || price_text || ' per hour' end;
+      else
+        descr := svc.name || ' — ' || st.full_name || ', ' || to_char(l.start_at at time zone 'Asia/Dubai', 'YYYY-MM-DD') || label;
+      end if;
       insert into public.charges (lesson_id, student_id, family_id, description, amount, status, date, price_source, hourly_price)
-      values (l.id, sid, st.family_id,
-              svc.name || ' — ' || st.full_name || ', ' || to_char(l.start_at at time zone 'Asia/Dubai', 'YYYY-MM-DD') || label,
+      values (l.id, sid, st.family_id, descr,
               round(fp.amount * fee, 2), 'unbilled', l.start_at, fp.source, fp.hourly_price);
     end if;
   end loop;
