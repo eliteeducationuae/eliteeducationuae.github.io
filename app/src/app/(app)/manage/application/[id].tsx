@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { APPLICATION_STATUS, teachingFromApplication } from '@/components/hiring';
+import { RepeatNote, SpamActions, SpamBanner } from '@/components/spam';
 import { tutorColorFor } from '@/lib/tutor-colors';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useApplications } from '@/data/hooks';
 import { relativeDay } from '@/domain/dates';
+import { isPossibleSpam } from '@/domain/spam';
 import type { ApplicationStatus, TutorApplication } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 
@@ -55,6 +57,7 @@ function Detail({ a }: { a: TutorApplication }) {
   return (
     <Screen>
       <Stack.Screen options={{ title: a.fullName }} />
+      <SpamBanner kind="application" id={a.id} item={a} />
       <Card style={{ gap: Spacing.two }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
@@ -63,6 +66,7 @@ function Detail({ a }: { a: TutorApplication }) {
               Applied {relativeDay(a.createdAt).toLowerCase()} · {a.email}
               {a.phone ? ` · ${a.phone}` : ''}
             </Txt>
+            <RepeatNote repeatCount={a.repeatCount} />
           </View>
           <Badge label={APPLICATION_STATUS[a.status].label} tone={APPLICATION_STATUS[a.status].tone} />
         </Row>
@@ -92,6 +96,7 @@ function Detail({ a }: { a: TutorApplication }) {
           <Button title="Email" icon="mail" size="sm" variant="secondary" onPress={() => Linking.openURL(`mailto:${a.email}?subject=${encodeURIComponent('Your application to Elite Education')}`)} />
           {phone ? <Button title="WhatsApp" icon="chat" size="sm" variant="secondary" onPress={() => Linking.openURL(`https://wa.me/${phone.replace('+', '')}`)} /> : null}
         </Row>
+        {!isPossibleSpam(a) ? <SpamActions kind="application" id={a.id} status={a.spamStatus} compact /> : null}
       </Card>
 
       <Section title="Stage">

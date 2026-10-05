@@ -29,6 +29,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [emailInvoices, setEmailInvoices] = useState(initial.emailInvoices);
   const [emailMessages, setEmailMessages] = useState(initial.emailMessages);
   const [notice, setNotice] = useState(String(initial.bookingNoticeHours));
+  const [captcha, setCaptcha] = useState(initial.captchaRequired ?? false);
   const pct = (s: string) => Math.max(0, Math.min(100, Number(s) || 0)) / 100;
 
   return (
@@ -55,6 +56,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
                 emailInvoices: emailInvoices,
                 emailMessages: emailMessages,
                 bookingNoticeHours: Math.max(0, parseInt(notice, 10) || 0),
+                captchaRequired: captcha,
               },
             ]);
             router.back();
@@ -101,6 +103,17 @@ function SettingsForm({ initial }: { initial: Settings }) {
             keyboardType="number-pad"
             hint="Families can only request times at least this far ahead. Set tutors’ hours under Tutors → Availability."
           />
+        </Card>
+      </Section>
+      <Section title="Website forms">
+        <Card style={{ gap: Spacing.two }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt style={{ flex: 1 }}>Security check on website forms</Txt>
+            <Switch value={captcha} onValueChange={setCaptcha} accessibilityLabel="Security check on website forms" />
+          </Row>
+          <Txt variant="small">
+            Uses Cloudflare Turnstile. Add the keys described in the README first. Website messages sent without the check are kept and marked as possible spam.
+          </Txt>
         </Card>
       </Section>
       <Section title="Emails to families">

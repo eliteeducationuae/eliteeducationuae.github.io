@@ -259,6 +259,37 @@ How it works for families:
 
 **Before families can book lessons,** each tutor sets their weekly hours under *Me → Availability & time off* (or you can do it from *More → Tutors*).
 
+**Spam and abuse protection (round 4).** The two public forms on eliteeducation.me (*Request a consultation* and *Apply to tutor with us*) and the app's own enquiry and application forms are protected against automated and repeated submissions, without ever turning a genuine family away. Set it up once, in this order:
+
+1. **Database.** Run `supabase/migrations/20261021000000_spam.sql` in the Supabase SQL editor, after the earlier migrations. If the website goes live first, the forms fall back automatically to the older form of each request, so no enquiry or application is lost in the meantime.
+2. **Optional security check (Cloudflare Turnstile).** The protections below work without it; turn it on only if spam still gets through.
+   1. In the [Cloudflare dashboard](https://dash.cloudflare.com), open **Turnstile → Add widget**. Name it *Elite Education website*, add the hostnames `eliteeducation.me`, `www.eliteeducation.me` and, if the site is also reached there, `eliteeducationuae.github.io`, and choose the **Managed** mode.
+   2. Copy the **site key** into `data-turnstile-sitekey=""` on the `<html>` line at the top of `index.html` (the comment above it marks the place), and publish the website. The site key is public; the **secret key** must never go into the website or the repository.
+   3. Store the secret key in Supabase and deploy the checking function. It is called by visitors who are not signed in, so it is deployed without the login check:
+      ```bash
+      npx supabase secrets set TURNSTILE_SECRET_KEY=…
+      # Optional: accept passes only from these hostnames.
+      npx supabase secrets set TURNSTILE_ALLOWED_HOSTNAMES=eliteeducation.me,www.eliteeducation.me
+      npx supabase functions deploy verify-captcha --no-verify-jwt
+      ```
+   4. In the app, open **Settings** and switch on **Security check on website forms**. From then on, a website submission without a valid check is still received, but is kept under *Possible spam* for you to review rather than being announced to the team. Leave the setting off until steps 1 to 3 are complete.
+
+   The check appears only on the website. The app's own forms do not show it and rely on the other protections below. If the check cannot load (for example, a browser extension blocks it) or Cloudflare cannot be reached, the form is still sent and kept for review, so a family is never blocked. **Testing:** Cloudflare publishes test keys that always pass (site key `1x00000000000000000000AA` with secret key `1x0000000000000000000000000000000AA`) and that always fail (site key `2x00000000000000000000AB` with secret key `2x0000000000000000000000000000000AA`). Use them on a copy of the site or briefly with the setting off, send yourself an enquiry, and then put the real keys back.
+3. **Sign-ups and sign-ins in Supabase Auth** (parents may create their own accounts in the app):
+   - Under *Authentication → Rate Limits*, review the limits for sign-ups and sign-ins, emails sent, one-time codes and verifications, and token refreshes. Keep them conservative: a family signs up once and signs in occasionally, so a few sign-ups per hour from one connection and a modest number of emails per hour are ample for a tutoring business. Raise a limit only if genuine families report being turned away.
+   - Under *Authentication → Sign In / Providers → Email*, keep **Confirm email** switched on, so an account cannot be used until its owner has confirmed the address.
+   - Under *Authentication → Attack Protection*, switch on **leaked password protection** if your Supabase plan includes it; it refuses passwords that are known to have appeared in data breaches.
+   - **Leave CAPTCHA protection in *Authentication → Attack Protection* switched off.** Turning it on makes Supabase require a security-check token on every sign-up and sign-in, which the app does not yet send, so families and tutors would be locked out. It can be switched on once the app has been updated to send the check.
+
+How it works:
+
+- **Hidden fields (honeypots).** Each form contains a field that people never see. Automated programs tend to fill it in; when they do, they are shown the usual thank-you message, but nothing is sent.
+- **Time to submit.** Each form notes how long it took to complete. Anything sent within three seconds is kept as possible spam.
+- **Limits per email address and per connection.** Enquiries: 3 an hour or 6 a day from one email address, and 5 an hour or 20 a day from one internet connection. Tutor applications: 2 an hour or 3 a day from one email address, and 3 an hour or 10 a day from one connection. Beyond that, the visitor sees a polite message: *Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email craig@craigobrieneducation.com.* Connection addresses are never stored as written: only a one-way hash is kept, for 30 days, and it cannot be turned back into the address.
+- **Duplicates.** If the same email address sends a similar message within 24 hours, it is added to the existing enquiry rather than creating a second one, and the family sees the usual thank-you.
+- **Links.** A message with three or more links, or a link in a name, is kept as possible spam.
+- **Possible spam.** Flagged submissions are never rejected. They are kept under *Enquiries → Possible spam* and *Hiring → Possible spam*, send no notification to the team and no thank-you email, and are left out of the conversion statistics. Open one and choose **Not spam** to move it into the normal pipeline, or **Mark as spam** to file away anything that slipped through.
+
 ## Round 4 setup checklist
 
 Complete these once, in this order. The function names come from the round 4 plan; each feature's section above carries the detail.
@@ -270,6 +301,7 @@ Complete these once, in this order. The function names come from the round 4 pla
 5. **Twilio.** Follow *WhatsApp reminders* above.
 6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
+8. **Spam protection.** In Supabase, review *Authentication → Rate Limits*, keep **Confirm email** on and leave Auth CAPTCHA off (see *Spam and abuse protection* above). Turnstile on the website is optional: add the site key to `index.html`, set `TURNSTILE_SECRET_KEY`, run `npx supabase functions deploy verify-captcha --no-verify-jwt`, then switch on *Security check on website forms* in Settings.
 
 ## Checks
 

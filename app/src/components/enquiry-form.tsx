@@ -7,6 +7,7 @@ import type { NewEnquiry } from '@/data/source';
 import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
 
 import { CataloguePicker } from './catalogue-picker';
+import { Honeypot } from './honeypot';
 import { Banner, Button, Card, Chip, ErrorNote, Field, Row, Section, Txt } from './ui';
 
 const TIMES = ['Weekday afternoons', 'Weekday evenings', 'Weekends', 'Flexible'];
@@ -39,6 +40,9 @@ export function EnquiryForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [sent, setSent] = useState(false);
+  // Spam protection: when the form opened, and a hidden field only bots fill in.
+  const [startedAt] = useState(() => Date.now());
+  const [honeypot, setHoneypot] = useState('');
 
   if (sent) {
     return (
@@ -51,6 +55,12 @@ export function EnquiryForm({
   const valid = parentName.trim() && (hideContact || email.trim() || phone.trim());
 
   async function send() {
+    if (honeypot) {
+      // Almost certainly a bot: show the usual thank-you and send nothing.
+      setSent(true);
+      onSent?.();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -66,6 +76,7 @@ export function EnquiryForm({
         message: message.trim() || undefined,
         preferredTimes: times.join(', ') || undefined,
         source: origin,
+        elapsedMs: Date.now() - startedAt,
       });
       setSent(true);
       onSent?.();
@@ -82,6 +93,7 @@ export function EnquiryForm({
       {!hideContact ? (
         <>
           <Field label="Your name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
+          <Honeypot value={honeypot} onChange={setHoneypot} />
           <Row gap={Spacing.two}>
             <View style={{ flex: 1 }}>
               <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />

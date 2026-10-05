@@ -261,6 +261,7 @@ export function createDemoSource(): DataSource {
     },
     listApplications: () => read((d, v) => ops.applications(d, v)),
     updateApplication: (id, patch) => write((d, v) => ops.updateApplication(d, v, id, patch)),
+    setSpamStatus: (kind, id, spam) => write((d, v) => eq.setSpamStatus(d, v, kind, id, spam)),
     getPaymentDetails: (tutorId) => read((d, v) => ops.paymentDetails(d, v, tutorId)),
     savePaymentDetails: (details) => write((d, v) => ops.savePaymentDetails(d, v, details)),
     listTutorInvoices: () => read((d, v) => ops.tutorInvoices(d, v)),

@@ -1,5 +1,6 @@
 import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
+import { enquiryPayloadProblem, findDuplicateEnquiry, RateLimitError, rateLimited, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
@@ -19,6 +20,9 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
   }
   return false;
 }
+
+/** Blank fields a repeat enquiry may fill in on the one it is merged into. */
+const MERGE_FIELDS = ['phone', 'studentName', 'curriculum', 'subject', 'phase', 'yearGroup', 'preferredTimes'] as const;
 
 export const eq = {
   /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
@@ -89,12 +93,33 @@ export const eq = {
     const f = db.families.find((x) => x.id === familyId);
     if (f) f.status = status;
   },
-  submitEnquiry(db: DemoDB, viewer: Profile | null, e: NewEnquiry, now = new Date()) {
+  submitEnquiry(db: DemoDB, viewer: Profile | null, input: NewEnquiry, now = new Date()) {
+    const { elapsedMs, ...e } = input;
     if (!e.parentName.trim()) throw new Error('Please enter your name');
     if (!e.email?.trim() && !e.phone?.trim()) throw new Error('Please give an email address or phone number');
+    const isAdmin = viewer?.role === 'admin';
+    const at = now.toISOString();
+    if (!isAdmin) {
+      // Mirrors public.submit_enquiry: size limits, rate limits, merging repeats and flagging possible spam.
+      const problem = enquiryPayloadProblem(e);
+      if (problem) throw new Error(problem);
+      const email = e.email?.trim().toLowerCase() || undefined;
+      const log = (db.formSubmissions ??= []);
+      if (rateLimited(log.filter((x) => x.kind === 'enquiry'), { email }, SPAM_LIMITS.enquiry, now)) throw new RateLimitError();
+      log.push({ kind: 'enquiry', email, at });
+      const dup = findDuplicateEnquiry(db.enquiries, { ...e, email }, now);
+      if (dup) {
+        for (const k of MERGE_FIELDS) if (!dup[k]?.trim() && e[k]?.trim()) dup[k] = e[k]!.trim();
+        if ((e.message?.trim().length ?? 0) > (dup.message?.length ?? 0)) dup.message = e.message!.trim();
+        dup.repeatCount = (dup.repeatCount ?? 0) + 1;
+        dup.lastSubmittedAt = at;
+        return;
+      }
+    }
+    const reasons = isAdmin ? [] : spamReasons({ names: [e.parentName, e.studentName], text: [e.message, e.preferredTimes], elapsedMs });
     db.enquiries.push({
       id: newId('enq'),
-      createdAt: now.toISOString(),
+      createdAt: at,
       status: 'new',
       source: e.source ?? 'app',
       ...e,
@@ -102,12 +127,23 @@ export const eq = {
       subject: tidy(e.subject),
       phase: tidy(e.phase),
       familyId: viewer?.role === 'parent' ? viewer.familyId : undefined,
+      spamStatus: reasons.length ? 'suspected' : 'clean',
+      spamReasons: reasons,
+      repeatCount: 0,
+      lastSubmittedAt: at,
     });
   },
   enquiries(db: DemoDB, viewer: Profile): Enquiry[] {
     if (viewer.role === 'admin') return db.enquiries;
     if (viewer.role === 'parent') return db.enquiries.filter((e) => e.familyId && e.familyId === viewer.familyId);
     return [];
+  },
+  /** Mirrors public.set_submission_spam. */
+  setSpamStatus(db: DemoDB, viewer: Profile, kind: 'enquiry' | 'application', id: string, spam: boolean) {
+    requireAdmin(viewer);
+    const item = kind === 'enquiry' ? db.enquiries.find((x) => x.id === id) : db.applications.find((x) => x.id === id);
+    if (!item) throw new Error(kind === 'enquiry' ? 'Enquiry not found' : 'Application not found');
+    item.spamStatus = spam ? 'spam' : 'clean';
   },
   updateEnquiry(db: DemoDB, viewer: Profile, id: string, patch: Partial<Enquiry>) {
     requireAdmin(viewer);

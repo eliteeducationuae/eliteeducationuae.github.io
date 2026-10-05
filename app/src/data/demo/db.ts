@@ -91,6 +91,8 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  /** Public form submissions for rate limiting (mirrors public.submission_log). Optional: read with `??= []`. */
+  formSubmissions?: { kind: 'enquiry' | 'application'; email?: string; at: string }[];
 }
 
 export interface OutboxMessage {

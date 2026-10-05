@@ -110,6 +110,7 @@ const toSettings = (r: Row): Settings => ({
   emailInvoices: r.email_invoices ?? true,
   emailMessages: r.email_messages ?? true,
   bookingNoticeHours: r.booking_notice_hours ?? 24,
+  captchaRequired: r.captcha_required ?? false,
 });
 
 const fromSettings = (s: Partial<Settings>): Row =>
@@ -127,6 +128,7 @@ const fromSettings = (s: Partial<Settings>): Row =>
     email_invoices: s.emailInvoices,
     email_messages: s.emailMessages,
     booking_notice_hours: s.bookingNoticeHours,
+    captcha_required: s.captchaRequired,
   });
 
 const toTutor = (r: Row): Tutor => ({
@@ -197,6 +199,10 @@ const toEnquiry = (r: Row): Enquiry => ({
   nextActionAt: r.next_action_at ?? undefined,
   notes: r.notes ?? undefined,
   lostReason: r.lost_reason ?? undefined,
+  spamStatus: r.spam_status ?? 'clean',
+  spamReasons: r.spam_reasons ?? [],
+  repeatCount: r.repeat_count ?? 0,
+  lastSubmittedAt: r.last_submitted_at ?? undefined,
 });
 
 const toRequest = (r: Row): LessonRequest => ({
@@ -1064,21 +1070,27 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       check(await client.from('families').update({ status }).eq('id', familyId));
     },
     async submitEnquiry(e) {
-      check(
-        await client.rpc('submit_enquiry', {
-          p_parent_name: e.parentName,
-          p_email: e.email ?? null,
-          p_phone: e.phone ?? null,
-          p_student_name: e.studentName ?? null,
-          p_curriculum: e.curriculum ?? null,
-          p_year_group: e.yearGroup ?? null,
-          p_message: e.message ?? null,
-          p_preferred_times: e.preferredTimes ?? null,
-          p_source: e.source ?? 'app',
-          p_subject: e.subject ?? null,
-          p_phase: e.phase ?? null,
-        }),
-      );
+      const params = {
+        p_parent_name: e.parentName,
+        p_email: e.email ?? null,
+        p_phone: e.phone ?? null,
+        p_student_name: e.studentName ?? null,
+        p_curriculum: e.curriculum ?? null,
+        p_year_group: e.yearGroup ?? null,
+        p_message: e.message ?? null,
+        p_preferred_times: e.preferredTimes ?? null,
+        p_source: e.source ?? 'app',
+        p_subject: e.subject ?? null,
+        p_phase: e.phase ?? null,
+        p_elapsed_ms: e.elapsedMs == null ? null : Math.round(e.elapsedMs),
+      };
+      let res = await client.rpc('submit_enquiry', params);
+      if (res.error?.code === 'PGRST202') {
+        // The database has not been migrated for spam protection yet: send without the timing so nothing is lost.
+        const { p_elapsed_ms: _elapsed, ...older } = params;
+        res = await client.rpc('submit_enquiry', older);
+      }
+      check(res);
     },
     async listEnquiries() {
       return check(await client.from('enquiries').select('*').order('created_at', { ascending: false })).map(toEnquiry);
@@ -1281,20 +1293,26 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
 
     async submitTutorApplication(a) {
-      check(
-        await client.rpc('submit_tutor_application', {
-          p_full_name: a.fullName,
-          p_email: a.email,
-          p_phone: a.phone ?? null,
-          p_curricula: a.curricula,
-          p_subjects: a.subjects ?? null,
-          p_experience: a.experience ?? null,
-          p_qualifications: a.qualifications ?? null,
-          p_availability: a.availability ?? null,
-          p_cv_path: a.cvPath ?? null,
-          p_phases: a.phases ?? [],
-        }),
-      );
+      const params = {
+        p_full_name: a.fullName,
+        p_email: a.email,
+        p_phone: a.phone ?? null,
+        p_curricula: a.curricula,
+        p_subjects: a.subjects ?? null,
+        p_experience: a.experience ?? null,
+        p_qualifications: a.qualifications ?? null,
+        p_availability: a.availability ?? null,
+        p_cv_path: a.cvPath ?? null,
+        p_phases: a.phases ?? [],
+        p_elapsed_ms: a.elapsedMs == null ? null : Math.round(a.elapsedMs),
+      };
+      let res = await client.rpc('submit_tutor_application', params);
+      if (res.error?.code === 'PGRST202') {
+        // The database has not been migrated for spam protection yet: send without the timing so nothing is lost.
+        const { p_elapsed_ms: _elapsed, ...older } = params;
+        res = await client.rpc('submit_tutor_application', older);
+      }
+      check(res);
     },
     async listApplications() {
       const rows = check(await client.from('tutor_applications').select('*').order('created_at', { ascending: false }));
@@ -1315,11 +1333,18 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           status: r.status,
           notes: r.notes ?? undefined,
           tutorId: r.tutor_id ?? undefined,
+          spamStatus: r.spam_status ?? 'clean',
+          spamReasons: r.spam_reasons ?? [],
+          repeatCount: r.repeat_count ?? 0,
+          lastSubmittedAt: r.last_submitted_at ?? undefined,
         }),
       );
     },
     async updateApplication(id, p) {
       check(await client.from('tutor_applications').update(strip({ status: p.status, notes: p.notes, tutor_id: p.tutorId })).eq('id', id));
+    },
+    async setSpamStatus(kind, id, spam) {
+      check(await client.rpc('set_submission_spam', { p_kind: kind, p_id: id, p_spam: spam }));
     },
 
     async getPaymentDetails(tutorId) {

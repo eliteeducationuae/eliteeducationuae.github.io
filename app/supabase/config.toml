@@ -14,3 +14,7 @@ verify_jwt = false
 # protected by a single-use state value that expires after 15 minutes.
 [functions.google-connect]
 verify_jwt = false
+
+# The public website calls this before a visitor is signed in; Cloudflare Turnstile protects it instead.
+[functions.verify-captcha]
+verify_jwt = false
