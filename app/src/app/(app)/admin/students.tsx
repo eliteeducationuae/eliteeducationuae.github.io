@@ -3,9 +3,11 @@ import { useState } from 'react';
 
 import { View } from 'react-native';
 
+import { ClosedToggle } from '@/components/closed-accounts';
 import { Avatar, Badge, Button, Chip, EmptyState, Field, ListItem, Loading, Row, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useEnrolments, useLookup, useStudents } from '@/data/hooks';
+import { CLOSED_LABEL, closedCount, closedLast, isClosed } from '@/domain/closed-accounts';
 import { activeEnrolments, sameSubject, studentSubjects } from '@/domain/enrolments';
 
 export default function AdminStudents() {
@@ -14,6 +16,7 @@ export default function AdminStudents() {
   const enrolments = useEnrolments();
   const [query, setQuery] = useState('');
   const [subject, setSubject] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
 
   const all = enrolments.data ?? [];
   // Every subject someone is currently studying, once each, in name order.
@@ -21,7 +24,7 @@ export default function AdminStudents() {
     a.localeCompare(b),
   );
   const q = query.trim().toLowerCase();
-  const list = (students.data ?? [])
+  const matching = (students.data ?? [])
     .filter((s) => !subject || activeEnrolments(all, s.id).some((e) => sameSubject(e.subject, subject)))
     .filter(
       (s) =>
@@ -31,6 +34,9 @@ export default function AdminStudents() {
         (s.school?.toLowerCase().includes(q) ?? false),
     )
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  // Records of closed accounts are kept for invoices; they sit last, behind "Show closed".
+  const list = closedLast(matching, showClosed);
+  const closed = closedCount(matching);
 
   return (
     <Screen
@@ -48,7 +54,7 @@ export default function AdminStudents() {
       ) : null}
       {students.isLoading ? (
         <Loading />
-      ) : list.length === 0 ? (
+      ) : list.length === 0 && !closed ? (
         <EmptyState icon="people" title="No students found" message="Please try another name, parent, school or subject, or add a new student." />
       ) : (
         <View style={{ gap: Spacing.two }}>
@@ -56,12 +62,17 @@ export default function AdminStudents() {
             <ListItem
               key={s.id}
               title={s.fullName}
-              subtitle={`${studentSubjects(all, s.id) || 'No subjects yet'}${s.school ? ` · ${s.school}` : ''}\nParent: ${lookup.family(s.familyId)?.parentName ?? '–'}`}
+              subtitle={
+                isClosed(s)
+                  ? 'Kept for past lessons and invoices'
+                  : `${studentSubjects(all, s.id) || 'No subjects yet'}${s.school ? ` · ${s.school}` : ''}\nParent: ${lookup.family(s.familyId)?.parentName ?? '–'}`
+              }
               left={<Avatar name={s.fullName} />}
-              right={s.targetGrade ? <Badge label={`Target ${s.targetGrade}`} tone="info" /> : undefined}
+              right={isClosed(s) ? <Badge label={CLOSED_LABEL} /> : s.targetGrade ? <Badge label={`Target ${s.targetGrade}`} tone="info" /> : undefined}
               onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })}
             />
           ))}
+          <ClosedToggle count={closed} showing={showClosed} onToggle={() => setShowClosed((v) => !v)} />
         </View>
       )}
     </Screen>

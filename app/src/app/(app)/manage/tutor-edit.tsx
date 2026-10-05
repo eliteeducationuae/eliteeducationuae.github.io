@@ -7,12 +7,14 @@ import { HistorySection } from '@/components/history';
 import { LoginHint } from '@/components/login-hint';
 import { TutorChecksSummary } from '@/components/vetting';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
-import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
+import { Banner, Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useTutors } from '@/data/hooks';
 import { CURRICULA, inCatalogue, PHASES, SUBJECTS } from '@/domain/catalogue';
+import { isClosed } from '@/domain/closed-accounts';
+import { formatDate } from '@/domain/dates';
 import type { Tutor } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -21,7 +23,20 @@ export default function EditTutor() {
   const tutors = useTutors();
   if (tutors.isLoading) return <Loading />;
   const existing = id ? tutors.data?.find((t) => t.id === id) : undefined;
+  if (existing && isClosed(existing)) return <ClosedTutor tutor={existing} />;
   return <TutorForm key={existing?.id ?? 'new'} existing={existing} />;
+}
+
+/** A closed tutor is kept only for past lessons and pay records: nothing to edit and no login to send. */
+function ClosedTutor({ tutor }: { tutor: Tutor }) {
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: tutor.fullName }} />
+      <Banner icon="person">
+        {`This tutor's account was closed on ${formatDate(tutor.deletedAt!)}. Their name, contact details, availability and bank details have been removed. Past lessons and pay records are kept, and any upcoming lessons should be given to another tutor.`}
+      </Banner>
+    </Screen>
+  );
 }
 
 function TutorForm({ existing }: { existing?: Tutor }) {

@@ -321,6 +321,19 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   publishHandbook: 'write',
   listHandbookAcknowledgements: 'read',
   acknowledgeHandbook: 'write',
+
+  // Launch readiness (downloading a viewed person's data on their behalf is refused)
+  // Errors seen while viewing are not the viewed person's, and the server would refuse the write anyway.
+  logAppError: 'silent',
+  getSystemHealth: 'read',
+  listAppErrors: 'read',
+  listFunctionErrors: 'read',
+  exportMyData: 'write',
+  deleteMyAccount: 'write',
+  listDeletionRequests: 'read',
+  recordDeletionRequest: 'write',
+  cancelDeletionRequest: 'write',
+  processDeletionRequest: 'write',
 };
 
 const refuse = async (): Promise<never> => {

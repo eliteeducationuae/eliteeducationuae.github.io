@@ -54,6 +54,10 @@ import type {
   HandbookVersion,
   TutorDocument,
   VettingOverride,
+  // Launch readiness
+  AppErrorRow,
+  DeletionRequest,
+  FunctionErrorRow,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -127,6 +131,13 @@ export interface DemoDB {
   vettingEnforced?: boolean;
   /** tutorId → when onboarding began (the application was marked hired). */
   tutorOnboarding?: Record<string, string>;
+  // Launch readiness. Optional because databases saved before it lack them: created on first use.
+  /** Errors reported by the app (mirrors public.app_errors). */
+  appErrors?: AppErrorRow[];
+  /** Errors recorded by Edge Functions (mirrors public.function_errors); always empty in the demo. */
+  functionErrors?: FunctionErrorRow[];
+  /** Account deletion requests (mirrors public.deletion_requests). */
+  deletionRequests?: DeletionRequest[];
 }
 
 /** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */

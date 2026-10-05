@@ -10,6 +10,7 @@ import { useMe, useSession } from '@/data/session';
 import { confirm } from '@/lib/confirm';
 
 import { CalendarSyncCard } from './calendar-sync';
+import { DataPrivacyCard } from './data-privacy';
 import { GoogleCalendarCard } from './google-calendar';
 import { WhatsAppCard } from './whatsapp-card';
 import { Avatar, Badge, Button, Card, Row, Screen, Section, Txt } from './ui';
@@ -73,6 +74,9 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
           />
         </Section>
       ) : null}
+
+      {/* Launch readiness */}
+      <DataPrivacyCard />
 
       {viewing ? (
         <Button

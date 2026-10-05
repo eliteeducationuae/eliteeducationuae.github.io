@@ -6,8 +6,10 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 import { stackOptions } from '@/components/stack-options';
 import { Colors } from '@/constants/theme';
@@ -15,8 +17,27 @@ import { queryClient } from '@/data/query';
 import { useSession } from '@/data/session';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { registerForPushNotifications, useNotificationTaps } from '@/lib/push';
+// Launch readiness
+import { source } from '@/data';
+import { configureErrorReporting, installGlobalErrorHandlers } from '@/lib/error-reporting';
+
+import { ErrorBoundary } from '@/components/error-boundary';
+
+export { ErrorBoundary };
+// Each screen gets its own boundary (inherited by every nested layout), so a screen that fails to render shows the
+// recovery screen in place, the navigators and the address stay as they were, and Try again re-renders that screen.
+export const unstable_settings = { screenErrorBoundary: ErrorBoundary };
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+// Launch readiness: send app errors to the office's error log, and catch uncaught errors too.
+configureErrorReporting({
+  platform: Platform.OS === 'ios' || Platform.OS === 'android' || Platform.OS === 'web' ? Platform.OS : 'unknown',
+  appVersion: Constants.expoConfig?.version,
+  send: (input) => source.logAppError(input),
+  getRoute: () => (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.pathname : undefined),
+});
+installGlobalErrorHandlers();
 
 // Metric-compatible twins of Georgia (Gelasio) and Calibri (Carlito); family names match font() in theme.ts.
 const BRAND_FONTS = { Gelasio_400Regular, Gelasio_700Bold, Carlito_400Regular, Carlito_700Bold };

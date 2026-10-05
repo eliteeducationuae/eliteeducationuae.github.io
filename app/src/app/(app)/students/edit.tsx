@@ -12,6 +12,7 @@ import { useEnrolments, useFamilies, useServices, useStudents, useTutors } from 
 import { PHASES } from '@/domain/catalogue';
 import { activeEnrolments, draftFromEnrolment, ratesChanged, validateEnrolments, type EnrolmentDraft } from '@/domain/enrolments';
 import type { Enrolment, Student } from '@/domain/types';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 export default function EditStudent() {
   const { id, familyId } = useLocalSearchParams<{ id?: string; familyId?: string }>();
@@ -127,14 +128,14 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
         action={<Button title="New family" size="sm" variant="ghost" icon="plus" onPress={() => router.push('/manage/family-edit')} />}>
         {(families.data ?? []).length === 0 ? <Banner>Add the family first, then come back to add the student.</Banner> : null}
         <Row gap={Spacing.one} wrap>
-          {(families.data ?? []).map((f) => (
+          {withoutClosed(families.data).map((f) => (
             <Chip key={f.id} label={`${f.name} (${f.parentName})`} selected={familyId === f.id} onPress={() => setFamilyId(f.id)} />
           ))}
         </Row>
       </Section>
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <Section title="Subjects">
-        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }} />
+        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={withoutClosed(tutors.data)} rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }} />
       </Section>
       <Field label="School" value={school} onChangeText={setSchool} />
       <Row gap={Spacing.two}>

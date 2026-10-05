@@ -278,3 +278,48 @@ export const useHandbookAcks = (tutorId?: string) =>
     queryKey: ['handbook-acks', tutorId],
     queryFn: () => source.listHandbookAcknowledgements(tutorId ? { tutorId } : undefined),
   });
+
+// Launch readiness: system health, error logs and deletion requests (admins only)
+
+function useIsAdmin(): boolean {
+  return useSession((s) => s.profile?.role) === 'admin';
+}
+
+/** The system health report, refreshed every minute while on screen. */
+export function useSystemHealth() {
+  const enabled = useIsAdmin();
+  return useQuery({ queryKey: ['system-health'], queryFn: () => source.getSystemHealth(), enabled, refetchInterval: 60_000 });
+}
+
+export function useAppErrors(limit = 50) {
+  const enabled = useIsAdmin();
+  return useQuery({ queryKey: ['app-errors', limit], queryFn: () => source.listAppErrors(limit), enabled });
+}
+
+export function useFunctionErrors(limit = 50) {
+  const enabled = useIsAdmin();
+  return useQuery({ queryKey: ['function-errors', limit], queryFn: () => source.listFunctionErrors(limit), enabled });
+}
+
+export function useDeletionRequests() {
+  const enabled = useIsAdmin();
+  return useQuery({ queryKey: ['deletion-requests'], queryFn: () => source.listDeletionRequests(), enabled });
+}
+
+/** After a deletion request changes, refresh it and every list an anonymised account appears in. */
+const DELETION_AFFECTS = ['deletion-requests', 'families', 'tutors', 'students', 'lessons', 'invoices', 'system-health'];
+const invalidateDeletion = () =>
+  Promise.all(DELETION_AFFECTS.map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+
+export const useRecordDeletionRequest = () =>
+  useMutation({
+    mutationKey: ['record-deletion-request'],
+    mutationFn: (target: { profileId?: string; familyId?: string; tutorId?: string; reason?: string }) => source.recordDeletionRequest(target),
+    onSuccess: invalidateDeletion,
+  });
+
+export const useCancelDeletionRequest = () =>
+  useMutation({ mutationKey: ['cancel-deletion-request'], mutationFn: (id: string) => source.cancelDeletionRequest(id), onSuccess: invalidateDeletion });
+
+export const useProcessDeletionRequest = () =>
+  useMutation({ mutationKey: ['process-deletion-request'], mutationFn: (id: string) => source.processDeletionRequest(id), onSettled: invalidateDeletion });

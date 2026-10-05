@@ -13,6 +13,7 @@ import { CURRICULA, PHASES, SUBJECTS, cleanChoice } from '@/domain/catalogue';
 import { addDays, toDateKey } from '@/domain/dates';
 import { activeEnrolments, sameSubject } from '@/domain/enrolments';
 import type { Opportunity } from '@/domain/types';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 /** Post (or edit) a role. Prefills from `?enquiryId=` or `?studentId=`. */
 export default function EditOpportunity() {
@@ -136,7 +137,7 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
         />
         {visibility === 'invited' ? (
           <Row gap={Spacing.one} wrap>
-            {(tutors.data ?? []).map((t) => (
+            {withoutClosed(tutors.data).map((t) => (
               <Chip key={t.id} label={t.fullName} selected={invited.includes(t.id)} onPress={() => setInvited((x) => (x.includes(t.id) ? x.filter((y) => y !== t.id) : [...x, t.id]))} />
             ))}
           </Row>

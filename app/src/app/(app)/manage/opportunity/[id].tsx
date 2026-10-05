@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useAvailability, useBids, useLessons, useOpportunities, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { isClosed } from '@/domain/closed-accounts';
 import { addDays, formatDate, minutesBetween, relativeDay, startOfWeek } from '@/domain/dates';
 import type { Tutor } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
@@ -30,8 +31,9 @@ export default function OpportunityDetail() {
   if (opportunities.isLoading || bids.isLoading || tutors.isLoading) return <Loading />;
   const o = opportunities.data?.find((x) => x.id === id);
   if (!o) return <Screen><EmptyState title="Role not found" /></Screen>;
-  const theirs = (bids.data ?? []).filter((b) => b.opportunityId === o.id && b.status !== 'withdrawn');
   const tutor = (tid: string) => tutors.data?.find((t) => t.id === tid);
+  // A closed tutor's bid can no longer be chosen, so it is not offered (the server withdraws it too).
+  const theirs = (bids.data ?? []).filter((b) => b.opportunityId === o.id && b.status !== 'withdrawn' && !(b.status === 'pending' && isClosed(tutor(b.tutorId))));
   const winner = o.awardedTutorId ? tutor(o.awardedTutorId) : undefined;
   const s = opportunityTone(o);
 

@@ -63,6 +63,13 @@ import type {
   CreditNoteRef,
   Refund,
   TaxParty,
+  // Launch readiness
+  AppErrorRow,
+  DataExport,
+  DeletionRequest,
+  DeletionSummary,
+  FunctionErrorRow,
+  SystemHealth,
 } from '@/domain/types';
 import { normaliseTrn } from '@/domain/tax';
 
@@ -196,6 +203,7 @@ const toTutor = (r: Row): Tutor => ({
   phases: r.phases ?? [],
   // Tutors created before the rebrand keep their old bright colours in the database; draw them in the brand palette.
   color: brandTutorColor(r.color, r.id),
+  deletedAt: r.deleted_at ?? undefined,
 });
 
 const toFamily = (r: Row): Family => ({
@@ -206,6 +214,7 @@ const toFamily = (r: Row): Family => ({
   phone: r.phone ?? undefined,
   status: r.status ?? 'active',
   createdAt: r.created_at ?? undefined,
+  deletedAt: r.deleted_at ?? undefined,
   ...toBilling(r.family_billing),
 });
 
@@ -351,6 +360,7 @@ const toStudent = (r: Row): Student => ({
   targetGrade: r.target_grade ?? undefined,
   examDate: r.exam_date ?? undefined,
   notes: r.student_notes?.notes ?? undefined,
+  deletedAt: r.deleted_at ?? undefined,
 });
 
 const toService = (r: Row): Service => ({
@@ -699,6 +709,81 @@ const toViewTarget = (r: Row): ViewTarget => ({
  * The Supabase data source. Pass `options.client` to run over an existing client, e.g. the separate client of an
  * admin's "View as" session: that source never reads a sign-in redirect and never signs its client out.
  */
+// Launch readiness: error reporting, system health and account deletion
+
+const toAppError = (r: Row): AppErrorRow => ({
+  id: r.id,
+  createdAt: r.created_at,
+  profileId: r.profile_id ?? undefined,
+  role: r.role ?? undefined,
+  platform: r.platform ?? 'unknown',
+  appVersion: r.app_version ?? undefined,
+  route: r.route ?? undefined,
+  source: r.source ?? 'manual',
+  message: r.message ?? '',
+  stack: r.stack ?? undefined,
+  fingerprint: r.fingerprint ?? undefined,
+});
+
+const toFunctionError = (r: Row): FunctionErrorRow => ({
+  id: r.id,
+  createdAt: r.created_at,
+  functionName: r.function_name,
+  message: r.message ?? '',
+  status: r.status ?? undefined,
+  context: r.context ?? undefined,
+});
+
+const toDeletionSummary = (r: Row | null | undefined): DeletionSummary => {
+  const s = r ?? {};
+  const n = (v: unknown) => (v == null ? undefined : Number(v));
+  return {
+    role: s.role ?? undefined,
+    familyAnonymised: s.familyAnonymised ?? undefined,
+    studentsAnonymised: n(s.studentsAnonymised),
+    futureLessonsCancelled: n(s.futureLessonsCancelled),
+    upcomingLessonsNeedingTutor: n(s.upcomingLessonsNeedingTutor),
+    invoicesRetained: n(s.invoicesRetained),
+    paymentsRetained: n(s.paymentsRetained),
+  };
+};
+
+const toDeletionRequest = (r: Row): DeletionRequest => ({
+  id: r.id,
+  createdAt: r.created_at,
+  status: r.status,
+  targetKind: r.target_kind,
+  profileId: r.profile_id ?? undefined,
+  familyId: r.family_id ?? undefined,
+  tutorId: r.tutor_id ?? undefined,
+  role: r.role ?? undefined,
+  label: r.label ?? '',
+  reason: r.reason ?? undefined,
+  completedAt: r.completed_at ?? undefined,
+  summary: toDeletionSummary(r.summary),
+  error: r.error ?? undefined,
+});
+
+/** system_health() returns camelCase JSON already; fill gaps so the screen never meets undefined lists. */
+const toSystemHealth = (r: Row | null): SystemHealth => ({
+  checkedAt: r?.checkedAt ?? new Date().toISOString(),
+  status: r?.status ?? 'ok',
+  checks: (r?.checks ?? []).map((c: Row) => ({ key: c.key, label: c.label, status: c.status, detail: c.detail ?? '', count: c.count ?? undefined })),
+  jobs: (r?.jobs ?? []).map((j: Row) => ({
+    name: j.name,
+    lastStartedAt: j.lastStartedAt ?? undefined,
+    lastSucceededAt: j.lastSucceededAt ?? undefined,
+    lastFailedAt: j.lastFailedAt ?? undefined,
+    lastError: j.lastError ?? undefined,
+  })),
+  database: {
+    latest: r?.database?.latest ?? '',
+    latestName: r?.database?.latestName ?? '',
+    count: Number(r?.database?.count ?? 0),
+    migrations: (r?.database?.migrations ?? []).map((m: Row) => ({ version: m.version, name: m.name ?? '', appliedAt: m.appliedAt ?? undefined })),
+  },
+});
+
 export function createSupabaseSource(url: string, anonKey: string, options?: { client?: SupabaseClient }): DataSource {
   const injected = !!options?.client;
   const client: SupabaseClient =
@@ -2058,6 +2143,63 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     },
     async acknowledgeHandbook(version) {
       check(await client.rpc('acknowledge_handbook', { p_version: version }));
+    },
+
+    // Launch readiness: error reporting, system health, data export and account deletion
+    async logAppError(e) {
+      // Reporting must never cause another error: any failure (offline, not deployed) is swallowed.
+      try {
+        const { data, error } = await client.rpc('log_app_error', {
+          p_message: e.message,
+          p_stack: e.stack ?? null,
+          p_route: e.route ?? null,
+          p_platform: e.platform,
+          p_app_version: e.appVersion ?? null,
+          p_source: e.source,
+          p_fingerprint: e.fingerprint ?? null,
+        });
+        return !error && data !== false;
+      } catch {
+        return false;
+      }
+    },
+    async getSystemHealth() {
+      return toSystemHealth(check<Row | null>(await client.rpc('system_health')));
+    },
+    async listAppErrors(limit = 50) {
+      return check<Row[]>(await client.from('app_errors').select('*').order('created_at', { ascending: false }).limit(limit)).map(toAppError);
+    },
+    async listFunctionErrors(limit = 50) {
+      return check<Row[]>(await client.from('function_errors').select('*').order('created_at', { ascending: false }).limit(limit)).map(toFunctionError);
+    },
+    async exportMyData() {
+      return check<DataExport>(await client.rpc('export_my_data'));
+    },
+    async deleteMyAccount() {
+      const data = await invokeResult<{ summary?: Row }>(await client.functions.invoke('delete-account', { body: {} }));
+      // The login no longer exists, so only the session stored on this device is cleared.
+      await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      return toDeletionSummary(data?.summary);
+    },
+    async listDeletionRequests() {
+      return check<Row[]>(await client.from('deletion_requests').select('*').order('created_at', { ascending: false })).map(toDeletionRequest);
+    },
+    async recordDeletionRequest(target) {
+      return check<string>(
+        await client.rpc('admin_record_deletion_request', {
+          p_profile_id: target.profileId ?? null,
+          p_family_id: target.familyId ?? null,
+          p_tutor_id: target.tutorId ?? null,
+          p_reason: target.reason?.trim() || null,
+        }),
+      );
+    },
+    async cancelDeletionRequest(id) {
+      check(await client.rpc('admin_cancel_deletion_request', { p_id: id }));
+    },
+    async processDeletionRequest(id) {
+      const data = await invokeResult<{ summary?: Row }>(await client.functions.invoke('delete-account', { body: { requestId: id } }));
+      return toDeletionSummary(data?.summary);
     },
   };
 }

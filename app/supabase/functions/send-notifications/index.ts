@@ -9,6 +9,7 @@
 // TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
 import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv, whatsappRecipient } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
@@ -36,8 +37,7 @@ function emailHtml(subject: string, body: string, link?: string) {
   </div></body></html>`;
 }
 
-Deno.serve(async (req) => {
-  if (!isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) return refuseCronCall();
+const monitored = withMonitoring('send-notifications', adminClient, async () => {
   const db = adminClient();
   const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me/app';
   const from = Deno.env.get('EMAIL_FROM') ?? 'Elite Education <hello@eliteeducation.me>';
@@ -155,3 +155,8 @@ Deno.serve(async (req) => {
   }
   return new Response(`sent ${sent} of ${queue?.length ?? 0}`);
 });
+
+// A call without the cron secret is refused before monitoring, so it never counts as a run.
+Deno.serve((req) =>
+  isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET')) ? monitored(req) : refuseCronCall(),
+);

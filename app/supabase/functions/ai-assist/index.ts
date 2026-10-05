@@ -8,7 +8,8 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
 import { admissionsFacts, admissionsLetterInstructions } from '../_shared/admissions-letter.ts';
-import { corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
+import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
 
 const MODEL = 'claude-opus-5-5';
@@ -65,7 +66,7 @@ async function role(supabase: ReturnType<typeof userClient>) {
   return data as { role: string; full_name: string } | null;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('ai-assist', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (!Deno.env.get('ANTHROPIC_API_KEY')) return json({ error: 'AI is not set up' }, 503);
   try {
@@ -202,4 +203,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
-});
+}));

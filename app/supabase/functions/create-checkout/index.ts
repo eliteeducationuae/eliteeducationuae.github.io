@@ -6,6 +6,7 @@
 // Apple Pay and Google Pay appear automatically once switched on in the Stripe Dashboard.
 // Secrets: STRIPE_SECRET_KEY, APP_URL (where Stripe returns the parent afterwards).
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
 import { checkoutInvoiceForm, checkoutOfferForm, invoiceBalanceFils, offerChargeFils } from '../_shared/stripe.ts';
 import { ensureCustomer, stripe } from '../_shared/stripe-api.ts';
@@ -84,7 +85,7 @@ async function offerCheckout(req: Request, offerId: string) {
   return json({ url: res.body.url });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('create-checkout', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     // A View as session (read only) cannot pay for anything.
@@ -98,4 +99,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+}));

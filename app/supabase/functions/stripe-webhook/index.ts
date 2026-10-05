@@ -8,6 +8,7 @@
 // Permanent data errors (a deleted invoice or family) are acknowledged with 200 and logged, so Stripe does not retry them.
 // When that happens to money already taken (invoice-paid, offer-paid), the office is alerted so it can be reconciled by hand.
 import { adminClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { classifyEvent, isPermanentWebhookError, verifyStripeSignature } from '../_shared/stripe.ts';
 import { refreshCard, setDefaultCard } from '../_shared/stripe-api.ts';
 
@@ -51,7 +52,7 @@ async function rpcFailure(
   return new Response(error.message, { status: permanent ? 200 : 500 });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('stripe-webhook', adminClient, async (req) => {
   const payload = await req.text();
   const ok = await verifyStripeSignature(payload, req.headers.get('stripe-signature'), Deno.env.get('STRIPE_WEBHOOK_SECRET'), Date.now() / 1000);
   if (!ok) return new Response('Invalid signature', { status: 400 });
@@ -131,4 +132,4 @@ Deno.serve(async (req) => {
     return new Response(e instanceof Error ? e.message : String(e), { status: 500 });
   }
   return new Response('ok');
-});
+}));

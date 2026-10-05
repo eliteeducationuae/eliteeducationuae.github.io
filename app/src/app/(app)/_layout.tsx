@@ -7,6 +7,9 @@ import { useSession } from '@/data/session';
 import { useTheme } from '@/hooks/use-theme';
 import { useAccountantOffLimits } from '@/lib/accountant-routes';
 
+// Launch readiness: a calm, branded screen when something here fails to render.
+export { ErrorBoundary } from '@/components/error-boundary';
+
 /**
  * Everything behind sign-in. Waits for the saved session before rendering, so deep links and
  * notification taps open the right screen, and sends signed-out visitors to the sign-in page.
@@ -94,6 +97,11 @@ export default function SignedInLayout() {
       <Stack.Screen name="handbook-edit" options={{ title: 'Edit handbook', presentation: 'modal' }} />
       <Stack.Screen name="manage/vetting/index" options={{ title: 'Tutor checks' }} />
       <Stack.Screen name="manage/vetting/[tutorId]" options={{ title: 'Tutor checks' }} />
+      {/* Launch readiness */}
+      <Stack.Screen name="account-delete" options={{ title: 'Delete my account' }} />
+      <Stack.Screen name="manage/system-health" options={{ title: 'System health' }} />
+      <Stack.Screen name="manage/deletion-requests" options={{ title: 'Deletion requests' }} />
+      <Stack.Screen name="demo-error" options={{ title: 'Elite Education' }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

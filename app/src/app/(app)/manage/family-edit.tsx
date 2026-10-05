@@ -7,11 +7,13 @@ import { FamilyContactsSection } from '@/components/family-contacts';
 import { HistorySection } from '@/components/history';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
-import { Button, Card, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { Banner, Button, Card, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useEnrolments, useFamilies, usePackages, useStudents } from '@/data/hooks';
+import { isClosed } from '@/domain/closed-accounts';
+import { formatDate } from '@/domain/dates';
 import { studentSubjects } from '@/domain/enrolments';
 import { isValidTrn, normaliseTrn } from '@/domain/tax';
 import type { Family, FamilyStatus } from '@/domain/types';
@@ -21,7 +23,20 @@ export default function EditFamily() {
   const families = useFamilies();
   if (families.isLoading) return <Loading />;
   const existing = id ? families.data?.find((f) => f.id === id) : undefined;
+  if (existing && isClosed(existing)) return <ClosedFamily family={existing} />;
   return <FamilyForm key={existing?.id ?? 'new'} existing={existing} />;
+}
+
+/** A closed family is kept only for its invoices and payments: nothing to edit and no login to send. */
+function ClosedFamily({ family }: { family: Family }) {
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: `${family.name} family` }} />
+      <Banner icon="person">
+        {`This family's account was closed on ${formatDate(family.deletedAt!)}. Contact details, the children's profiles, lesson notes, messages and homework have been removed. Invoices, payments and lesson dates are kept for the period UAE law requires.`}
+      </Banner>
+    </Screen>
+  );
 }
 
 function FamilyForm({ existing }: { existing?: Family }) {

@@ -8,9 +8,9 @@
 // which send-notifications delivers in the same way.
 import { adminClient } from '../_shared/supabase.ts';
 import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 
-Deno.serve(async (req) => {
-  if (!isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) return refuseCronCall();
+const monitored = withMonitoring('send-reminders', adminClient, async () => {
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
@@ -66,3 +66,8 @@ Deno.serve(async (req) => {
   await db.from('lessons').update({ reminded_at: new Date().toISOString() }).in('id', lessons.map((l) => l.id));
   return new Response(`sent ${messages.length} pushes, ${whatsapp}`);
 });
+
+// A call without the cron secret is refused before monitoring, so it never counts as a run.
+Deno.serve((req) =>
+  isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET')) ? monitored(req) : refuseCronCall(),
+);

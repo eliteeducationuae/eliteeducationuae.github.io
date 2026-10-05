@@ -14,6 +14,7 @@
 // otherwise the payment intent is only looked up, never charged again. Only an answer about the card counts as a
 // decline (classifyAutopayResponse); any other error keeps the invoice 'unknown' and held from the family.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
 import {
   autopayIdempotencyKey,
@@ -293,7 +294,7 @@ async function resolve(db: Db, inv: any): Promise<Result> {
   return { invoiceId: id, status: 'skipped', error: 'No charge was made, and this invoice no longer needs autopay.' };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('charge-invoice', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const who = await caller(req);
@@ -343,4 +344,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+}));

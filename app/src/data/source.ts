@@ -81,6 +81,14 @@ import type {
   TutorDocument,
   TutorDocumentType,
   VettingOverride,
+  // Launch readiness
+  AppErrorInput,
+  AppErrorRow,
+  DataExport,
+  DeletionRequest,
+  DeletionSummary,
+  FunctionErrorRow,
+  SystemHealth,
 } from '@/domain/types';
 
 import type { ViewAsSession, ViewTarget } from './view-as';
@@ -489,6 +497,28 @@ export interface DataSource {
   listHandbookAcknowledgements(filter?: { tutorId?: string }): Promise<HandbookAcknowledgement[]>;
   /** Tutor: acknowledge the current handbook version. */
   acknowledgeHandbook(version: number): Promise<void>;
+
+  // Launch readiness: error reporting, system health, data export and account deletion
+  /** Record an app error for the office. Never throws: returns false when it could not be recorded. */
+  logAppError(e: AppErrorInput): Promise<boolean>;
+  /** Admin: the system health report (checks, scheduled jobs and database version). */
+  getSystemHealth(): Promise<SystemHealth>;
+  /** Admin: the most recent app errors, newest first. */
+  listAppErrors(limit?: number): Promise<AppErrorRow[]>;
+  /** Admin: the most recent Edge Function errors, newest first. */
+  listFunctionErrors(limit?: number): Promise<FunctionErrorRow[]>;
+  /** Everything held about the signed-in person, for download. */
+  exportMyData(): Promise<DataExport>;
+  /** Delete the signed-in person's account (financial records are kept, anonymised). Signs out locally. */
+  deleteMyAccount(): Promise<DeletionSummary>;
+  /** Admin: deletion requests, newest first. */
+  listDeletionRequests(): Promise<DeletionRequest[]>;
+  /** Admin: record a deletion request received by email or telephone. Returns its id. */
+  recordDeletionRequest(target: { profileId?: string; familyId?: string; tutorId?: string; reason?: string }): Promise<string>;
+  /** Admin: cancel a pending deletion request. */
+  cancelDeletionRequest(id: string): Promise<void>;
+  /** Admin: carry out a pending or failed deletion request now. */
+  processDeletionRequest(id: string): Promise<DeletionSummary>;
 }
 
 // Tax: credit notes, refunds and accountant access

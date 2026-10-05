@@ -17,6 +17,7 @@ import { defaultSubject, enrolmentFor, sameSubject, subjectsFor } from '@/domain
 import { expandWeeklySkipping, findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
 import { isVettingBlock } from '@/domain/vetting';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { uuid } from '@/lib/id';
 
 type Repeat = 'once' | 'weekly' | 'fortnightly';
@@ -111,7 +112,7 @@ export default function NewLesson() {
 
   if (!lookup.ready) return <Loading />;
   const q = query.trim().toLowerCase();
-  const studentList = (students.data ?? []).filter((s) => studentIds.includes(s.id) || !q || s.fullName.toLowerCase().includes(q));
+  const studentList = withoutClosed(students.data).filter((s) => studentIds.includes(s.id) || !q || s.fullName.toLowerCase().includes(q));
 
   return (
     <Screen
@@ -167,7 +168,7 @@ export default function NewLesson() {
 
       <Section title="Tutor">
         <Row gap={Spacing.one} wrap>
-          {(tutors.data ?? []).map((t) => (
+          {withoutClosed(tutors.data).map((t) => (
             <Chip key={t.id} label={tutorChipLabel(t.fullName, vetting.get(t.id))} selected={chosenTutorId === t.id} onPress={() => setTutorId(t.id)} />
           ))}
         </Row>

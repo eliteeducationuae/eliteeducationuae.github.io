@@ -32,6 +32,7 @@ import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startO
 import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
 import type { Enrolment, Lesson, Service } from '@/domain/types';
 import { canAssignTutor } from '@/domain/vetting';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -236,7 +237,7 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
   // Tutors who cannot take new lessons (clearance enforced, no override) go last, with a way to resolve it.
-  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? [])
+  const options = coverOptions(lesson, withoutClosed(tutors.data), sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? [])
     .map((o, i) => ({ o, i, blocked: !canAssignTutor(vetting.get(o.tutor.id), now).allowed }))
     .sort((a, b) => Number(a.blocked) - Number(b.blocked) || a.i - b.i);
   return (

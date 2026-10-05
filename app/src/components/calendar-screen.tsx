@@ -6,6 +6,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useBusyBlocks, useClosures, useLessons, useLookup, useTutors } from '@/data/hooks';
 import { addDays, formatDay, formatMonth, formatTime, isSameDay, startOfDay, startOfWeek } from '@/domain/dates';
+import { isClosed as isClosedAccount, withoutClosed } from '@/domain/closed-accounts';
 import { byStart, type DayEntry, findBusyClashes, findClashes, inTimeOrder, isClosed } from '@/domain/scheduling';
 import type { BusyBlock, Lesson } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -89,7 +90,11 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const tutorIds =
     perspective === 'tutor'
       ? [...new Set(all.map((l) => l.tutorId))]
-      : (tutors.data ?? []).map((t) => t.id).filter((id) => !tutorFilter || id === tutorFilter);
+      : // A closed tutor keeps a column only while their past lessons are in view.
+        (tutors.data ?? [])
+          .filter((t) => !isClosedAccount(t) || all.some((l) => l.tutorId === t.id))
+          .map((t) => t.id)
+          .filter((id) => !tutorFilter || id === tutorFilter);
 
   return (
     <Screen
@@ -129,7 +134,7 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
       {perspective === 'admin' && tutors.data ? (
         <Row gap={Spacing.one} wrap>
           <Chip label="All tutors" selected={!tutorFilter} onPress={() => setTutorFilter(null)} />
-          {tutors.data.map((t) => (
+          {withoutClosed(tutors.data).map((t) => (
             <Chip key={t.id} label={t.fullName.split(' ')[0]} selected={tutorFilter === t.id} onPress={() => setTutorFilter(t.id)} />
           ))}
         </Row>

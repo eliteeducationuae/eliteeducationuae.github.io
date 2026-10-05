@@ -8,6 +8,7 @@ import { source } from '@/data';
 import { useAction, useStudents } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { addDays, toDateKey } from '@/domain/dates';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 /** Tutors and admin set homework for one student, outside of recording a lesson. */
 export default function NewHomework() {
@@ -26,7 +27,7 @@ export default function NewHomework() {
     );
   }
   if (students.isLoading) return <Loading />;
-  const list = [...(students.data ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const list = withoutClosed(students.data).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const student = list.find((s) => s.id === studentId);
   const valid = !!studentId && !!draft.title.trim() && isValidDueDate(draft.dueDate);
 

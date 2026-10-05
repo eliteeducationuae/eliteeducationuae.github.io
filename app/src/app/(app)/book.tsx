@@ -10,6 +10,7 @@ import { useAction, useEnrolments, useLessons, useLookup, useOpenSlots, useServi
 import { addDays, formatDay, formatTime, startOfDay, toDateKey } from '@/domain/dates';
 import { activeEnrolments, enrolmentFor, enrolmentTitle, lessonSubject, sameSubject } from '@/domain/enrolments';
 import { byStart } from '@/domain/scheduling';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 const today = startOfDay(new Date());
 const WINDOW_DAYS = 21;
@@ -34,7 +35,7 @@ export default function Book() {
 
   const all = lessons.data ?? [];
   const moving = lessonId ? all.find((l) => l.id === lessonId) : undefined;
-  const kids = students.data ?? [];
+  const kids = withoutClosed(students.data);
   const student = kids.find((s) => s.id === (studentId ?? moving?.studentIds[0])) ?? (kids.length === 1 ? kids[0] : undefined);
   const theirs = student ? all.filter((l) => l.studentIds.includes(student.id)).sort(byStart) : [];
   const allEnrolments = enrolments.data ?? [];

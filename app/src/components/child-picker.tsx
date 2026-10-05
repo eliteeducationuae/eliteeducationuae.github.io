@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { useStudents } from '@/data/hooks';
+import { withoutClosed } from '@/domain/closed-accounts';
 import type { Student } from '@/domain/types';
 
 import { EmptyState, Loading, Segmented } from './ui';
@@ -10,7 +11,7 @@ export function ChildPicker({ children }: { children: (student: Student) => Reac
   const students = useStudents();
   const [selected, setSelected] = useState<string | null>(null);
   if (students.isLoading) return <Loading />;
-  const list = students.data ?? [];
+  const list = withoutClosed(students.data);
   if (list.length === 0) return <EmptyState icon="people" title="No student profiles on this account yet" message="Once a student has been added, their progress will appear here." />;
   const current = list.find((s) => s.id === selected) ?? list[0];
   return (

@@ -10,6 +10,7 @@ import { useAction, useResources, useStudents } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { resourceAttachment } from '@/domain/homework';
 import type { Resource } from '@/domain/types';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { confirm, notify } from '@/lib/confirm';
 
 /** Worksheets, past papers and links that tutors share with students or attach to homework. */
@@ -35,7 +36,7 @@ export default function ResourceLibrary() {
 
   const all = resources.data ?? [];
   const list = applyResourceFilter(all, filter);
-  const myStudents = [...(students.data ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const myStudents = withoutClosed(students.data).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const canChange = (r: Resource) => me.role === 'admin' || r.uploadedBy === me.id;
 
   async function shareWith(r: Resource, studentId: string) {

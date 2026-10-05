@@ -5,12 +5,13 @@ import { Avatar, EmptyState, ListItem, Loading, Screen } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useEnrolments, useStudents } from '@/data/hooks';
 import { studentSubjects } from '@/domain/enrolments';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 export default function TutorStudents() {
   const students = useStudents();
   const enrolments = useEnrolments();
   if (students.isLoading) return <Loading />;
-  const list = [...(students.data ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const list = withoutClosed(students.data).sort((a, b) => a.fullName.localeCompare(b.fullName));
   return (
     <Screen onRefresh={() => students.refetch()} refreshing={students.isRefetching}>
       {list.length === 0 ? (
