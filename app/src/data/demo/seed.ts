@@ -253,7 +253,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   db.packages.push({
     id: 'pkg-sharma',
     familyId: 'f-sharma',
-    name: 'A-Level 10-lesson bundle',
+    name: 'A-Level bundle',
     serviceId: 'svc-alevel',
     lessonsTotal: 10,
     lessonsUsed: 0,

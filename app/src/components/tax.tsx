@@ -30,7 +30,9 @@ export function creditNoteKind(note: Pick<CreditNoteRef, 'subtotal' | 'rebilled'
 export function rebilledSentence(note: Pick<CreditNote, 'lines'>): string {
   const marked = note.lines.map((l, i) => (l.rebilled ? i + 1 : 0)).filter(Boolean);
   if (marked.length === 0 || marked.length === note.lines.length) {
-    return 'The lessons on this credit note were returned to be invoiced again.';
+    return note.lines.length === 1
+      ? 'The lesson on this credit note was returned to be invoiced again.'
+      : 'The lessons on this credit note were returned to be invoiced again.';
   }
   const which = marked.length === 1 ? `line ${marked[0]}` : `lines ${marked.slice(0, -1).join(', ')} and ${marked[marked.length - 1]}`;
   return `The lesson${marked.length === 1 ? '' : 's'} on ${which} of this credit note ${marked.length === 1 ? 'was' : 'were'} returned to be invoiced again. The other lines are a credit.`;

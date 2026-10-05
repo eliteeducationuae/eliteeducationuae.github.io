@@ -1,7 +1,7 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
-import { AmountLine, creditNoteKind, creditNoteLineViews, LineTaxTable, rebilledSentence, Rule, TaxPartyBlock, vatPercent } from '@/components/tax';
+import { AmountLine, creditNoteKind, creditNoteLineViews, LineTaxTable, rebilledSentence, TaxPartyBlock, vatPercent } from '@/components/tax';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useCreditNote, useInvoice, useLookup, useSettings } from '@/data/hooks';
@@ -77,7 +77,6 @@ export default function CreditNotePage() {
       <Section title="Credited">
         <Card style={{ gap: Spacing.three }}>
           <LineTaxTable lines={creditNoteLineViews(n)} />
-          <Rule />
           <View style={{ gap: Spacing.one }}>
             <AmountLine label="Credit excluding VAT" value={aed(n.subtotal)} />
             <AmountLine label={`VAT at ${vatPercent(n.vatRate)}`} value={aed(n.vat)} />

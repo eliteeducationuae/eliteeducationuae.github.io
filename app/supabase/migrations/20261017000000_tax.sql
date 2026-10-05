@@ -506,6 +506,8 @@ end $$;
  * p_release_charges ('Invoice these lessons again') returns to the unbilled list the lessons on the lines this note
  * credits in full. Only the lines whose lessons are actually released are marked rebilled (with the note's rebilled_net);
  * a partial line credit, a line with no lesson, or a gross amount is a lower price and counts as a credit in the accounts.
+ * Known limit: an earlier partial credit on a line that a later note releases still counts as a credit, although the
+ * lesson is then invoiced again in full (documented in the README).
  */
 create function public.issue_credit_note(p_invoice_id uuid, p_reason text, p_lines jsonb,
   p_release_charges boolean default false, p_gross numeric default null)
