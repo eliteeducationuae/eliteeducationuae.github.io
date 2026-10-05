@@ -212,6 +212,8 @@ describe('handover_pack mapping', () => {
 
   it('maps rows and builds the save arguments', () => {
     expect(toHandover({ ...handoverRow, viewed_at: '2026-10-04T08:00:00Z' }).viewedAt).toBe('2026-10-04T08:00:00Z');
+    expect(toHandover({ ...handoverRow, student_name: 'Charlotte Hughes' }).studentName).toBe('Charlotte Hughes');
+    expect(toHandover({ ...handoverRow, student_name: null }).studentName).toBeUndefined();
     expect(toLessonPlan({ lesson_id: 'l', objectives: null, topic_ids: null, resource_ids: null, homework: null, shared_with_family: false, updated_at: 'u' })).toEqual({
       lessonId: 'l', tutorId: undefined, objectives: '', topicIds: [], resourceIds: [], homework: [], sharedWithFamily: false, createdAt: undefined, updatedAt: 'u',
     });

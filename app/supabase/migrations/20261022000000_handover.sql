@@ -153,6 +153,8 @@ create table public.handovers (
   created_at timestamptz not null default now(),
   reason text not null check (reason in ('cover', 'reassigned', 'awarded')),
   student_id uuid not null references public.students(id) on delete cascade,
+  -- The student's name when the handover was made: an awarded tutor cannot see the student yet.
+  student_name text,
   subject text check (length(subject) <= 80),
   enrolment_id uuid references public.enrolments(id) on delete set null,
   lesson_id uuid references public.lessons(id) on delete set null,
@@ -208,11 +210,11 @@ begin
     return v_id;
   end if;
 
-  insert into public.handovers (reason, student_id, subject, enrolment_id, lesson_id, opportunity_id, from_tutor_id, to_tutor_id)
-  values (p_reason, p_student, v_subject, p_enrolment, p_lesson, p_opportunity, p_from, p_to)
+  select * into st from public.students where id = p_student;
+  insert into public.handovers (reason, student_id, student_name, subject, enrolment_id, lesson_id, opportunity_id, from_tutor_id, to_tutor_id)
+  values (p_reason, p_student, st.full_name, v_subject, p_enrolment, p_lesson, p_opportunity, p_from, p_to)
   returning id into v_id;
 
-  select * into st from public.students where id = p_student;
   select full_name into to_name from public.tutors where id = p_to;
   if p_lesson is not null then select * into l from public.lessons where id = p_lesson; end if;
   when_text := case when l.id is not null
@@ -239,10 +241,11 @@ end $$;
 revoke all on function public.create_handover(text, uuid, text, uuid, uuid, uuid, uuid, uuid) from public, anon, authenticated;
 revoke all on function public.handover_whose(text, text, text) from public, anon, authenticated;
 
--- a) Cover: a scheduled lesson moves to another tutor.
+-- a) Cover: a scheduled lesson moves to another tutor. Moving it back to the student's regular tutor
+--    (undoing a cover) sends no pack, and withdraws the unread cover pack sent to the tutor it is taken from.
 create function public.on_lesson_tutor_changed() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare sid uuid; v_subject text; v_enrolment uuid;
+declare sid uuid; v_subject text; v_enrolment uuid; v_regular uuid;
 begin
   foreach sid in array new.student_ids loop
     v_subject := nullif(trim(new.subject), '');
@@ -250,11 +253,16 @@ begin
       select min(e.subject) into v_subject from public.enrolments e
       where e.student_id = sid and e.active having count(*) = 1;
     end if;
-    v_enrolment := null;
+    v_enrolment := null; v_regular := null;
     if v_subject is not null then
-      select e.id into v_enrolment from public.enrolments e
+      select e.id, e.tutor_id into v_enrolment, v_regular from public.enrolments e
       where e.student_id = sid and e.active and lower(e.subject) = lower(v_subject)
       order by e.created_at limit 1;
+    end if;
+    if v_regular is not null and new.tutor_id = v_regular then
+      delete from public.handovers
+      where lesson_id = new.id and reason = 'cover' and student_id = sid and to_tutor_id = old.tutor_id and viewed_at is null;
+      continue;
     end if;
     perform public.create_handover('cover', sid, v_subject, v_enrolment, new.id, null, old.tutor_id, new.tutor_id);
   end loop;

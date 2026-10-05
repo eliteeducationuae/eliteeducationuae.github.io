@@ -668,6 +668,8 @@ export interface Handover {
   createdAt: string;
   reason: HandoverReason;
   studentId: string;
+  /** The student's name when the handover was made, for a tutor who cannot see the student yet. */
+  studentName?: string;
   subject?: string;
   enrolmentId?: string;
   lessonId?: string;

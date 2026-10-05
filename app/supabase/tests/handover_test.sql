@@ -318,4 +318,36 @@ select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b3');
 select pg_temp.fails($$select public.save_handover_note((select id from public.handovers where reason = 'awarded'), 'x')$$, '42501',
   'nobody but an admin writes the note when there was no previous tutor');
 reset role;
+-- (11) Undoing a cover ----------------------------------------------------------------
+-- Tia is Ollie's regular English tutor. The office covers a lesson with Cy, then moves it back to Tia.
+insert into public.enrolments (id, student_id, subject, tutor_id) values
+  ('e1000000-0000-0000-0000-000000000003', 'd0000000-0000-0000-0000-000000000002', 'English', 'b0000000-0000-0000-0000-000000000001');
+insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location, status, subject) values
+  ('f0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000001', '{d0000000-0000-0000-0000-000000000002}',
+   'e0000000-0000-0000-0000-000000000001', now() + interval '6 days', now() + interval '6 days' + interval '1 hour', 'online', 'scheduled', 'English');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.reassign_lesson('f0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000003');
+reset role;
+select pg_temp.check((select count(*) from public.handovers where lesson_id = 'f0000000-0000-0000-0000-000000000004'
+  and to_tutor_id = 'b0000000-0000-0000-0000-000000000003') = 1, 'covering the English lesson creates a pack for Cy');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select public.reassign_lesson('f0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000001');
+reset role;
+select pg_temp.check(not exists (select 1 from public.handovers where to_tutor_id = 'b0000000-0000-0000-0000-000000000001'),
+  'moving a lesson back to the regular tutor creates no handover for them');
+select pg_temp.check(not exists (select 1 from public.handovers where lesson_id = 'f0000000-0000-0000-0000-000000000004'),
+  'and withdraws the unread cover pack');
+select pg_temp.check((select count(*) from public.notification_outbox where subject like 'Handover%Ollie Other%') = 2,
+  'the regular tutor is sent nothing more');
+
+-- (12) Student name -----------------------------------------------------------------
+select pg_temp.check((select bool_and(h.student_name = s.full_name) from public.handovers h join public.students s on s.id = h.student_id),
+  'each handover carries the student''s name');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b3');
+select pg_temp.check((select student_name from public.handovers where reason = 'awarded') = 'Sami Ahmed',
+  'the awarded tutor sees the new student''s name before they can see the student');
+reset role;
 \echo 'All handover tests passed'

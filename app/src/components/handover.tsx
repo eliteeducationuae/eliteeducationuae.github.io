@@ -24,8 +24,9 @@ function tutorName(lookup: Lookup, tutorId: string | undefined, fallback = 'the 
   return (tutorId && lookup.tutor(tutorId)?.fullName) || fallback;
 }
 
-function studentName(lookup: Lookup, studentId: string) {
-  return lookup.student(studentId)?.fullName ?? 'Student';
+/** The student's name. An awarded tutor cannot see the student yet, so fall back to the name stored with the handover. */
+function studentName(lookup: Lookup, h: Handover) {
+  return lookup.student(h.studentId)?.fullName ?? h.studentName ?? 'New student';
 }
 
 /** e.g. 'From James Wilson to Sarah Ahmed'. */
@@ -68,7 +69,7 @@ export function HandoverBanners() {
     <>
       {toRead.map((h) => (
         <Banner key={`read-${h.id}`} icon="book">
-          Handover pack ready: {handoverTitle(h, studentName(lookup, h.studentId))}.{' '}
+          Handover pack ready: {handoverTitle(h, studentName(lookup, h))}.{' '}
           <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
             Open handover pack
           </Txt>
@@ -76,7 +77,7 @@ export function HandoverBanners() {
       ))}
       {toWrite.map((h) => (
         <Banner key={`write-${h.id}`} icon="chat">
-          Please leave a handover note for {tutorName(lookup, h.toTutorId, 'the new tutor')} about {studentName(lookup, h.studentId)}.{' '}
+          Please leave a handover note for {tutorName(lookup, h.toTutorId, 'the new tutor')} about {studentName(lookup, h)}.{' '}
           <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
             Write handover note
           </Txt>
@@ -94,7 +95,7 @@ function HandoverItem({ h, lookup, incoming }: { h: Handover; lookup: Lookup; in
   const theme = useTheme();
   return (
     <ListItem
-      title={handoverTitle(h, studentName(lookup, h.studentId))}
+      title={handoverTitle(h, studentName(lookup, h))}
       subtitle={`${HANDOVER_REASON_LABEL[h.reason]} · ${tutorName(lookup, h.fromTutorId)} to ${tutorName(lookup, h.toTutorId, 'the new tutor')} · ${formatDate(h.createdAt)}`}
       left={<Icon name="book" size={22} color={theme.accent} />}
       right={incoming && !h.viewedAt ? <Badge label="New" tone="gold" /> : undefined}
@@ -188,7 +189,7 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
   if (!admin && !incoming) {
     return (
       <Screen>
-        <HandoverHeader handover={h} studentName={studentName(lookup, h.studentId)} lookup={lookup} />
+        <HandoverHeader handover={h} studentName={studentName(lookup, h)} lookup={lookup} canOpenLesson={false} />
         <Banner icon="alert">Only the incoming tutor and the office can see the full handover pack.</Banner>
         <HandoverNoteEditor key={h.noteUpdatedAt ?? 'none'} handover={h} label={`Your handover note for ${toName}`} />
       </Screen>
@@ -204,7 +205,18 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
   );
 }
 
-function HandoverHeader({ handover: h, studentName: name, lookup }: { handover: Handover; studentName: string; lookup: Lookup }) {
+function HandoverHeader({
+  handover: h,
+  studentName: name,
+  lookup,
+  canOpenLesson,
+}: {
+  handover: Handover;
+  studentName: string;
+  lookup: Lookup;
+  /** The outgoing tutor no longer has the covered lesson, so it is shown without a link. */
+  canOpenLesson: boolean;
+}) {
   return (
     <Card style={{ gap: Spacing.two }}>
       <Txt variant="h2">{name}</Txt>
@@ -213,14 +225,15 @@ function HandoverHeader({ handover: h, studentName: name, lookup }: { handover: 
         {h.subject ? <Badge label={h.subject} /> : null}
       </Row>
       <Txt variant="muted">{fromTo(lookup, h)}</Txt>
-      {h.lessonId ? <CoveredLessonLink lessonId={h.lessonId} /> : null}
+      {h.lessonId ? <CoveredLessonLink lessonId={h.lessonId} canOpen={canOpenLesson} /> : null}
     </Card>
   );
 }
 
-function CoveredLessonLink({ lessonId }: { lessonId: string }) {
+function CoveredLessonLink({ lessonId, canOpen }: { lessonId: string; canOpen: boolean }) {
   const lesson = useLesson(lessonId);
   const start = lesson.data?.start;
+  if (!canOpen) return start ? <Txt variant="muted">Covered lesson: {formatDay(start)}, {formatTime(start)}</Txt> : null;
   return (
     <Txt color="accent" accessibilityRole="link" onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: lessonId } })}>
       {start ? `Covered lesson: ${formatDay(start)}, ${formatTime(start)}` : 'Open the covered lesson'}
@@ -280,6 +293,7 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
   const today = toDateKey(now);
   // The incoming tutor cannot open another tutor's lessons, so only their own (or any, for admins) link through.
   const canOpenLesson = (tutorId: string) => me.role === 'admin' || (!!me.tutorId && tutorId === me.tutorId);
+  const canOpenHomework = (studentId: string) => me.role === 'admin' || !!lookup.student(studentId);
 
   useEffect(() => {
     if (!markViewed) return;
@@ -307,7 +321,7 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
 
   return (
     <Screen onRefresh={refetch}>
-      <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} />
+      <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} canOpenLesson />
 
       <Section title="Handover note">
         <Card style={{ gap: Spacing.one }}>
@@ -418,8 +432,10 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
               key={hw.id}
               title={hw.title}
               subtitle={dueLabel(hw.dueDate, now)}
-              right={hw.dueDate.slice(0, 10) < today ? <Badge label="Overdue" tone="warning" /> : undefined}
-              onPress={() => router.push({ pathname: '/homework/[id]', params: { id: hw.id } })}
+              // Below the subtitle, so the title keeps the full width (and two lines) on a phone.
+              below={hw.dueDate.slice(0, 10) < today ? <Badge label="Overdue" tone="warning" /> : undefined}
+              // A newly awarded tutor cannot open the student's homework until the office moves the enrolment.
+              onPress={canOpenHomework(hw.studentId) ? () => router.push({ pathname: '/homework/[id]', params: { id: hw.id } }) : undefined}
             />
           ))
         ) : (

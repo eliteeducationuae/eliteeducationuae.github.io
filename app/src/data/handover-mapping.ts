@@ -45,6 +45,7 @@ export const toHandover = (r: Row): Handover => ({
   createdAt: r.created_at,
   reason: r.reason,
   studentId: r.student_id,
+  studentName: r.student_name ?? undefined,
   subject: r.subject ?? undefined,
   enrolmentId: r.enrolment_id ?? undefined,
   lessonId: r.lesson_id ?? undefined,

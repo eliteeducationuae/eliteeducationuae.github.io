@@ -160,16 +160,32 @@ describe('handover packs (mirror the handovers policies and handover_pack)', () 
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ reason: 'cover', studentId: 's-arjun', lessonId: lesson.id, fromTutorId: 't-craig', toTutorId: 't-james', subject: 'Maths' });
     expect(created[0].enrolmentId).toBe('enr-arjun-maths');
+    expect(created[0].studentName).toBe(db.students.find((s) => s.id === 's-arjun')!.fullName);
+    // James reads the pack, so it stays when the lesson briefly goes back to Craig.
+    ho.markViewed(db, james, created[0].id, NOW);
     reassign(db, lesson.id, 't-craig');
     reassign(db, lesson.id, 't-james');
     const toJames = db.handovers!.filter((h) => h.lessonId === lesson.id && h.toTutorId === 't-james');
     expect(toJames).toHaveLength(1);
-    expect(db.handovers!.filter((h) => h.lessonId === lesson.id)).toHaveLength(2);
+    expect(db.handovers!.filter((h) => h.lessonId === lesson.id)).toHaveLength(1);
     // After the dedupe window a fresh handover is made.
     const later = new Date(NOW.getTime() + 15 * 86_400_000);
     reassign(db, lesson.id, 't-craig', later);
     reassign(db, lesson.id, 't-james', later);
     expect(db.handovers!.filter((h) => h.lessonId === lesson.id && h.toTutorId === 't-james')).toHaveLength(2);
+  });
+
+  it('sends nothing when a cover is undone, and withdraws the unread cover pack (as on_lesson_tutor_changed does)', () => {
+    const db = createSeed(NOW);
+    const covered = db.handovers!.find((h) => h.id === 'ho-charlotte')!.lessonId!;
+    expect(reassign(db, covered, 't-james')).toEqual([]);
+    expect(db.handovers!.some((h) => h.toTutorId === 't-james' && h.studentId === 's-charlotte')).toBe(false);
+    expect(db.handovers!.some((h) => h.id === 'ho-charlotte')).toBe(false);
+  });
+
+  it('names the student on every handover, even for a tutor who cannot see them yet', () => {
+    const db = createSeed(NOW);
+    for (const h of ho.handovers(db, who(db, 'admin'))) expect(h.studentName).toBe(db.students.find((s) => s.id === h.studentId)!.fullName);
   });
 
   it('reuses the handover for a second covered lesson with the same student, subject and tutor (as create_handover does)', () => {
@@ -210,6 +226,8 @@ describe('handover packs (mirror the handovers policies and handover_pack)', () 
     const same = { ...saved };
     expect(ho.afterEnrolmentSaved(db, same, enr.saveEnrolment(db, admin, { ...same }), NOW)).toBeNull();
     expect(ho.afterEnrolmentSaved(db, undefined, saved, NOW)).toBeNull();
+    // A first assignment is not a handover (the enrolments trigger needs a previous tutor).
+    expect(ho.afterEnrolmentSaved(db, { ...saved, tutorId: undefined }, { ...saved, tutorId: 't-nour' }, NOW)).toBeNull();
   });
 
   it('creates a handover when a role for a known student is awarded', () => {

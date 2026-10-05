@@ -23,6 +23,8 @@ export const HANDOVER_DEDUPE_DAYS = 14;
 export const HANDOVER_LESSON_LIMIT = 10;
 /** How many plans a pack draws on (handover_pack uses the same limit). */
 export const HANDOVER_PLAN_LIMIT = 5;
+/** How much open homework a pack lists (handover_pack uses the same limit). */
+export const HANDOVER_HOMEWORK_LIMIT = 20;
 
 const norm = (v?: string) => (v ?? '').trim().toLowerCase();
 
@@ -128,6 +130,8 @@ export const ho = {
         if (viewer.role === 'admin') return true;
         return viewer.role === 'tutor' && !!viewer.tutorId && (h.toTutorId === viewer.tutorId || h.fromTutorId === viewer.tutorId);
       })
+      // Older demo handovers predate the stored name.
+      .map((h) => (h.studentName ? h : { ...h, studentName: db.students.find((s) => s.id === h.studentId)?.fullName }))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
@@ -163,11 +167,14 @@ export const ho = {
       });
 
     const lessonById = new Map(db.lessons.map((l) => [l.id, l]));
-    const homework = db.homework.filter((h) => {
-      if (h.studentId !== student.id || h.done) return false;
-      const lesson = h.lessonId ? lessonById.get(h.lessonId) : undefined;
-      return !lesson || subjectMatches(handover.subject, lesson.subject);
-    });
+    const homework = db.homework
+      .filter((h) => {
+        if (h.studentId !== student.id || h.done) return false;
+        const lesson = h.lessonId ? lessonById.get(h.lessonId) : undefined;
+        return !lesson || subjectMatches(handover.subject, lesson.subject);
+      })
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
+      .slice(0, HANDOVER_HOMEWORK_LIMIT);
 
     const studentLessonIds = new Map(studentLessons.map((l) => [l.id, l]));
     const plans = plansOf(db)
@@ -187,14 +194,16 @@ export const ho = {
       // Never reveal which other children a resource is shared with.
       .map((r) => ({ ...r, studentIds: [] }));
 
+    // As handover_pack: same subject (or either blank), most recently published first.
+    const reportDate = (r: { publishedAt?: string; updatedAt: string }) => r.publishedAt ?? r.updatedAt;
     const latestReport = db.reports
       .filter(
         (r) =>
           r.studentId === student.id &&
           (r.status === 'approved' || r.status === 'published') &&
-          (enrolment && r.enrolmentId ? r.enrolmentId === enrolment.id : subjectMatches(handover.subject, r.subject)),
+          subjectMatches(handover.subject, r.subject),
       )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      .sort((a, b) => reportDate(b).localeCompare(reportDate(a)))[0];
 
     const out: HandoverSources = { handover, student, lessons, notes, homework, plans, ratings, resources };
     if (enrolment) out.enrolment = enrolment;
@@ -252,6 +261,8 @@ export const ho = {
       studentId: input.studentId,
       toTutorId: input.toTutorId,
     };
+    const studentName = db.students.find((s) => s.id === input.studentId)?.fullName;
+    if (studentName) created.studentName = studentName;
     const optional = ['subject', 'enrolmentId', 'lessonId', 'opportunityId', 'fromTutorId'] as const;
     for (const key of optional) if (input[key]) created[key] = input[key];
     if (input.note?.trim()) {
@@ -262,13 +273,23 @@ export const ho = {
     return created;
   },
 
-  /** After an admin gives a lesson to another tutor: a cover handover for each student. */
+  /**
+   * After an admin gives a lesson to another tutor: a cover handover for each student. Moving it back to the
+   * student's regular tutor (undoing a cover) creates nothing, and withdraws the unread cover pack sent to the
+   * tutor it was taken from.
+   */
   afterLessonReassigned(db: DemoDB, lesson: Lesson, oldTutorId: string | undefined, now = new Date()): Handover[] {
     const current = db.lessons.find((l) => l.id === lesson.id) ?? lesson;
     if (!oldTutorId || current.tutorId === oldTutorId) return [];
     const out: Handover[] = [];
     for (const studentId of current.studentIds) {
       const enrolment = enrolmentFor(db.enrolments, studentId, current.subject);
+      if (enrolment?.active && enrolment.tutorId && enrolment.tutorId === current.tutorId) {
+        db.handovers = handoversOf(db).filter(
+          (h) => !(h.lessonId === current.id && h.reason === 'cover' && h.studentId === studentId && h.toTutorId === oldTutorId && !h.viewedAt),
+        );
+        continue;
+      }
       const h = ho.createHandover(
         db,
         {
@@ -289,7 +310,8 @@ export const ho = {
 
   /** After an enrolment is saved with a different tutor: a handover to the new tutor. */
   afterEnrolmentSaved(db: DemoDB, before: Enrolment | undefined, after: Enrolment, now = new Date()): Handover | null {
-    if (!before || !after.active || !after.tutorId || before.tutorId === after.tutorId) return null;
+    // As the enrolments trigger: only a change from one tutor to another, not a first assignment.
+    if (!before?.tutorId || !after.active || !after.tutorId || before.tutorId === after.tutorId) return null;
     return ho.createHandover(
       db,
       {
