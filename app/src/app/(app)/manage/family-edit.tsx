@@ -86,7 +86,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
       <ErrorNote error={save.error} />
       {existing ? (
         <>
-          <FamilyContactsSection familyId={existing.id} editable />
+          <FamilyContactsSection familyId={existing.id} editable intro="Contact changes are saved as soon as you make them." />
           <Section
             title="Students"
             action={<Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/students/edit', params: { familyId: existing.id } })} />}>

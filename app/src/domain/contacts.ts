@@ -74,9 +74,12 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** Who will receive this kind of notice, as a phrase: 'Fatima Al Mansoori and Grace Fernandes', or 'Nobody'. */
+/**
+ * Who will receive this kind of notice, as a phrase: 'Fatima Al Mansoori and Grace Fernandes (email only)', or 'Nobody'.
+ * A contact who cannot sign in is marked '(email only)': they get no app notifications and no access to the app.
+ */
 export function describeRecipients(contacts: FamilyContact[], kind: NoticeKind): string {
-  const names = recipientsFor(contacts, kind).map((c) => c.name);
+  const names = recipientsFor(contacts, kind).map((c) => (c.canLogIn || c.hasLogin ? c.name : `${c.name} (email only)`));
   return names.length ? joinNames(names) : 'Nobody';
 }
 
@@ -118,7 +121,7 @@ export function draftFromContact(c: FamilyContact): FamilyContactDraft {
     name: c.name,
     relationship: c.relationship,
     email: c.email,
-    phone: c.phone,
+    phone: formatPhoneForDisplay(c.phone),
     preferredChannel: c.preferredChannel,
     canLogIn: c.canLogIn,
     receivesInvoices: c.receivesInvoices,
@@ -128,6 +131,17 @@ export function draftFromContact(c: FamilyContact): FamilyContactDraft {
     emergencyContact: c.emergencyContact,
     isPrimary: c.isPrimary,
   };
+}
+
+/**
+ * A telephone number as people read it. A stored UAE mobile (+971501234567) is grouped as +971 50 123 4567; any other
+ * number is shown as stored. Saving turns it back into the stored form (normaliseContactDraft).
+ */
+export function formatPhoneForDisplay(phone: string | undefined): string | undefined {
+  if (!phone) return phone;
+  const compact = phone.replace(/[\s()-]/g, '');
+  const uae = /^\+971(5\d)(\d{3})(\d{4})$/.exec(compact);
+  return uae ? `+971 ${uae[1]} ${uae[2]} ${uae[3]}` : phone;
 }
 
 /** Tidy what was typed: trimmed name, lower-case email, phone in E.164 form where it can be, blanks left out. */
@@ -149,6 +163,8 @@ export const CONTACT_ERRORS = {
   whatsappNumber: 'Please enter a mobile number with its country code, for example +971 50 123 4567, to send WhatsApp messages.',
   duplicateEmail: 'Another contact in this family already uses that email address.',
   emailElsewhere: 'That email address already signs in to another family. Please use a different address.',
+  /** For a parent: the address already has a login in a prospect family, which only the office may move. */
+  existingAccount: 'That email address already has an Elite Education account. Please ask the office to add this contact for you.',
   lastLogin: 'At least one contact must be able to sign in.',
   primaryRequired: 'Please choose another main contact first.',
   removePrimary: 'Please choose another main contact before removing this one.',

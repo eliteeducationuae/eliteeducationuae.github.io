@@ -8,6 +8,7 @@ import {
   describeRecipients,
   draftFromContact,
   emptyContactDraft,
+  formatPhoneForDisplay,
   normaliseContactDraft,
   NOTICE_KIND_LABELS,
   noticeKindForUrl,
@@ -99,7 +100,7 @@ describe('who receives what', () => {
   });
 
   it('describes recipients the British way', () => {
-    expect(describeRecipients([fatima, grace], 'invoices')).toBe('Fatima Al Mansoori and Grace Fernandes');
+    expect(describeRecipients([fatima, grace], 'invoices')).toBe('Fatima Al Mansoori and Grace Fernandes (email only)');
     expect(describeRecipients([fatima, khalid, grace], 'general')).toBe('Fatima Al Mansoori and Khalid Al Mansoori');
     expect(describeRecipients([fatima, khalid, contact({ id: 'c6', name: 'Noor', isPrimary: false, createdAt: '2026-01-09T00:00:00Z' })], 'reports')).toBe('Fatima Al Mansoori, Khalid Al Mansoori and Noor');
     expect(describeRecipients([fatima], 'reports')).toBe('Fatima Al Mansoori');
@@ -269,5 +270,21 @@ describe('primaryContact and contactsFromFamily', () => {
       createdAt: '2026-02-01T00:00:00Z',
     });
     expect(contactsFromFamily({ id: 'f2', name: 'X', parentName: 'Y', email: '' })[0].email).toBeUndefined();
+  });
+});
+
+describe('formatPhoneForDisplay', () => {
+  it('groups a UAE mobile and leaves other numbers as stored', () => {
+    expect(formatPhoneForDisplay('+971500000012')).toBe('+971 50 000 0012');
+    expect(formatPhoneForDisplay('+971 50 000 0012')).toBe('+971 50 000 0012');
+    expect(formatPhoneForDisplay('+447700900123')).toBe('+447700900123');
+    expect(formatPhoneForDisplay('+971 4 123 4567')).toBe('+971 4 123 4567');
+    expect(formatPhoneForDisplay(undefined)).toBeUndefined();
+  });
+
+  it('is used for the editor, and saving stores the compact form again', () => {
+    const d = draftFromContact({ ...base, phone: '+971500000012' });
+    expect(d.phone).toBe('+971 50 000 0012');
+    expect(normaliseContactDraft(d).phone).toBe('+971500000012');
   });
 });

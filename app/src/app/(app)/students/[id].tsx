@@ -6,6 +6,7 @@ import { FamilyContactsReadOnly } from '@/components/family-contacts';
 import { StudentOverview } from '@/components/student-overview';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
+import { formatPhoneForDisplay } from '@/domain/contacts';
 import { useLookup, useStudents } from '@/data/hooks';
 import { useMe } from '@/data/session';
 
@@ -42,7 +43,7 @@ export default function StudentPage() {
           {me.role === 'admin' ? (
             <Txt variant="muted">
               {family.email}
-              {family.phone ? ` · ${family.phone}` : ''}
+              {family.phone ? ` · ${formatPhoneForDisplay(family.phone)}` : ''}
             </Txt>
           ) : null}
           <View style={{ marginTop: Spacing.two }}>

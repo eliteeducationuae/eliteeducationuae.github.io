@@ -1,4 +1,4 @@
-import { whatsappRecipient } from '../../../supabase/functions/_shared/whatsapp';
+import { contactWhatsAppNumber, whatsappRecipient } from '../../../supabase/functions/_shared/whatsapp';
 
 describe('whatsappRecipient', () => {
   it('sends a login’s message to the number they opted in with', () => {
@@ -39,7 +39,7 @@ describe('whatsappRecipient', () => {
     ).toBeNull();
   });
 
-  it('sends a contact without a login to the queued number while they still agree', () => {
+  it('sends a contact without a login to their current number while they still agree', () => {
     expect(
       whatsappRecipient({
         profile_id: null,
@@ -69,5 +69,34 @@ describe('whatsappRecipient', () => {
     expect(whatsappRecipient({ profile_id: null, contact_id: 'c1', whatsapp_to: '+971502223333', family_contacts: null })).toBeNull();
     // A removed contact leaves contact_id null (on delete set null).
     expect(whatsappRecipient({ profile_id: null, contact_id: null, whatsapp_to: '+971502223333' })).toBeNull();
+  });
+
+  it('uses a contact’s corrected number at send time, and skips a number no longer usable', () => {
+    expect(
+      whatsappRecipient({
+        profile_id: null,
+        contact_id: 'c1',
+        whatsapp_to: '+971502223333',
+        family_contacts: { receives_whatsapp: true, phone: '+971 50 999 8888' },
+      }),
+    ).toBe('+971509998888');
+    expect(
+      whatsappRecipient({
+        profile_id: null,
+        contact_id: 'c1',
+        whatsapp_to: '+971502223333',
+        family_contacts: { receives_whatsapp: true, phone: '050 123' },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('contactWhatsAppNumber', () => {
+  it('matches public.contact_whatsapp_number', () => {
+    expect(contactWhatsAppNumber('+971 (50) 222-3333')).toBe('+971502223333');
+    expect(contactWhatsAppNumber('+44 7700 900123')).toBe('+447700900123');
+    expect(contactWhatsAppNumber('+971 4 123 4567')).toBeNull();
+    expect(contactWhatsAppNumber('0501234567')).toBeNull();
+    expect(contactWhatsAppNumber(null)).toBeNull();
   });
 });

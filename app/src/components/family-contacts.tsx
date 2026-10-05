@@ -40,7 +40,7 @@ function contactBadges(c: FamilyContact): { label: string; tone: Tone }[] {
 }
 
 /** The family's contacts with what each receives, for the family itself and for admins. */
-export function FamilyContactsSection({ familyId, editable }: { familyId: string; editable: boolean }) {
+export function FamilyContactsSection({ familyId, editable, intro }: { familyId: string; editable: boolean; intro?: string }) {
   const contacts = useFamilyContacts(familyId);
   const list = contacts.data ?? [];
   return (
@@ -51,6 +51,7 @@ export function FamilyContactsSection({ familyId, editable }: { familyId: string
           <Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/contacts/edit', params: { familyId } })} />
         ) : undefined
       }>
+      {intro ? <Txt variant="muted">{intro}</Txt> : null}
       {contacts.isLoading ? (
         <Loading />
       ) : contacts.error ? (
@@ -87,6 +88,11 @@ export function FamilyContactsSection({ familyId, editable }: { familyId: string
                 {describeRecipients(list, kind)}
               </Txt>
             ))}
+            {list.some((c) => !c.canLogIn && !c.hasLogin && !!c.email) ? (
+              <Txt variant="small">
+                Email only: these contacts receive emails but no app notifications, and cannot sign in.
+              </Txt>
+            ) : null}
             <Txt variant="small">Bank details are never included in notifications; they appear only on invoices in the app.</Txt>
           </Card>
         </View>
@@ -173,12 +179,16 @@ export function ContactEditor({
   const me = useMe();
   const save = useAction(source.saveFamilyContact);
   const remove = useAction(source.removeFamilyContact);
-  const [draft, setDraft] = useState<FamilyContactDraft>(() => (existing ? draftFromContact(existing) : emptyContactDraft()));
+  // A family's first contact becomes its main contact (the server insists), so the switch starts on and stays on.
+  const firstContact = !existing && all.length === 0;
+  const [draft, setDraft] = useState<FamilyContactDraft>(() =>
+    existing ? draftFromContact(existing) : { ...emptyContactDraft(), isPrimary: firstContact },
+  );
   const [touched, setTouched] = useState(false);
 
   const others = all.filter((c) => c.id !== existing?.id);
   const problem = validateContactDraft({ ...draft, hasLogin: existing?.hasLogin }, others, me.role);
-  const alreadyPrimary = !!existing?.isPrimary;
+  const alreadyPrimary = !!existing?.isPrimary || firstContact;
   const whatsappManaged = !!existing?.hasLogin;
   const removal = existing ? canRemoveContact(existing, all, me.role) : undefined;
 
@@ -290,7 +300,7 @@ export function ContactEditor({
           explanation={
             whatsappManaged
               ? 'Managed by this contact in their own Account settings.'
-              : 'Lesson reminders sent by WhatsApp to the telephone number above.'
+              : 'Lesson reminders and the notices ticked above, sent by WhatsApp to the mobile number above. Please switch this on only if they have agreed to receive WhatsApp messages.'
           }
           value={draft.receivesWhatsApp}
           onChange={(v) => set('receivesWhatsApp', v)}
@@ -304,7 +314,11 @@ export function ContactEditor({
         />
         <SwitchRow
           label="Main contact"
-          explanation="Invoices are addressed to the main contact. Making this the main contact replaces the current one."
+          explanation={
+            firstContact
+              ? "The family's first contact becomes the main contact, so they need an email address. Invoices are addressed to them."
+              : 'Invoices are addressed to the main contact. Making this the main contact replaces the current one.'
+          }
           value={alreadyPrimary || draft.isPrimary}
           onChange={(v) => set('isPrimary', v)}
           disabled={alreadyPrimary}

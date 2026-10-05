@@ -19,6 +19,11 @@
 --   * every family that has contacts has exactly one main contact, and the main contact has an email address;
 --   * a contact who can sign in has an email address, and a sign-in email belongs to one family only;
 --   * one login is linked to at most one contact (family_contacts.profile_id).
+-- Exception: a family with no families.email (and no parent login) gets no contact from the backfill, because the main
+-- contact needs an email address. The first contact added to such a family becomes its main contact, so it must have an
+-- email address; the contact editor says so.
+-- Contacts who cannot sign in (a PA, the family office) are emailed a version of each notice without the app's
+-- instructions or link (contact_email_body). Only the office moves an existing login from one family to another.
 -- Bank details never appear in any notification, email or WhatsApp message.
 
 -- ---------------------------------------------------------------------------
@@ -83,42 +88,77 @@ language sql immutable set search_path = public as $$
 $$;
 
 /**
+ * Whether a login may be moved from one family to another here: only by the office, or by the server itself (no
+ * signed-in user, for example while a new login is being set up). A parent adding a contact never moves somebody
+ * else's existing login into their family; they are asked to contact the office instead.
+ */
+create function public.contact_may_move_login() returns boolean
+language sql stable security definer set search_path = public as $$
+  select auth.uid() is null or public.is_admin()
+$$;
+
+/**
  * Whether another family's sign-in contact with this email may give the email up. It may when its family is archived,
  * or when it is a login sitting alone in an empty prospect family (no children, no other parent login): for example an
  * Apple private-relay login that was given its own prospect family before the office added the relay address to the
- * right family. The login then moves (see contact_link_existing_login) and the empty prospect family is archived.
+ * right family. The login then moves (see release_login_email) and the empty prospect family is archived. A contact
+ * with a login only gives it up when p_move_login (the office or the server is making the change).
  */
-create function public.contact_login_releasable(c public.family_contacts) returns boolean
+create function public.contact_login_releasable(c public.family_contacts, p_move_login boolean) returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce((
-    select f.status = 'archived'
-      or (f.status = 'prospect' and c.profile_id is not null
+    select (f.status = 'archived' and (c.profile_id is null or p_move_login))
+      or (f.status = 'prospect' and c.profile_id is not null and p_move_login
           and not exists (select 1 from public.students st where st.family_id = f.id)
           and not exists (select 1 from public.profiles p where p.family_id = f.id and p.role = 'parent' and p.id <> c.profile_id))
     from public.families f where f.id = c.family_id), false)
 $$;
 
-/** True when another family has a sign-in contact with this email that cannot give it up. */
+/** True when another family has a sign-in contact with this email that cannot give it up to whoever is asking. */
 create function public.login_email_taken(p_email text, p_family_id uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.family_contacts c
     where c.email = lower(btrim(p_email)) and c.can_log_in and c.family_id <> p_family_id
-      and not public.contact_login_releasable(c))
+      and not public.contact_login_releasable(c, public.contact_may_move_login()))
 $$;
 
-/** Free a sign-in email held by another family's contact that may give it up (see contact_login_releasable). */
+/**
+ * Free a sign-in email held by another family's contact that may give it up (see contact_login_releasable). When a
+ * login moves out of an empty prospect family, its owner is told which family they now belong to, and the office is
+ * told that the sign-in moved, so a mistaken address is noticed at once.
+ */
 create function public.release_login_email(p_email text, p_family_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare c public.family_contacts; f public.families;
+declare c public.family_contacts; f public.families; to_fam public.families; pr public.profiles; first_name text;
+  may_move boolean := public.contact_may_move_login();
 begin
   for c in select * from public.family_contacts
            where email = lower(btrim(p_email)) and can_log_in and family_id <> p_family_id for update loop
-    if public.contact_login_releasable(c) then
+    if public.contact_login_releasable(c, may_move) then
       select * into f from public.families where id = c.family_id;
       -- Revoking the sign-in also unlinks the login (family_contacts_revoke); the new contact links it again.
       update public.family_contacts set can_log_in = false where id = c.id;
-      if f.status = 'prospect' then update public.families set status = 'archived' where id = f.id; end if;
+      if f.status = 'prospect' then
+        update public.families set status = 'archived' where id = f.id;
+        select * into to_fam from public.families where id = p_family_id;
+        pr := null;
+        select * into pr from public.profiles where id = c.profile_id;
+        if pr.id is not null then
+          first_name := coalesce(nullif(public.whatsapp_first_name(coalesce(pr.full_name, c.name)), ''), 'there');
+          perform public.notify(pr.id, pr.email, 'Your Elite Education account',
+            'Dear ' || first_name || ',' || E'\n\n'
+              || 'The Elite Education office has linked your sign-in to the ' || to_fam.name || ' family''s account. '
+              || 'You will now see lessons, progress and messages for the family. If you did not expect this, please reply '
+              || 'to this email and the office will look into it straight away.'
+              || E'\n\nElite Education | eliteeducation.me',
+            'Account linked', 'Your sign-in is now linked to the ' || to_fam.name || ' family', '/', true);
+        end if;
+        perform public.notify_admins('Sign-in moved: ' || to_fam.name,
+          c.name || ' (' || c.email || ') already had a sign-in in the prospect family ' || f.name
+            || '. The sign-in has moved to the ' || to_fam.name || ' family, and the prospect family has been archived.',
+          'Sign-in moved', c.name || ' moved to the ' || to_fam.name || ' family', '/manage/family-edit?id=' || p_family_id);
+      end if;
     end if;
   end loop;
 end $$;
@@ -165,7 +205,8 @@ end $$;
 -- 2. Backfill
 -- ---------------------------------------------------------------------------
 
--- One main contact per family from parent_name/email/phone. Where several families share an email, only one of them
+-- One main contact per family from parent_name/email/phone (families without an email get none: see the header).
+-- Where several families share an email, only one of them
 -- keeps it as a sign-in: the family with a matching parent login, then any parent login, then active, then the oldest.
 insert into public.family_contacts (family_id, name, relationship, email, phone, can_log_in, is_primary, created_at)
 select f.id,
@@ -230,8 +271,10 @@ create trigger family_contacts_sync_family after insert or update on public.fami
 
 /**
  * A contact who can sign in: link any confirmed login with that email (as link_existing_login did for families.email).
- * A login sitting alone in an empty prospect family (or with no family at all) moves to this family; the empty prospect
- * family is archived, never deleted. This is how Apple private-relay addresses are added: as a sign-in contact.
+ * A login with no family at all joins this family. A login sitting alone in an empty prospect family moves here only
+ * when the office makes the change (contact_may_move_login); the empty prospect family is archived, never deleted, and
+ * both the login's owner and the office are told (release_login_email). This is how Apple private-relay addresses are
+ * added: as a sign-in contact.
  */
 create function public.contact_link_existing_login() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -249,7 +292,8 @@ begin
       if p.family_id is not null then select * into old_fam from public.families where id = p.family_id; end if;
       if p.family_id is null then
         update public.profiles set family_id = new.family_id, full_name = new.name where id = p.id;
-      elsif old_fam.status = 'prospect' and not exists (select 1 from public.students where family_id = old_fam.id) then
+      elsif old_fam.status = 'prospect' and public.contact_may_move_login()
+            and not exists (select 1 from public.students where family_id = old_fam.id) then
         update public.profiles set family_id = new.family_id, full_name = new.name where id = p.id;
         update public.families set status = 'archived' where id = old_fam.id;
       end if;
@@ -621,6 +665,10 @@ begin
     raise exception 'Another contact in this family already uses that email address.';
   end if;
   if v_login and public.login_email_taken(v_email, p_family_id) then
+    if not is_adm and exists (select 1 from public.family_contacts o where o.email = v_email and o.can_log_in
+        and o.family_id <> p_family_id and public.contact_login_releasable(o, true)) then
+      raise exception 'That email address already has an Elite Education account. Please ask the office to add this contact for you.';
+    end if;
     raise exception 'That email address already signs in to another family. Please use a different address.';
   end if;
   if not is_adm then
@@ -656,12 +704,17 @@ begin
     returning id into result;
   end if;
 
-  -- Someone newly able to sign in who has no login yet is invited by email. Never bank details.
+  if not is_adm then select * into me from public.profiles where id = auth.uid(); end if;
+  -- Someone newly able to sign in who has no login yet is invited by email, naming who gave them access so the
+  -- invitation is not mistaken for phishing. Never bank details.
   if new_login and not exists (select 1 from auth.users where lower(email) = v_email and email_confirmed_at is not null) then
     first_name := coalesce(nullif(public.whatsapp_first_name(v_name), ''), v_name);
     perform public.notify(null, v_email, 'Your access to Elite Education',
       'Dear ' || first_name || ',' || E'\n\n'
-        || 'You have been given access to the ' || fam.name || ' family''s account with Elite Education. Please download the '
+        || case when is_adm or nullif(btrim(me.full_name), '') is null
+             then 'The Elite Education office has given you access to the ' || fam.name || ' family''s account.'
+             else btrim(me.full_name) || ' has given you access to the ' || fam.name || ' family''s account with Elite Education.'
+           end || ' Please download the '
         || 'Elite Education app, or open it on the web, and sign in or create an account with this email address ('
         || v_email || '). You will then see lessons, progress and messages for the family.'
         || E'\n\nElite Education | eliteeducation.me',
@@ -669,7 +722,6 @@ begin
   end if;
 
   if not is_adm then
-    select * into me from public.profiles where id = auth.uid();
     perform public.notify_admins('Family contacts updated: ' || fam.name,
       coalesce(me.full_name, 'A parent') || case when cur.id is null then ' added ' else ' updated ' end || v_name
         || ' (' || public.contact_relationship_label(v_rel) || ') for the ' || fam.name || ' family.',
@@ -742,8 +794,42 @@ language sql immutable set search_path = public as $$
 $$;
 
 /**
+ * The email sent to a contact who cannot sign in (a PA, the family office, a relative): the same notice without the
+ * app's instructions, which they cannot follow, and without "your card" (it is the family's), followed by a line saying
+ * why they received it and how to view or pay online. Amounts, invoice numbers and due dates in the notice are kept.
+ * Never bank details.
+ */
+create function public.contact_email_body(p_body text, p_family_name text, p_kind text) returns text
+language plpgsql immutable set search_path = public as $$
+declare
+  b text := coalesce(p_body, '');
+  app text := '(Elite Education app|in the app|Billing tab|Manage cards)';
+begin
+  -- "…automatically; you can pay them in the Billing tab…, and …." ends the sentence at the semicolon.
+  b := regexp_replace(b, ';\s*(you can|you may|please)\M[^.\n]*' || app || '[^.\n]*\.', '.', 'gi');
+  -- Sentences that tell the reader to do something in the app ("You can view and pay it in the Elite Education app.").
+  b := regexp_replace(b, '\s*\m(you can|you may|please|your receipt is|reply|express interest)\M[^.\n]*' || app || '[^.\n]*\.',
+    '', 'gi');
+  -- "is ready to read in the Elite Education app" and "is now available in the Elite Education app" read without it.
+  b := regexp_replace(b, '\s+(to read\s+)?in the Elite Education app', '', 'g');
+  b := replace(b, 'from your saved ', 'from the family''s saved ');
+  b := replace(b, 'using your saved card', 'using the family''s saved card');
+  b := replace(b, 'to your account', 'to the family''s account');
+  b := regexp_replace(b, '^Your payment ', 'The family''s payment ');
+  b := btrim(b, E' \n');
+  return b || case when b = '' then '' else E'\n\n' end
+    || 'You are receiving this as a contact of the ' || coalesce(nullif(btrim(p_family_name), ''), 'client') || ' family. '
+    || case when p_kind = 'invoices'
+         then 'To view or pay online, please ask the family to give you sign-in access, or reply to this email and the office will be glad to assist.'
+         else 'To see this online, please ask the family to give you sign-in access, or reply to this email and the office will be glad to assist.'
+       end;
+end $$;
+
+/**
  * Notify a family's contacts who receive this kind of notice, main contact first: a contact with a login in the family
- * by push and email to their login, anyone else by email. Nobody is sent the same notice twice (by login or by email).
+ * by push and email to their login, anyone else by email. A contact who cannot sign in gets the email-only wording
+ * (contact_email_body) with no link into the app; a sign-in contact who has not created their login yet gets the notice
+ * as written, since they can sign in. Nobody is sent the same notice twice (by login or by email).
  * Parent logins not linked to any contact still receive everything; a family with no contacts at all falls back to
  * families.email when nobody has logged in, as before.
  */
@@ -755,6 +841,7 @@ declare
   c public.family_contacts; pr public.profiles; fam public.families;
   seen_profiles uuid[] := '{}'; seen_emails text[] := '{}'; any_contact boolean := false;
 begin
+  select * into fam from public.families where id = p_family_id;
   for c in select * from public.family_contacts where family_id = p_family_id order by is_primary desc, created_at, id loop
     any_contact := true;
     if not public.contact_receives(c, p_kind) then continue; end if;
@@ -769,7 +856,12 @@ begin
       seen_emails := seen_emails || lower(pr.email);
     elsif c.email is not null then
       if c.email = any (seen_emails) then continue; end if;
-      perform public.notify(null, c.email, p_subject, p_body, null, null, p_url, p_send_email);
+      if c.can_log_in then
+        perform public.notify(null, c.email, p_subject, p_body, null, null, p_url, p_send_email);
+      else
+        perform public.notify(null, c.email, p_subject, public.contact_email_body(p_body, fam.name, p_kind), null, null, null,
+          p_send_email);
+      end if;
       seen_emails := seen_emails || c.email;
     end if;
   end loop;
@@ -785,7 +877,6 @@ begin
   end loop;
 
   if not any_contact and cardinality(seen_profiles) = 0 then
-    select * into fam from public.families where id = p_family_id;
     if fam.email is not null then
       perform public.notify(null, fam.email, p_subject, p_body, null, null, p_url, p_send_email);
     end if;
@@ -916,7 +1007,8 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 revoke all on function public.contact_whatsapp_number(text), public.contact_relationship_label(text),
-  public.contact_login_releasable(public.family_contacts), public.login_email_taken(text, uuid),
+  public.contact_may_move_login(), public.contact_login_releasable(public.family_contacts, boolean),
+  public.login_email_taken(text, uuid), public.contact_email_body(text, text, text),
   public.release_login_email(text, uuid), public.link_parent_profile(public.profiles),
   public.family_contacts_before(), public.family_contacts_sync_family(), public.contact_link_existing_login(),
   public.family_contacts_revoke(), public.family_contacts_name_to_profile(), public.family_contacts_whatsapp_off(),

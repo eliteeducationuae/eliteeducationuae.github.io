@@ -136,7 +136,7 @@ select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
   '{"name":"Rana Haddad","relationship":"mother","email":" Rana@x.ae ","can_log_in":true}');
 select pg_temp.check((select count(*) from public.notification_outbox where email = 'rana@x.ae' and profile_id is null
   and subject = 'Your access to Elite Education' and url = '/sign-in'
-  and body = E'Dear Rana,\n\nYou have been given access to the Haddad family''s account with Elite Education. Please download the '
+  and body = E'Dear Rana,\n\nThe Elite Education office has given you access to the Haddad family''s account. Please download the '
     || 'Elite Education app, or open it on the web, and sign in or create an account with this email address (rana@x.ae). '
     || E'You will then see lessons, progress and messages for the family.\n\nElite Education | eliteeducation.me') = 1,
   'a new sign-in contact without a login is invited by email');
@@ -174,6 +174,14 @@ select pg_temp.check((pg_temp.contact('zz@privaterelay.appleid.com')).profile_id
   'the relay contact is linked and the archived family''s contact no longer signs in');
 select pg_temp.check(not exists (select 1 from public.notification_outbox where email = 'zz@privaterelay.appleid.com'
   and subject = 'Your access to Elite Education'), 'a contact who already has a login is not invited');
+select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-000000000014'
+  and subject = 'Your Elite Education account' and url = '/'
+  and body like E'Dear %,\n\nThe Elite Education office has linked your sign-in to the Haddad family''s account. %') = 1,
+  'the owner of a moved login is told which family they now belong to');
+select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-00000000000a'
+  and subject = 'Sign-in moved: Haddad' and body like '% (zz@privaterelay.appleid.com) already had a sign-in in the prospect family %'
+  || 'The sign-in has moved to the Haddad family, and the prospect family has been archived.') = 1,
+  'the office is told that a sign-in moved out of a prospect family');
 
 -- (e) A sign-in email belongs to one family -------------------------------------------------------------------------
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
@@ -223,10 +231,18 @@ insert into public.invoices (id, number, family_id, issue_date, due_date, status
   ('10000000-0000-0000-0000-000000000001', 'INV-9001', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-15', 'draft',
    '[{"description":"Lessons","quantity":2,"unitPrice":450}]');
 update public.invoices set status = 'sent' where id = '10000000-0000-0000-0000-000000000001';
-select pg_temp.check(pg_temp.recipients('/invoice/10000000-0000-0000-0000-000000000001') = 'layla@x,omar@x,pa@x.ae,rana@x.ae',
-  'an invoice reaches the contacts who receive invoices: the PA by email, not the father who opted out');
-select pg_temp.check((select bool_and(push_title is null and profile_id is null) from public.notification_outbox
-  where email = 'pa@x.ae' and url = '/invoice/10000000-0000-0000-0000-000000000001'), 'a contact without a login gets email only');
+select pg_temp.check(pg_temp.recipients('/invoice/10000000-0000-0000-0000-000000000001') = 'layla@x,omar@x,rana@x.ae',
+  'an invoice reaches the sign-in contacts who receive invoices, not the father who opted out');
+select pg_temp.check((select count(*) from public.notification_outbox where email = 'pa@x.ae' and not whatsapp
+  and subject = 'Invoice INV-9001 from ' || (select business_name from public.settings where id = 1)
+  and push_title is null and profile_id is null and url is null and send_email
+  and body = E'A new invoice for AED 900.00 is due by 15 Oct 2026.\n\nYou are receiving this as a contact of the Haddad family. '
+    || 'To view or pay online, please ask the family to give you sign-in access, or reply to this email and the office will '
+    || 'be glad to assist.') = 1,
+  'a PA who cannot sign in gets the invoice by email only: amount and due date, no app link and no app instructions');
+select pg_temp.check(not exists (select 1 from public.notification_outbox where email = 'pa@x.ae'
+  and (url is not null or body ilike '%in the app%' or body ilike '%Elite Education app%')),
+  'nothing sent to a contact without a sign-in tells them to use the app');
 select pg_temp.check((select count(*) from public.notification_outbox where whatsapp and profile_id = 'a0000000-0000-0000-0000-000000000011'
   and whatsapp_template = 'invoice_sent' and url = '/invoice/10000000-0000-0000-0000-000000000001') = 1,
   'a linked contact gets WhatsApp through their own opt-in');
@@ -258,6 +274,37 @@ update public.invoices set status = 'paid' where id = '10000000-0000-0000-0000-0
 select pg_temp.check((select whatsapp_status from public.notification_outbox where whatsapp
   and contact_id = pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Ali Haddad')
   and url = '/invoice/10000000-0000-0000-0000-000000000002') = 'skipped', 'paying the invoice skips a contact''s held WhatsApp');
+
+-- The email-only wording for each kind of family notice a contact without a sign-in can receive
+select pg_temp.check(public.contact_email_body('A new invoice for AED 900.00 is ready in the Elite Education app. As autopay is on, '
+    || 'it will be paid automatically from your saved Visa ending 4242. There is nothing you need to do; we will let you know if '
+    || 'the payment does not go through.', 'Haddad', 'invoices')
+  = 'A new invoice for AED 900.00 is ready. As autopay is on, it will be paid automatically from the family''s saved Visa ending 4242. '
+    || 'There is nothing you need to do; we will let you know if the payment does not go through.'
+    || E'\n\nYou are receiving this as a contact of the Haddad family. To view or pay online, please ask the family to give you '
+    || 'sign-in access, or reply to this email and the office will be glad to assist.',
+  'an autopay invoice reads "the family''s saved card" and is not "in the app"');
+select pg_temp.check(public.contact_email_body('We tried to take AED 450.00 for invoice INV-1 using your saved card, but the payment '
+    || 'did not go through: your card has expired. Please update your card with Manage cards in the Billing tab, or pay the invoice '
+    || 'in the Elite Education app.', 'Haddad', 'invoices')
+  like 'We tried to take AED 450.00 for invoice INV-1 using the family''s saved card, but the payment did not go through: your card has expired.' || E'\n\nYou are receiving%',
+  'a failed autopay notice drops the in-app instructions');
+select pg_temp.check(public.contact_email_body('As there is no longer a card saved to your account, autopay has been switched off. '
+    || 'New invoices will not be charged automatically; you can pay them in the Billing tab of the Elite Education app, and switch '
+    || 'autopay on again once a card is saved.', 'Haddad', 'invoices')
+  like 'As there is no longer a card saved to the family''s account, autopay has been switched off. New invoices will not be charged '
+    || E'automatically.\n\nYou are receiving%', 'the autopay-off notice ends where the app instructions began');
+select pg_temp.check(public.contact_email_body('Sami''s Autumn report is ready to read in the Elite Education app.', 'Haddad', 'reports')
+  = E'Sami''s Autumn report is ready.\n\nYou are receiving this as a contact of the Haddad family. To see this online, please ask '
+    || 'the family to give you sign-in access, or reply to this email and the office will be glad to assist.',
+  'a report notice is "ready", not "ready to read in the app"');
+select pg_temp.check(public.contact_email_body(E'Sami has been set "Vectors". Due Friday.\n\nYou can view the details and any '
+    || 'attached materials in the Elite Education app.', 'Haddad', 'lesson_notes')
+  like E'Sami has been set "Vectors". Due Friday.\n\nYou are receiving%', 'a homework notice drops the app instructions');
+select pg_temp.check(public.contact_email_body('Your payment of AED 4,500.00 has been received and 10 lessons have been added to your '
+    || 'account. Your receipt is in the Billing tab of the Elite Education app.', 'Haddad', 'invoices')
+  like 'The family''s payment of AED 4,500.00 has been received and 10 lessons have been added to the family''s account.'
+    || E'\n\nYou are receiving%', 'a lessons-bought receipt is addressed to the family');
 
 -- A report (published reports link to /parent/progress)
 select public.notify_family('c0000000-0000-0000-0000-000000000001', 'Autumn report for Sami', 'Sami''s Autumn report is ready.',
@@ -372,7 +419,26 @@ select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
   '{"name":"Hana Haddad","relationship":"guardian","email":"hana@x.ae","can_log_in":true}');
 reset role;
 select pg_temp.check(exists (select 1 from public.notification_outbox where email = 'hana@x.ae'
-  and subject = 'Your access to Elite Education' and body like 'Dear Hana,%'), 'a parent''s new sign-in contact is invited');
+  and subject = 'Your access to Elite Education'
+  and body like E'Dear Hana,\n\nRana Haddad has given you access to the Haddad family''s account with Elite Education. Please %'),
+  'a parent''s new sign-in contact is invited, naming the parent who gave them access');
+
+-- A parent never moves somebody else's existing login into their family; the office does that.
+reset role;
+insert into auth.users (id, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data) values
+  ('a0000000-0000-0000-0000-000000000016', 'stranger@privaterelay.appleid.com', now(), '{"provider":"apple"}', '{}');
+select family_id as stranger_fam from public.profiles where id = 'a0000000-0000-0000-0000-000000000016' \gset
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
+select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Typo Contact","email":"stranger@privaterelay.appleid.com","can_log_in":true}')$$,
+  'That email address already has an Elite Education account. Please ask the office to add this contact for you.',
+  'a parent cannot pull another person''s login into their family');
+reset role;
+select pg_temp.check((select family_id from public.profiles where id = 'a0000000-0000-0000-0000-000000000016') = :'stranger_fam'
+  and (select status from public.families where id = :'stranger_fam') = 'prospect',
+  'the other login and its prospect family are left untouched');
+set role authenticated;
 
 set role authenticated;
 select pg_temp.raises($$select public.remove_family_contact(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Layla Haddad'))$$,
