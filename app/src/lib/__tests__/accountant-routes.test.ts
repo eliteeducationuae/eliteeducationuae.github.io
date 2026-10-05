@@ -5,7 +5,7 @@ jest.mock('@/data/session', () => ({ useSession: () => undefined }));
 
 describe('isAccountantRoute', () => {
   it('allows the books', () => {
-    for (const r of ['/accountant', '/accountant/invoices', '/accountant/vat', '/invoice/inv-1', '/credit-note/cn-1', '/manage/vat', '/manage/money']) {
+    for (const r of ['/accountant', '/accountant/invoices', '/accountant/vat', '/invoice/inv-1', '/credit-note/cn-1', '/manage/vat', '/manage/money', '/account-delete']) {
       expect(isAccountantRoute(r)).toBe(true);
     }
   });

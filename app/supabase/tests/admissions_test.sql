@@ -236,11 +236,9 @@ select pg_temp.check((select count(*) from public.admissions_events where kind =
 set role authenticated;
 
 -- Documents ----------------------------------------------------------------------------
--- A stand-in for Supabase Storage's objects table, so the "family lists only their own uploads" rule is exercised.
+-- Uploaded files in the test shim's Supabase Storage, so the "family lists only their own uploads" rule is exercised.
 reset role;
-create schema storage;
-create table storage.objects (bucket_id text, name text, owner_id text);
-insert into storage.objects values
+insert into storage.objects (bucket_id, name, owner_id) values
   ('admissions', 'cases/' || (select id from ids where k = 'case') || '/report.pdf', 'a0000000-0000-0000-0000-00000000000c'),
   ('admissions', 'cases/' || (select id from ids where k = 'case') || '/ref.pdf', 'a0000000-0000-0000-0000-0000000000b2'),
   ('admissions', 'cases/' || (select id from ids where k = 'case') || '/staff-only.pdf', 'a0000000-0000-0000-0000-0000000000b2');
@@ -355,14 +353,9 @@ select pg_temp.check(public.delete_admissions_document((select id from ids where
   'a file another document still uses is kept');
 -- The adviser deletes a document the office uploaded: the stored file goes too (same rule as the "admissions delete" policy).
 reset role;
-insert into storage.objects values
+-- The migration's own "admissions read" and "admissions delete" policies apply (the test shim provides Storage).
+insert into storage.objects (bucket_id, name, owner_id) values
   ('admissions', 'cases/' || (select id from ids where k = 'case') || '/office.pdf', 'a0000000-0000-0000-0000-00000000000a');
-alter table storage.objects enable row level security;
-create policy "admissions select" on storage.objects for select to authenticated using (true);
-create policy "admissions delete" on storage.objects for delete to authenticated
-  using (bucket_id = 'admissions' and public.admissions_can_remove(name, owner_id));
-grant usage on schema storage to authenticated;
-grant select, delete on storage.objects to authenticated;
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 insert into ids select 'odoc', (public.add_admissions_document((select id from ids where k = 'case'), null, 'reference', 'Confidential reference',

@@ -272,8 +272,9 @@ create trigger lessons_handover after update of tutor_id on public.lessons
   for each row when (old.tutor_id is distinct from new.tutor_id and new.status = 'scheduled')
   execute function public.on_lesson_tutor_changed();
 
--- b) Reassigned: an active enrolment moves from one tutor to another.
-create function public.on_enrolment_tutor_changed() returns trigger
+-- b) Reassigned: an active enrolment moves from one tutor to another. (Named on_enrolment_handover so it does not
+--    replace the rates migration's on_enrolment_tutor_changed, which clears the previous tutor's custom pay.)
+create function public.on_enrolment_handover() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   perform public.create_handover('reassigned', new.student_id, new.subject, new.id, null, null, old.tutor_id, new.tutor_id);
@@ -282,7 +283,7 @@ end $$;
 create trigger enrolments_handover after update of tutor_id on public.enrolments
   for each row when (old.tutor_id is not null and new.tutor_id is not null
                      and old.tutor_id is distinct from new.tutor_id and new.active)
-  execute function public.on_enrolment_tutor_changed();
+  execute function public.on_enrolment_handover();
 
 -- c) Awarded: a role with a named student goes to a tutor.
 create function public.on_opportunity_awarded() returns trigger
@@ -302,7 +303,7 @@ create trigger opportunities_handover after update on public.opportunities
                      and new.student_id is not null and new.awarded_tutor_id is not null)
   execute function public.on_opportunity_awarded();
 
-revoke all on function public.on_lesson_tutor_changed(), public.on_enrolment_tutor_changed(),
+revoke all on function public.on_lesson_tutor_changed(), public.on_enrolment_handover(),
   public.on_opportunity_awarded() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------

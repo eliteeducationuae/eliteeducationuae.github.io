@@ -100,6 +100,9 @@ export const AUDIT_TYPE_GROUPS: readonly { key: string; label: string; tables: s
   { key: 'homework', label: 'Homework', tables: ['homework'] },
   { key: 'reports', label: 'Reports', tables: ['student_reports'] },
   { key: 'settings', label: 'Settings and services', tables: ['settings', 'services'] },
+  { key: 'tax', label: 'Credit notes and refunds', tables: ['credit_notes', 'refunds', 'accountant_invites'] },
+  { key: 'vetting', label: 'Tutor checks', tables: ['tutor_documents', 'tutor_vetting_overrides'] },
+  { key: 'contacts', label: 'Contacts and admissions', tables: ['family_contacts', 'admissions_cases'] },
 ];
 
 /**
@@ -418,6 +421,21 @@ const TABLE_NAMES: Record<string, string> = {
   lesson_notes: 'lesson notes',
   tutor_invoices: 'tutor invoices',
   student_reports: 'student reports',
+  family_contacts: 'family contacts',
+  enrolment_tutor_pay: 'custom tutor pay',
+  enrolment_family_price: 'agreed family prices',
+  credit_notes: 'credit notes',
+  refunds: 'refunds',
+  accountant_invites: 'accountant access',
+  admissions_cases: 'admissions cases',
+  tutor_documents: 'tutor documents',
+  tutor_vetting_overrides: 'tutor check overrides',
+};
+
+const DOCUMENT_TYPES: Record<string, string> = {
+  police_clearance: 'a police clearance certificate',
+  passport_id: 'a passport or Emirates ID',
+  qualification: 'a qualification',
 };
 
 function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; omit: string[] } {
@@ -591,6 +609,57 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
       }
       return done(`${who} updated the role${title}.`);
     }
+    case 'credit_notes': {
+      const num = str('number');
+      const total = typeof row.total === 'number' ? ` for ${formatAED(row.total)}` : '';
+      if (e.action === 'insert') return done(`${who} issued credit note${num ? ` ${num}` : ''}${total}.`);
+      return done(`${who} updated credit note${num ? ` ${num}` : ''}.`);
+    }
+    case 'refunds': {
+      const amount = typeof row.amount === 'number' ? ` of ${formatAED(row.amount)}` : '';
+      if (e.action === 'insert') return done(`${who} recorded a refund${amount}.`);
+      if (changed('status')) {
+        const s = to('status');
+        if (s === 'succeeded') return done(`${who} confirmed a refund${amount}.`, ['status', 'settled_at']);
+        if (s === 'failed') return done(`${who} recorded that a refund${amount} failed.`, ['status', 'settled_at']);
+      }
+      return done(`${who} updated a refund${amount}.`);
+    }
+    case 'accountant_invites': {
+      const name = str('full_name') ?? str('email');
+      const them = name ? ` ${name}` : ' an accountant';
+      if (e.action === 'insert') return done(`${who} invited${them} to read the accounts.`);
+      if (e.action === 'delete') return done(`${who} removed accountant access for${them}.`);
+      if (changed('accepted_at')) return done(`${name ?? 'The accountant'} accepted the invitation to read the accounts.`, ['accepted_at']);
+      return done(`${who} updated accountant access for${them}.`);
+    }
+    case 'admissions_cases': {
+      const title = quoted(str('title'));
+      if (e.action === 'insert') return done(`${who} opened the admissions case${title}.`);
+      if (e.action === 'delete') return done(`${who} removed the admissions case${title}.`);
+      if (changed('status')) return done(`${who} marked the admissions case${title} as ${humanise(to('status') ?? 'updated').toLowerCase()}.`, ['status']);
+      return done(`${who} updated the admissions case${title}.`);
+    }
+    case 'tutor_documents': {
+      const doc = DOCUMENT_TYPES[str('doc_type') ?? ''] ?? 'a document';
+      const tutor = e.tutorId ? names.tutor(e.tutorId) : undefined;
+      const forTutor = tutor ? ` for ${tutor}` : '';
+      if (e.action === 'insert') return done(`${who} uploaded ${doc}${forTutor}.`);
+      if (e.action === 'delete') return done(`${who} removed ${doc}${forTutor}.`);
+      if (changed('status')) {
+        const s = to('status');
+        if (s === 'verified') return done(`${who} verified ${doc}${forTutor}.`, ['status', 'verified_at', 'verified_by', 'verified_by_name']);
+        if (s === 'rejected') return done(`${who} rejected ${doc}${forTutor}.`, ['status']);
+      }
+      return done(`${who} updated ${doc}${forTutor}.`);
+    }
+    case 'tutor_vetting_overrides': {
+      const tutor = e.tutorId ? names.tutor(e.tutorId) : undefined;
+      const forTutor = tutor ? ` for ${tutor}` : '';
+      if (e.action === 'insert') return done(`${who} allowed new work${forTutor} before their checks are complete.`);
+      if (changed('revoked_at') && a.revoked_at) return done(`${who} withdrew the permission to assign new work${forTutor}.`, ['revoked_at', 'revoked_by', 'revoked_by_name']);
+      return done(`${who} updated the check override${forTutor}.`);
+    }
     default: {
       const place = TABLE_NAMES[e.table] ?? humanise(e.table).toLowerCase();
       if (e.action === 'insert') return done(`${who} added a record to ${place}.`);
@@ -603,7 +672,7 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
 /** Tables whose events are about one or more students' lessons or subjects. */
 const STUDENT_CONTEXT = new Set(['lessons', 'lesson_notes', 'homework', 'student_reports', 'charges', 'enrolment_tutor_pay', 'enrolment_family_price']);
 /** Tables whose events are about a family's account. */
-const FAMILY_CONTEXT = new Set(['invoices', 'payments', 'packages', 'family_contacts']);
+const FAMILY_CONTEXT = new Set(['invoices', 'payments', 'packages', 'family_contacts', 'credit_notes', 'refunds', 'admissions_cases']);
 
 /**
  * Which record an event is about, for when its summary doesn't say: the students, subject and lesson day for

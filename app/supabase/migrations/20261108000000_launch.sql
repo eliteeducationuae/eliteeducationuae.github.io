@@ -46,8 +46,18 @@ insert into public.db_migrations (version, name) values
   ('20261010000000', 'payments'),
   ('20261011000000', 'whatsapp'),
   ('20261012000000', 'invoice_notifications'),
-  ('20261012010000', 'classwork_security')
+  ('20261012010000', 'classwork_security'),
+  ('20261013000000', 'review_fixes'),
+  ('20261014000000', 'round4_qa_fixes'),
+  ('20261101000000', 'viewas'),
+  ('20261102000000', 'rates'),
+  ('20261103000000', 'contacts'),
+  ('20261104000000', 'audit'),
+  ('20261105000000', 'tax'),
+  ('20261106000000', 'admissions'),
+  ('20261107000000', 'vetting')
 on conflict (version) do nothing;
+-- The migrations after this one (spam, handover and the round 5 merge) are recorded by 20261111000000_round5_merge.sql.
 
 /**
  * Every applied migration: the ledger above, together with the Supabase CLI's own record
@@ -1059,4 +1069,4 @@ begin
   end if;
 end $$;
 
-select public.record_migration('20261020000000', 'launch');
+select public.record_migration('20261108000000', 'launch');

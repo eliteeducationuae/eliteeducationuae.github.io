@@ -327,7 +327,15 @@ export const ho = {
   },
 
   /** After a role for a known student is awarded: a handover to the winning tutor. */
-  afterAward(db: DemoDB, opportunityId: string, now = new Date()): Handover | null {
+  /**
+   * The subject's tutor before a bid is awarded. Awarding (rates) moves the enrolment to the winner straight away, so
+   * the handover's previous tutor is read first, as the database trigger sees it before award_opportunity's enrolment update.
+   */
+  tutorBeforeAward(db: DemoDB, bidId: string): string | undefined {
+    const o = db.opportunities.find((x) => x.id === db.bids.find((b) => b.id === bidId)?.opportunityId);
+    return o?.studentId && o.subject ? enrolmentFor(db.enrolments, o.studentId, o.subject)?.tutorId : undefined;
+  },
+  afterAward(db: DemoDB, opportunityId: string, now = new Date(), previousTutorId?: string): Handover | null {
     const o = db.opportunities.find((x) => x.id === opportunityId);
     if (!o || o.status !== 'awarded' || !o.studentId || !o.awardedTutorId) return null;
     const enrolment = o.subject ? enrolmentFor(db.enrolments, o.studentId, o.subject) : undefined;
@@ -339,7 +347,7 @@ export const ho = {
         subject: o.subject ?? enrolment?.subject,
         enrolmentId: enrolment?.id,
         opportunityId: o.id,
-        fromTutorId: enrolment?.tutorId,
+        fromTutorId: previousTutorId ?? enrolment?.tutorId,
         toTutorId: o.awardedTutorId,
       },
       now,

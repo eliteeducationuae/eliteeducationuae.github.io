@@ -163,8 +163,9 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     listViewTargets: () =>
       read((d, v) => {
         requireAdmin(v);
+        // Only parents, students and tutors can be viewed (an accountant cannot), as begin_view_as requires.
         return d.profiles
-          .filter((p) => p.role !== 'admin')
+          .filter((p) => p.role === 'parent' || p.role === 'student' || p.role === 'tutor')
           .map(
             (p): ViewTarget => ({
               profileId: p.id,
@@ -372,10 +373,11 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     withdrawBid: (id) => write((d, v) => ops.withdrawBid(d, v, id)),
     awardOpportunity: (bidId) =>
       write((d, v) => {
+        const previousTutorId = ho.tutorBeforeAward(d, bidId);
         ops.awardOpportunity(d, v, bidId);
         // Session plans and handover packs: the winning tutor gets a handover when the role is for a known student.
         const opportunityId = d.bids.find((b) => b.id === bidId)?.opportunityId;
-        if (opportunityId) ho.afterAward(d, opportunityId);
+        if (opportunityId) ho.afterAward(d, opportunityId, new Date(), previousTutorId);
       }),
     async submitTutorApplication(a) {
       const d = await load();

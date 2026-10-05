@@ -19,6 +19,7 @@ import {
   refundNeedsLookup,
 } from '../_shared/stripe.ts';
 import { stripe, type StripeResult } from '../_shared/stripe-api.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 
 const NO_KEY = 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).';
 const UNREACHABLE = 'Stripe could not be reached. The refund will update automatically, or try again in a moment.';
@@ -39,6 +40,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   try {
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
     if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: NO_KEY }, 500);
     const body = await req.json().catch(() => ({}));
     const paymentId = typeof body?.paymentId === 'string' ? body.paymentId : '';

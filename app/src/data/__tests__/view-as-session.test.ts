@@ -125,7 +125,7 @@ describe('startViewAs (demo)', () => {
 
   it('lists the people an admin can view as', async () => {
     const targets = await source.listViewTargets!();
-    expect(targets.map((t) => t.profileId).sort()).toEqual(['u-parent', 'u-student', 'u-tutor']);
+    expect(targets.map((t) => t.profileId).sort()).toEqual(['u-parent', 'u-parent2', 'u-student', 'u-tutor']);
     await signInAs('fatima@example.com');
     await expect(source.listViewTargets!()).rejects.toThrow();
   });

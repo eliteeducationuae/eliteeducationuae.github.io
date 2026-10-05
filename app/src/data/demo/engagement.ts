@@ -148,8 +148,8 @@ export const eq = {
     });
   },
   enquiries(db: DemoDB, viewer: Profile): Enquiry[] {
+    // Enquiries hold the office's staff-only notes, so only administrators read them (as after the round 5 merge).
     if (viewer.role === 'admin') return db.enquiries;
-    if (viewer.role === 'parent') return db.enquiries.filter((e) => e.familyId && e.familyId === viewer.familyId);
     return [];
   },
   /** Mirrors public.set_submission_spam. The demo sends no emails, so the acknowledgement option has nothing to send. */

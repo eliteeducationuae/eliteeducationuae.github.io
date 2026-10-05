@@ -3,6 +3,7 @@ import { creditableLines, planCreditFromGross, planCreditNote, refundableAmount,
 import type { AccountantInvite, CreditNote, Payment, Profile, Refund } from '@/domain/types';
 
 import type { CreditNoteInput, RefundInput } from '../source';
+import { allContacts } from './contacts';
 import {
   AccessError,
   accountantInvitesOf,
@@ -193,7 +194,9 @@ export const tax = {
       const as = profile.role === 'admin' ? 'an administrator' : `a ${profile.role}`;
       throw new Error(`This email address already signs in as ${as}. Please use a different address for the accountant.`);
     }
-    if (!profile && (db.tutors.some((t) => t.email.toLowerCase() === e) || db.families.some((f) => f.email.toLowerCase() === e))) {
+    // Any family contact's address counts, not only a family's main email (as invite_accountant after the round 5 merge).
+    const familyAddress = db.families.some((f) => f.email.toLowerCase() === e) || allContacts(db).some((c) => c.email?.toLowerCase() === e);
+    if (!profile && (db.tutors.some((t) => t.email.toLowerCase() === e) || familyAddress)) {
       throw new Error('This email address belongs to a tutor or a family. Please use a different address for the accountant.');
     }
     const invites = accountantInvitesOf(db);

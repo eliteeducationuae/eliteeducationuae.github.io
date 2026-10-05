@@ -58,6 +58,13 @@ export function snapshotAudited(db: DemoDB): AuditSnapshot {
   snap.set('student_reports', keyed(db.reports, byId, (r) => toRow(r)));
   snap.set('homework', keyed(db.homework, byId, (h) => toRow(h)));
   snap.set('opportunities', keyed(db.opportunities, byId, (o) => toRow(o)));
+  // Round 5 tables recorded by the round 5 merge migration (contacts: by the audit migration).
+  snap.set('family_contacts', keyed(db.familyContacts, byId, (c) => toRow(c, {}, ['hasLogin'])));
+  snap.set('credit_notes', keyed(db.creditNotes, byId, (c) => toRow(c)));
+  snap.set('refunds', keyed(db.refunds, byId, (r) => toRow(r, {}, ['requestKey'])));
+  snap.set('accountant_invites', keyed(db.accountantInvites, (i) => i.email, (i) => toRow(i)));
+  snap.set('tutor_documents', keyed(db.tutorDocuments, byId, (d) => toRow(d, { type: 'doc_type' })));
+  snap.set('tutor_vetting_overrides', keyed(db.vettingOverrides, byId, (o) => toRow(o)));
   return structuredClone(snap);
 }
 
@@ -157,7 +164,13 @@ function deriveLinks(table: string, key: string, row: Row, lookup: (table: strin
     case 'opportunities':
       return { ...none, ...forStudents(uniq([str(row.student_id)])), tutorId: str(row.awarded_tutor_id), relatedIds: uniq([str(row.enquiry_id)]) };
     default:
-      return none;
+      // Tables attached by later migrations: filed under their family, student and tutor columns (as audit_row does).
+      return {
+        ...none,
+        familyIds: uniq([str(row.family_id)]),
+        studentIds: uniq([str(row.student_id)]),
+        tutorId: str(row.tutor_id),
+      };
   }
 }
 

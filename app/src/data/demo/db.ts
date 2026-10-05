@@ -174,7 +174,7 @@ export function notifyTutor(db: DemoDB, tutorId: string, subject: string, body: 
   }
 }
 
-export const DEMO_DB_VERSION = 9;
+export const DEMO_DB_VERSION = 10;
 
 let counter = 0;
 export function newId(prefix: string): string {

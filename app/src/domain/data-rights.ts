@@ -26,7 +26,9 @@ export function deletionConsequences(role: Role): DeletionConsequences {
         removed: [
           'Your login and contact details',
           "Your children's logins and any other parent login for your family",
+          'The other contacts recorded for your family',
           "Your children's profiles",
+          'Admissions advisory records, letters and documents',
           'Lesson notes, homework and submissions',
           'Lesson addresses and meeting links',
           'Your messages with Elite Education',
@@ -34,13 +36,19 @@ export function deletionConsequences(role: Role): DeletionConsequences {
         ],
         kept: [
           'Lesson dates and invoices, without contact details',
-          'Payment records, kept for the period UAE law requires',
+          'Payment records, credit notes and refunds, kept for the period UAE law requires',
         ],
         note: 'Everything else is removed straight away and cannot be recovered.',
       };
     case 'tutor':
       return {
-        removed: ['Your login and contact details', 'Your weekly availability', 'Your bank details', 'Your Google Calendar link'],
+        removed: [
+          'Your login and contact details',
+          'Your weekly availability',
+          'Your bank details',
+          'Your Google Calendar link',
+          'Your police clearance and other vetting documents',
+        ],
         kept: ['Your invoices and lesson history, kept for tax and pay records'],
         note: 'Elite Education will reassign your upcoming lessons to another tutor. Everything else is removed straight away and cannot be recovered.',
       };

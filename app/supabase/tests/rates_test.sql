@@ -246,14 +246,14 @@ select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 select pg_temp.check((select string_agg(amount || '/' || price_source, ',' order by student_id) from public.charges
   where lesson_id = '50000000-0000-0000-0000-000000000003') = '600.00/custom,500.00/custom', 'each student in a group is charged their own price');
 select pg_temp.check((select description from public.charges where lesson_id = '50000000-0000-0000-0000-000000000001')
-  ~ '^IGCSE 1:1 \(Maths\) — Sami Ahmed, \d{4}-\d{2}-\d{2} · 1\.5 hours at the agreed price of AED 600 per hour$',
+  ~ '^IGCSE 1:1 \(Maths\) — Sami Ahmed, \d{1,2} [A-Z][a-z]{2} \d{4} · 1\.5 hours at the agreed price of AED 600 per hour$',
   'a custom-priced charge names the subject, the hours and the agreed price');
 select pg_temp.check((select description from public.charges where lesson_id = '50000000-0000-0000-0000-000000000003'
   and student_id = 'd0000000-0000-0000-0000-000000000001')
-  ~ '^Small group \(maths\) — Sami Ahmed, \d{4}-\d{2}-\d{2} · agreed price AED 600 per hour$',
+  ~ '^Small group \(maths\) — Sami Ahmed, \d{1,2} [A-Z][a-z]{2} \d{4} · agreed price AED 600 per hour$',
   'a 60-minute custom-priced charge names the agreed price (subject trimmed)');
 select pg_temp.check((select description from public.charges where lesson_id = '50000000-0000-0000-0000-000000000002')
-  ~ '^IGCSE 1:1 — Sami Ahmed, \d{4}-\d{2}-\d{2}$', 'a service-priced charge keeps its usual description');
+  ~ '^IGCSE 1:1 — Sami Ahmed, \d{1,2} [A-Z][a-z]{2} \d{4}$', 'a service-priced charge keeps its usual description');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select public.complete_lesson('50000000-0000-0000-0000-000000000007', 'completed', '{}', 'Group', null, '{}', '[]', '[]');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');

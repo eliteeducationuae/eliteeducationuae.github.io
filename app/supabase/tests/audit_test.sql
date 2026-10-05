@@ -306,7 +306,7 @@ select pg_temp.check((select array_agg(distinct table_name) from public.list_aud
   'filtering by a non-uuid id matches the row id only');
 select pg_temp.check((select count(*) from public.list_audit_events(p_family_id => 'c0000000-0000-0000-0000-000000000002', p_limit => 200))
     = (select count(*) from public.audit_events where family_ids @> '{c0000000-0000-0000-0000-000000000002}')
-  and (select bool_and(table_name in ('families', 'students', 'enrolments', 'lessons', 'lesson_notes', 'opportunities', 'charges', 'invoices', 'payments'))
+  and (select bool_and(table_name in ('families', 'family_contacts', 'students', 'enrolments', 'enrolment_tutor_pay', 'enrolment_family_price', 'lessons', 'lesson_notes', 'opportunities', 'charges', 'invoices', 'payments'))
        from public.list_audit_events(p_family_id => 'c0000000-0000-0000-0000-000000000002', p_limit => 200)),
   'filtering by family');
 select pg_temp.check((select count(*) from public.list_audit_events(p_student_id => 'd0000000-0000-0000-0000-000000000002', p_limit => 200))
@@ -373,7 +373,7 @@ select pg_temp.check((select action = 'delete' and before = '{"id":"c0000000-000
 
 -- Erasure ---------------------------------------------------------------------------------
 select pg_temp.check((select count(*) from public.audit_events where family_ids @> '{c0000000-0000-0000-0000-000000000001}'
-  and (coalesce(before::text, '') || coalesce(after::text, '')) like '%+971500000000%') = 1, 'the family phone is in the log before erasure');
+  and (coalesce(before::text, '') || coalesce(after::text, '')) like '%+971500000000%') >= 1, 'the family phone is in the log before erasure (on the family and its main contact)');
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 do $$ begin

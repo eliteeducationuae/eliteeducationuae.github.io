@@ -118,7 +118,8 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <View style={{ gap: 6 }}>
       <Txt variant="label">{children}</Txt>
-      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+      {/* 2px so the gold rule never renders grey or white on screens that round a thinner line away. */}
+      <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
     </View>
   );
 }
@@ -300,7 +301,8 @@ export function EmptyState({ icon = 'sparkle', title, message, action }: { icon?
       <Txt variant="h2" style={{ textAlign: 'center' }}>
         {title}
       </Txt>
-      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+      {/* 2px so the gold rule never renders grey or white on screens that round a thinner line away. */}
+      <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
       {message ? (
         <Txt variant="muted" style={{ textAlign: 'center', maxWidth: 380 }}>
           {message}

@@ -849,3 +849,22 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
 
   return { cases, targets, dates, tasks, documents, updates, events };
 }
+
+/**
+ * Account deletion: a closed family's admissions cases go with everything filed under them (mirrors the round 5
+ * merge's anonymise_student). Returns the document paths, whose demo files the caller removes.
+ */
+export function removeAdmissionsForStudents(db: DemoDB, studentIds: Set<string>): string[] {
+  const s = store(db);
+  const caseIds = new Set(s.cases.filter((c) => studentIds.has(c.studentId)).map((c) => c.id));
+  if (!caseIds.size) return [];
+  const paths = s.documents.filter((d) => caseIds.has(d.caseId)).map((d) => d.path);
+  s.cases = s.cases.filter((c) => !caseIds.has(c.id));
+  s.targets = s.targets.filter((x) => !caseIds.has(x.caseId));
+  s.dates = s.dates.filter((x) => !caseIds.has(x.caseId));
+  s.tasks = s.tasks.filter((x) => !caseIds.has(x.caseId));
+  s.documents = s.documents.filter((x) => !caseIds.has(x.caseId));
+  s.updates = s.updates.filter((x) => !caseIds.has(x.caseId));
+  s.events = s.events.filter((x) => !caseIds.has(x.caseId));
+  return paths;
+}

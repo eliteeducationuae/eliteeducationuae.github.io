@@ -14,7 +14,9 @@ import type {
   SystemHealth,
 } from '@/domain/types';
 
+import { removeAdmissionsForStudents } from './admissions';
 import { cw } from './classwork';
+import { allContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
@@ -215,6 +217,13 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
     lessonRequests: [] as unknown[],
     availability: [] as unknown[],
     tutorInvoices: [] as unknown[],
+    // Round 5 (as the round 5 merge's export_my_data).
+    familyContacts: [] as unknown[],
+    creditNotes: [] as unknown[],
+    refunds: [] as unknown[],
+    admissions: [] as unknown[],
+    tutorDocuments: [] as unknown[],
+    handbookAcknowledgements: [] as unknown[],
   };
   const base: DataExport = {
     format: 'elite-education-export/1',
@@ -257,6 +266,16 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
       packages: viewer.role === 'parent' ? q.packages(db, viewer) : [],
       messages: viewer.familyId ? eq.messages(db, viewer, viewer.familyId) : db.messages.filter((m) => m.senderId === viewer.id),
       lessonRequests: viewer.role === 'parent' ? eq.requests(db, viewer) : [],
+      familyContacts: viewer.role === 'parent' && viewer.familyId ? allContacts(db).filter((c) => c.familyId === viewer.familyId) : [],
+      creditNotes: viewer.role === 'parent' ? (db.creditNotes ?? []).filter((n) => n.familyId === viewer.familyId) : [],
+      refunds: viewer.role === 'parent' ? (db.refunds ?? []).filter((r) => r.familyId === viewer.familyId).map(({ requestKey: _key, ...r }) => r) : [],
+      admissions: (db.admissions?.cases ?? [])
+        .filter((c) => students.some((st) => st.id === c.studentId))
+        .map((c) => ({
+          ...c,
+          updates: (db.admissions?.updates ?? []).filter((u) => u.caseId === c.id && u.status === 'published'),
+          documents: (db.admissions?.documents ?? []).filter((d) => d.caseId === c.id && d.familyVisible).map((d) => ({ name: d.name, category: d.category })),
+        })),
     };
   }
 
@@ -272,6 +291,10 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
       // Bank details never leave the server in full: the account number is reduced to its last four digits.
       paymentDetails: details ? { accountName: details.accountName, bankName: details.bankName, ibanLast4: last4(details.iban) } : null,
       messages: db.messages.filter((m) => m.senderId === viewer.id),
+      tutorDocuments: (db.tutorDocuments ?? [])
+        .filter((d) => d.tutorId === viewer.tutorId)
+        .map((d) => ({ type: d.type, title: d.title, fileName: d.fileName, issueDate: d.issueDate, expiryDate: d.expiryDate, status: d.status })),
+      handbookAcknowledgements: (db.handbookAcks ?? []).filter((a) => a.tutorId === viewer.tutorId),
     };
   }
   return base;
@@ -350,6 +373,24 @@ function anonymiseFamily(db: DemoDB, familyId: string, now: Date): DeletionSumma
     o.title = `${o.subject || 'Tuition'} opportunity (closed)`;
     if (o.status === 'open') o.status = 'closed';
   }
+  // Round 5 records (as the round 5 merge's anonymise_* wrappers): admissions cases, handover packs, lesson plans for
+  // the children's own lessons (and homework planned for them elsewhere), other contacts and billing details.
+  removeAdmissionsForStudents(db, studentIds);
+  db.handovers = (db.handovers ?? []).filter((h) => !studentIds.has(h.studentId));
+  db.lessonPlans = (db.lessonPlans ?? [])
+    .filter((p) => !soleLessons.has(p.lessonId))
+    .map((p) => ({ ...p, homework: p.homework.filter((h) => !h.studentId || !studentIds.has(h.studentId)) }));
+  syncPrimaryFromFamily(db, family);
+  db.familyContacts = allContacts(db)
+    .filter((c) => c.familyId !== familyId || c.isPrimary)
+    .map((c) =>
+      c.familyId === familyId
+        ? { ...c, phone: undefined, canLogIn: false, receivesInvoices: false, receivesReports: false, receivesLessonNotes: false, receivesWhatsApp: false, emergencyContact: false }
+        : c,
+    );
+  delete family.billingName;
+  delete family.billingAddress;
+  delete family.trn;
   db.messages = db.messages.filter((m) => m.familyId !== familyId);
   db.requests = db.requests.filter((r) => r.familyId !== familyId);
   for (const reads of Object.values(db.reads)) delete reads[familyId];
@@ -380,6 +421,9 @@ function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary
   db.availability = db.availability.filter((a) => a.tutorId !== tutorId);
   db.paymentDetails = db.paymentDetails.filter((p) => p.tutorId !== tutorId);
   db.busyBlocks = (db.busyBlocks ?? []).filter((b) => b.tutorId !== tutorId);
+  // Round 5: vetting documents go; override reasons are replaced (as the round 5 merge's anonymise_tutor).
+  db.tutorDocuments = (db.tutorDocuments ?? []).filter((d) => d.tutorId !== tutorId);
+  for (const o of db.vettingOverrides ?? []) if (o.tutorId === tutorId) o.reason = 'Removed: account closed';
   // Bids keep only their outcome: pending ones are withdrawn so they cannot be awarded, and the tutor's own words go.
   for (const b of db.bids) {
     if (b.tutorId !== tutorId) continue;
@@ -406,9 +450,12 @@ function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary
 function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
   if (profile.role === 'admin' && db.profiles.filter((p) => p.role === 'admin').length <= 1) throw new Error(LAST_ADMIN_MESSAGE);
   db.profiles = db.profiles.filter((p) => p.id !== profile.id);
+  // Tax: an accountant's invitation goes with their login.
+  if (profile.role === 'accountant') db.accountantInvites = (db.accountantInvites ?? []).filter((i) => i.email !== profile.email.toLowerCase());
   db.calendarConnections = (db.calendarConnections ?? []).filter((c) => c.profileId !== profile.id);
   // Messages they wrote stay in the family's conversation without their name, as on the server.
-  const former = profile.role === 'student' ? 'Former student' : profile.role === 'admin' ? 'Elite Education' : 'Former parent';
+  const former =
+    profile.role === 'student' ? 'Former student' : profile.role === 'admin' ? 'Elite Education' : profile.role === 'accountant' ? 'Former accountant' : 'Former parent';
   for (const m of db.messages) {
     if (m.senderId !== profile.id) continue;
     delete m.senderId;

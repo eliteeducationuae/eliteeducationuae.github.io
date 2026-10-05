@@ -9,6 +9,7 @@
 // The database work happens in perform_account_deletion (migration 20261108000000_launch.sql). No extra secrets.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { errorMessage, logFunctionError, withMonitoring } from '../_shared/monitoring.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 
 const NAME = 'delete-account';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -105,6 +106,9 @@ Deno.serve(withMonitoring(NAME, adminClient, async (req) => {
   const { data: auth } = await userClient(req).auth.getUser();
   const uid = auth?.user?.id;
   if (!uid) return json({ error: 'Please sign in again to close this account.' }, 401);
+  // The work below runs with the service role, so the database's View as guard would not see it: refuse here.
+  const refused = await refuseViewAs(req);
+  if (refused) return refused;
   const body = await req.json().catch(() => ({}));
   const db = adminClient();
   const { data: me } = await db.from('profiles').select('id, role').eq('id', uid).maybeSingle();

@@ -6,6 +6,14 @@ describe('notificationRoute', () => {
     expect(notificationRoute({ url: ' /manage/enquiries ' })).toBe('/manage/enquiries');
     expect(notificationRoute({ url: '/' })).toBe('/');
   });
+  it('keeps simple query parameters, as the contacts and homework notices use', () => {
+    expect(notificationRoute({ url: '/manage/family-edit?id=c0000000-0000-0000-0000-000000000001' })).toBe(
+      '/manage/family-edit?id=c0000000-0000-0000-0000-000000000001',
+    );
+    expect(notificationRoute({ url: '/parent/progress?tab=homework&student=s-omar' })).toBe('/parent/progress?tab=homework&student=s-omar');
+    expect(notificationRoute({ url: '/x?=1' })).toBeNull();
+    expect(notificationRoute({ url: '/x?a=1&' })).toBeNull();
+  });
   it('ignores missing, foreign or malformed links', () => {
     expect(notificationRoute(null)).toBeNull();
     expect(notificationRoute({})).toBeNull();

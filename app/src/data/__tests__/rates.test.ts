@@ -5,6 +5,12 @@ import { ops } from '../demo/operations';
 import { createSeed } from '../demo/seed';
 import { enrolmentRatesFromRow, setEnrolmentRatesArgs } from '../rpc-mapping';
 
+/** The demo seed enforces tutor vetting (James has no clearance); these tests are about other rules, so it is off. */
+function withoutVetting<T extends { vettingEnforced?: boolean }>(db: T): T {
+  db.vettingEnforced = false;
+  return db;
+}
+
 const NOW = new Date(2026, 9, 4, 12, 0);
 type DB = ReturnType<typeof createSeed>;
 const who = (db: DB, role: string) => db.profiles.find((p) => p.role === role)!;
@@ -110,7 +116,7 @@ describe('rate visibility (mirrors the RLS on the rate tables)', () => {
 
 describe('setEnrolmentRates (mirrors set_enrolment_rates)', () => {
   it('is for admins only and checks its input', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     const input = { enrolmentId: 'enr-layla-chemistry', tutorPay: 250, familyPrice: null };
     expect(() => enr.setEnrolmentRates(db, who(db, 'tutor'), input)).toThrow(AccessError);
@@ -126,7 +132,7 @@ describe('setEnrolmentRates (mirrors set_enrolment_rates)', () => {
   });
 
   it('sets, keeps the opportunity source when unchanged, and clears with null', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     enr.setEnrolmentRates(db, admin, { enrolmentId: 'enr-karim-maths', tutorPay: 240, familyPrice: 300 });
     expect(raw(db, 'enr-karim-maths')).toMatchObject({ tutorPay: 240, tutorPaySource: 'opportunity', familyPrice: 300 });
@@ -138,7 +144,7 @@ describe('setEnrolmentRates (mirrors set_enrolment_rates)', () => {
   });
 
   it('clears the tutor pay, but not the family price, when the tutor changes', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     enr.setEnrolmentRates(db, admin, { enrolmentId: 'enr-layla-chemistry', tutorPay: 260, familyPrice: 380 });
     const e = raw(db, 'enr-layla-chemistry');
@@ -156,7 +162,7 @@ describe('setEnrolmentRates (mirrors set_enrolment_rates)', () => {
 
 describe('charges and tutor invoices at custom rates', () => {
   it('charges a completed lesson at the custom price and keeps the snapshot when the rate changes', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     enr.setEnrolmentRates(db, admin, { enrolmentId: 'enr-layla-chemistry', tutorPay: 260, familyPrice: 400 });
     const lesson = db.lessons.find((l) => l.status === 'scheduled' && l.subject === 'Chemistry' && l.studentIds.includes('s-layla'))!;
@@ -175,7 +181,7 @@ describe('charges and tutor invoices at custom rates', () => {
   });
 
   it('bills the tutor invoice line at the custom rate, and keeps it once submitted', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     const sarah = who(db, 'tutor');
     enr.setEnrolmentRates(db, admin, { enrolmentId: 'enr-layla-chemistry', tutorPay: 260, familyPrice: null });
@@ -202,7 +208,7 @@ describe('charges and tutor invoices at custom rates', () => {
 
 describe('awardOpportunity (mirrors award_opportunity)', () => {
   it('gives the winner the student’s enrolment at the role’s pay', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     const o = ops.saveOpportunity(
       db,
@@ -216,7 +222,7 @@ describe('awardOpportunity (mirrors award_opportunity)', () => {
   });
 
   it('creates the enrolment when the student does not yet study the subject', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const admin = who(db, 'admin');
     const o = ops.saveOpportunity(
       db,
@@ -231,7 +237,7 @@ describe('awardOpportunity (mirrors award_opportunity)', () => {
   });
 
   it('leaves enrolments alone for a role without a student', () => {
-    const db = createSeed(NOW);
+    const db = withoutVetting(createSeed(NOW));
     const before = JSON.stringify(db.enrolments);
     const o = db.opportunities.find((x) => x.title.startsWith('IGCSE Physics'))!;
     ops.placeBid(db, who(db, 'tutor'), o.id, 'Happy to help.', undefined, NOW);

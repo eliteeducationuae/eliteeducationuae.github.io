@@ -5,11 +5,14 @@
 // Secrets: APP_URL (where the invitation link takes them). Never log email addresses or request bodies here.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { inviteRedirect, isAlreadyRegisteredError, normaliseInviteEmail } from '../_shared/invite.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   try {
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
     const body = await req.json().catch(() => ({}));
     const email = normaliseInviteEmail(body?.email);
     if (!email) return json({ error: 'Please enter the accountant\'s email address.' }, 400);

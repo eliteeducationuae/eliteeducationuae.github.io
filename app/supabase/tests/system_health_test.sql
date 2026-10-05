@@ -103,15 +103,20 @@ grant select on r0 to authenticated;
 select pg_temp.check((select r->>'status' = 'ok' from r0), 'a clean database is ok');
 select pg_temp.check((select array_agg(c->>'key' order by ord) = '{notifications,whatsapp,calendar,autopay,stripe,server-errors,app-errors,backups}'
                         from r0, jsonb_array_elements(r->'checks') with ordinality as x(c, ord)), 'the checks come in a fixed order');
-select pg_temp.check((select r->'database'->>'latest' = '20261020000000' and r->'database'->>'latestName' = 'launch'
-                             and (r->'database'->>'count')::int >= 13
-                             and r->'database'->'migrations'->0->>'version' = '20261020000000'
+select pg_temp.check((select r->'database'->>'latest' = '20261111000000' and r->'database'->>'latestName' = 'round5_merge'
+                             and (r->'database'->>'count')::int = :migration_count
+                             and r->'database'->'migrations'->0->>'version' = '20261111000000'
                              and exists (select 1 from jsonb_array_elements(r->'database'->'migrations') m where m->>'version' = '20261002000000')
-                        from r0), 'the database version is the launch migration and the ledger holds every migration');
+                        from r0), 'the database version is the latest migration and the ledger holds every migration');
 select pg_temp.check((select jsonb_array_length(r->'jobs') = 1 and r->'jobs'->0->>'name' = 'backup-export'
                              and r->'jobs'->0->'lastSucceededAt' is not null and r->'jobs'->0->'lastError' = 'null'::jsonb
                         from r0), 'job runs are listed');
 select pg_temp.check((select count(*) >= 13 from public.db_migrations), 'an admin can read the migrations ledger');
+-- run.sh passes the number of files in supabase/migrations, so a migration missing from the ledger fails here.
+select pg_temp.check((select count(*) from public.db_migrations) = :migration_count,
+  'the ledger lists every migration file (' || :migration_count || ')');
+select pg_temp.check(not exists (select 1 from public.db_migrations where version like '202610_______' and version > '20261014000000'),
+  'no round 5 migration is recorded under its old number');
 reset role;
 
 -- Notifications stuck for 11 minutes
@@ -178,17 +183,17 @@ insert into public.function_errors (function_name, message, created_at) values (
 set role service_role;
 select pg_temp.check(public.purge_old_errors() = 2, 'errors older than 90 days are purged');
 reset role;
-select public.record_migration('20261020000000', 'launch');
-select pg_temp.check((select count(*) = 1 from public.db_migrations where version = '20261020000000'), 'recording a migration twice keeps one row');
+select public.record_migration('20261108000000', 'launch');
+select pg_temp.check((select count(*) = 1 from public.db_migrations where version = '20261108000000'), 'recording a migration twice keeps one row');
 
 -- Migrations applied by the Supabase CLI that never called record_migration still show.
 create schema supabase_migrations;
 create table supabase_migrations.schema_migrations (version text primary key, statements text[], name text);
-insert into supabase_migrations.schema_migrations (version, name) values ('20261002000000', 'init'), ('20261013000000', 'viewas'), ('20261099000000', null);
+insert into supabase_migrations.schema_migrations (version, name) values ('20261002000000', 'init'), ('20261101000000', 'viewas'), ('20261199000000', null);
 set role service_role;
-select pg_temp.check((select count(*) = 1 from public.db_version() where version = '20261013000000' and name = 'viewas')
+select pg_temp.check((select count(*) = 1 from public.db_version() where version = '20261101000000' and name = 'viewas')
   and (select count(*) = 1 from public.db_version() where version = '20261002000000')
-  and (select count(*) = 1 from public.db_version() where version = '20261099000000' and name is null),
+  and (select count(*) = 1 from public.db_version() where version = '20261199000000' and name is null),
   'db_version includes the Supabase CLI history without duplicates');
-select pg_temp.check((select public.system_health_report()->'database'->>'latest' = '20261099000000'), 'the latest applied migration is reported');
+select pg_temp.check((select public.system_health_report()->'database'->>'latest' = '20261199000000'), 'the latest applied migration is reported');
 reset role;
