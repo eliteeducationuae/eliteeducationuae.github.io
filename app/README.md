@@ -282,7 +282,9 @@ The office can see the app exactly as a particular parent, student or tutor sees
 - Each view lasts at most 60 minutes. After that, or once the admin returns to their own account, the view's session is refused entirely and the app shows *This view has ended. Please return to your own account.*
 - Every start and end of a view is recorded, with the admin, the person and the time, in `view_as_audit`. Only admins can read it, and nobody can change it.
 - Because a view signs in as the person, their *last signed in* time in Supabase updates when they are viewed.
-- The person cannot change their email address, phone number or password while a view of their account is active.
+- Ending a view deletes its auth session (and refresh tokens) on the server, and a view's session cannot be refreshed once the view has ended or expired.
+- The person's email address, phone number and password cannot change, and no second factor or new Google or Apple sign-in can be added to their account, while a view of it is active. If a view expired without being ended (for example the app was closed), this protection lasts 65 minutes longer, until the view's last access token has run out. That allowance assumes Supabase's default one-hour JWT expiry; if the project's JWT expiry is raised, raise the interval in `public.view_as_protects` to match.
+- Some auth-only changes are not covered: while a view is active, its session could still change the person's `user_metadata` through the auth API. The app never does this and nothing in the app relies on `user_metadata` for access.
 - A person who has never been given a login cannot be viewed (*This person does not have a login yet.*).
 
 **Deploying.**
@@ -296,7 +298,8 @@ The office can see the app exactly as a particular parent, student or tutor sees
 1. In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard`.
 2. Sign in as an admin and view a test parent. Their lessons, invoices and messages should appear as they would for the parent.
 3. Try to send a message, book a lesson or upload a file: each should be refused with *Viewing only — changes are disabled.*
-4. Return to your own account, and confirm that `view_as_audit` shows a `start` and an `end` row for the view and that `view_as_sessions` shows an `ended_at` time.
+4. Return to your own account, and confirm that `view_as_audit` shows a `start` and an `end` row for the view and that `view_as_sessions` shows an `ended_at` time and a `revoked_at` time. If `revoked_at` is empty, the database could not delete the session from `auth.sessions` in this project; the view is still refused, and the person stays protected for 65 minutes after the view.
+5. On an iPhone or the iOS simulator, view a tutor, open *Record lesson* and a parent's *Book a lesson*: the compact gold strip with *Exit* should appear at the top of each sheet, and tapping save should show the *Viewing only* note inside the sheet.
 
 ## Checks
 

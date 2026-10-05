@@ -98,6 +98,16 @@ select pg_temp.check((select count(*) = 1 from public.view_as_audit a join publi
   where v.session_id = 'e0000000-0000-0000-0000-000000000001' and a.action = 'start'
     and a.admin_id = 'a0000000-0000-0000-0000-000000000001' and a.target_id = 'a0000000-0000-0000-0000-000000000004'),
   'starting a view writes one start audit row');
+-- The auth sessions GoTrue created for the three views, each with a refresh token, plus Bea's own session.
+insert into auth.sessions (id, user_id) values
+  ('e0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000004'),
+  ('e0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003'),
+  ('e0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000005'),
+  ('e0000000-0000-0000-0000-0000000000b0', 'a0000000-0000-0000-0000-000000000002');
+insert into auth.refresh_tokens (token, user_id, session_id) values
+  ('t1', 'a0000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001'),
+  ('t2', 'a0000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-000000000002'),
+  ('t3', 'a0000000-0000-0000-0000-000000000005', 'e0000000-0000-0000-0000-000000000003');
 select pg_temp.check((select count(*) = 3 from public.view_as_audit where action = 'start'), 'every view start is audited');
 
 -- (d) The guard in a view: reads pass, writes and non-read RPCs are refused -------------------------------------
@@ -216,6 +226,18 @@ select pg_temp.check(pg_temp.err($q$update auth.users set raw_user_meta_data = '
 select pg_temp.check(pg_temp.err($q$update auth.users set email = 'new-bea@x' where id = 'a0000000-0000-0000-0000-000000000002'$q$)
   is null, 'people who are not being viewed can change their email');
 update auth.users set email = 'bea@x' where id = 'a0000000-0000-0000-0000-000000000002';
+select pg_temp.check(pg_temp.err($q$insert into auth.mfa_factors (user_id) values ('a0000000-0000-0000-0000-000000000004')$q$)
+  like '42501:%', 'a second factor cannot be added during a view');
+select pg_temp.check(pg_temp.err($q$insert into auth.identities (user_id) values ('a0000000-0000-0000-0000-000000000004')$q$)
+  like '42501:%', 'another sign-in cannot be linked during a view');
+select pg_temp.check(pg_temp.err($q$insert into auth.identities (user_id) values ('a0000000-0000-0000-0000-000000000002')$q$)
+  is null, 'people who are not being viewed can link a sign-in');
+select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user_id, session_id)
+    values ('t1b', 'a0000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001')$q$) is null,
+  'an active view can refresh its session');
+select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user_id, session_id)
+    values ('tb', 'a0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-0000000000b0')$q$) is null,
+  'ordinary sessions refresh as normal');
 
 -- (h) Ending a view --------------------------------------------------------------------------------------------------
 \set view1 '(select id from public.view_as_sessions where session_id = ''e0000000-0000-0000-0000-000000000001'')'
@@ -238,6 +260,15 @@ select pg_temp.check((select ended_at is not null from public.view_as_sessions w
   'the owning admin ends the view');
 select pg_temp.check((select count(*) = 1 from public.view_as_audit where view_id = current_setting('test.view1')::uuid and action = 'end'
     and admin_id = 'a0000000-0000-0000-0000-000000000001'), 'ending writes one end audit row, however often it is called');
+select pg_temp.check(not exists (select 1 from auth.sessions where id = 'e0000000-0000-0000-0000-000000000001')
+  and not exists (select 1 from auth.refresh_tokens where session_id = 'e0000000-0000-0000-0000-000000000001')
+  and (select revoked_at is not null from public.view_as_sessions where id = current_setting('test.view1')::uuid),
+  'ending a view revokes its auth session and refresh tokens on the server');
+select pg_temp.check(exists (select 1 from auth.sessions where id = 'e0000000-0000-0000-0000-000000000002'),
+  'ending one view leaves other sessions alone');
+select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user_id, session_id)
+    values ('t1c', 'a0000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001')$q$) like '42501:%',
+  'an ended view cannot refresh its session');
 
 -- (k, continued) Once the view has ended, the person can change their details again.
 select pg_temp.check(pg_temp.err($q$update auth.users set email = 'new@x' where id = 'a0000000-0000-0000-0000-000000000004'$q$) is null,
@@ -255,8 +286,17 @@ select pg_temp.check(public.is_view_as_session(), 'an expired view is still reco
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000004');
 select pg_temp.check(pg_temp.guard('e0000000-0000-0000-0000-000000000001', 'GET', '/lessons') = :view_ended, 'an ended view cannot even read');
 reset role;
+select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user_id, session_id)
+    values ('t2b', 'a0000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-000000000002')$q$) like '42501:%',
+  'an expired view cannot refresh its session');
+-- An expired view that was never ended (the app was closed) still has a live access token for up to an hour.
+select pg_temp.check(pg_temp.err($q$update auth.users set email = 'tutor2@x' where id = 'a0000000-0000-0000-0000-000000000003'$q$)
+  like '42501:%', 'an expired view that was not revoked protects the email while its last token can still be used');
+update public.view_as_sessions set expires_at = now() - interval '2 hours' where session_id = 'e0000000-0000-0000-0000-000000000002';
 select pg_temp.check(pg_temp.err($q$update auth.users set email = 'tutor2@x' where id = 'a0000000-0000-0000-0000-000000000003'$q$) is null,
-  'an expired view no longer protects the email');
+  'once its last token has run out, an expired view no longer protects the email');
+select pg_temp.check(pg_temp.err($q$insert into auth.mfa_factors (user_id) values ('a0000000-0000-0000-0000-000000000003')$q$) is null,
+  'and a second factor can be added again');
 
 -- (j) Every allowlisted RPC exists ----------------------------------------------------------------------------------
 select pg_temp.check((select bool_and(exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -274,5 +314,7 @@ select pg_temp.check(has_function_privilege('anon', 'public.view_as_guard()', 'e
   and has_function_privilege('service_role', 'public.view_as_guard()', 'execute'), 'every API role can run the guard');
 select pg_temp.check(not has_function_privilege('anon', 'public.end_view_as(uuid)', 'execute')
   and has_function_privilege('authenticated', 'public.end_view_as(uuid)', 'execute'), 'only signed-in users can call end_view_as');
+select pg_temp.check(not has_function_privilege('authenticated', 'public.view_as_revoke_auth(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.view_as_revoke_auth(uuid)', 'execute'), 'nobody can revoke a session directly');
 
 \echo 'All View as tests passed'

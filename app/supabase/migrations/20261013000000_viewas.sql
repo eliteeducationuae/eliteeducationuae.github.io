@@ -9,6 +9,8 @@
 --   * allows only GET/HEAD/OPTIONS on tables and views, and only the read RPCs in view_as_read_rpcs().
 -- Storage uploads, changes and deletes are refused by restrictive policies, and an auth.users trigger stops the
 -- person's email, phone or password being changed while a view of their account is active.
+-- Ending a view revokes its auth session on the server (end_view_as), and the auth schema refuses to refresh a view's
+-- session once the view has ended or expired, so its tokens cannot be used for long afterwards.
 -- Each view lasts at most 60 minutes and every start and end is recorded in view_as_audit.
 
 -- ---------------------------------------------------------------------------
@@ -23,7 +25,9 @@ create table public.view_as_sessions (
   session_id uuid not null unique,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
-  ended_at timestamptz
+  ended_at timestamptz,
+  -- When the view's auth session (and its refresh tokens) was deleted on the server.
+  revoked_at timestamptz
 );
 create index view_as_sessions_target_idx on public.view_as_sessions (target_id);
 create index view_as_sessions_admin_idx on public.view_as_sessions (admin_id);
@@ -99,6 +103,27 @@ end $$;
 revoke all on function public.begin_view_as(uuid, uuid, uuid, int) from public, anon, authenticated;
 grant execute on function public.begin_view_as(uuid, uuid, uuid, int) to service_role;
 
+-- Deletes a view's auth session, and with it every refresh token, so its tokens can no longer be refreshed or used
+-- with the auth endpoints. Returns false where the auth schema cannot be changed from here (the view then stays
+-- protected for one token lifetime instead; see view_as_protects).
+create function public.view_as_revoke_auth(p_view_id uuid) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare sid uuid;
+begin
+  select session_id into sid from public.view_as_sessions where id = p_view_id;
+  if sid is null or to_regclass('auth.sessions') is null then return false; end if;
+  begin
+    execute 'delete from auth.sessions where id = $1' using sid;
+  exception when insufficient_privilege then
+    return false;
+  end;
+  update public.view_as_sessions set revoked_at = now() where id = p_view_id and revoked_at is null;
+  return true;
+end $$;
+
+revoke all on function public.view_as_revoke_auth(uuid) from public, anon, authenticated;
+grant execute on function public.view_as_revoke_auth(uuid) to service_role;
+
 -- Called by the admin's own (normal) session when they return to their account. Ending twice is harmless.
 create function public.end_view_as(p_view_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
@@ -115,6 +140,7 @@ begin
     update public.view_as_sessions set ended_at = now() where id = r.id;
     insert into public.view_as_audit (view_id, admin_id, target_id, action) values (r.id, r.admin_id, r.target_id, 'end');
   end if;
+  if r.revoked_at is null then perform public.view_as_revoke_auth(r.id); end if;
 end $$;
 
 -- True when the caller's session belongs to a view, ended or not (the Edge Functions and storage refuse both).
@@ -206,14 +232,29 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 -- The admin's app holds the person's tokens for the length of the view, and the auth endpoints do not pass through
--- PostgREST, so this is checked on auth.users itself.
+-- PostgREST, so this is checked in the auth schema itself.
+--
+-- A person is protected while a view of their account is active, and afterwards until the view's session is revoked
+-- or its last access token has run out. Refreshing is refused once a view has ended or expired (below), so that
+-- token outlives the view by at most one access-token lifetime (Supabase's default is one hour; 65 minutes allows
+-- for clock skew). If the project's JWT expiry is raised, raise this interval to match.
+create function public.view_as_protects(p_user uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.view_as_sessions v
+    where v.target_id = p_user
+      and ((v.ended_at is null and v.expires_at > now())
+           or (v.revoked_at is null and least(coalesce(v.ended_at, v.expires_at), v.expires_at) > now() - interval '65 minutes')))
+$$;
+
+revoke all on function public.view_as_protects(uuid) from public, anon, authenticated;
+
 create function public.view_as_protect_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if (new.email is distinct from old.email or new.phone is distinct from old.phone
       or new.encrypted_password is distinct from old.encrypted_password)
-     and exists (select 1 from public.view_as_sessions v
-                 where v.target_id = new.id and v.ended_at is null and v.expires_at > now()) then
+     and public.view_as_protects(new.id) then
     raise exception 'Account details cannot be changed while the office is viewing this account.' using errcode = '42501';
   end if;
   return new;
@@ -223,6 +264,46 @@ revoke all on function public.view_as_protect_user() from public, anon, authenti
 
 create trigger view_as_protect_user before update on auth.users
   for each row execute function public.view_as_protect_user();
+
+-- Adding a second factor or linking another sign-in (Google, Apple) only touches the auth schema too, so neither
+-- can happen while the person is protected. Their existing factors and identities keep working as normal.
+create function public.view_as_protect_auth_link() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.view_as_protects(coalesce(new.user_id, old.user_id)) then
+    raise exception 'Account details cannot be changed while the office is viewing this account.' using errcode = '42501';
+  end if;
+  return coalesce(new, old);
+end $$;
+
+-- A view's session cannot be refreshed once the view has ended or expired.
+create function public.view_as_refuse_refresh() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.view_as_sessions v
+             where v.session_id = new.session_id::uuid and (v.ended_at is not null or v.expires_at <= now())) then
+    raise exception 'This view has ended. Please return to your own account.' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.view_as_protect_auth_link(), public.view_as_refuse_refresh() from public, anon, authenticated;
+
+do $$
+begin
+  if to_regclass('auth.mfa_factors') is not null then
+    execute 'create trigger view_as_protect_mfa before insert on auth.mfa_factors
+               for each row execute function public.view_as_protect_auth_link()';
+  end if;
+  if to_regclass('auth.identities') is not null then
+    execute 'create trigger view_as_protect_identities before insert or delete on auth.identities
+               for each row execute function public.view_as_protect_auth_link()';
+  end if;
+  if to_regclass('auth.refresh_tokens') is not null then
+    execute 'create trigger view_as_refuse_refresh before insert on auth.refresh_tokens
+               for each row execute function public.view_as_refuse_refresh()';
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Wire the guard into PostgREST (a no-op where there is no authenticator role, as in the tests)

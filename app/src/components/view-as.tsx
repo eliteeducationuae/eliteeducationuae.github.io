@@ -3,15 +3,15 @@
  * controls that start a view from a family, tutor or student page.
  */
 import { router, type Href } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, font, Spacing } from '@/constants/theme';
 import { useViewTargets } from '@/data/hooks';
 import { useSession, useViewing } from '@/data/session';
 import { minutesLeft, useViewNotice, VIEW_ONLY_MESSAGE, viewTargetsFor, type ViewTarget } from '@/data/view-as';
-import { notify } from '@/lib/confirm';
+import { useTheme } from '@/hooks/use-theme';
 
 import { Icon } from './icon';
 import { Button, ErrorNote, Section, Txt } from './ui';
@@ -21,6 +21,10 @@ export type ViewAsRef = { familyId?: string; studentId?: string; tutorId?: strin
 
 /** How long the calm "view only" note stays under the banner. */
 export const VIEW_ONLY_NOTE_MS = 4000;
+/** How long the "back in your own account" note stays after a view ends. */
+export const VIEW_RETURNED_NOTE_MS = 6000;
+/** Shown once the admin is back in their own account after a view ended. */
+export const VIEW_RETURNED_MESSAGE = 'Your view has ended. You are back in your own account.';
 /** How often the remaining-time hint refreshes. */
 const TICK_MS = 30_000;
 
@@ -45,13 +49,15 @@ type HitRef = { id: string; title: string };
 
 /**
  * The "View as" rows for search hits: one per login linked to each family, tutor or student found, and a
- * "No login yet" row for any hit without one. Each login appears once.
+ * "No login yet" row for a family or tutor without one. Students without a login are left out, since most
+ * children never sign in and their family's row already covers them. Each login appears once.
  */
 export function viewAsRows(targets: ViewTarget[], hits: { families?: HitRef[]; tutors?: HitRef[]; students?: HitRef[] }): ViewAsRow[] {
   const rows: ViewAsRow[] = [];
   const seen = new Set<string>();
   const add = (kind: 'family' | 'tutor' | 'student', hit: HitRef, found: ViewTarget[]) => {
     if (!found.length) {
+      if (kind === 'student') return;
       rows.push({ key: `none-${kind}-${hit.id}`, title: hit.title, subtitle: 'No login yet' });
       return;
     }
@@ -97,11 +103,116 @@ export function useStartViewAs() {
   return { start, busyId, error };
 }
 
-/** Leave the view and return to the admin's home. */
+/** Leave the view and return to the admin's home, closing any open modal first. */
 async function leaveView(reason?: 'ended') {
   await useSession.getState().exitViewAs();
+  if (router.canDismiss()) router.dismissAll();
   router.replace('/admin');
-  if (reason === 'ended') notify('The view has ended', 'You are back in your own account.');
+  // A calm in-app note rather than a blocking alert.
+  if (reason === 'ended') useViewNotice.getState().flag('returned');
+}
+
+/**
+ * Wraps the signed-in stack: the "View as" banner above every screen (it takes the top inset while viewing) and
+ * the calm notice below it. The tree keeps the same shape either way, so the Stack never remounts.
+ */
+export function ViewAsFrame({ children }: { children: ReactNode }) {
+  const palette = useTheme();
+  const viewing = useViewing();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
+      <ViewAsBanner />
+      <View style={{ flex: 1 }}>
+        <SafeAreaInsetsContext.Provider value={viewing ? { ...insets, top: 0 } : insets}>{children}</SafeAreaInsetsContext.Provider>
+        <ViewAsToast top={viewing ? Spacing.two : insets.top + Spacing.two} />
+      </View>
+    </View>
+  );
+}
+
+const isModal = (presentation: unknown) => typeof presentation === 'string' && presentation !== 'card';
+
+/**
+ * The Stack's `screenLayout`. On iOS a modal screen is a native sheet over the whole app, hiding the banner, so
+ * while viewing each modal carries a compact copy of the banner and the calm notice. Elsewhere modals sit under the
+ * banner already, and every other screen is left exactly as it is.
+ */
+export function viewAsScreenLayout({ options, children }: { options: { presentation?: unknown }; children: ReactElement }): ReactElement {
+  if (Platform.OS !== 'ios' || !isModal(options.presentation)) return children;
+  return <ViewAsModalFrame>{children}</ViewAsModalFrame>;
+}
+
+function ViewAsModalFrame({ children }: { children: ReactElement }) {
+  const viewing = useViewing();
+  return (
+    <View style={{ flex: 1 }}>
+      {viewing ? <ViewAsModalStrip name={viewing.profile.fullName} /> : null}
+      <View style={{ flex: 1 }}>
+        {children}
+        {viewing ? <ViewAsToast top={Spacing.two} /> : null}
+      </View>
+    </View>
+  );
+}
+
+/** The compact banner inside a modal: who is being viewed and an Exit button. */
+function ViewAsModalStrip({ name }: { name: string }) {
+  const [exiting, setExiting] = useState(false);
+  const exit = async () => {
+    setExiting(true);
+    try {
+      await leaveView();
+    } finally {
+      setExiting(false);
+    }
+  };
+  return (
+    <View accessibilityRole="summary" style={[styles.strip, { paddingTop: Spacing.two }]}>
+      <View style={styles.row}>
+        <Icon name="eye" size={16} color={Brand.noir} />
+        <Text style={[styles.label, { flex: 1 }]} numberOfLines={1}>
+          Viewing as {name} · read only
+        </Text>
+        <ExitButton exiting={exiting} onPress={() => void exit()} />
+      </View>
+    </View>
+  );
+}
+
+function ExitButton({ exiting, onPress }: { exiting: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={exiting}
+      accessibilityRole="button"
+      accessibilityLabel="Exit view"
+      accessibilityState={{ disabled: exiting, busy: exiting }}
+      hitSlop={8}
+      style={({ pressed }) => [styles.exit, (pressed || exiting) && { opacity: 0.7 }]}>
+      <Text style={styles.exitText}>Exit</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The calm notice: a small Noir (or ivory, in dark mode) note that floats just below the banner for a few
+ * seconds, so the gold strip itself never grows. It never blocks a tap.
+ */
+function ViewAsToast({ top }: { top: number }) {
+  const palette = useTheme();
+  const notice = useViewNotice((s) => s.notice);
+  const message = notice === 'view-only' ? VIEW_ONLY_MESSAGE : notice === 'returned' ? VIEW_RETURNED_MESSAGE : null;
+  if (!message) return null;
+  return (
+    <View
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      style={[styles.toast, { top, backgroundColor: palette.text, pointerEvents: 'none' }]}>
+      <Icon name="info" size={16} color={palette.background} />
+      <Text style={[styles.toastText, { color: palette.background }]}>{message}</Text>
+    </View>
+  );
 }
 
 /**
@@ -153,10 +264,10 @@ export function ViewAsBanner() {
     if (expiresAt && (expired || notice === 'ended')) void leave('ended');
   }, [expiresAt, expired, notice, leave]);
 
-  // The calm "view only" note fades after a few seconds; a repeat refusal restarts it.
+  // The calm notes fade after a few seconds; a repeat refusal restarts the timer.
   useEffect(() => {
-    if (notice !== 'view-only') return;
-    const t = setTimeout(() => useViewNotice.getState().clear(), VIEW_ONLY_NOTE_MS);
+    if (notice !== 'view-only' && notice !== 'returned') return;
+    const t = setTimeout(() => useViewNotice.getState().clear(), notice === 'returned' ? VIEW_RETURNED_NOTE_MS : VIEW_ONLY_NOTE_MS);
     return () => clearTimeout(t);
   }, [notice, noticeAt]);
 
@@ -167,28 +278,15 @@ export function ViewAsBanner() {
       <View style={styles.row}>
         <Icon name="eye" size={18} color={Brand.noir} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.label} numberOfLines={2}>
-            Viewing as {viewing.profile.fullName} · read only
+          <Text style={styles.label} numberOfLines={1}>
+            Viewing as {viewing.profile.fullName}
           </Text>
-          {left !== null && left > 0 ? <Text style={styles.hint}>{left} min left</Text> : null}
+          <Text style={styles.hint} numberOfLines={1}>
+            {left !== null && left > 0 ? `Read only · ${left} min left` : 'Read only'}
+          </Text>
         </View>
-        <Pressable
-          onPress={() => void leave()}
-          disabled={exiting}
-          accessibilityRole="button"
-          accessibilityLabel="Exit view"
-          accessibilityState={{ disabled: exiting, busy: exiting }}
-          hitSlop={8}
-          style={({ pressed }) => [styles.exit, (pressed || exiting) && { opacity: 0.7 }]}>
-          <Text style={styles.exitText}>Exit</Text>
-        </Pressable>
+        <ExitButton exiting={exiting} onPress={() => void leave()} />
       </View>
-      {notice === 'view-only' ? (
-        <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.note}>
-          <Icon name="info" size={14} color={Brand.noir} />
-          <Text style={styles.noteText}>{VIEW_ONLY_MESSAGE}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -245,6 +343,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   exitText: { ...font('sans', 'bold'), color: Brand.noir, fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase' },
-  note: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one + 2 },
-  noteText: { ...font('sans'), color: Brand.noir, fontSize: 13, lineHeight: 18, flex: 1 },
+  toast: {
+    position: 'absolute',
+    left: Spacing.three,
+    right: Spacing.three,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: Brand.gold,
+  },
+  toastText: { ...font('sans'), fontSize: 14, lineHeight: 19, flex: 1 },
 });

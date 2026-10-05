@@ -297,10 +297,11 @@ export function readOnlySource(inner: DataSource): DataSource {
 
 /** A calm notice the app shows when a change was refused (view-only) or the view has ended. */
 interface ViewNoticeState {
-  notice: 'view-only' | 'ended' | null;
+  /** `returned` is shown once the admin is back in their own account after a view ended. */
+  notice: 'view-only' | 'ended' | 'returned' | null;
   /** When the notice was raised (ms since epoch), so repeated notices restart the flash. */
   at: number;
-  flag(kind: 'view-only' | 'ended'): void;
+  flag(kind: 'view-only' | 'ended' | 'returned'): void;
   clear(): void;
 }
 
