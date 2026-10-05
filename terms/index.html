@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of service | Elite Education</title>
+    <meta name="description" content="The terms on which Elite Education provides private tuition and the Elite Education app to families, students and tutors.">
+    <meta name="theme-color" content="#0A0A0A">
+    <meta name="color-scheme" content="light dark">
+    <link rel="canonical" href="https://eliteeducation.me/terms/">
+    <link rel="icon" type="image/png" sizes="96x96" href="../assets/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Gelasio:wght@400;700&display=swap">
+    <style>
+        :root {
+            --noir: #0A0A0A;
+            --gold: #C9A84C;
+            --ivory: #F9F8F5;
+            --stone: #888888;
+            --white: #FFFFFF;
+
+            --bg: var(--ivory);
+            --surface: var(--white);
+            --panel: var(--ivory);
+            --text: var(--noir);
+            --muted: #6B6B6B;
+            --line: #E5E0D4;
+            --shadow: 0 1px 2px rgba(10, 10, 10, 0.04), 0 8px 24px rgba(10, 10, 10, 0.05);
+
+            --serif: Georgia, Gelasio, 'Times New Roman', serif;
+            --sans: Calibri, Carlito, 'Segoe UI', Arial, sans-serif;
+            --gutter: 2rem;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: var(--noir);
+                --surface: #141414;
+                --panel: #1C1C1C;
+                --text: var(--ivory);
+                --muted: #A8A49B;
+                --line: #2A2925;
+                --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+            }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body { font-family: var(--sans); font-size: 1.0625rem; color: var(--text); background: var(--bg); line-height: 1.65; }
+        img { display: block; max-width: 100%; height: auto; }
+        a { color: inherit; }
+        :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+        .wrap { max-width: 880px; margin: 0 auto; padding: 0 var(--gutter); }
+
+        /* Header */
+        header { background: var(--noir); color: var(--white); border-bottom: 1px solid rgba(201, 168, 76, 0.35); }
+        header .wrap { max-width: 1120px; display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding-top: 0.9rem; padding-bottom: 0.9rem; }
+        .brand { display: block; padding: 0.25rem 0; flex-shrink: 0; }
+        .brand img { width: 132px; }
+        header nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1.75rem; }
+        header nav a { color: var(--ivory); text-decoration: none; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 0.35rem 0; border-bottom: 1px solid transparent; }
+        header nav a:hover, header nav a[aria-current="page"] { border-bottom-color: var(--gold); }
+        header nav a.signin { color: var(--gold); }
+
+        /* Page */
+        main { padding: 4.5rem 0 5rem; }
+        .label { display: inline-flex; align-items: center; gap: 0.75rem; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+        .label::before { content: ''; width: 32px; height: 1px; background: var(--gold); }
+        h1, h2, h3 { font-family: var(--serif); color: var(--text); line-height: 1.25; }
+        h1 { font-weight: 400; font-size: clamp(2rem, 4.5vw, 2.75rem); }
+        h2 { font-weight: 700; font-size: 1.5rem; margin: 3rem 0 1rem; scroll-margin-top: 1.5rem; }
+        h3 { font-weight: 700; font-size: 1.125rem; margin: 1.75rem 0 0.5rem; }
+        .rule { width: 72px; height: 1px; background: var(--gold); border: 0; margin: 1.5rem 0; }
+        .meta { color: var(--muted); font-size: 0.9375rem; }
+        .lead { font-size: 1.1875rem; color: var(--muted); margin-top: 1rem; }
+
+        .notice { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 12px; padding: 1.25rem 1.5rem; margin: 2rem 0 0; }
+        .notice strong { display: block; font-size: 0.8125rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 0.35rem; }
+        .notice p { color: var(--muted); }
+
+        .contents { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem 1.75rem; margin: 2.5rem 0 0; box-shadow: var(--shadow); }
+        .contents p { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+        .contents ol { columns: 2; column-gap: 2rem; padding-left: 1.25rem; }
+        .contents li { break-inside: avoid; margin-bottom: 0.35rem; }
+        .contents a { text-decoration: none; border-bottom: 1px solid transparent; }
+        .contents a:hover { border-bottom-color: var(--gold); }
+
+        article p, article li { margin-bottom: 0.85rem; }
+        article ul, article ol { padding-left: 1.4rem; margin-bottom: 0.85rem; }
+        article li { margin-bottom: 0.5rem; }
+        article a { text-decoration: none; border-bottom: 1px solid var(--gold); overflow-wrap: anywhere; }
+        article strong { font-weight: 700; }
+
+        .table-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.975rem; }
+        th, td { text-align: left; vertical-align: top; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+        tr:last-child td { border-bottom: 0; }
+        th { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.25rem; margin: 1.5rem 0; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; box-shadow: var(--shadow); }
+        .card h3 { margin-top: 0; }
+        .card h3::after { content: ''; display: block; width: 32px; height: 1px; background: var(--gold); margin-top: 0.6rem; }
+        .card p { color: var(--muted); margin-bottom: 0.5rem; }
+        .card p:last-child { margin-bottom: 0; }
+        .steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+        .steps li { counter-increment: step; position: relative; padding-left: 2.5rem; }
+        .steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.75rem; height: 1.75rem; border: 1px solid var(--gold); border-radius: 50%; font-family: var(--serif); font-size: 0.9375rem; display: flex; align-items: center; justify-content: center; }
+
+        /* Footer */
+        footer { background: var(--noir); color: #BDB8AD; padding: 3.5rem 0; border-top: 1px solid rgba(201, 168, 76, 0.35); }
+        footer .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.25rem; }
+        footer img { width: 140px; padding: 0.5rem 0; }
+        footer .essence { font-family: var(--serif); font-size: 1rem; color: var(--gold); letter-spacing: 0.04em; }
+        footer .footlinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.5rem; font-size: 0.9375rem; }
+        footer .footlinks a { color: #CFCBC2; text-decoration: none; border-bottom: 1px solid transparent; }
+        footer .footlinks a:hover, footer .footlinks a[aria-current="page"] { border-bottom-color: var(--gold); }
+        footer .footline { font-size: 0.9375rem; letter-spacing: 0.04em; color: #CFCBC2; }
+        footer .footline a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(201, 168, 76, 0.6); }
+
+        @media (max-width: 640px) {
+            :root { --gutter: 16px; }
+            body { font-size: 1rem; }
+            header .wrap { gap: 1rem; }
+            .brand img { width: 104px; }
+            header nav { gap: 0.25rem 1.1rem; }
+            header nav a { font-size: 0.75rem; letter-spacing: 0.12em; }
+            header nav a.optional { display: none; }
+            main { padding: 3rem 0 3.5rem; }
+            h2 { font-size: 1.3125rem; margin-top: 2.5rem; }
+            .contents { padding: 1.25rem; }
+            .contents ol { columns: 1; }
+            .notice { padding: 1rem 1.15rem; }
+            th, td { padding: 0.65rem 0.75rem; }
+        }
+        @media print {
+            header nav, .contents { display: none; }
+            header, footer { background: none; color: #000; }
+        }
+    </style>
+</head>
+<body>
+<!--
+  FOR CRAIG — DRAFT FOR LEGAL REVIEW. Points to confirm with your lawyer (and accountant where marked) before removing the draft notice:
+  1. The legal entity name, trade licence number and registered address under "About these terms".
+  2. Whether these terms, or a separate signed agreement, form the contract with families; and whether tutors are engaged as independent contractors (section 9), and on what written terms.
+  3. [Accountant] VAT wording in section 5: whether Elite Education is VAT-registered, the TRN to show on invoices, and the payment terms (currently "within 7 days of the invoice date").
+  4. Package terms (section 6): expiry of unused credits and refunds of unused credits.
+  5. Non-solicitation of tutors by families (section 7) and whether it is enforceable as drafted.
+  6. The limitation of liability (section 11), including the cap at the fees paid in the previous three months.
+  7. Governing law and jurisdiction (section 12): UAE federal law and the courts of Dubai, or another forum such as DIFC courts or arbitration.
+  8. Notice period for changes to these terms (currently 30 days).
+  9. The safeguarding promises in section 8 (interview, references, police clearance before teaching; parent nearby for younger students online) match the vetting process actually followed.
+-->
+<header>
+    <div class="wrap">
+        <a class="brand" href="../" aria-label="Elite Education home"><img src="../assets/logo-white-wide.png" width="132" height="50" alt="Elite Education"></a>
+        <nav aria-label="Main">
+            <a class="optional" href="../">Home</a>
+            <a href="../privacy/">Privacy</a>
+            <a href="../terms/" aria-current="page">Terms</a>
+            <a href="../support/">Support</a>
+            <a class="signin" href="/app/">Sign in</a>
+        </nav>
+    </div>
+</header>
+<main>
+    <div class="wrap">
+        <p class="label">Legal</p>
+        <h1>Terms of service</h1>
+        <hr class="rule">
+        <p class="meta">Draft of October 2026. These terms will apply from the date shown here once they are in force.</p>
+        <div class="notice" role="note">
+            <strong>Draft for legal review - not yet in force</strong>
+            <p>These terms are being reviewed by our legal advisers and may change before they take effect. Until then, the arrangements agreed with our office continue to apply.</p>
+        </div>
+        <p class="lead">These terms set out how Elite Education provides tuition and the Elite Education app, and what we ask of the families, students and tutors who use them. We have written them to be read, and we would be pleased to answer any question about them.</p>
+        <nav class="contents" aria-label="Contents">
+            <p>Contents</p>
+            <ol>
+                <li><a href="#about">About these terms</a></li>
+                <li><a href="#service">The service</a></li>
+                <li><a href="#accounts">Accounts</a></li>
+                <li><a href="#lessons">Lessons and cancellations</a></li>
+                <li><a href="#payments">Payments and invoices</a></li>
+                <li><a href="#packages">Packages</a></li>
+                <li><a href="#conduct">Conduct</a></li>
+                <li><a href="#safeguarding">Safeguarding</a></li>
+                <li><a href="#tutors">Tutors</a></li>
+                <li><a href="#ip">Intellectual property</a></li>
+                <li><a href="#liability">Our liability</a></li>
+                <li><a href="#law">Governing law</a></li>
+                <li><a href="#changes">Changes and ending these terms</a></li>
+                <li><a href="#contact">Contact us</a></li>
+            </ol>
+        </nav>
+        <article>
+            <h2 id="about">1. About these terms</h2>
+            <p>These terms are an agreement between you and [legal entity name], [trade licence number], [registered address], United Arab Emirates ("Elite Education", "we", "us"). They apply to our tuition services, our website at eliteeducation.me and the Elite Education app. By creating an account or booking a lesson, you accept these terms. Our <a href="../privacy/">privacy policy</a> explains how we handle personal data.</p>
+
+            <h2 id="service">2. The service</h2>
+            <p>We arrange private tuition, in person and online, delivered by tutors we have selected and vetted. The app allows families to view and request lessons, read lesson notes and progress, hand in homework, receive and pay invoices, and message our office and their tutors. It allows tutors to manage their availability, record lessons and submit invoices.</p>
+            <p>We take great care to keep the app available and accurate, but we cannot promise that it will be free from interruption. If the app is unavailable, our office will continue to help you by email or telephone.</p>
+
+            <h2 id="accounts">3. Accounts</h2>
+            <ul>
+                <li>A parent or guardian aged 18 or over opens the family account and is responsible for it, including for the profiles of any children added to it and for any sign-in given to a student.</li>
+                <li>Please keep your sign-in details private and tell us promptly if you believe someone else has used your account.</li>
+                <li>Please keep your contact details up to date, so that reminders and invoices reach you.</li>
+                <li>You may close your account at any time in the app under Account &rarr; Your data and privacy &rarr; Delete my account. Closing your account does not cancel amounts already due.</li>
+            </ul>
+
+            <h2 id="lessons">4. Lessons and cancellations</h2>
+            <p>Lessons are scheduled with our office, or requested in the app from your tutor's available times and confirmed by us. We will always try to keep the same tutor for each subject; where that is not possible, we will propose a suitable alternative.</p>
+            <p>Our cancellation policy, including the notice required and any fee for a late cancellation or a missed lesson, is shown in the app and is confirmed to you before you cancel. The policy shown in the app at the time of cancellation applies. No fee is charged to a family when a tutor cancels, and our office may waive a fee at its discretion.</p>
+
+            <h2 id="payments">5. Payments and invoices</h2>
+            <ul>
+                <li>Prices are agreed with you before lessons begin and are charged in UAE dirhams (AED). VAT is added where applicable and shown on each invoice.</li>
+                <li>Invoices are issued in the app and by email. Unless agreed otherwise, they are payable within 7 days of the invoice date.</li>
+                <li>You may pay by card, Apple Pay or Google Pay through our payment provider, Stripe, or by another method agreed with our office. You may also choose to have invoices paid automatically from a saved card, and may switch this off at any time.</li>
+                <li>If an invoice remains unpaid, we may pause further bookings until it is settled. We will always contact you first.</li>
+                <li>If you believe an invoice is incorrect, please tell us promptly; where we have made an error, we will issue a credit note or a refund.</li>
+            </ul>
+
+            <h2 id="packages">6. Packages</h2>
+            <p>We may offer prepaid packages of lessons. Lessons are drawn from a package automatically as they take place, and the app shows the credits remaining. The validity period of a package and our approach to any unused credits are stated when you buy it.</p>
+
+            <h2 id="conduct">7. Conduct</h2>
+            <p>We ask everyone who uses our service to treat one another with courtesy and respect. In particular, you agree not to:</p>
+            <ul>
+                <li>use the app or our messages for anything unlawful, offensive or unrelated to tuition;</li>
+                <li>share another person's personal data, or lesson materials, outside the purpose for which they were provided;</li>
+                <li>attempt to access accounts or information that are not yours, or interfere with the app's operation;</li>
+                <li>arrange lessons privately with a tutor introduced by Elite Education, outside our service, while you are a client and for six months afterwards, without our agreement.</li>
+            </ul>
+            <p>We may suspend or close an account where these terms are seriously or repeatedly broken, and will explain our reasons.</p>
+
+            <h2 id="safeguarding">8. Safeguarding</h2>
+            <p>The safety and wellbeing of students is our first concern. Every tutor is interviewed, has their qualifications and references checked, and provides a police clearance certificate before teaching. Communication between tutors and students takes place through the app or with a parent's knowledge. For online lessons, a parent or another responsible adult should be nearby for younger students. If you have any concern about a student's safety or a tutor's conduct, please contact us immediately at <a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a>; every concern is treated seriously and in confidence.</p>
+
+            <h2 id="tutors">9. Tutors</h2>
+            <p>Our tutors are engaged as independent contractors and not as employees of Elite Education, unless we have agreed otherwise with a tutor in writing. Tutors agree to follow our safeguarding, conduct and confidentiality standards, to keep accurate lesson records in the app, and to invoice through the app. A tutor's separate written agreement with us takes precedence over these terms where the two differ.</p>
+
+            <h2 id="ip">10. Intellectual property</h2>
+            <p>The app, this website, the Elite Education name and logo, and the materials we provide are owned by or licensed to us. You may use them only for your own or your child's tuition. Work that students create remains theirs; by handing it in through the app, you allow us and the tutor to view and comment on it for the purpose of teaching.</p>
+
+            <h2 id="liability">11. Our liability</h2>
+            <p>We provide our services with reasonable care and skill. We cannot guarantee particular examination results, as these depend on many factors beyond our control. Nothing in these terms limits any liability that cannot lawfully be limited. Otherwise, we are not liable for indirect or consequential losses, and our total liability to you in connection with our services is limited to the fees you paid us in the three months before the event giving rise to the claim.</p>
+
+            <h2 id="law">12. Governing law</h2>
+            <p>These terms are governed by the laws of the United Arab Emirates as applied in the Emirate of Dubai. Any dispute that we cannot resolve together will be subject to the jurisdiction of the courts of Dubai. We will always try to resolve a concern informally first.</p>
+
+            <h2 id="changes">13. Changes and ending these terms</h2>
+            <p>We may update these terms to reflect changes in our service or in the law. We will give you at least 30 days' notice of any significant change in the app or by email. If you do not wish to accept a change, you may close your account before it takes effect. Either of us may end the arrangement at any time; amounts due for lessons already given remain payable.</p>
+
+            <h2 id="contact">14. Contact us</h2>
+            <p>Please write to <a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a> with any question about these terms. For help with the app, please see our <a href="../support/">support page</a>.</p>
+        </article>
+    </div>
+</main>
+<footer>
+    <div class="wrap">
+        <img src="../assets/logo-white-wide.png" width="140" height="53" alt="Elite Education">
+        <p class="essence">Excellence. Discretion. Results.</p>
+        <p class="footlinks">
+            <a href="../privacy/">Privacy policy</a>
+            <a href="../terms/" aria-current="page">Terms of service</a>
+            <a href="../support/">Support</a>
+        </p>
+        <p class="footline">Elite Education | <a href="https://eliteeducation.me">eliteeducation.me</a></p>
+    </div>
+</footer>
+</body>
+</html>

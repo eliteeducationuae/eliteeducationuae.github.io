@@ -2,6 +2,7 @@
 #   /      the marketing site (index.html)
 #   /app/  the app (Expo web build), for Craig and tutors on a laptop and for families without the iOS app
 # One-off setup: repo Settings → Pages → Source: "GitHub Actions".
+# Checks on every branch and pull request live in ci.yml; this workflow repeats `npm run check` before publishing.
 name: Deploy site and web app
 
 on:

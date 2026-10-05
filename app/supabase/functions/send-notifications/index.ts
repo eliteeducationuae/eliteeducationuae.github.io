@@ -6,6 +6,7 @@
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
 // TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
@@ -33,7 +34,7 @@ function emailHtml(subject: string, body: string, link?: string) {
   </div></body></html>`;
 }
 
-Deno.serve(async () => {
+Deno.serve(withMonitoring('send-notifications', adminClient, async () => {
   const db = adminClient();
   const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me';
   const from = Deno.env.get('EMAIL_FROM') ?? 'Elite Education <hello@eliteeducation.me>';
@@ -150,4 +151,4 @@ Deno.serve(async () => {
     }
   }
   return new Response(`sent ${sent} of ${queue?.length ?? 0}`);
-});
+}));

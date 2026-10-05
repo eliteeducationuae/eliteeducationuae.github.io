@@ -3,8 +3,9 @@
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
 import { adminClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 
-Deno.serve(async () => {
+Deno.serve(withMonitoring('send-reminders', adminClient, async () => {
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
@@ -52,4 +53,4 @@ Deno.serve(async () => {
   }
   await db.from('lessons').update({ reminded_at: new Date().toISOString() }).in('id', lessons.map((l) => l.id));
   return new Response(`sent ${messages.length} pushes, ${whatsapp}`);
-});
+}));

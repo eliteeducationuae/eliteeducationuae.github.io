@@ -170,6 +170,9 @@
         footer .essence { margin: 0; font-size: 1rem; }
         footer .footline { font-size: 0.9375rem; letter-spacing: 0.04em; color: #CFCBC2; }
         footer .footline a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(201, 168, 76, 0.6); }
+        footer .footlinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.5rem; font-size: 0.9375rem; }
+        footer .footlinks a { color: #CFCBC2; text-decoration: none; border-bottom: 1px solid transparent; }
+        footer .footlinks a:hover { border-bottom-color: var(--gold); }
 
         @media (max-width: 860px) {
             .contact-grid { grid-template-columns: 1fr; gap: 1rem; }
@@ -419,6 +422,7 @@
     <div class="wrap">
         <img src="assets/logo-white-wide.png" width="140" height="53" alt="Elite Education">
         <p class="essence">Excellence. Discretion. Results.</p>
+        <p class="footlinks"><a href="privacy/">Privacy policy</a> <a href="terms/">Terms of service</a> <a href="support/">Support</a></p>
         <p class="footline">Elite Education | <a href="https://eliteeducation.me" target="_blank" rel="noopener">eliteeducation.me</a></p>
     </div>
 </footer>

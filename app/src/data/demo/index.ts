@@ -11,6 +11,7 @@ import { eq } from './engagement';
 import { ops } from './operations';
 import { pay } from './payments';
 import { createSeed } from './seed';
+import * as launch from './launch';
 import { setWhatsAppPrefs } from './whatsapp';
 
 const DB_KEY = 'elite.demo.db';
@@ -82,7 +83,15 @@ export function createDemoSource(): DataSource {
     async signIn(email) {
       const d = await load();
       const found = d.profiles.find((p) => p.email.toLowerCase() === email.trim().toLowerCase());
-      if (!found) throw new Error('No demo account with that email.');
+      if (!found) {
+        // Launch readiness: a sample account deleted from the Account screen comes back with Reset demo data.
+        const deleted = createSeed().profiles.some((p) => p.email.toLowerCase() === email.trim().toLowerCase());
+        throw new Error(
+          deleted
+            ? 'This demo account has been deleted. Sign in with another role and choose Reset demo data on the Account screen to restore it.'
+            : 'No demo account with that email.',
+        );
+      }
       viewer = found;
       await AsyncStorage.setItem(SESSION_KEY, found.id).catch(() => undefined);
       return found;
@@ -302,5 +311,32 @@ export function createDemoSource(): DataSource {
     setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
     buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
     chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
+
+    // Launch readiness: error reporting, system health, data export and account deletion
+    async logAppError(e) {
+      try {
+        const d = await load();
+        launch.logAppError(d, viewer, e);
+        await save();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    getSystemHealth: () => read((d, v) => launch.systemHealth(d, v)),
+    listAppErrors: (limit) => read((d, v) => launch.appErrors(d, v, limit)),
+    listFunctionErrors: (limit) => read((d, v) => launch.functionErrors(d, v, limit)),
+    exportMyData: () => read((d, v) => launch.exportMyData(d, v)),
+    async deleteMyAccount() {
+      const summary = await write((d, v) => launch.deleteMyAccount(d, v));
+      // The login no longer exists: forget the demo session, as production signs out locally.
+      viewer = null;
+      await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
+      return summary;
+    },
+    listDeletionRequests: () => read((d, v) => launch.deletionRequests(d, v)),
+    recordDeletionRequest: (target) => write((d, v) => launch.recordDeletionRequest(d, v, target)),
+    cancelDeletionRequest: (id) => write((d, v) => launch.cancelDeletionRequest(d, v, id)),
+    processDeletionRequest: (id) => write((d, v) => launch.processDeletionRequest(d, v, id)),
   };
 }

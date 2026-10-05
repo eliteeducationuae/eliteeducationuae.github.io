@@ -2,6 +2,8 @@
 
 The Elite Education app for iPhone (plus Android and web, from the same code). It runs scheduling, billing and student progress for **admins, tutors, parents and students**. It's built to replace Teachworks.
 
+**Launching on the App Store and Google Play:** follow the numbered checklist in [LAUNCH.md](LAUNCH.md).
+
 ## Why it's better than Teachworks
 
 | | Teachworks | Elite Education app |
@@ -277,6 +279,146 @@ Complete these once, in this order. The function names come from the round 4 pla
 npm run check      # lint + typecheck + unit tests
 npm run test:db    # schema, row-level security and billing functions against a local Postgres
 ```
+
+Both run automatically in GitHub Actions on every push and pull request (see *Continuous integration* below), so a red cross on a commit means one of them failed.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` (*Checks*) runs on every push and every pull request, on every branch, and can be started by hand from *Actions → Checks → Run workflow*. A newer push to the same branch cancels the run still in progress. It has two jobs:
+
+- **App (lint, types, unit tests)** installs the packages with `npm ci` and runs `npm run check`: ESLint, the TypeScript compiler and the Jest unit tests.
+- **Database (migrations, row-level security, server functions)** runs `bash supabase/tests/run.sh` (the same as `npm run test:db`): it starts a throwaway PostgreSQL server, applies every migration in order to a fresh database for each test file, and runs the SQL tests in `supabase/tests`. PostgreSQL comes with the GitHub runner; the job installs it only if it is missing.
+
+`deploy.yml` still runs `npm run check` before it publishes from `main`, so a broken commit is never deployed.
+
+**Reading a failure.** Open the red cross next to the commit (or the *Checks* tab of the pull request), then the failed job and the failed step:
+
+- *Lint, typecheck and unit tests*: the log shows the ESLint rule and file, the TypeScript error with its file and line, or the Jest test name with *Expected* and *Received*. Run `npm run check` locally to reproduce.
+- *Database tests*: the last lines show the SQL test file, the failing statement and the message (for example `ERROR: permission denied` or a failed `assert`). Run `npm run test:db` locally; it needs PostgreSQL installed (`PG_BIN` can point at its `bin` folder, and `PG_TEST_PORT` changes the port).
+
+**Requiring the checks on main.** In GitHub, go to *Settings → Branches → Add branch protection rule* (or *Rules → Rulesets*), target `main`, tick *Require status checks to pass before merging*, and choose both **App (lint, types, unit tests)** and **Database (migrations, row-level security, server functions)**. The checks appear in the list once they have run at least once.
+
+**Later improvement.** The Edge Functions are written for Deno and are not yet type-checked in CI. A third job could install Deno (`denoland/setup-deno`) and run `deno check supabase/functions/*/index.ts`.
+
+## Database migrations
+
+- **Never edit a migration that has been applied** anywhere (production, or a teammate's database). Fix forward with a new migration.
+- Name each new file `<next timestamp>_<name>.sql` in `supabase/migrations`, with a timestamp later than every existing file (for example `20261021000000_waiting_list.sql`). Files run in name order.
+- **End every new migration** with a line that records it, so the app can show which version is live:
+  ```sql
+  select public.record_migration('20261021000000', 'waiting_list');
+  ```
+- Add a matching SQL test, `supabase/tests/<name>_test.sql`, and add `<name>` to the list of tests in `supabase/tests/run.sh`. CI then checks it on every push.
+- Apply to production with `npx supabase db push` (it applies only the migrations that are new), or paste the file into the SQL editor.
+- Check the result in the app: *Admin → More → System health → Database version*. In production it also reads `supabase_migrations.schema_migrations` (the list kept by `supabase db push`), so every applied migration is listed even if it was applied before `record_migration` existed.
+
+## Backups and restore
+
+Three layers protect the data:
+
+1. **Point-in-time recovery (PITR).** On the Supabase Pro plan, enable the PITR add-on (*Database → Backups → Point in time*). It lets you restore the whole database to any second in the retention window. Without PITR, the Pro plan keeps **daily backups** for 7 days. This is the only backup that includes tutor bank details and Google Calendar tokens.
+2. **Nightly JSON export.** The `backup-export` Edge Function runs daily at 02:10 UAE time. It writes one JSON file per critical table (families, students, lessons, notes, homework, invoices, charges, payments, packages, tutors, tutor invoices, expenses, reports and settings) plus a `manifest.json` with row counts and the database version into the private **`backups`** storage bucket, in a folder named after the date (`2026-11-14/invoices.json`). Folders older than **35 days** are deleted automatically. Bank details, calendar tokens, OAuth states, autopay requests and push tokens are **intentionally excluded**; PITR covers them.
+3. **Your own copy.** From time to time, download a day's folder and keep it somewhere safe and encrypted.
+
+**Restore the whole database to a point in time.** Supabase Dashboard → *Database → Backups → Point in time* → choose the date and time just before the problem → *Restore*. The project is unavailable for a few minutes while it restores, and everything after that moment is lost, so first pause the cron jobs and note what changed since.
+
+**Download a day's backup.** Dashboard → *Storage → backups* → open the date folder → download each file. With the CLI: `npx supabase storage cp -r ss:///backups/2026-11-14 ./backup-2026-11-14 --experimental --linked`.
+
+**Restore a single table from JSON** (for example after a mistaken bulk edit to `lessons`). Always restore into a scratch schema first, compare, then copy back only the rows you need:
+
+```bash
+# 1. Load the JSON into a scratch table (needs the database connection string from Dashboard → Connect).
+psql "$DATABASE_URL" -c "create schema if not exists restore; drop table if exists restore.lessons_raw; create table restore.lessons_raw (doc jsonb);"
+jq -c '.[]' backup-2026-11-14/lessons.json | psql "$DATABASE_URL" -c "\copy restore.lessons_raw (doc) from stdin"
+```
+
+```sql
+-- 2. Turn it back into rows with the live table's columns, and compare.
+create table restore.lessons as
+  select r.* from restore.lessons_raw, jsonb_populate_record(null::public.lessons, doc) r;
+select count(*) from restore.lessons;
+select id from restore.lessons except select id from public.lessons;   -- rows that were deleted
+
+-- 3. Copy back only what is needed, then tidy up.
+insert into public.lessons select * from restore.lessons
+  where id in (select id from restore.lessons except select id from public.lessons);
+drop schema restore cascade;
+```
+
+Each table file is a plain JSON array of rows. The `profiles` file holds only the columns needed to reconnect logins (no tokens), so restore it into the scratch schema and copy across the columns you need.
+
+**Test a restore every quarter:** download one day's folder, restore one table into the scratch schema as above, check the row count matches `manifest.json`, and drop the schema. Note the date in the office log.
+
+## Error reporting and System health
+
+- **App errors.** Crashes and unexpected errors in the app are sent to the database through `log_app_error` and stored in `app_errors`. Personal details (email addresses, phone numbers, long numbers such as card or IBAN digits, and tokens) are removed before the report leaves the device and again in the database, and reports are rate-limited (per person and per error) so a fault in a loop cannot flood the table. Expected problems, such as no internet connection, are not reported. Reports older than 90 days are deleted.
+- **Server errors.** Every Edge Function is wrapped in `withMonitoring` (`supabase/functions/_shared/monitoring.ts`): failures are recorded in `function_errors`, and the scheduled functions record each run in `function_runs`.
+- **System health** (*Admin → More → System health*) shows each check with its status, the recent errors and the database version. It flags:
+  - emails, push or WhatsApp notifications waiting more than **10 minutes**, or failed in the last 24 hours;
+  - the Google Calendar queue stuck for more than **30 minutes**;
+  - `charge-invoice` (autopay) not having run for **30 minutes**;
+  - Stripe webhook failures in the last 24 hours (card payments may not have been recorded);
+  - WhatsApp failures;
+  - a nightly backup older than **26 hours**;
+  - server and app errors in the last 24 hours.
+- **Alerts.** The `health-check` function runs every 15 minutes and emails `HEALTH_ALERT_EMAIL` (or every administrator if it is not set) when a problem starts, again every 6 hours while it continues, and once when everything is clear. Alerts hold counts only, never personal details.
+
+**Adding Sentry later (optional).** Create a React Native project at sentry.io, store its DSN as an EAS environment variable (`EXPO_PUBLIC_SENTRY_DSN`, under expo.dev → your project → *Environment variables*), run `npx expo install @sentry/react-native`, add its config plugin to `app.json`, initialise it with the DSN, and register it as an extra destination with `registerErrorSink` in `src/lib/error-reporting.ts`. That is the one place to change; every existing report then reaches both the database and Sentry.
+
+## Account deletion and data export
+
+Families, students and tutors can download their data and close their account themselves, as Apple's guideline 5.1.1(v) and the UAE Personal Data Protection Law (Federal Decree-Law No. 45 of 2021) expect.
+
+- **Download my data** (*Account → Your data and privacy*): a JSON file with everything held about the person (and, for a parent, their family and children), and a readable PDF summary. A tutor's bank details appear only as the bank name and the last four digits of the IBAN.
+- **Delete my account** (*Account → Your data and privacy → Delete my account*): explains what happens, offers the download first, and asks for typed confirmation. The `delete-account` Edge Function then closes the account at once.
+- **What is removed and what is kept:**
+  - *Parent (family):* the whole family is closed with every login in it. Names, contact details, addresses, notes, homework, hand-ins, ratings, reports, messages' author names, saved card summary, WhatsApp consent, push tokens, queued emails and stored files are removed; upcoming lessons are cancelled (children are removed from group lessons). **Invoices, credit notes, charges, payments and packages are kept**, anonymised, because tax law requires them; the family surname stays as the bill-to name on retained invoices.
+  - *Student login:* closed with their family, as above. The office can also close a single child from the family.
+  - *Tutor:* name, contact details, availability, time off, bank details and calendar links are removed. **Lessons and tutor invoices are kept** for pay and tax records. Upcoming lessons are not cancelled; they are counted so the office can give them to another tutor.
+  - *Administrator:* the only administrator cannot be removed until another is appointed.
+- **Office side:** *Admin → More → Deletion requests* records requests received by email or phone, carries them out with the same function, shows failures to retry, and keeps a record of each completed deletion without personal details.
+- **Retention:** retained invoices and payment records are kept for the period UAE tax law requires (the privacy policy currently says five years). **For legal and accountant review:** confirm the retention period, whether the bill-to surname must stay on tax invoices, and the wording in the app and the privacy policy.
+
+## Launch functions: deploy and schedule
+
+```bash
+npx supabase functions deploy delete-account health-check backup-export
+npx supabase secrets set HEALTH_ALERT_EMAIL=<the address that should receive alerts>
+# Already set for send-notifications, and used by health-check for its emails: RESEND_API_KEY, EMAIL_FROM, APP_URL
+```
+
+`delete-account` needs no schedule and no extra secret. `health-check` and `backup-export` accept only the service role key, so schedule them the same way as `charge-invoice`: in the Supabase Dashboard under *Integrations → Cron* (switch on Cron and pg_net if asked), create a job that calls the Edge Function with method POST, body `{}` and `Authorization: Bearer <service role key>`, or in the SQL editor with the key kept in Vault:
+
+```sql
+-- Once: keep the service role key (Dashboard → Settings → API keys) in Vault, never in the app or this repository.
+select vault.create_secret('<service role key>', 'service_role_key');
+
+select cron.schedule('health-check', '*/15 * * * *', $$
+  select net.http_post(
+    url := 'https://<project-ref>.supabase.co/functions/v1/health-check',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
+    ),
+    body := '{}'::jsonb
+  )
+$$);
+
+-- 22:10 UTC is 02:10 in the UAE.
+select cron.schedule('backup-export', '10 22 * * *', $$
+  select net.http_post(
+    url := 'https://<project-ref>.supabase.co/functions/v1/backup-export',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 120000
+  )
+$$);
+```
+
+Check the jobs with `select jobname, schedule, active from cron.job;` and their recent runs with `select * from cron.job_run_details order by start_time desc limit 20;`. After the first night, *System health* should show the backup as recent.
 
 ## Roadmap ideas
 

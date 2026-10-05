@@ -1,0 +1,117 @@
+import { toDateKey } from './dates';
+import type { DeletionRequest, DeletionSummary, Role } from './types';
+
+/**
+ * Data rights: what deleting an account removes and keeps, the typed confirmation, and file names for exports.
+ * Mirrors the delete-account Edge Function and the admin deletion request functions.
+ */
+
+export interface DeletionConsequences {
+  removed: string[];
+  kept: string[];
+  note: string;
+}
+
+/** Shown when the only administrator tries to delete their account (the server says the same). */
+export const LAST_ADMIN_MESSAGE =
+  'You are the only administrator, so this account cannot be deleted. Please make another person an administrator first.';
+
+/** The word a person types to confirm deletion. */
+export const DELETE_CONFIRM_WORD = 'DELETE';
+
+export function deletionConsequences(role: Role): DeletionConsequences {
+  switch (role) {
+    case 'parent':
+      return {
+        removed: [
+          'Your login and contact details',
+          "Your children's profiles",
+          'Lesson notes, homework and submissions',
+          'Your messages with Elite Education',
+          'All future lessons, which will be cancelled',
+        ],
+        kept: ['Invoices and payment records, kept for the period UAE law requires, without your contact details'],
+        note: 'Your invoices and payment records are kept for the period UAE law requires, without your contact details. Everything else is removed and cannot be recovered.',
+      };
+    case 'tutor':
+      return {
+        removed: ['Your login and contact details', 'Your weekly availability', 'Your bank details', 'Your Google Calendar link'],
+        kept: ['Your invoices and lesson history, kept for tax and pay records'],
+        note: 'Your upcoming lessons will be reassigned to another tutor by Elite Education. Your invoices and lesson history are kept for tax and pay records.',
+      };
+    case 'student':
+      return {
+        removed: ['Your login', 'Your messages'],
+        kept: ["Your lessons, notes and reports, which stay with your parent's account"],
+        note: "The family's records stay with your parent's account. Your parent can ask us to remove them.",
+      };
+    case 'admin':
+      return {
+        removed: ['Your login and contact details', 'Your Google Calendar link'],
+        kept: ['Business records, invoices and lesson history'],
+        note: 'An administrator account can only be deleted when another administrator remains.',
+      };
+    default:
+      // Roles added later (for example an accountant) lose their login; business records stay.
+      return {
+        removed: ['Your login and contact details'],
+        kept: ['Business records, invoices and lesson history'],
+        note: 'Your login is removed. Business records are kept for the period UAE law requires.',
+      };
+  }
+}
+
+/** True only when the person typed DELETE exactly (surrounding spaces are ignored). */
+export function canConfirmDeletion(text: string): boolean {
+  return text.trim() === DELETE_CONFIRM_WORD;
+}
+
+/** e.g. elite-education-data-2026-10-04.json (local date). */
+export function exportFileName(date: Date, extension = 'json'): string {
+  return `elite-education-data-${toDateKey(date)}.${extension}`;
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** e.g. "Kept 4 invoices and 3 payments; cancelled 2 future lessons; 1 upcoming lesson needs a new tutor". */
+export function deletionSummaryText(s: DeletionSummary | undefined | null): string {
+  if (!s) return '';
+  const parts: string[] = [];
+  const invoices = s.invoicesRetained ?? 0;
+  const payments = s.paymentsRetained ?? 0;
+  if (invoices || payments) parts.push(`Kept ${plural(invoices, 'invoice')} and ${plural(payments, 'payment')}`);
+  if (s.studentsAnonymised) parts.push(`anonymised ${plural(s.studentsAnonymised, 'student')}`);
+  if (s.futureLessonsCancelled) parts.push(`cancelled ${plural(s.futureLessonsCancelled, 'future lesson')}`);
+  if (s.upcomingLessonsNeedingTutor) {
+    const n = s.upcomingLessonsNeedingTutor;
+    parts.push(`${plural(n, 'upcoming lesson')} ${n === 1 ? 'needs' : 'need'} a new tutor`);
+  }
+  if (!parts.length) return 'Nothing needed to be kept or cancelled.';
+  const text = parts.join('; ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export const DELETION_STATUS_LABEL: Record<DeletionRequest['status'], string> = {
+  pending: 'Pending',
+  processing: 'In progress',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+/** Order the groups appear in on the admin screen. */
+export const DELETION_STATUS_ORDER: DeletionRequest['status'][] = ['pending', 'failed', 'processing', 'completed', 'cancelled'];
+
+export function canProcessRequest(r: Pick<DeletionRequest, 'status'>): boolean {
+  return r.status === 'pending' || r.status === 'failed';
+}
+
+export function canCancelRequest(r: Pick<DeletionRequest, 'status'>): boolean {
+  return r.status === 'pending';
+}
+
+/** Masks all but the last four characters of an account number, e.g. "•••• 1234". Never returns more than four. */
+export function last4(value: string | undefined | null): string | undefined {
+  const clean = (value ?? '').replace(/\s+/g, '');
+  return clean ? clean.slice(-4) : undefined;
+}

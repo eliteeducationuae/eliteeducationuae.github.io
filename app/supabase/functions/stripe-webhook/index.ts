@@ -5,6 +5,7 @@
 // Secrets: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY.
 // Every handler is safe to repeat: Stripe retries on any non-2xx response and may send events more than once.
 import { adminClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import { classifyEvent, verifyStripeSignature } from '../_shared/stripe.ts';
 import { refreshCard, setDefaultCard } from '../_shared/stripe-api.ts';
 
@@ -20,7 +21,7 @@ async function rememberCard(customerId?: string, paymentMethodId?: string) {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('stripe-webhook', adminClient, async (req) => {
   const payload = await req.text();
   const ok = await verifyStripeSignature(payload, req.headers.get('stripe-signature'), Deno.env.get('STRIPE_WEBHOOK_SECRET'), Date.now() / 1000);
   if (!ok) return new Response('Invalid signature', { status: 400 });
@@ -79,4 +80,4 @@ Deno.serve(async (req) => {
     return new Response(e instanceof Error ? e.message : String(e), { status: 500 });
   }
   return new Response('ok');
-});
+}));

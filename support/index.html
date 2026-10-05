@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support | Elite Education</title>
+    <meta name="description" content="How to contact Elite Education for help with lessons, invoices or the Elite Education app, and how to download your data or delete your account.">
+    <meta name="theme-color" content="#0A0A0A">
+    <meta name="color-scheme" content="light dark">
+    <link rel="canonical" href="https://eliteeducation.me/support/">
+    <link rel="icon" type="image/png" sizes="96x96" href="../assets/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Gelasio:wght@400;700&display=swap">
+    <style>
+        :root {
+            --noir: #0A0A0A;
+            --gold: #C9A84C;
+            --ivory: #F9F8F5;
+            --stone: #888888;
+            --white: #FFFFFF;
+
+            --bg: var(--ivory);
+            --surface: var(--white);
+            --panel: var(--ivory);
+            --text: var(--noir);
+            --muted: #6B6B6B;
+            --line: #E5E0D4;
+            --shadow: 0 1px 2px rgba(10, 10, 10, 0.04), 0 8px 24px rgba(10, 10, 10, 0.05);
+
+            --serif: Georgia, Gelasio, 'Times New Roman', serif;
+            --sans: Calibri, Carlito, 'Segoe UI', Arial, sans-serif;
+            --gutter: 2rem;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: var(--noir);
+                --surface: #141414;
+                --panel: #1C1C1C;
+                --text: var(--ivory);
+                --muted: #A8A49B;
+                --line: #2A2925;
+                --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+            }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body { font-family: var(--sans); font-size: 1.0625rem; color: var(--text); background: var(--bg); line-height: 1.65; }
+        img { display: block; max-width: 100%; height: auto; }
+        a { color: inherit; }
+        :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+        .wrap { max-width: 880px; margin: 0 auto; padding: 0 var(--gutter); }
+
+        /* Header */
+        header { background: var(--noir); color: var(--white); border-bottom: 1px solid rgba(201, 168, 76, 0.35); }
+        header .wrap { max-width: 1120px; display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding-top: 0.9rem; padding-bottom: 0.9rem; }
+        .brand { display: block; padding: 0.25rem 0; flex-shrink: 0; }
+        .brand img { width: 132px; }
+        header nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1.75rem; }
+        header nav a { color: var(--ivory); text-decoration: none; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 0.35rem 0; border-bottom: 1px solid transparent; }
+        header nav a:hover, header nav a[aria-current="page"] { border-bottom-color: var(--gold); }
+        header nav a.signin { color: var(--gold); }
+
+        /* Page */
+        main { padding: 4.5rem 0 5rem; }
+        .label { display: inline-flex; align-items: center; gap: 0.75rem; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+        .label::before { content: ''; width: 32px; height: 1px; background: var(--gold); }
+        h1, h2, h3 { font-family: var(--serif); color: var(--text); line-height: 1.25; }
+        h1 { font-weight: 400; font-size: clamp(2rem, 4.5vw, 2.75rem); }
+        h2 { font-weight: 700; font-size: 1.5rem; margin: 3rem 0 1rem; scroll-margin-top: 1.5rem; }
+        h3 { font-weight: 700; font-size: 1.125rem; margin: 1.75rem 0 0.5rem; }
+        .rule { width: 72px; height: 1px; background: var(--gold); border: 0; margin: 1.5rem 0; }
+        .meta { color: var(--muted); font-size: 0.9375rem; }
+        .lead { font-size: 1.1875rem; color: var(--muted); margin-top: 1rem; }
+
+        .notice { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 12px; padding: 1.25rem 1.5rem; margin: 2rem 0 0; }
+        .notice strong { display: block; font-size: 0.8125rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 0.35rem; }
+        .notice p { color: var(--muted); }
+
+        .contents { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem 1.75rem; margin: 2.5rem 0 0; box-shadow: var(--shadow); }
+        .contents p { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+        .contents ol { columns: 2; column-gap: 2rem; padding-left: 1.25rem; }
+        .contents li { break-inside: avoid; margin-bottom: 0.35rem; }
+        .contents a { text-decoration: none; border-bottom: 1px solid transparent; }
+        .contents a:hover { border-bottom-color: var(--gold); }
+
+        article p, article li { margin-bottom: 0.85rem; }
+        article ul, article ol { padding-left: 1.4rem; margin-bottom: 0.85rem; }
+        article li { margin-bottom: 0.5rem; }
+        article a { text-decoration: none; border-bottom: 1px solid var(--gold); overflow-wrap: anywhere; }
+        article strong { font-weight: 700; }
+
+        .table-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.975rem; }
+        th, td { text-align: left; vertical-align: top; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+        tr:last-child td { border-bottom: 0; }
+        th { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.25rem; margin: 1.5rem 0; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; box-shadow: var(--shadow); }
+        .card h3 { margin-top: 0; }
+        .card h3::after { content: ''; display: block; width: 32px; height: 1px; background: var(--gold); margin-top: 0.6rem; }
+        .card p { color: var(--muted); margin-bottom: 0.5rem; }
+        .card p:last-child { margin-bottom: 0; }
+        .steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+        .steps li { counter-increment: step; position: relative; padding-left: 2.5rem; }
+        .steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.75rem; height: 1.75rem; border: 1px solid var(--gold); border-radius: 50%; font-family: var(--serif); font-size: 0.9375rem; display: flex; align-items: center; justify-content: center; }
+
+        /* Footer */
+        footer { background: var(--noir); color: #BDB8AD; padding: 3.5rem 0; border-top: 1px solid rgba(201, 168, 76, 0.35); }
+        footer .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.25rem; }
+        footer img { width: 140px; padding: 0.5rem 0; }
+        footer .essence { font-family: var(--serif); font-size: 1rem; color: var(--gold); letter-spacing: 0.04em; }
+        footer .footlinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.5rem; font-size: 0.9375rem; }
+        footer .footlinks a { color: #CFCBC2; text-decoration: none; border-bottom: 1px solid transparent; }
+        footer .footlinks a:hover, footer .footlinks a[aria-current="page"] { border-bottom-color: var(--gold); }
+        footer .footline { font-size: 0.9375rem; letter-spacing: 0.04em; color: #CFCBC2; }
+        footer .footline a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(201, 168, 76, 0.6); }
+
+        @media (max-width: 640px) {
+            :root { --gutter: 16px; }
+            body { font-size: 1rem; }
+            header .wrap { gap: 1rem; }
+            .brand img { width: 104px; }
+            header nav { gap: 0.25rem 1.1rem; }
+            header nav a { font-size: 0.75rem; letter-spacing: 0.12em; }
+            header nav a.optional { display: none; }
+            main { padding: 3rem 0 3.5rem; }
+            h2 { font-size: 1.3125rem; margin-top: 2.5rem; }
+            .contents { padding: 1.25rem; }
+            .contents ol { columns: 1; }
+            .notice { padding: 1rem 1.15rem; }
+            th, td { padding: 0.65rem 0.75rem; }
+        }
+        @media print {
+            header nav, .contents { display: none; }
+            header, footer { background: none; color: #000; }
+        }
+    </style>
+</head>
+<body>
+<!--
+  FOR CRAIG: confirm the office hours and response times below, and that hello@eliteeducation.me is monitored every working day.
+  This page is the App Store and Google Play support URL (https://eliteeducation.me/support/).
+-->
+<header>
+    <div class="wrap">
+        <a class="brand" href="../" aria-label="Elite Education home"><img src="../assets/logo-white-wide.png" width="132" height="50" alt="Elite Education"></a>
+        <nav aria-label="Main">
+            <a class="optional" href="../">Home</a>
+            <a href="../privacy/">Privacy</a>
+            <a href="../terms/">Terms</a>
+            <a href="../support/" aria-current="page">Support</a>
+            <a class="signin" href="/app/">Sign in</a>
+        </nav>
+    </div>
+</header>
+<main>
+    <div class="wrap">
+        <p class="label">Help</p>
+        <h1>Support</h1>
+        <hr class="rule">
+        <div class="notice" role="note">
+            <strong>Draft for legal review - not yet in force</strong>
+            <p>This page, including the account deletion and data request details below, is being reviewed by our legal advisers and may change before the app is published. Our email address is already in use, and we will be glad to help with any question in the meantime.</p>
+        </div>
+        <p class="lead">We are here to help with lessons, invoices and the Elite Education app. Please write to us and a member of our team will reply personally.</p>
+        <div class="cards">
+            <div class="card">
+                <h3>Email us</h3>
+                <p><a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a></p>
+                <p>Please include your name and, if your question concerns a student, their name and year group.</p>
+            </div>
+            <div class="card">
+                <h3>Response times</h3>
+                <p>We reply within one working day, Monday to Friday, and usually much sooner.</p>
+                <p>For an urgent matter concerning a lesson today, please also message us in the app.</p>
+            </div>
+            <div class="card">
+                <h3>In the app</h3>
+                <p>Families and tutors may message our office directly from Messages.</p>
+                <p><a href="/app/">Sign in to the app</a></p>
+            </div>
+        </div>
+        <article>
+            <h2 id="common">Common questions</h2>
+            <h3>I cannot sign in</h3>
+            <p>Please use the email address our office holds for you. If you sign in with an email code, check your junk folder for the message. If you use Sign in with Apple and chose to hide your email address, please let us know so that we can link your account. If the problem continues, write to us and we will help.</p>
+            <h3>How do I cancel or move a lesson?</h3>
+            <p>Open the lesson in the app and choose to cancel or request a new time. The cancellation policy, and any fee, are shown before you confirm.</p>
+            <h3>How do I pay an invoice?</h3>
+            <p>Open the invoice in the app and pay securely by card, Apple Pay or Google Pay. A receipt is sent to you by email. If an amount looks incorrect, please write to us before paying.</p>
+            <h3>How do I change my reminders?</h3>
+            <p>Under Account in the app, choose how you would like to be reminded: by email, by notification or by WhatsApp.</p>
+
+            <h2 id="your-data">Your data and your account</h2>
+            <h3>Download your data</h3>
+            <ol class="steps">
+                <li>Open the Elite Education app and sign in.</li>
+                <li>Go to <strong>Account &rarr; Your data and privacy</strong>.</li>
+                <li>Choose <strong>Download my data</strong>. You will receive a file containing the information we hold about you and, for parents, your family, together with a readable summary.</li>
+            </ol>
+            <h3>Delete your account</h3>
+            <ol class="steps">
+                <li>Go to <strong>Account &rarr; Your data and privacy &rarr; Delete my account</strong>.</li>
+                <li>Read what will be removed. You will be offered the chance to download your data first.</li>
+                <li>Type the confirmation shown and confirm. Your account is closed straight away.</li>
+            </ol>
+            <p>Your personal details, lesson notes, homework and messages are removed. Invoices and payment records are kept in anonymised form for the period UAE tax law requires. If you would prefer us to close your account for you, please write to <a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a> from the email address on the account.</p>
+
+            <h2 id="policies">Policies</h2>
+            <ul>
+                <li><a href="../privacy/">Privacy policy</a>: how we collect, use and protect personal data.</li>
+                <li><a href="../terms/">Terms of service</a>: the terms on which we provide tuition and the app.</li>
+            </ul>
+        </article>
+    </div>
+</main>
+<footer>
+    <div class="wrap">
+        <img src="../assets/logo-white-wide.png" width="140" height="53" alt="Elite Education">
+        <p class="essence">Excellence. Discretion. Results.</p>
+        <p class="footlinks">
+            <a href="../privacy/">Privacy policy</a>
+            <a href="../terms/">Terms of service</a>
+            <a href="../support/" aria-current="page">Support</a>
+        </p>
+        <p class="footline">Elite Education | <a href="https://eliteeducation.me">eliteeducation.me</a></p>
+    </div>
+</footer>
+</body>
+</html>

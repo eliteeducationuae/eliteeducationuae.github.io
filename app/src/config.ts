@@ -10,3 +10,14 @@ export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://tza
 export const SUPABASE_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_GGcYrMILBwC_39aVhEiQ4w_uuQ06_Q6';
 export const DEMO_MODE = process.env.EXPO_PUBLIC_DEMO === '1';
+
+// Launch readiness
+/**
+ * Optional Sentry project for crash reports, alongside the app's own error log (System health in the admin app).
+ * Adding @sentry/react-native, initialising it with this DSN and calling registerErrorSink (src/lib/error-reporting.ts)
+ * once in the root layout is all that is needed; every error the app reports then reaches Sentry too.
+ */
+export const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || '';
+export const PRIVACY_URL = 'https://eliteeducation.me/privacy/';
+export const TERMS_URL = 'https://eliteeducation.me/terms/';
+export const SUPPORT_EMAIL = 'hello@eliteeducation.me';

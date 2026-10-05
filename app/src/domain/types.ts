@@ -632,3 +632,119 @@ export interface PackageOffer {
   active: boolean;
   sort: number;
 }
+
+// Launch readiness: error reporting, system health, data export and account deletion
+
+/** Where an app error was caught. */
+export type AppErrorSource = 'boundary' | 'query' | 'mutation' | 'global' | 'manual';
+
+export type AppPlatform = 'ios' | 'android' | 'web' | 'unknown';
+
+/** What the app sends to log_app_error. Never contains profile fields; messages are scrubbed of personal data first. */
+export interface AppErrorInput {
+  message: string;
+  stack?: string;
+  route?: string;
+  platform: AppPlatform;
+  appVersion?: string;
+  source: AppErrorSource;
+  fingerprint?: string;
+}
+
+/** An app error as administrators see it. */
+export interface AppErrorRow {
+  id: string;
+  createdAt: string;
+  profileId?: string;
+  role?: string;
+  platform: AppPlatform;
+  appVersion?: string;
+  route?: string;
+  source: AppErrorSource;
+  message: string;
+  stack?: string;
+  fingerprint?: string;
+}
+
+/** A failure recorded by an Edge Function. */
+export interface FunctionErrorRow {
+  id: string;
+  createdAt: string;
+  functionName: string;
+  message: string;
+  status?: number;
+  context?: Record<string, unknown>;
+}
+
+export type HealthStatus = 'ok' | 'warning' | 'failing';
+
+export interface HealthCheck {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  /** A full sentence explaining the state. */
+  detail: string;
+  count?: number;
+}
+
+export interface HealthJob {
+  name: string;
+  lastStartedAt?: string;
+  lastSucceededAt?: string;
+  lastFailedAt?: string;
+  lastError?: string;
+}
+
+export interface MigrationRecord {
+  version: string;
+  name: string;
+  appliedAt?: string;
+}
+
+export interface SystemHealth {
+  checkedAt: string;
+  status: HealthStatus;
+  checks: HealthCheck[];
+  jobs: HealthJob[];
+  database: { latest: string; latestName: string; count: number; migrations: MigrationRecord[] };
+}
+
+export type DeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+export type DeletionTargetKind = 'profile' | 'family' | 'tutor';
+
+/** What an account deletion removed and kept. */
+export interface DeletionSummary {
+  role?: Role;
+  familyAnonymised?: boolean;
+  studentsAnonymised?: number;
+  futureLessonsCancelled?: number;
+  upcomingLessonsNeedingTutor?: number;
+  invoicesRetained?: number;
+  paymentsRetained?: number;
+}
+
+export interface DeletionRequest {
+  id: string;
+  createdAt: string;
+  status: DeletionRequestStatus;
+  targetKind: DeletionTargetKind;
+  profileId?: string;
+  familyId?: string;
+  tutorId?: string;
+  role?: Role;
+  label: string;
+  reason?: string;
+  completedAt?: string;
+  summary: DeletionSummary;
+  error?: string;
+}
+
+/** The signed-in person's data, as returned by export_my_data. Sections are loosely typed: they are passed through to the file. */
+export interface DataExport extends Record<string, unknown> {
+  format: 'elite-education-export/1';
+  exportedAt: string;
+  account: Record<string, unknown>;
+  family?: Record<string, unknown> | null;
+  tutor?: Record<string, unknown> | null;
+  paymentDetails?: { accountName?: string; bankName?: string; ibanLast4?: string } | null;
+}

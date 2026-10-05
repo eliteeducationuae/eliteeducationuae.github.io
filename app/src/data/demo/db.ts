@@ -42,6 +42,10 @@ import type {
   TopicList,
   TopicRating,
   PackageOffer,
+  // Launch readiness
+  AppErrorRow,
+  DeletionRequest,
+  FunctionErrorRow,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -91,6 +95,13 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  // Launch readiness. Optional because databases saved before it lack them: created on first use.
+  /** Errors reported by the app (mirrors public.app_errors). */
+  appErrors?: AppErrorRow[];
+  /** Errors recorded by Edge Functions (mirrors public.function_errors); always empty in the demo. */
+  functionErrors?: FunctionErrorRow[];
+  /** Account deletion requests (mirrors public.deletion_requests). */
+  deletionRequests?: DeletionRequest[];
 }
 
 export interface OutboxMessage {

@@ -2,11 +2,12 @@
 // Subscribed to from Apple/Google Calendar, so it authenticates by the secret token, not a session.
 // Deploy with --no-verify-jwt. Each event is titled with the lesson's subject (lessons.subject), e.g. 'Chemistry: Zara'.
 import { adminClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 const stamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('ics', adminClient, async (req) => {
   const token = new URL(req.url).searchParams.get('token');
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return new Response('Not found', { status: 404 });
   const db = adminClient();
@@ -49,4 +50,4 @@ Deno.serve(async (req) => {
   }
   lines.push('END:VCALENDAR');
   return new Response(lines.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8' } });
-});
+}));

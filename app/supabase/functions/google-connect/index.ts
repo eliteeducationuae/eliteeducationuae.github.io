@@ -7,6 +7,7 @@
 // verify_jwt is off for this function (see config.toml) because Google redirects back without a
 // login; start and disconnect check the caller's session themselves. Tokens never leave the server.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import {
   BRAND_FOOTER,
   buildAuthUrl,
@@ -254,7 +255,7 @@ async function disconnect(profile: { id: string; tutor_id: string | null }) {
   return json({ ok: true });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('google-connect', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   const url = new URL(req.url);
   if (req.method === 'GET') return handleCallback(url);
@@ -271,4 +272,4 @@ Deno.serve(async (req) => {
   if (body.action === 'start') return startConnect(profile, body);
   if (body.action === 'disconnect') return disconnect(profile);
   return json({ error: 'Unknown action' }, 400);
-});
+}));

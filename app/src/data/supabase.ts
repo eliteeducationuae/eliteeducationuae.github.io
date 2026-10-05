@@ -56,6 +56,13 @@ import type {
   Tutor,
   TopicRating,
   PackageOffer,
+  // Launch readiness
+  AppErrorRow,
+  DataExport,
+  DeletionRequest,
+  DeletionSummary,
+  FunctionErrorRow,
+  SystemHealth,
 } from '@/domain/types';
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
@@ -532,6 +539,81 @@ async function invokeResult<T>(result: { data: unknown; error: unknown }): Promi
   }
   throw new Error(message);
 }
+
+// Launch readiness: error reporting, system health and account deletion
+
+const toAppError = (r: Row): AppErrorRow => ({
+  id: r.id,
+  createdAt: r.created_at,
+  profileId: r.profile_id ?? undefined,
+  role: r.role ?? undefined,
+  platform: r.platform ?? 'unknown',
+  appVersion: r.app_version ?? undefined,
+  route: r.route ?? undefined,
+  source: r.source ?? 'manual',
+  message: r.message ?? '',
+  stack: r.stack ?? undefined,
+  fingerprint: r.fingerprint ?? undefined,
+});
+
+const toFunctionError = (r: Row): FunctionErrorRow => ({
+  id: r.id,
+  createdAt: r.created_at,
+  functionName: r.function_name,
+  message: r.message ?? '',
+  status: r.status ?? undefined,
+  context: r.context ?? undefined,
+});
+
+const toDeletionSummary = (r: Row | null | undefined): DeletionSummary => {
+  const s = r ?? {};
+  const n = (v: unknown) => (v == null ? undefined : Number(v));
+  return {
+    role: s.role ?? undefined,
+    familyAnonymised: s.familyAnonymised ?? undefined,
+    studentsAnonymised: n(s.studentsAnonymised),
+    futureLessonsCancelled: n(s.futureLessonsCancelled),
+    upcomingLessonsNeedingTutor: n(s.upcomingLessonsNeedingTutor),
+    invoicesRetained: n(s.invoicesRetained),
+    paymentsRetained: n(s.paymentsRetained),
+  };
+};
+
+const toDeletionRequest = (r: Row): DeletionRequest => ({
+  id: r.id,
+  createdAt: r.created_at,
+  status: r.status,
+  targetKind: r.target_kind,
+  profileId: r.profile_id ?? undefined,
+  familyId: r.family_id ?? undefined,
+  tutorId: r.tutor_id ?? undefined,
+  role: r.role ?? undefined,
+  label: r.label ?? '',
+  reason: r.reason ?? undefined,
+  completedAt: r.completed_at ?? undefined,
+  summary: toDeletionSummary(r.summary),
+  error: r.error ?? undefined,
+});
+
+/** system_health() returns camelCase JSON already; fill gaps so the screen never meets undefined lists. */
+const toSystemHealth = (r: Row | null): SystemHealth => ({
+  checkedAt: r?.checkedAt ?? new Date().toISOString(),
+  status: r?.status ?? 'ok',
+  checks: (r?.checks ?? []).map((c: Row) => ({ key: c.key, label: c.label, status: c.status, detail: c.detail ?? '', count: c.count ?? undefined })),
+  jobs: (r?.jobs ?? []).map((j: Row) => ({
+    name: j.name,
+    lastStartedAt: j.lastStartedAt ?? undefined,
+    lastSucceededAt: j.lastSucceededAt ?? undefined,
+    lastFailedAt: j.lastFailedAt ?? undefined,
+    lastError: j.lastError ?? undefined,
+  })),
+  database: {
+    latest: r?.database?.latest ?? '',
+    latestName: r?.database?.latestName ?? '',
+    count: Number(r?.database?.count ?? 0),
+    migrations: (r?.database?.migrations ?? []).map((m: Row) => ({ version: m.version, name: m.name ?? '', appliedAt: m.appliedAt ?? undefined })),
+  },
+});
 
 export function createSupabaseSource(url: string, anonKey: string): DataSource {
   const client: SupabaseClient = createClient(url, anonKey, {
@@ -1510,6 +1592,63 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       );
       const first = data?.results?.[0];
       return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
+    },
+
+    // Launch readiness: error reporting, system health, data export and account deletion
+    async logAppError(e) {
+      // Reporting must never cause another error: any failure (offline, not deployed) is swallowed.
+      try {
+        const { data, error } = await client.rpc('log_app_error', {
+          p_message: e.message,
+          p_stack: e.stack ?? null,
+          p_route: e.route ?? null,
+          p_platform: e.platform,
+          p_app_version: e.appVersion ?? null,
+          p_source: e.source,
+          p_fingerprint: e.fingerprint ?? null,
+        });
+        return !error && data !== false;
+      } catch {
+        return false;
+      }
+    },
+    async getSystemHealth() {
+      return toSystemHealth(check<Row | null>(await client.rpc('system_health')));
+    },
+    async listAppErrors(limit = 50) {
+      return check<Row[]>(await client.from('app_errors').select('*').order('created_at', { ascending: false }).limit(limit)).map(toAppError);
+    },
+    async listFunctionErrors(limit = 50) {
+      return check<Row[]>(await client.from('function_errors').select('*').order('created_at', { ascending: false }).limit(limit)).map(toFunctionError);
+    },
+    async exportMyData() {
+      return check<DataExport>(await client.rpc('export_my_data'));
+    },
+    async deleteMyAccount() {
+      const data = await invokeResult<{ summary?: Row }>(await client.functions.invoke('delete-account', { body: {} }));
+      // The login no longer exists, so only the session stored on this device is cleared.
+      await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      return toDeletionSummary(data?.summary);
+    },
+    async listDeletionRequests() {
+      return check<Row[]>(await client.from('deletion_requests').select('*').order('created_at', { ascending: false })).map(toDeletionRequest);
+    },
+    async recordDeletionRequest(target) {
+      return check<string>(
+        await client.rpc('admin_record_deletion_request', {
+          p_profile_id: target.profileId ?? null,
+          p_family_id: target.familyId ?? null,
+          p_tutor_id: target.tutorId ?? null,
+          p_reason: target.reason?.trim() || null,
+        }),
+      );
+    },
+    async cancelDeletionRequest(id) {
+      check(await client.rpc('admin_cancel_deletion_request', { p_id: id }));
+    },
+    async processDeletionRequest(id) {
+      const data = await invokeResult<{ summary?: Row }>(await client.functions.invoke('delete-account', { body: { requestId: id } }));
+      return toDeletionSummary(data?.summary);
     },
   };
 }

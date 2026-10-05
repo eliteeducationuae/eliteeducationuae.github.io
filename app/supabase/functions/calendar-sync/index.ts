@@ -15,6 +15,7 @@
 //
 // Never logs tokens and never emails or notifies anyone: Google is told sendUpdates=none throughout.
 import { adminClient, json } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 import {
   busyBlocksFor,
   type CalendarLessonRow,
@@ -503,7 +504,7 @@ async function run(db: Db) {
   return json(summary);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('calendar-sync', adminClient, async (req) => {
   // The app's public key is itself a valid login token, so the platform's JWT check is not enough on its own.
   if (!isAuthorisedSyncCall(req.headers.get('x-sync-secret'), env('CALENDAR_SYNC_SECRET'))) {
     return json({ error: 'Not authorised.' }, 401);
@@ -519,4 +520,4 @@ Deno.serve(async (req) => {
   } finally {
     await db.rpc('calendar_sync_release', { p_holder: runId });
   }
-});
+}));

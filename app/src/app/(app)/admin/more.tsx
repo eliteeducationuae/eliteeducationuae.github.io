@@ -3,8 +3,10 @@ import { router } from 'expo-router';
 import { AccountScreen } from '@/components/account';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
-import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount } from '@/data/hooks';
+import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount, useDeletionRequests, useSystemHealth } from '@/data/hooks';
 import { useTheme } from '@/hooks/use-theme';
+// Launch readiness
+import { attentionCount } from '@/domain/system-health';
 
 export default function AdminMore() {
   const theme = useTheme();
@@ -47,6 +49,13 @@ export default function AdminMore() {
     { title: 'Tutor pay', subtitle: 'Hours taught and pay owed by month', icon: 'money', href: '/manage/payroll' },
     { title: 'Business settings', subtitle: 'Cancellation policy, VAT, invoicing', icon: 'settings', href: '/manage/settings' },
   ] as const;
+  // Launch readiness
+  const health = useSystemHealth();
+  const deletionRequests = useDeletionRequests();
+  const system = [
+    { title: 'System health', subtitle: 'Errors, scheduled jobs and database version', icon: 'alert', href: '/manage/system-health', badge: attentionCount(health.data?.checks) },
+    { title: 'Deletion requests', subtitle: 'Account deletions and records kept', icon: 'doc', href: '/manage/deletion-requests', badge: (deletionRequests.data ?? []).filter((r) => r.status === 'pending').length },
+  ] as const;
   return (
     <AccountScreen>
       <Section title="Business">
@@ -68,6 +77,18 @@ export default function AdminMore() {
       </Section>
       <Section title="Team">
         {team.map((l) => (
+          <ListItem
+            key={l.href}
+            title={l.title}
+            subtitle={l.subtitle}
+            left={<Icon name={l.icon} size={22} color={theme.accent} />}
+            right={l.badge ? <Badge label={String(l.badge)} tone="gold" /> : undefined}
+            onPress={() => router.push(l.href)}
+          />
+        ))}
+      </Section>
+      <Section title="System">
+        {system.map((l) => (
           <ListItem
             key={l.href}
             title={l.title}
