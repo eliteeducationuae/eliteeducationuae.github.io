@@ -1,5 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
+import { StudentAdmissionsLinks } from '@/components/admissions/entry-links';
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
 import { StudentOverview } from '@/components/student-overview';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
@@ -59,6 +60,7 @@ export default function StudentPage() {
           />
         </Row>
       ) : null}
+      <StudentAdmissionsLinks studentId={student.id} />
     </Screen>
   );
 }

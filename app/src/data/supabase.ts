@@ -58,6 +58,19 @@ import type {
   PackageOffer,
 } from '@/domain/types';
 
+// Admissions advisory
+import {
+  keyDateRow,
+  targetRow,
+  taskRow,
+  toAdmissionsCase,
+  toAdmissionsDocument,
+  toAdmissionsEvent,
+  toAdmissionsKeyDate,
+  toAdmissionsTarget,
+  toAdmissionsTask,
+  toAdvisoryUpdate,
+} from './admissions-mapping';
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { addChildSubjects } from './rpc-mapping';
@@ -1510,6 +1523,146 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       );
       const first = data?.results?.[0];
       return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
+    },
+
+    // Admissions advisory. Row-level security decides what each person sees; these only filter and order.
+    async listAdmissionsCases(filter = {}) {
+      let query = client.from('admissions_cases').select('*');
+      if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      return check<Row[]>(await query.order('updated_at', { ascending: false })).map(toAdmissionsCase);
+    },
+    async getAdmissionsCase(id) {
+      const row = check<Row | null>(await client.from('admissions_cases').select('*').eq('id', id).maybeSingle());
+      return row ? toAdmissionsCase(row) : null;
+    },
+    async saveAdmissionsCase(input) {
+      const data = check(
+        await client.rpc('save_admissions_case', {
+          p_id: input.id ?? null,
+          p_student_id: input.studentId,
+          p_kind: input.kind,
+          p_title: input.title.trim(),
+          p_entry_year: input.entryYear?.trim() || null,
+          p_status: input.status,
+          p_adviser_tutor_id: input.adviserTutorId || null,
+          p_summary: input.summary?.trim() || null,
+        }),
+      );
+      return toAdmissionsCase(firstRow(data));
+    },
+    async listAdmissionsTargets(filter = {}) {
+      let query = client.from('admissions_targets').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      return check<Row[]>(await query.order('sort').order('institution')).map(toAdmissionsTarget);
+    },
+    async saveAdmissionsTarget(input) {
+      const row = check<Row>(await client.from('admissions_targets').upsert(targetRow(input)).select('*').single());
+      return toAdmissionsTarget(row);
+    },
+    async deleteAdmissionsTarget(id) {
+      check(await client.from('admissions_targets').delete().eq('id', id));
+    },
+    async listAdmissionsKeyDates(filter = {}) {
+      let query = client.from('admissions_dates').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      if (filter.from) query = query.gte('due_on', filter.from);
+      if (filter.to) query = query.lte('due_on', filter.to);
+      return check<Row[]>(await query.order('due_on').order('time_of_day', { nullsFirst: true })).map(toAdmissionsKeyDate);
+    },
+    async saveAdmissionsKeyDate(input) {
+      const row = check<Row>(await client.from('admissions_dates').upsert(keyDateRow(input)).select('*').single());
+      return toAdmissionsKeyDate(row);
+    },
+    async deleteAdmissionsKeyDate(id) {
+      check(await client.from('admissions_dates').delete().eq('id', id));
+    },
+    async listAdmissionsTasks(filter = {}) {
+      let query = client.from('admissions_tasks').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      return check<Row[]>(await query.order('due_on', { nullsFirst: false }).order('created_at')).map(toAdmissionsTask);
+    },
+    async saveAdmissionsTask(input) {
+      const row = check<Row>(await client.from('admissions_tasks').upsert(taskRow(input)).select('*').single());
+      return toAdmissionsTask(row);
+    },
+    async setAdmissionsTaskDone(id, done) {
+      check(await client.rpc('set_admissions_task_done', { p_id: id, p_done: done }));
+    },
+    async deleteAdmissionsTask(id) {
+      check(await client.from('admissions_tasks').delete().eq('id', id));
+    },
+    async listAdmissionsDocuments(filter = {}) {
+      let query = client.from('admissions_documents').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      return check<Row[]>(await query.order('created_at', { ascending: false })).map(toAdmissionsDocument);
+    },
+    async addAdmissionsDocument(input) {
+      const data = check(
+        await client.rpc('add_admissions_document', {
+          p_case_id: input.caseId,
+          p_target_id: input.targetId || null,
+          p_category: input.category,
+          p_name: input.name.trim(),
+          p_path: input.path,
+          p_mime_type: input.mimeType ?? null,
+          p_family_visible: input.familyVisible ?? true,
+        }),
+      );
+      return toAdmissionsDocument(firstRow(data));
+    },
+    async deleteAdmissionsDocument(id) {
+      const path = check<string | null>(await client.rpc('delete_admissions_document', { p_id: id }));
+      if (path) {
+        // Best effort: the record is gone even if the stored file cannot be removed.
+        await client.storage.from('admissions').remove([path]).then(undefined, () => undefined);
+      }
+    },
+    async listAdvisoryUpdates(filter = {}) {
+      let query = client.from('admissions_updates').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      return check<Row[]>(await query.order('created_at', { ascending: false })).map(toAdvisoryUpdate);
+    },
+    async saveAdvisoryUpdate(input) {
+      const data = check(
+        await client.rpc('save_advisory_update', {
+          p_id: input.id ?? null,
+          p_case_id: input.caseId,
+          p_kind: input.kind,
+          p_title: input.title.trim(),
+          p_period: input.period?.trim() || null,
+          p_body: input.body,
+          p_ai_assisted: !!input.aiAssisted,
+        }),
+      );
+      return toAdvisoryUpdate(firstRow(data));
+    },
+    async setAdvisoryUpdateStatus(id, status) {
+      check(await client.rpc('set_advisory_update_status', { p_id: id, p_status: status }));
+    },
+    async deleteAdvisoryUpdate(id) {
+      check(await client.rpc('delete_advisory_update', { p_id: id }));
+    },
+    async listAdmissionsEvents(filter = {}) {
+      let query = client.from('admissions_events').select('*');
+      if (filter.caseId) query = query.eq('case_id', filter.caseId);
+      return check<Row[]>(await query.order('at', { ascending: false })).map(toAdmissionsEvent);
+    },
+    async addAdmissionsMilestone(caseId, title, detail) {
+      check(await client.rpc('add_admissions_milestone', { p_case_id: caseId, p_title: title.trim(), p_detail: detail?.trim() || null }));
+    },
+    async billAdmissionsFee(input) {
+      const row = firstRow(
+        check(
+          await client.rpc('bill_admissions_fee', {
+            p_case_id: input.caseId,
+            p_description: input.description.trim(),
+            p_quantity: input.quantity,
+            p_unit_price: input.unitPrice,
+          }),
+        ),
+      );
+      chargeIfAutopay(row);
+      return toInvoice(row);
     },
   };
 }

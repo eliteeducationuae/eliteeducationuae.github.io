@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 
+import { AdmissionsSummaryCard } from '@/components/admissions/admissions-summary-card';
 import { GreetingCard, NextLessonCard, QuickActions } from '@/components/dashboard';
 import { LessonCard } from '@/components/lessons';
 import { RequestCard } from '@/components/requests';
@@ -55,6 +56,7 @@ export default function ParentHome() {
           ]}
         />
       ) : null}
+      {kids.length ? <AdmissionsSummaryCard /> : null}
 
       {kids.length === 0 ? (
         <Card style={{ gap: Spacing.two }}>

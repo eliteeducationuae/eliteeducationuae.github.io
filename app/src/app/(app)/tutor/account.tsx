@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
 import { AccountScreen } from '@/components/account';
+import { AdmissionsAccountLink } from '@/components/admissions/entry-links';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
 import { useReportCycles, useStudentReports } from '@/data/hooks';
@@ -30,6 +31,7 @@ export default function TutorAccount() {
         {links.map((l) => (
           <ListItem key={l.href} title={l.title} subtitle={l.subtitle} left={<Icon name={l.icon} size={22} color={theme.accent} />} right={l.badge ? <Badge label={String(l.badge)} tone="gold" /> : undefined} onPress={() => router.push(l.href)} />
         ))}
+        <AdmissionsAccountLink />
       </Section>
     </AccountScreen>
   );

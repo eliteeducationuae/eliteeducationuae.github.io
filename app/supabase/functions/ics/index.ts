@@ -1,10 +1,23 @@
 // Personal calendar feed: GET /functions/v1/ics?token=<profiles.ics_token>
 // Subscribed to from Apple/Google Calendar, so it authenticates by the secret token, not a session.
 // Deploy with --no-verify-jwt. Each event is titled with the lesson's subject (lessons.subject), e.g. 'Chemistry: Zara'.
+// Open admissions key dates appear too, as all-day events (or 30-minute events when a UAE time is set):
+// parents see their children's cases, students their own, tutors the cases they advise and admins every case.
 import { adminClient } from '../_shared/supabase.ts';
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 const stamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+const day = (date: string) => date.replace(/-/g, '');
+const nextDay = (date: string) => day(new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10));
+
+type AdmissionsDate = {
+  id: string;
+  title: string;
+  due_on: string;
+  time_of_day: string | null;
+  admissions_targets: { institution: string } | null;
+  admissions_cases: { student_id: string; family_id: string; adviser_tutor_id: string | null; status: string } | null;
+};
 
 Deno.serve(async (req) => {
   const token = new URL(req.url).searchParams.get('token');
@@ -46,6 +59,34 @@ Deno.serve(async (req) => {
     const where = l.location === 'online' ? l.meeting_url : l.address;
     if (where) lines.push(`LOCATION:${esc(where)}`);
     lines.push('END:VEVENT');
+  }
+
+  // Admissions key dates (not done) on active or paused cases, in the same window.
+  const { data: keyDates } = await db
+    .from('admissions_dates')
+    .select('id, title, due_on, time_of_day, admissions_targets(institution), admissions_cases(student_id, family_id, adviser_tutor_id, status)')
+    .eq('done', false)
+    .gte('due_on', from.slice(0, 10))
+    .lte('due_on', to.slice(0, 10));
+  for (const d of (keyDates ?? []) as unknown as AdmissionsDate[]) {
+    const c = d.admissions_cases;
+    if (!c || (c.status !== 'active' && c.status !== 'on-hold')) continue;
+    const mine =
+      me.role === 'admin' ||
+      (me.role === 'tutor' && !!me.tutor_id && c.adviser_tutor_id === me.tutor_id) ||
+      (me.role === 'parent' && !!me.family_id && c.family_id === me.family_id) ||
+      (me.role === 'student' && !!me.student_id && c.student_id === me.student_id);
+    if (!mine) continue;
+    const institution = d.admissions_targets?.institution;
+    lines.push('BEGIN:VEVENT', `UID:${d.id}@eliteeducation-admissions`, `DTSTAMP:${stamp(new Date().toISOString())}`);
+    if (d.time_of_day) {
+      // UAE time (UTC+4, no daylight saving).
+      const start = new Date(`${d.due_on}T${d.time_of_day}:00+04:00`).toISOString();
+      lines.push(`DTSTART:${stamp(start)}`, `DTEND:${stamp(new Date(Date.parse(start) + 30 * 60_000).toISOString())}`);
+    } else {
+      lines.push(`DTSTART;VALUE=DATE:${day(d.due_on)}`, `DTEND;VALUE=DATE:${nextDay(d.due_on)}`);
+    }
+    lines.push(`SUMMARY:${esc(`Admissions: ${d.title}${institution ? ` (${institution})` : ''}`)}`, 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
   return new Response(lines.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8' } });

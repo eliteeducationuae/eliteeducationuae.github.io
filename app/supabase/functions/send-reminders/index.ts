@@ -2,13 +2,18 @@
 // Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
+// Admissions advisory reminders (key dates and tasks) are queued as push and email notifications, 08:00–20:59 UAE time.
 import { adminClient } from '../_shared/supabase.ts';
 
 Deno.serve(async () => {
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
-  const whatsapp = `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages`;
+  const { data: admissionsQueued, error: admissionsError } = await db.rpc('queue_admissions_reminders');
+  if (admissionsError) console.error('queue_admissions_reminders failed', admissionsError.message);
+  const whatsapp =
+    `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages` +
+    ` and ${typeof admissionsQueued === 'number' ? admissionsQueued : 0} admissions reminders`;
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')

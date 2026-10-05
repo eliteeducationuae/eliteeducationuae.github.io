@@ -67,6 +67,15 @@ export default function SignedInLayout() {
       <Stack.Screen name="messages/index" options={{ title: 'Messages' }} />
       <Stack.Screen name="messages/[familyId]" options={{ title: 'Messages' }} />
       <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
+      {/* Admissions advisory */}
+      <Stack.Screen name="admissions/index" options={{ title: 'Admissions advisory' }} />
+      <Stack.Screen name="admissions/[id]" options={{ title: 'Admissions' }} />
+      <Stack.Screen name="admissions/edit" options={{ title: 'Admissions case', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/target" options={{ title: 'Shortlist', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/date" options={{ title: 'Key date', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/task" options={{ title: 'Task', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/update" options={{ title: 'Advisory update' }} />
+      <Stack.Screen name="admissions/bill" options={{ title: 'Bill advisory fee', presentation: 'modal' }} />
     </Stack>
   );
 }

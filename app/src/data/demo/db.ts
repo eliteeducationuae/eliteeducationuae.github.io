@@ -45,6 +45,8 @@ import type {
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
+// Admissions advisory
+import type { AdmissionsStore } from './admissions';
 
 /** The whole demo database — a plain object so it can be persisted as JSON and tested directly. */
 export interface DemoDB {
@@ -91,6 +93,8 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  // Admissions advisory. Optional and seeded lazily (see demo/admissions.ts) so saved databases need no migration.
+  admissions?: AdmissionsStore;
 }
 
 export interface OutboxMessage {
