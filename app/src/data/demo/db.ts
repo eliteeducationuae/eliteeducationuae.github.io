@@ -630,7 +630,7 @@ export function applyCharges(db: DemoDB, lesson: Lesson, attendance: CompleteLes
 }
 
 // ---------------------------------------------------------------------------
-// Tax: credit notes, refunds and accountant access (mirrors 20261017000000_tax.sql)
+// Tax: credit notes, refunds and accountant access (mirrors 20261105000000_tax.sql)
 // ---------------------------------------------------------------------------
 
 export const creditNotesOf = (db: DemoDB): CreditNote[] => (db.creditNotes ??= []);

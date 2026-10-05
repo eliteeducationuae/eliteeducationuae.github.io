@@ -21,7 +21,7 @@ import {
 
 /**
  * Demo versions of credit notes, refunds and accountant access. Each mirrors a database function or policy in
- * 20261017000000_tax.sql. Databases saved before this feature lack the collections, so they are read defensively.
+ * 20261105000000_tax.sql. Databases saved before this feature lack the collections, so they are read defensively.
  */
 
 /** credit_notes and refunds RLS: admins and accountants see all, a parent their own family, everyone else none. */
