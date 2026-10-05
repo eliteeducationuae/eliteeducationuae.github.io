@@ -353,6 +353,11 @@ export interface DataSource {
   submitTutorApplication(a: NewTutorApplication): Promise<void>;
   listApplications(): Promise<TutorApplication[]>;
   updateApplication(id: string, patch: { status?: ApplicationStatus; notes?: string; tutorId?: string }): Promise<void>;
+  /**
+   * Admin only: mark an enquiry or tutor application as spam (kept, but out of the pipeline) or as genuine.
+   * With sendAck, marking as genuine also sends the usual thank-you email that was held back.
+   */
+  setSpamStatus(kind: 'enquiry' | 'application', id: string, spam: boolean, sendAck?: boolean): Promise<void>;
 
   // Tutor pay
   getPaymentDetails(tutorId: string): Promise<PaymentDetails | null>;
@@ -618,6 +623,8 @@ export interface NewTutorApplication {
   qualifications?: string;
   availability?: string;
   cvPath?: string;
+  /** Milliseconds from the form opening to submission; very fast submissions are marked as possible spam. */
+  elapsedMs?: number;
 }
 
 export interface ReportFields {
@@ -688,6 +695,8 @@ export interface NewEnquiry {
   message?: string;
   preferredTimes?: string;
   source?: Enquiry['source'];
+  /** Milliseconds from the form opening to submission; very fast submissions are marked as possible spam. */
+  elapsedMs?: number;
 }
 
 export interface NewLessonRequest {

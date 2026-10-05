@@ -35,6 +35,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [address, setAddress] = useState(initial.registeredAddress ?? '');
   const [footer, setFooter] = useState(initial.invoiceFooter ?? '');
   const [quarterStart, setQuarterStart] = useState<VatQuarterStartMonth>(initial.vatQuarterStartMonth ?? 1);
+  const [captcha, setCaptcha] = useState(initial.captchaRequired ?? false);
   const pct = (s: string) => Math.max(0, Math.min(100, Number(s) || 0)) / 100;
   const trnInvalid = !!trn.trim() && !isValidTrn(trn);
 
@@ -69,6 +70,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
                 registeredAddress: address.trim(),
                 invoiceFooter: footer.trim(),
                 vatQuarterStartMonth: quarterStart,
+                captchaRequired: captcha,
               },
             ]);
             router.back();
@@ -139,6 +141,17 @@ function SettingsForm({ initial }: { initial: Settings }) {
             keyboardType="number-pad"
             hint="Families can only request times at least this far ahead. Set tutors’ hours under Tutors → Availability."
           />
+        </Card>
+      </Section>
+      <Section title="Website forms">
+        <Card style={{ gap: Spacing.two }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt style={{ flex: 1 }}>Security check on website forms</Txt>
+            <Switch value={captcha} onValueChange={setCaptcha} accessibilityLabel="Security check on website forms" />
+          </Row>
+          <Txt variant="small">
+            Uses Cloudflare Turnstile, which needs to be set up on the website first (see the setup guide). When on, anything sent without the check by someone who is not signed in is kept and marked as possible spam, including the app’s own public forms, which do not show the check.
+          </Txt>
         </Card>
       </Section>
       <Section title="Emails to families">

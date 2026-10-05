@@ -11,6 +11,7 @@ import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
 import { CLOSED_LABEL, closedLast, isClosed } from '@/domain/closed-accounts';
 import { studentSubjects } from '@/domain/enrolments';
+import { spamLabel } from '@/domain/spam';
 import { useTheme } from '@/hooks/use-theme';
 
 interface Hit {
@@ -90,7 +91,7 @@ export default function Search() {
           icon: 'inbox',
           hits: (enquiries.data ?? [])
             .filter((e) => matches(q, e.parentName, e.studentName, e.email, e.phone, e.subject, e.phase, e.curriculum))
-            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.subject, e.curriculum, e.status].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
+            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.subject, e.curriculum, e.status, spamLabel(e)].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
         },
         {
           title: 'Roles',
@@ -104,7 +105,7 @@ export default function Search() {
           icon: 'person',
           hits: (applications.data ?? [])
             .filter((a) => matches(q, a.fullName, a.email))
-            .map((a) => ({ key: a.id, title: a.fullName, subtitle: `${a.email} · ${a.status}`, href: { pathname: '/manage/application/[id]', params: { id: a.id } } })),
+            .map((a) => ({ key: a.id, title: a.fullName, subtitle: [a.email, a.status, spamLabel(a)].filter(Boolean).join(' · '), href: { pathname: '/manage/application/[id]', params: { id: a.id } } })),
         },
       );
     }

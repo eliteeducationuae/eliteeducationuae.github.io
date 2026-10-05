@@ -334,6 +334,9 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   recordDeletionRequest: 'write',
   cancelDeletionRequest: 'write',
   processDeletionRequest: 'write',
+
+  // Spam review
+  setSpamStatus: 'write',
 };
 
 const refuse = async (): Promise<never> => {

@@ -4,7 +4,9 @@ import { View } from 'react-native';
 
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { pickFile } from '@/components/file-pick';
-import { Banner, Button, Card, ErrorNote, Field, Row, Screen, Section, Txt } from '@/components/ui';
+import { Honeypot } from '@/components/honeypot';
+import { FormError } from '@/components/spam';
+import { Banner, Button, Card, Field, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { PickedFile } from '@/data/source';
@@ -25,8 +27,16 @@ export default function Apply() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [sent, setSent] = useState(false);
+  // Spam protection: when the form opened, and a hidden field only bots fill in.
+  const [startedAt] = useState(() => Date.now());
+  const [honeypot, setHoneypot] = useState('');
 
   async function submit() {
+    if (honeypot) {
+      // Almost certainly a bot: show the usual thank-you and send nothing.
+      setSent(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -42,6 +52,7 @@ export default function Apply() {
         qualifications: qualifications.trim() || undefined,
         availability: availability.trim() || undefined,
         cvPath,
+        elapsedMs: Date.now() - startedAt,
       });
       setSent(true);
     } catch (e) {
@@ -65,6 +76,7 @@ export default function Apply() {
           </Txt>
           <Card style={{ gap: Spacing.three }}>
             <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" autoComplete="name" />
+            <Honeypot value={honeypot} onChange={setHoneypot} />
             <Row gap={Spacing.two}>
               <View style={{ flex: 1 }}>
                 <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
@@ -96,7 +108,7 @@ export default function Apply() {
               </Txt>
               <Button title={cv ? 'Change' : 'Attach your CV'} icon="doc" size="sm" variant="secondary" onPress={async () => setCv((await pickFile()) ?? cv)} />
             </Row>
-            <ErrorNote error={error} />
+            <FormError error={error} />
             <Button title="Send application" variant="gold" loading={busy} disabled={!fullName.trim() || !email.includes('@') || curricula.length === 0} onPress={submit} />
           </Card>
         </>

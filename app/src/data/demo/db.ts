@@ -138,6 +138,8 @@ export interface DemoDB {
   functionErrors?: FunctionErrorRow[];
   /** Account deletion requests (mirrors public.deletion_requests). */
   deletionRequests?: DeletionRequest[];
+  /** Public form submissions for rate limiting (mirrors public.submission_log). Optional: read with `??= []`. */
+  formSubmissions?: { kind: 'enquiry' | 'application'; email?: string; at: string }[];
 }
 
 /** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */

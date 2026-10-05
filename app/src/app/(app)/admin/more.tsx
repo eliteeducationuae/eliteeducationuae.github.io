@@ -6,6 +6,7 @@ import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
 import { useTutorChecksCount } from '@/components/vetting';
 import { useApplications, useBids, useDeletionRequests, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useSystemHealth, useTutorInvoices, useUnreadCount } from '@/data/hooks';
+import { suspectedCount, withoutSpam } from '@/domain/spam';
 import { useTheme } from '@/hooks/use-theme';
 // Launch readiness
 import { attentionCount } from '@/domain/system-health';
@@ -15,12 +16,14 @@ export default function AdminMore() {
   const unread = useUnreadCount();
   const enquiries = useEnquiries();
   const requests = useRequests();
-  const newEnquiries = (enquiries.data ?? []).filter((e) => e.status === 'new').length;
+  const newEnquiries = withoutSpam(enquiries.data ?? []).filter((e) => e.status === 'new').length;
+  // Held as possible spam: mentioned quietly, never counted in a badge.
+  const heldEnquiries = suspectedCount(enquiries.data);
   const pending = (requests.data ?? []).filter((r) => r.status === 'pending').length;
   const updatesToApprove = useAdvisoryUpdatesToApprove();
   const engage = [
     { title: 'Messages', subtitle: unread ? `${unread} unread` : 'Conversations with families', icon: 'chat', href: '/messages', badge: unread },
-    { title: 'Enquiries', subtitle: 'New leads through to enrolment', icon: 'inbox', href: '/manage/enquiries', badge: newEnquiries },
+    { title: 'Enquiries', subtitle: heldEnquiries ? `New leads through to enrolment · ${heldEnquiries} possible spam to review` : 'New leads through to enrolment', icon: 'inbox', href: '/manage/enquiries', badge: newEnquiries },
     { title: 'Lesson requests', subtitle: 'Extra lessons and changes from families', icon: 'calendar', href: '/manage/requests', badge: pending },
     { title: 'Announcements', subtitle: 'Send news to families and tutors', icon: 'megaphone', href: '/announcements', badge: 0 },
     { title: 'Admissions advisory', subtitle: 'School and university applications for families', icon: 'school', href: '/admissions', badge: updatesToApprove },
@@ -28,6 +31,7 @@ export default function AdminMore() {
   const opportunities = useOpportunities();
   const bids = useBids();
   const applications = useApplications();
+  const heldApplications = suspectedCount(applications.data);
   const tutorInvoices = useTutorInvoices();
   const reportCycles = useReportCycles();
   const reports = useStudentReports();
@@ -39,7 +43,7 @@ export default function AdminMore() {
     { title: 'Roles for tutors', subtitle: 'Post new students; tutors put themselves forward', icon: 'school', href: '/manage/opportunities', badge: openBids },
     { title: 'Tutor invoices', subtitle: 'Approve monthly invoices and pay tutors', icon: 'doc', href: '/manage/tutor-invoices', badge: (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted').length },
     { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
-    { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: (applications.data ?? []).filter((a) => a.status === 'applied').length },
+    { title: 'Hiring', subtitle: heldApplications ? `Applications to teach with you · ${heldApplications} possible spam to review` : 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: withoutSpam(applications.data ?? []).filter((a) => a.status === 'applied').length },
     { title: 'Tutor checks', subtitle: 'Police clearance, onboarding and overrides', icon: 'check', href: '/manage/vetting', badge: tutorChecks },
     { title: 'Tutor handbook', subtitle: 'Policies tutors acknowledge', icon: 'book', href: '/handbook', badge: 0 },
     { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },

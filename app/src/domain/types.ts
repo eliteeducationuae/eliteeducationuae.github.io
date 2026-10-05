@@ -414,6 +414,8 @@ export interface Settings {
   /** First month of the VAT quarter cycle the FTA assigned (1 = Jan/Apr/Jul/Oct). */
   vatQuarterStartMonth: VatQuarterStartMonth;
   nextCreditNoteNumber: number;
+  /** Website forms must pass the Cloudflare Turnstile security check; submissions without it are kept but marked as possible spam. */
+  captchaRequired?: boolean;
 }
 
 /** A weekly block when a tutor can teach. `weekday` 0 = Monday. Times are `HH:MM`. */
@@ -465,6 +467,11 @@ export interface CalendarConnection {
   lastError?: string;
 }
 
+/** How a public form submission looks: `suspected` and `spam` are kept but left out of the pipeline. */
+export type SpamStatus = 'clean' | 'suspected' | 'spam';
+/** Why a submission was marked as possible spam. */
+export type SpamReason = 'link-in-name' | 'links' | 'too-fast' | 'captcha';
+
 export type EnquiryStatus = 'new' | 'contacted' | 'trial-booked' | 'enrolled' | 'lost';
 export type EnquirySource = 'app' | 'website' | 'referral' | 'phone' | 'other';
 
@@ -489,6 +496,12 @@ export interface Enquiry {
   nextActionAt?: string;
   notes?: string;
   lostReason?: string;
+  /** Undefined means clean. */
+  spamStatus?: SpamStatus;
+  spamReasons?: SpamReason[];
+  /** How many repeat submissions were merged into this one. */
+  repeatCount?: number;
+  lastSubmittedAt?: string;
 }
 
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'withdrawn';
@@ -604,6 +617,12 @@ export interface TutorApplication {
   status: ApplicationStatus;
   notes?: string;
   tutorId?: string;
+  /** Undefined means clean. */
+  spamStatus?: SpamStatus;
+  spamReasons?: SpamReason[];
+  /** How many repeat submissions were merged into this one. */
+  repeatCount?: number;
+  lastSubmittedAt?: string;
 }
 
 export interface PaymentDetails {

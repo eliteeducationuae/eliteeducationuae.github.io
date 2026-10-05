@@ -19,3 +19,7 @@ verify_jwt = false
 #   delete-account  called by the app with the person's login (closing their own account, or an admin carrying out a request).
 #   health-check    schedule every 15 minutes with Authorization: Bearer <service role key>; emails HEALTH_ALERT_EMAIL.
 #   backup-export   schedule daily at 22:10 UTC (02:10 UAE) with Authorization: Bearer <service role key>.
+
+# The public website calls this before a visitor is signed in; Cloudflare Turnstile protects it instead.
+[functions.verify-captcha]
+verify_jwt = false

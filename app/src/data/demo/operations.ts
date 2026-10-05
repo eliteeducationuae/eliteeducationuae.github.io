@@ -1,5 +1,6 @@
 import { toDateKey } from '@/domain/dates';
 import { enrolmentFor } from '@/domain/enrolments';
+import { applicationPayloadProblem, findDuplicateApplication, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
@@ -108,10 +109,46 @@ export const ops = {
     }
   },
 
-  submitApplication(db: DemoDB, a: NewTutorApplication, now = new Date()) {
+  submitApplication(db: DemoDB, input: NewTutorApplication, now = new Date()) {
+    const { elapsedMs, ...a } = input;
     if (!a.fullName.trim()) throw new Error('Please enter your name');
     if (!a.email.includes('@')) throw new Error('Please enter a valid email address');
-    db.applications.push({ ...a, phases: a.phases ?? [], id: newId('app'), createdAt: now.toISOString(), fullName: a.fullName.trim(), email: a.email.trim().toLowerCase(), status: 'applied' });
+    // Mirrors public.submit_tutor_application: size limits, rate limits, merging repeats and flagging possible spam.
+    const problem = applicationPayloadProblem(a);
+    if (problem) throw new Error(problem);
+    const email = a.email.trim().toLowerCase();
+    const at = now.toISOString();
+    const log = (db.formSubmissions ??= []);
+    if (rateLimited(log.filter((x) => x.kind === 'application'), { email }, SPAM_LIMITS.application, now)) throw new RateLimitError();
+    log.push({ kind: 'application', email, at });
+    const reasons = spamReasons({ names: [a.fullName], text: [a.experience, a.qualifications, a.subjects, a.availability], elapsedMs });
+    // Only a clean repeat is folded in, and it only fills blanks: anyone who knows the email could send it.
+    const dup = reasons.length ? undefined : findDuplicateApplication(db.applications, { email }, now);
+    if (dup) {
+      for (const k of ['subjects', 'qualifications', 'availability', 'cvPath', 'experience'] as const) {
+        if (!dup[k]?.trim() && a[k]?.trim()) dup[k] = a[k]!.trim();
+      }
+      // A repeat's telephone number is noted for the office to confirm, never written into the contact details.
+      dup.notes = repeatPhoneNote(dup.notes, dup.phone, a.phone, now);
+      dup.curricula = [...new Set([...dup.curricula, ...a.curricula])];
+      dup.phases = [...new Set([...(dup.phases ?? []), ...(a.phases ?? [])])];
+      dup.repeatCount = (dup.repeatCount ?? 0) + 1;
+      dup.lastSubmittedAt = at;
+      return;
+    }
+    db.applications.push({
+      ...a,
+      phases: a.phases ?? [],
+      id: newId('app'),
+      createdAt: at,
+      fullName: a.fullName.trim(),
+      email,
+      status: 'applied',
+      spamStatus: reasons.length ? 'suspected' : 'clean',
+      spamReasons: reasons,
+      repeatCount: 0,
+      lastSubmittedAt: at,
+    });
   },
   applications(db: DemoDB, viewer: Profile) {
     requireAdmin(viewer);
