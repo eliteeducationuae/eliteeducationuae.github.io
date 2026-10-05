@@ -290,7 +290,7 @@ The office can see the app exactly as a particular parent, student or tutor sees
 
 **Deploying.**
 
-1. Run `npx supabase db push` (or run `20261013000000_viewas.sql` in the SQL editor). The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
+1. Run `npx supabase db push` (or run `20261101000000_viewas.sql` in the SQL editor). The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
 2. Run `npx supabase functions deploy view-as`. It keeps the default JWT check, so no `config.toml` change is needed.
 3. Redeploy the functions that now refuse view sessions: `npx supabase functions deploy ai-assist billing-portal charge-invoice create-checkout google-connect`.
 
