@@ -7,6 +7,7 @@ import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
 import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
+import { assertCleared } from './vetting';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
 
@@ -223,6 +224,7 @@ export const eq = {
         l.start = r.start;
         l.end = r.end;
       } else {
+        assertCleared(db, r.tutorId, 'lesson', now);
         const previous = [...db.lessons].reverse().find((l) => l.studentIds.includes(r.studentId));
         db.lessons.push({
           id: newId('les'),
@@ -248,10 +250,11 @@ export const eq = {
     if (!r) throw new Error('Request not found');
     r.status = 'withdrawn';
   },
-  reassignLesson(db: DemoDB, viewer: Profile, lessonId: string, tutorId: string) {
+  reassignLesson(db: DemoDB, viewer: Profile, lessonId: string, tutorId: string, now = new Date()) {
     requireAdmin(viewer);
     const l = db.lessons.find((x) => x.id === lessonId && x.status === 'scheduled');
     if (!l) throw new Error('Only scheduled lessons can be reassigned');
+    if (l.tutorId !== tutorId) assertCleared(db, tutorId, 'lesson', now);
     if (findClashes({ start: new Date(l.start), end: new Date(l.end), tutorId, studentIds: [], ignoreLessonId: l.id }, db.lessons).length) {
       throw new Error(`${db.tutors.find((t) => t.id === tutorId)?.fullName ?? 'That tutor'} already has a lesson then`);
     }

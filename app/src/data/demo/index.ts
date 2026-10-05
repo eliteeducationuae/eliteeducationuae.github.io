@@ -12,6 +12,7 @@ import { ops } from './operations';
 import { pay } from './payments';
 import { createSeed } from './seed';
 import { setWhatsAppPrefs } from './whatsapp';
+import { vet } from './vetting';
 
 const DB_KEY = 'elite.demo.db';
 const SESSION_KEY = 'elite.demo.session';
@@ -302,5 +303,26 @@ export function createDemoSource(): DataSource {
     setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
     buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
     chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
+
+    // Tutor vetting and onboarding
+    listTutorDocuments: (filter) => read((d, v) => vet.documents(d, v, filter)),
+    submitTutorDocument: (input) => write((d, v) => vet.submitDocument(d, v, input)),
+    reviewTutorDocument: (id, decision) => write((d, v) => vet.reviewDocument(d, v, id, decision)),
+    async deleteTutorDocument(id) {
+      const path = await write((d, v) => vet.deleteDocument(d, v, id));
+      demoFiles.delete(path);
+    },
+    listTutorCompliance: () => read((d, v) => vet.compliance(d, v)),
+    listVettingOverrides: (filter) => read((d, v) => vet.overrides(d, v, filter)),
+    grantVettingOverride: async (tutorId, reason, days) => {
+      await write((d, v) => vet.grantOverride(d, v, tutorId, reason, days));
+    },
+    revokeVettingOverride: (id) => write((d, v) => vet.revokeOverride(d, v, id)),
+    getVettingEnforced: () => read((d) => vet.enforced(d)),
+    setVettingEnforced: (on) => write((d, v) => vet.setEnforced(d, v, on)),
+    listHandbookVersions: () => read((d, v) => vet.handbookVersions(d, v)),
+    publishHandbook: (title, body) => write((d, v) => vet.publishHandbook(d, v, title, body)),
+    listHandbookAcknowledgements: (filter) => read((d, v) => vet.handbookAcks(d, v, filter)),
+    acknowledgeHandbook: (version) => write((d, v) => vet.acknowledgeHandbook(d, v, version)),
   };
 }

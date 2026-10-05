@@ -2,6 +2,7 @@ import { SYLLABUSES } from '@/data/curriculum';
 import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
+import { DEFAULT_HANDBOOK_BODY, DEFAULT_HANDBOOK_TITLE } from '@/domain/handbook';
 import { buildTopicLookup } from '@/domain/topics';
 import type { Enrolment, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
@@ -440,7 +441,48 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedClasswork(db, now);
   seedCalendar(db, now);
   seedPayments(db);
+  seedVetting(db, now);
   return db;
+}
+
+// Tutor vetting and onboarding
+/**
+ * Craig and Nour are cleared, Sarah's clearance expires in 25 days (she sees a renewal prompt but can still be
+ * given lessons) and James has uploaded nothing, so he is blocked while enforcement is on.
+ * Seeded after everything else so earlier seeding is never blocked.
+ */
+function seedVetting(db: DemoDB, now: Date) {
+  const day = (n: number) => toDateKey(addDays(now, n));
+  const at = (n: number) => addDays(now, n).toISOString();
+  const verified = { status: 'verified' as const, verifiedByName: "Craig O'Brien" };
+  db.tutorDocuments = [
+    {
+      id: 'doc-craig-police', tutorId: 't-craig', type: 'police_clearance', filePath: 'tutors/t-craig/police-clearance.pdf', fileName: 'police-clearance.pdf',
+      issueDate: day(-122), expiryDate: day(243), createdAt: at(-120), verifiedAt: at(-119), ...verified,
+    },
+    {
+      id: 'doc-nour-police', tutorId: 't-nour', type: 'police_clearance', filePath: 'tutors/t-nour/police-clearance.pdf', fileName: 'police-clearance.pdf',
+      issueDate: day(-60), expiryDate: day(305), createdAt: at(-58), verifiedAt: at(-57), ...verified,
+    },
+    {
+      id: 'doc-nour-passport', tutorId: 't-nour', type: 'passport_id', title: 'Emirates ID', filePath: 'tutors/t-nour/emirates-id.pdf', fileName: 'emirates-id.pdf',
+      issueDate: day(-400), expiryDate: day(695), createdAt: at(-58), verifiedAt: at(-57), ...verified,
+    },
+    {
+      id: 'doc-sarah-police', tutorId: 't-sarah', type: 'police_clearance', filePath: 'tutors/t-sarah/police-clearance.pdf', fileName: 'police-clearance.pdf',
+      issueDate: day(-340), expiryDate: day(25), createdAt: at(-338), verifiedAt: at(-337), ...verified,
+    },
+  ];
+  db.vettingOverrides = [];
+  db.handbookVersions = [
+    { id: 'hb-1', version: 1, title: DEFAULT_HANDBOOK_TITLE, body: DEFAULT_HANDBOOK_BODY, publishedAt: at(-60), publishedByName: 'Elite Education' },
+  ];
+  db.handbookAcks = [
+    { tutorId: 't-craig', version: 1, acknowledgedAt: at(-59) },
+    { tutorId: 't-nour', version: 1, acknowledgedAt: at(-55) },
+  ];
+  db.tutorOnboarding = {};
+  db.vettingEnforced = true;
 }
 
 // Google Calendar

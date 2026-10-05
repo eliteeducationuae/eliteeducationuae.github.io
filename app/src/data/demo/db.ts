@@ -42,9 +42,15 @@ import type {
   TopicList,
   TopicRating,
   PackageOffer,
+  // Tutor vetting and onboarding
+  HandbookAcknowledgement,
+  HandbookVersion,
+  TutorDocument,
+  VettingOverride,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
+import { assertCleared } from './vetting';
 
 /** The whole demo database — a plain object so it can be persisted as JSON and tested directly. */
 export interface DemoDB {
@@ -91,6 +97,15 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  // Tutor vetting and onboarding. Optional because databases saved before it lack them: read with `?? []`.
+  tutorDocuments?: TutorDocument[];
+  vettingOverrides?: VettingOverride[];
+  handbookVersions?: HandbookVersion[];
+  handbookAcks?: HandbookAcknowledgement[];
+  /** Block new lessons, students and roles for tutors who are not cleared. Off when absent. */
+  vettingEnforced?: boolean;
+  /** tutorId → when onboarding began (the application was marked hired). */
+  tutorOnboarding?: Record<string, string>;
 }
 
 export interface OutboxMessage {
@@ -260,8 +275,10 @@ export const cmd = {
     return upsert(db.services, service, 'svc');
   },
 
-  createLessons(db: DemoDB, viewer: Profile, lessons: NewLesson[]): Lesson[] {
+  createLessons(db: DemoDB, viewer: Profile, lessons: NewLesson[], now = new Date()): Lesson[] {
     requireAdmin(viewer);
+    // Tutor vetting and onboarding: new lessons only go to cleared tutors.
+    for (const tutorId of new Set(lessons.map((l) => l.tutorId))) assertCleared(db, tutorId, 'lesson', now);
     const created = lessons.map((l) => ({ ...l, id: newId('les'), status: 'scheduled' as const }));
     db.lessons.push(...created);
     return created;
@@ -476,6 +493,10 @@ export const enr = {
       throw new Error(`${subject} is listed twice. Please remove one.`);
     }
     const existing = draft.id ? db.enrolments.find((e) => e.id === draft.id) : undefined;
+    // Tutor vetting and onboarding: a new (or reactivated) student for a tutor needs their clearance.
+    if (draft.active && draft.tutorId && (!existing || existing.tutorId !== draft.tutorId || !existing.active)) {
+      assertCleared(db, draft.tutorId, 'enrolment', now);
+    }
     const saved: Enrolment = {
       id: existing?.id ?? draft.id ?? newId('enr'),
       studentId: draft.studentId,

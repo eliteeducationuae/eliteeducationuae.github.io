@@ -49,6 +49,13 @@ import type {
   TopicRating,
   AutopayStatus,
   PackageOffer,
+  // Tutor vetting and onboarding
+  HandbookAcknowledgement,
+  HandbookVersion,
+  TutorCompliance,
+  TutorDocument,
+  TutorDocumentType,
+  VettingOverride,
 } from '@/domain/types';
 
 export interface CompleteLessonInput {
@@ -64,7 +71,7 @@ export interface CompleteLessonInput {
 }
 
 /** Private storage buckets files can be uploaded to. */
-export type StorageBucket = 'applications' | 'receipts' | 'classwork';
+export type StorageBucket = 'applications' | 'receipts' | 'classwork' | 'vetting';
 
 /** New homework (no id) or an edit to existing homework. */
 export interface HomeworkInput {
@@ -343,6 +350,46 @@ export interface DataSource {
   openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+
+  // Tutor vetting and onboarding
+  /** Newest first. Admins see every tutor's documents, tutors their own, everyone else none. */
+  listTutorDocuments(filter?: { tutorId?: string }): Promise<TutorDocument[]>;
+  /** A tutor (for themselves) or an admin records an uploaded document; it starts as pending review. */
+  submitTutorDocument(input: NewTutorDocument): Promise<TutorDocument>;
+  /** Admin: verify (with dates) or reject (with a note) a document. */
+  reviewTutorDocument(id: string, decision: { approve: boolean; issueDate?: string; expiryDate?: string; note?: string }): Promise<void>;
+  /** Delete a document record and, best effort, its stored file. */
+  deleteTutorDocument(id: string): Promise<void>;
+  /** Admins get every tutor, tutors their own row, everyone else none. */
+  listTutorCompliance(): Promise<TutorCompliance[]>;
+  /** Newest first, including revoked and expired overrides. */
+  listVettingOverrides(filter?: { tutorId?: string }): Promise<VettingOverride[]>;
+  /** Admin: allow assignments to a tutor who is not cleared, for `days` (1 to 90, default 30). The reason needs 10+ characters. */
+  grantVettingOverride(tutorId: string, reason: string, days?: number): Promise<void>;
+  revokeVettingOverride(id: string): Promise<void>;
+  /** Whether assignments are blocked for tutors whose police clearance is not verified. */
+  getVettingEnforced(): Promise<boolean>;
+  setVettingEnforced(on: boolean): Promise<void>;
+  /** Newest version first. */
+  listHandbookVersions(): Promise<HandbookVersion[]>;
+  /** Admin: publish a new handbook version; every tutor is asked to acknowledge it. */
+  publishHandbook(title: string, body: string): Promise<HandbookVersion>;
+  listHandbookAcknowledgements(filter?: { tutorId?: string }): Promise<HandbookAcknowledgement[]>;
+  /** Tutor: acknowledge the current handbook version. */
+  acknowledgeHandbook(version: number): Promise<void>;
+}
+
+// Tutor vetting and onboarding
+
+/** A document already uploaded to the 'vetting' bucket, to record for review. Dates are `YYYY-MM-DD`. */
+export interface NewTutorDocument {
+  tutorId: string;
+  type: TutorDocumentType;
+  filePath: string;
+  fileName?: string;
+  title?: string;
+  issueDate?: string;
+  expiryDate?: string;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */
