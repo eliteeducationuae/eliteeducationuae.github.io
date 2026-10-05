@@ -6,7 +6,9 @@ import {
   feeDescription,
   FEE_PRESETS,
   invoicesForCase,
+  keyDateTimeLabel,
   keyDateTitle,
+  titleNamesInstitution,
   keyDateUrgency,
   keyDatesInRange,
   openTasks,
@@ -35,6 +37,7 @@ import {
   type AdmissionsTask,
   type TargetStatus,
 } from '../admissions';
+import { admissionsLetterInstructions, letterSignOff } from '../../../supabase/functions/_shared/admissions-letter';
 import type { Invoice, Profile } from '../types';
 
 const NOW = new Date('2026-10-04T08:00:00+04:00');
@@ -156,12 +159,34 @@ describe('key date lists', () => {
   it('lists every date in a range, done or not', () => {
     expect(keyDatesInRange(dates, '2026-10-04', '2026-10-10').map((d) => d.id)).toEqual(['today', 'done', 'untimed', 'timed']);
   });
-  it('titles a date with its kind and institution', () => {
-    const targets = [target('t1', 'University of Oxford', 'researching')];
-    expect(keyDateTitle(date('a', '2026-10-10', { kind: 'open-day', title: 'Open day visit', targetId: 't1' }), targets)).toBe(
-      'Open day: Open day visit · University of Oxford',
+  it('titles a date with its kind and institution, without repeating either', () => {
+    const targets = [target('t1', 'University of Oxford', 'researching'), target('t2', 'Benenden School', 'applying')];
+    expect(keyDateTitle(date('a', '2026-10-10', { kind: 'open-day', title: 'Visit', targetId: 't1' }), targets)).toBe(
+      'Open day: Visit · University of Oxford',
     );
     expect(keyDateTitle(date('b', '2026-10-10', { kind: 'test', title: 'TSA' }), targets)).toBe('Entrance test: TSA');
+    expect(keyDateTitle(date('c', '2026-10-10', { kind: 'deadline', title: 'Common App Early Decision deadline' }), targets)).toBe(
+      'Common App Early Decision deadline',
+    );
+    expect(keyDateTitle(date('d', '2026-10-10', { kind: 'open-day', title: 'Oxford open day', targetId: 't1' }), targets)).toBe('Oxford open day');
+    expect(keyDateTitle(date('e', '2026-10-10', { kind: 'test', title: 'Mathematics admissions test practice paper' }), targets)).toBe(
+      'Mathematics admissions test practice paper',
+    );
+    expect(keyDateTitle(date('f', '2026-10-10', { kind: 'deadline', title: 'Registration deadline', targetId: 't2' }), targets)).toBe(
+      'Registration deadline · Benenden School',
+    );
+    expect(keyDateTitle(date('g', '2026-10-10', { kind: 'interview', title: 'Benenden interview', targetId: 't2' }), targets)).toBe(
+      'Benenden interview',
+    );
+  });
+  it('knows when a title already names its institution', () => {
+    expect(titleNamesInstitution('Oxford open day', 'University of Oxford')).toBe(true);
+    expect(titleNamesInstitution('School visit', 'Benenden School')).toBe(false);
+    expect(titleNamesInstitution('UCL offer holder day', 'University College London')).toBe(false);
+    expect(titleNamesInstitution('LSE deadline', 'LSE')).toBe(true);
+  });
+  it('gives times in UAE time', () => {
+    expect(keyDateTimeLabel('10:30')).toBe('10:30 (UAE time)');
   });
 });
 
@@ -300,9 +325,9 @@ describe('advisory updates', () => {
     });
     expect(title).toBe('October 2026 advisory update');
     expect(body.split('\n\n')).toEqual([
-      'Dear Mona Ahmed,',
-      "We are pleased to share our advisory update on Omar's admissions for October 2026.",
-      "Omar's shortlist currently comprises five universities. We are preparing Omar's application to University College London, " +
+      'Dear Mona,',
+      'We are pleased to share our advisory update on Omar’s admissions for October 2026.',
+      'Omar’s shortlist currently comprises five universities. We are preparing Omar’s application to University College London, ' +
         'and continue to research the University of Oxford, the London School of Economics and the University of Warwick. ' +
         'We are delighted to report that Omar has received an offer from Imperial College London.',
       'Looking ahead, there are two key dates to note. The personal statement first draft is due on Saturday 17 October 2026. ' +
@@ -325,11 +350,35 @@ describe('advisory updates', () => {
       now: NOW,
     });
     expect(body).toContain('Dear Parents,');
-    expect(body).toContain("Layla's shortlist currently comprises one school. Layla has been invited to interview at Repton School Dubai.");
+    expect(body).toContain("Layla’s shortlist currently comprises one school. Layla has been invited to interview at Repton School Dubai.");
     expect(body).toContain(
       'Looking ahead, the Sixth Form panel interview with Repton School Dubai is scheduled for Monday 12 October 2026 at 10:30 (UAE time).',
     );
     expect(body).toContain('With kind regards,\nThe Admissions Team\nElite Education');
+  });
+  it('addresses a titled parent formally and keeps test names capitalised', () => {
+    const { body } = templateAdvisoryUpdate({
+      studentName: 'Omar',
+      kind: 'ad-hoc',
+      addressee: 'Mrs Fatima Al Mansoori',
+      targets: [],
+      dates: [date('d1', '2026-10-20', { kind: 'test', title: 'Mathematics admissions test practice paper' })],
+      tasks: [],
+      events: [],
+      now: NOW,
+    });
+    expect(body.startsWith('Dear Mrs Al Mansoori,\n\n')).toBe(true);
+    expect(body).toContain('the Mathematics Admissions Test practice paper takes place on Tuesday 20 October 2026.');
+    expect(body).not.toContain("'");
+  });
+  it('signs off exactly as the AI draft is told to', () => {
+    const office = templateAdvisoryUpdate({ studentName: 'Layla', kind: 'ad-hoc', targets: [], dates: [], tasks: [], events: [], now: NOW });
+    expect(office.body.endsWith(letterSignOff(undefined))).toBe(true);
+    const named = templateAdvisoryUpdate({ studentName: 'Layla', kind: 'ad-hoc', adviser: 'Sarah Khan', targets: [], dates: [], tasks: [], events: [], now: NOW });
+    expect(named.body.endsWith(letterSignOff('Sarah Khan'))).toBe(true);
+    expect(admissionsLetterInstructions({ kind: 'monthly', studentFirstName: 'Layla', parentName: 'Mona Ahmed', adviser: 'Sarah Khan' })).toContain(
+      `"Dear Mona," on its own line and close it with exactly this sign-off, line for line:\n${letterSignOff('Sarah Khan')}`,
+    );
   });
   it('titles ad-hoc updates simply and copes with an empty case', () => {
     const out = templateAdvisoryUpdate({ studentName: 'Layla', kind: 'ad-hoc', targets: [], dates: [], tasks: [], events: [], now: NOW });

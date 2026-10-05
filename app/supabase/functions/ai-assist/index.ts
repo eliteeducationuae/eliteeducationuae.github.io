@@ -7,6 +7,7 @@
 // Secrets: ANTHROPIC_API_KEY.
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
+import { admissionsFacts, admissionsLetterInstructions } from '../_shared/admissions-letter.ts';
 import { corsHeaders, json, userClient } from '../_shared/supabase.ts';
 
 const MODEL = 'claude-opus-5-5';
@@ -122,11 +123,22 @@ Deno.serve(async (req) => {
       const caseId = typeof body.caseId === 'string' ? body.caseId : '';
       const { data: found } = await supabase
         .from('admissions_cases')
-        .select('id, title, kind, entry_year, status, summary, students(full_name)')
+        .select('id, title, kind, entry_year, status, summary, adviser_tutor_id, students(full_name), tutors(full_name), families(parent_name)')
         .eq('id', caseId)
         .maybeSingle();
       const c = found as unknown as
-        | { id: string; title: string; kind: string; entry_year: string | null; status: string; summary: string | null; students: { full_name: string } | null }
+        | {
+            id: string;
+            title: string;
+            kind: string;
+            entry_year: string | null;
+            status: string;
+            summary: string | null;
+            adviser_tutor_id: string | null;
+            students: { full_name: string } | null;
+            tutors: { full_name: string } | null;
+            families: { parent_name: string } | null;
+          }
         | null;
       if (!c) return json({ error: 'Case not found' }, 404);
 
@@ -148,8 +160,10 @@ Deno.serve(async (req) => {
           .or(`done_at.is.null,done_at.gte.${new Date(now - 31 * day).toISOString()}`),
         supabase
           .from('admissions_events')
-          .select('at, kind, title, detail')
+          .select('at, kind, title, detail, family_visible')
           .eq('case_id', c.id)
+          // The letter goes to the family: adviser-only entries (confidential references and documents) stay out.
+          .eq('family_visible', true)
           .gte('at', new Date(now - 45 * day).toISOString())
           .order('at'),
       ]);
@@ -157,20 +171,22 @@ Deno.serve(async (req) => {
       const kind = body.kind === 'ad-hoc' ? 'ad-hoc' : 'monthly';
       const period = typeof body.period === 'string' ? body.period.trim().slice(0, 60) : '';
       const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 2000) : '';
-      const facts = {
+      // Who signs: the case's adviser, or the admissions team when the office leads the case. The app sends the names it
+      // shows as a fallback for when row-level security hides the adviser's or the family's record from this caller.
+      const text = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 120) : '');
+      const adviser = c.adviser_tutor_id ? c.tutors?.full_name?.trim() || text(body.adviser) || null : null;
+      const parentName = c.families?.parent_name?.trim() || text(body.addressee) || null;
+      const facts = admissionsFacts({
         today: isoDay(new Date(now)),
-        student: firstName,
-        case: { title: c.title, kind: c.kind, entryYear: c.entry_year, status: c.status, summary: c.summary },
-        shortlist: targets.data ?? [],
+        studentFirstName: firstName,
+        caseInfo: { title: c.title, kind: c.kind, entryYear: c.entry_year, status: c.status, summary: c.summary },
+        targets: targets.data ?? [],
         keyDates: dates.data ?? [],
-        tasks: (tasks.data ?? []).map((t) => ({ title: t.title, dueOn: t.due_on, owner: t.owner, done: !!t.done_at })),
-        recentTimeline: events.data ?? [],
-      };
+        tasks: tasks.data ?? [],
+        events: events.data ?? [],
+      });
       const out = await ask(
-        `${STYLE}\nYou write a ${kind === 'monthly' ? 'monthly' : 'short ad hoc'} admissions advisory update to the family of ${firstName}, ` +
-          `as their adviser at Elite Education. Summarise progress, decisions, upcoming deadlines and what the family needs to do next. ` +
-          `Never invent institutions, dates, outcomes or advice that are not in the facts, and never mention fees or payments. ` +
-          `The adviser will review and edit it before it is sent.`,
+        `${STYLE}\n${admissionsLetterInstructions({ kind, studentFirstName: firstName, parentName, adviser })}`,
         `${period ? `Period: ${period}\n` : ''}Facts about the admissions case (JSON):\n${JSON.stringify(facts).slice(0, 12000)}` +
           `${notes ? `\n\nThe adviser's notes for this update:\n${notes}` : ''}\n\nDraft the update.`,
         ADMISSIONS_SCHEMA,

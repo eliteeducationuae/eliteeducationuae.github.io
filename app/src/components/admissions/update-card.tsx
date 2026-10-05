@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { UPDATE_KIND_LABELS, UPDATE_STATUS_LABELS, type AdvisoryUpdate } from '@/domain/admissions';
+import { typographic, UPDATE_KIND_LABELS, UPDATE_STATUS_LABELS, type AdvisoryUpdate } from '@/domain/admissions';
 import { formatDate } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -15,7 +15,7 @@ export function updateDate(u: AdvisoryUpdate): string {
 
 /** The opening lines of an update, without the salutation ('Dear …,'). */
 export function previewText(body: string): string {
-  const paragraphs = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const paragraphs = typographic(body).split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   if (paragraphs.length > 1 && /^Dear\b.*,$/.test(paragraphs[0])) paragraphs.shift();
   return paragraphs.join('\n\n');
 }

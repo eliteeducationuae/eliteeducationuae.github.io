@@ -464,7 +464,16 @@ export type AiRequest =
   | { task: 'parent-update'; lessonId: string }
   | { task: 'insights'; figures: unknown }
   // Admissions advisory
-  | { task: 'admissions-update'; caseId: string; kind: AdvisoryUpdateKind; period?: string; notes?: string };
+  | {
+      task: 'admissions-update';
+      caseId: string;
+      kind: AdvisoryUpdateKind;
+      period?: string;
+      notes?: string;
+      /** The names the app shows, used only when the server cannot read them itself. */
+      addressee?: string;
+      adviser?: string;
+    };
 
 export type AiResult =
   | { task: 'report-draft'; strengths: string; nextSteps: string; comment: string }

@@ -109,6 +109,7 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
     timeline: TimelinePanel,
   }[tab];
 
+  const overview = tab === 'overview';
   return (
     <Screen onRefresh={refresh} refreshing={caseQ.isRefetching}>
       <Stack.Screen options={{ title: `${firstName(studentName)} · Admissions` }} />
@@ -119,15 +120,16 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
           </Txt>
           <Badge label={CASE_STATUS_LABELS[c.status]} tone={caseStatusTone(c.status)} />
         </Row>
-        <Txt variant="title" style={{ fontSize: 26, lineHeight: 33 }} accessibilityRole="header">
+        <Txt variant="title" style={overview ? { fontSize: 26, lineHeight: 33 } : { fontSize: 21, lineHeight: 27 }} accessibilityRole="header">
           {c.title}
         </Txt>
         <View style={[styles.rule, { backgroundColor: theme.gold }]} />
         <Txt variant="muted">
           {[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}
         </Txt>
-        {c.summary ? <Txt>{c.summary}</Txt> : null}
-        {manager ? (
+        {/* The summary and edit button belong to the overview; other tabs keep the header short so their content shows first. */}
+        {overview && c.summary ? <Txt>{c.summary}</Txt> : null}
+        {overview && manager ? (
           <Row gap={Spacing.two} style={{ marginTop: Spacing.one }}>
             <Button
               title={me.role === 'admin' ? 'Edit case' : 'Edit summary and status'}

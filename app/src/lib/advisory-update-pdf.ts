@@ -5,6 +5,8 @@ import { Platform } from 'react-native';
 import {
   CASE_KIND_LABELS,
   keyDateHeading,
+  keyDateTimeLabel,
+  typographic,
   type AdmissionsCase,
   type AdmissionsKeyDate,
   type AdmissionsTarget,
@@ -54,16 +56,16 @@ export function advisoryUpdateHTML(
   const rows = upcoming
     .map((d) => {
       const target = d.targetId ? targets.find((t) => t.id === d.targetId) : undefined;
-      const when = `${dateKeyLabel(d.dueOn)}${d.time ? ` at ${d.time}` : ''}`;
+      const when = `${dateKeyLabel(d.dueOn)}${d.time ? ` at ${keyDateTimeLabel(d.time)}` : ''}`;
       return `<tr><td>${esc(when)}</td><td>${esc(keyDateHeading(d))}</td><td>${esc(target?.institution ?? '')}</td></tr>`;
     })
     .join('');
   const table = rows
     ? `<h2>Key dates at a glance</h2><table><thead><tr><th>Date</th><th>Key date</th><th>Institution</th></tr></thead><tbody>${rows}</tbody></table>`
     : '';
-  const body = `${pdfHeader({ meta: 'Admissions advisory', title: `${student.fullName} · ${update.title}`, subtitle })}
+  const body = `${pdfHeader({ meta: 'Admissions advisory', title: `${student.fullName} · ${typographic(update.title)}`, subtitle })}
   <p class="label">${esc(caseRow.title)}</p>
-  ${para(update.body)}
+  ${para(typographic(update.body))}
   ${table}`;
   return pdfDocument({ title: `${update.title}: ${student.fullName}${businessName ? ` | ${businessName}` : ''}`, body });
 }

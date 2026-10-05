@@ -353,6 +353,39 @@ insert into public.admissions_documents (case_id, category, name, path) values
 set role authenticated;
 select pg_temp.check(public.delete_admissions_document((select id from ids where k = 'sdoc')) is null,
   'a file another document still uses is kept');
+-- The adviser deletes a document the office uploaded: the stored file goes too (same rule as the "admissions delete" policy).
+reset role;
+insert into storage.objects values
+  ('admissions', 'cases/' || (select id from ids where k = 'case') || '/office.pdf', 'a0000000-0000-0000-0000-00000000000a');
+alter table storage.objects enable row level security;
+create policy "admissions select" on storage.objects for select to authenticated using (true);
+create policy "admissions delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'admissions' and public.admissions_can_remove(name, owner_id));
+grant usage on schema storage to authenticated;
+grant select, delete on storage.objects to authenticated;
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+insert into ids select 'odoc', (public.add_admissions_document((select id from ids where k = 'case'), null, 'reference', 'Confidential reference',
+  'cases/' || (select id from ids where k = 'case') || '/office.pdf', 'application/pdf', false)).id;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+delete from storage.objects where name like '%/office.pdf';
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+delete from storage.objects where name like '%/office.pdf';
+reset role;
+select pg_temp.check(exists (select 1 from storage.objects where name like '%/office.pdf'), 'a listed file cannot be removed from storage, even by the adviser');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+-- As the app does: delete the record, then remove the file at the path it returns.
+create temp table removed as select public.delete_admissions_document((select id from ids where k = 'odoc')) as path;
+delete from storage.objects using removed where storage.objects.name = removed.path;
+reset role;
+select pg_temp.check(not exists (select 1 from storage.objects where name like '%/office.pdf'),
+  'the adviser deletes a document the office uploaded and no stored file is left behind');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+select pg_temp.check(not public.admissions_can_remove('cases/' || (select id from ids where k = 'case') || '/unlisted.pdf', 'a0000000-0000-0000-0000-00000000000a')
+  and not public.admissions_can_remove('cases/' || (select id from ids where k = 'case') || '/unlisted.pdf', null),
+  'a tutor who is not the adviser cannot remove the case''s files');
 
 -- Advisory updates ----------------------------------------------------------------------
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');

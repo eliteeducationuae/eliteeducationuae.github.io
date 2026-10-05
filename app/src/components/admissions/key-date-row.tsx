@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import {
   daysLeftLabel,
+  keyDateTimeLabel,
   keyDateTitle,
   keyDateUrgency,
   urgencyTone,
@@ -61,7 +62,7 @@ export function KeyDateRow({
   const theme = useTheme();
   const urgency = keyDateUrgency(date, now);
   const d = dateKeyToDate(date.dueOn);
-  const when = `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}${date.time ? ` at ${date.time}` : ''}`;
+  const when = `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}${date.time ? ` at ${keyDateTimeLabel(date.time)}` : ''}`;
   const title = keyDateTitle(date, targets);
   const body = (
     <Row gap={Spacing.three} style={{ alignItems: 'center' }}>

@@ -3,6 +3,7 @@
  * Pure helpers shared by the demo data source, the UI and (in spirit) the SQL rules in
  * supabase/migrations/20261018000000_admissions.sql.
  */
+import { letterSalutation, letterSignOff, typographic } from '../../supabase/functions/_shared/admissions-letter';
 import { daysUntil, toDateKey } from './dates';
 import type { Invoice, Profile } from './types';
 
@@ -512,12 +513,34 @@ export function targetStatusEventTitle(status: TargetStatus, institution: string
   }
 }
 
-/** '<Kind label>: <title>' plus ' · <institution>' when the date belongs to a shortlisted target. */
-export function keyDateTitle(d: AdmissionsKeyDate, targets: AdmissionsTarget[]): string {
-  const base = `${KEY_DATE_KIND_LABELS[d.kind]}: ${d.title}`;
-  const target = d.targetId ? targets.find((t) => t.id === d.targetId) : undefined;
-  return target ? `${base} · ${target.institution}` : base;
+/** Generic words in an institution's name that do not, on their own, name it ('School', 'University', 'of'…). */
+const GENERIC_INSTITUTION_WORDS = new Set([
+  'the', 'of', 'and', 'for', 'at', 'in', 'university', 'college', 'school', 'academy', 'institute', 'institution', 'international',
+  'british', 'american', 'english', 'high', 'senior', 'junior', 'prep', 'preparatory', 'grammar', 'boarding', 'sixth', 'form',
+  'centre', 'center', 'royal', 'london', 'state', 'city', 'national', 'technology', 'arts', 'science', 'sciences',
+]);
+
+/** True when a key date's title already names its institution ('Oxford open day' for the University of Oxford). */
+export function titleNamesInstitution(title: string, institution: string): boolean {
+  const said = new Set(title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const own = institution.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w && !GENERIC_INSTITUTION_WORDS.has(w));
+  if (own.length === 0) return title.toLowerCase().includes(institution.trim().toLowerCase());
+  return own.some((w) => said.has(w));
 }
+
+/** The key date's heading plus ' · <institution>' when it belongs to a shortlisted target the title does not already name. */
+export function keyDateTitle(d: AdmissionsKeyDate, targets: AdmissionsTarget[]): string {
+  const base = keyDateHeading(d);
+  const target = d.targetId ? targets.find((t) => t.id === d.targetId) : undefined;
+  return target && !titleNamesInstitution(d.title, target.institution) ? `${base} · ${target.institution}` : base;
+}
+
+/** A key date's time for families who may be abroad: '10:30 (UAE time)'. */
+export function keyDateTimeLabel(time: string): string {
+  return `${time} (UAE time)`;
+}
+
+export { typographic };
 
 // ---------------------------------------------------------------------------------------------
 // Access (same rule as SQL admissions_access)
@@ -597,10 +620,43 @@ function institutionName(name: string): string {
   return /^(university|institute|london school|royal college|college|school) of /i.test(n) ? `the ${n}` : n;
 }
 
+/** Names of tests and qualifications written in title case wherever they appear. */
+const PROPER_NAMES: readonly string[] = [
+  'Mathematics Admissions Test',
+  'Physics Aptitude Test',
+  'Thinking Skills Assessment',
+  'Test of Mathematics for University Admission',
+  'Engineering and Science Admissions Test',
+  'University Clinical Aptitude Test',
+  'Law National Aptitude Test',
+  'History Aptitude Test',
+  'Modern Languages Admissions Test',
+  'Classics Admissions Test',
+  'English Literature Admissions Test',
+  'Common App',
+  'Early Decision',
+  'Early Action',
+  'Regular Decision',
+  'Sixth Form',
+];
+
+/** Words that are proper nouns wherever they appear in British English (languages and nationalities). */
+const PROPER_WORDS = new Set([
+  'English', 'Arabic', 'French', 'Spanish', 'German', 'Italian', 'Latin', 'Greek', 'Mandarin', 'Chinese', 'Japanese', 'Russian',
+  'Hindi', 'Urdu', 'British', 'American', 'Emirati', 'European', 'Islamic', 'Christmas', 'Easter', 'Ramadan', 'Eid',
+]);
+
+/** Restores the capitals of known test names: 'Mathematics admissions test' → 'Mathematics Admissions Test'. */
+function properNames(text: string): string {
+  return PROPER_NAMES.reduce((t, name) => t.replace(new RegExp(`\\b${name.replace(/ /g, '\\s+')}\\b`, 'gi'), name), text);
+}
+
 /** A title placed mid-sentence: 'Send the latest school report' becomes 'send the latest school report'. */
 function midSentence(title: string, keep: readonly string[] = []): string {
-  const t = title.trim().replace(/[.;:]+$/, '');
+  const t = properNames(title.trim().replace(/[.;:]+$/, ''));
+  if (PROPER_NAMES.some((name) => t.startsWith(name))) return t;
   const [first = '', second = ''] = t.split(/\s+/);
+  if (PROPER_WORDS.has(first)) return t;
   // Proper names stay as written: the student, institutions and capitalised phrases such as 'Sixth Form'.
   if (!/^[A-Z][a-z]+$/.test(first) || keep.includes(first) || /^[A-Z]/.test(second)) return t;
   return first.toLowerCase() + t.slice(first.length);
@@ -665,9 +721,8 @@ function keyDateSentence(d: AdmissionsKeyDate, target: AdmissionsTarget | undefi
   const raw = stripStop(d.title);
   const title = /^(the|a|an|your|our)\s/i.test(raw) ? raw : `the ${midSentence(raw, keep)}`;
   const subject = title.charAt(0).toUpperCase() + title.slice(1);
-  const when = `${longDateLabel(d.dueOn)}${d.time ? ` at ${d.time} (UAE time)` : ''}`;
-  const last = target?.institution.trim().split(/\s+/).pop()?.toLowerCase() ?? '';
-  const at = target && !raw.toLowerCase().includes(last) ? ` with ${institutionName(target.institution)}` : '';
+  const when = `${longDateLabel(d.dueOn)}${d.time ? ` at ${keyDateTimeLabel(d.time)}` : ''}`;
+  const at = target && !titleNamesInstitution(raw, target.institution) ? ` with ${institutionName(target.institution)}` : '';
   switch (d.kind) {
     case 'deadline':
       return /deadline/i.test(raw) ? `${subject}${at} falls on ${when}.` : `${subject}${at} is due on ${when}.`;
@@ -690,7 +745,7 @@ export function templateAdvisoryUpdate(input: AdvisoryTemplateInput): { title: s
   const title = kind === 'monthly' ? `${period} advisory update` : 'Advisory update';
   const paragraphs: string[] = [];
 
-  paragraphs.push(`Dear ${input.addressee?.trim() || 'Parents'},`);
+  paragraphs.push(letterSalutation(input.addressee));
   paragraphs.push(
     kind === 'monthly'
       ? `We are pleased to share our advisory update on ${student}'s admissions for ${period}.`
@@ -733,13 +788,8 @@ export function templateAdvisoryUpdate(input: AdvisoryTemplateInput): { title: s
   }
 
   paragraphs.push('Please do not hesitate to contact us should you have any questions.');
-  const adviser = input.adviser?.trim();
-  paragraphs.push(
-    adviser && adviser !== 'Elite Education'
-      ? `With kind regards,\n${adviser}\nAdmissions Adviser, Elite Education`
-      : 'With kind regards,\nThe Admissions Team\nElite Education',
-  );
-  return { title, body: paragraphs.join('\n\n') };
+  paragraphs.push(letterSignOff(input.adviser));
+  return { title: typographic(title), body: typographic(paragraphs.join('\n\n')) };
 }
 
 // ---------------------------------------------------------------------------------------------

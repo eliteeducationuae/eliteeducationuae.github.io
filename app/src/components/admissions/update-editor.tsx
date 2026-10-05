@@ -20,6 +20,7 @@ import {
   canManageCase,
   CASE_KIND_LABELS,
   templateAdvisoryUpdate,
+  typographic,
   UPDATE_KIND_LABELS,
   UPDATE_STATUS_LABELS,
   upcomingKeyDates,
@@ -104,7 +105,7 @@ function Reader({ c, update, manager }: { c: AdmissionsCase; update: AdvisoryUpd
   const facts = useCaseFacts(c);
   const download = useDownload(c);
   const [now] = useState(() => new Date());
-  const paragraphs = update.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const paragraphs = typographic(update.body).split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   return (
     <Screen footer={<Button title="Download PDF" icon="share" variant="gold" style={{ flex: 1 }} onPress={() => download(update, now)} />}>
       <Stack.Screen options={{ title: UPDATE_KIND_LABELS[update.kind] }} />
@@ -114,7 +115,7 @@ function Reader({ c, update, manager }: { c: AdmissionsCase; update: AdvisoryUpd
             {[facts.studentName, CASE_KIND_LABELS[c.kind], update.period].filter(Boolean).join(' · ')}
           </Txt>
           <Txt variant="title" style={{ fontSize: 26, lineHeight: 33 }} accessibilityRole="header">
-            {update.title}
+            {typographic(update.title)}
           </Txt>
           <View style={[styles.rule, { backgroundColor: theme.gold }]} />
           <Txt variant="small">
@@ -219,7 +220,16 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
     setDrafting(true);
     setError(null);
     try {
-      const ai = await source.aiAssist?.({ task: 'admissions-update', caseId: c.id, kind, period: period.trim() || undefined, notes: notes.trim() || undefined }).catch(() => null);
+      const ai = await source
+        .aiAssist?.({
+          task: 'admissions-update',
+          caseId: c.id,
+          kind,
+          period: period.trim() || undefined,
+          notes: notes.trim() || undefined,
+          addressee: facts.addressee,
+          adviser: c.adviserTutorId ? facts.adviser : undefined,
+        }).catch(() => null);
       const usedAi = !!ai && ai.task === 'admissions-update';
       const d =
         ai && ai.task === 'admissions-update'
@@ -307,14 +317,15 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
     <Screen footer={footer}>
       <Stack.Screen options={{ title: update ? 'Advisory update' : 'Write an update' }} />
       <Card style={{ gap: Spacing.one }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.two}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Txt variant="label">{CASE_KIND_LABELS[c.kind]}</Txt>
-            <Txt variant="h2">{facts.studentName}</Txt>
-            <Txt variant="muted">{c.title}</Txt>
-          </View>
+        {/* The badge shares a row with the small label only, so the student's name keeps the full width on a phone. */}
+        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }} gap={Spacing.two} wrap>
+          <Txt variant="label" style={{ flexShrink: 1 }}>
+            {CASE_KIND_LABELS[c.kind]}
+          </Txt>
           <Badge label={UPDATE_STATUS_LABELS[status]} tone={updateStatusTone(status)} />
         </Row>
+        <Txt variant="h2">{facts.studentName}</Txt>
+        <Txt variant="muted">{c.title}</Txt>
         {update?.authorName ? <Txt variant="small">Written by {update.authorName}</Txt> : null}
       </Card>
 

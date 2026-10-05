@@ -907,10 +907,21 @@ language sql stable security definer set search_path = public as $$
     and not exists (select 1 from public.admissions_documents d where d.path = p_name)
 $$;
 
-revoke all on function public.admissions_can_read(text), public.admissions_can_write(text), public.admissions_can_delete(text)
-  from public, anon;
-grant execute on function public.admissions_can_read(text), public.admissions_can_write(text), public.admissions_can_delete(text)
-  to authenticated;
+/**
+ * True when the caller may remove the stored file p_name (owned by p_owner): the office, whoever uploaded it, or the case's
+ * adviser — so a confidential file the adviser deletes never lingers in the bucket — and only once no document lists it.
+ */
+create function public.admissions_can_remove(p_name text, p_owner text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (public.is_admin() or p_owner = auth.uid()::text or public.admissions_can_manage(public.admissions_path_case(p_name)))
+    and public.admissions_can_delete(p_name), false)
+$$;
+
+revoke all on function public.admissions_can_read(text), public.admissions_can_write(text), public.admissions_can_delete(text),
+  public.admissions_can_remove(text, text) from public, anon;
+grant execute on function public.admissions_can_read(text), public.admissions_can_write(text), public.admissions_can_delete(text),
+  public.admissions_can_remove(text, text) to authenticated;
 
 do $$
 begin
@@ -928,7 +939,6 @@ begin
     execute $p$create policy "admissions upload" on storage.objects for insert to authenticated
       with check (bucket_id = 'admissions' and public.admissions_can_write(name))$p$;
     execute $p$create policy "admissions delete" on storage.objects for delete to authenticated
-      using (bucket_id = 'admissions' and (public.is_admin() or owner_id = auth.uid()::text)
-             and public.admissions_can_delete(name))$p$;
+      using (bucket_id = 'admissions' and public.admissions_can_remove(name, owner_id))$p$;
   end if;
 end $$;
