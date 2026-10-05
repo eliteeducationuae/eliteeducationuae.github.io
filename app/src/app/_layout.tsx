@@ -14,7 +14,7 @@ import { Colors } from '@/constants/theme';
 import { queryClient } from '@/data/query';
 import { useSession } from '@/data/session';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { registerForPushNotifications } from '@/lib/push';
+import { registerForPushNotifications, useNotificationTaps } from '@/lib/push';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -40,6 +40,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (status === 'signed-in') registerForPushNotifications();
   }, [status]);
+  useNotificationTaps(status === 'signed-in' && fontsReady);
 
   if (!fontsReady) return null;
 

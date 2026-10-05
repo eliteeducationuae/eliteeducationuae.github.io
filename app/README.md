@@ -55,7 +55,7 @@ app/
 ## Going live
 
 1. **Supabase** (free tier is fine). Create a project at [supabase.com](https://supabase.com).
-   - Run `supabase/migrations/20261002000000_init.sql` in the SQL editor, or use `npx supabase db push`.
+   - Run `supabase/migrations/20261002000000_init.sql` in the SQL editor, or use `npx supabase db push` (only on a brand-new project; for the existing project, use the SQL editor, as the *Round 4 setup checklist* explains).
    - Create your login under Authentication → Users, then run `supabase/bootstrap.sql` (edit the email first).
    - The project URL and publishable key are in `src/config.ts`.
 2. **Stripe** (UAE account, for card payments in AED).
@@ -63,7 +63,7 @@ app/
    - `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal ics send-reminders send-notifications`
    - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for these six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`.
    - Saved cards, autopay, Apple Pay, Google Pay and lesson top-ups need a few more steps: see *Card payments: saved cards, autopay and top-ups* below.
-   - Schedule `send-reminders` to run hourly (Supabase → Edge Functions → Schedules).
+   - Schedule `send-reminders` to run hourly (Supabase → Integrations → Cron, or the pg_cron SQL in step 9 of the *Round 4 setup checklist*).
 3. **App Store.** This needs an Apple Developer account ($99/yr). No Mac is required.
    ```bash
    npx eas-cli@latest init            # links the project and enables push notifications
@@ -90,7 +90,7 @@ Run these once in the Supabase SQL editor, in order, if you haven't already:
 
 1. Create a free [Resend](https://resend.com) account and verify the `eliteeducation.me` domain.
 2. `npx supabase secrets set RESEND_API_KEY=re_… EMAIL_FROM="Elite Education <hello@eliteeducation.me>" APP_URL=https://eliteeducation.me/app` (the same `APP_URL` as everywhere else in this guide; see *Web app at `/app`*)
-3. `npx supabase functions deploy send-notifications`, then schedule it every minute (Supabase → Edge Functions → Schedules).
+3. `npx supabase functions deploy send-notifications`, then schedule it every minute (Supabase → Integrations → Cron, or the pg_cron SQL in step 9 of the *Round 4 setup checklist*).
 
 Until this is set up, everything still works in the app; the emails simply wait in the queue.
 
@@ -98,7 +98,21 @@ Until this is set up, everything still works in the app; the emails simply wait 
 
 **Roles, hiring, tutor invoices, reports and money (round 3).** Run `supabase/migrations/20261005000000_operations.sql` in the SQL editor. It also creates the private `applications` (CVs) and `receipts` storage buckets with their access rules.
 
-**Homework and resources (round 4).** Run `supabase/migrations/20261008000000_homework.sql` in the SQL editor. It adds details and attachments to homework, hand-ins with tutor feedback and marks, the resource library, and the private `classwork` storage bucket with its access rules: families and students may reach only their own child's folder, and library files only once they have been shared with them or attached to their homework. Each file may be up to 25 MB and must be a PDF, a photo or an Office document. Deleting a library resource keeps its stored file while any homework still uses it, and everyone except admins and a resource's uploader reads the library through `list_resources`, which never reveals which other students a resource is shared with. Then run `supabase/migrations/20261012010000_classwork_security.sql`: it stops tutors reading other tutors' resources from the table directly, and refuses to delete a stored file while a hand-in, homework or library resource still refers to it. Notices about new homework, hand-ins, feedback and shared resources are delivered by the existing `send-notifications` function, so no further set-up is required. Please rebuild the iPhone and Android apps with EAS so that the new photo-library and camera permissions (from `expo-image-picker`) are included. In demo mode, attached files are kept by name only and are not uploaded. Library resources use the same subject, curriculum and level pickers as a student's subjects (step 3), and the library opens on the lesson's subject when a tutor attaches a resource to homework. A tutor can set homework for any student they teach, including a student assigned to them for a subject before the first lesson. **Run order:** apply the migrations in timestamp order (`20261007000000_subjects.sql` first, then homework, calendar, payments, WhatsApp, invoice notifications, classwork security and review fixes). `20261013000000_review_fixes.sql` makes sure homework set from a lesson belongs to that lesson and its tutor, and that hand-ins cite only files in the student's own folder.
+**Homework and resources (round 4).** Homework gains details and attachments, hand-ins with tutor feedback and marks, and a shared resource library. Set it up once:
+
+1. **Database.** In the Supabase SQL editor, run `supabase/migrations/20261008000000_homework.sql`, then `20261012010000_classwork_security.sql`, then `20261013000000_review_fixes.sql` and `20261014000000_round4_qa_fixes.sql`, keeping to timestamp order with the other round 4 files (see the *Round 4 setup checklist*). The first creates the private `classwork` storage bucket with its access rules; the last makes sure that bucket is private and limited even if one was created by hand earlier.
+2. **Rebuild the iPhone and Android apps with EAS**, so that the new photo-library and camera permissions (from `expo-image-picker`) are included.
+
+Notices about new homework, hand-ins, feedback and shared resources are delivered by the existing `send-notifications` function, so nothing else is needed.
+
+How it behaves:
+
+- **Who can see files.** Families and students may reach only their own child's folder, and library files only once they have been shared with them or attached to their homework. Each file may be up to 25 MB and must be a PDF, a photo or an Office document.
+- **Who can set homework.** A tutor can set homework for any student they teach, including a student assigned to them for a subject before the first lesson. Homework set from a lesson must belong to that lesson and its tutor.
+- **Hand-ins.** A hand-in may attach only files from the student's own folder.
+- **The library.** Resources use the same subject, curriculum and level pickers as a student's subjects (step 3), and the library opens on the lesson's subject when a tutor attaches a resource to homework. Everyone except admins and a resource's uploader reads the library through `list_resources`, which never reveals which other students a resource is shared with. Tutors cannot read other tutors' private resources.
+- **Deleting.** Deleting a library resource keeps its stored file while any homework still uses it, and a stored file cannot be deleted while a hand-in, homework or library resource still refers to it.
+- **Demo mode.** Attached files are kept by name only and are not uploaded.
 
 **AI drafting (optional).** Report drafts, parent updates and the insights summary use Claude through the `ai-assist` Edge Function. Without it, tutors still get a template draft.
 
@@ -184,14 +198,14 @@ The website forms send the new subject and phase fields. If the site goes live b
    npx supabase secrets set CALENDAR_RETURN_URLS=http://localhost:8081
    ```
 6. **Deploy.** `npx supabase functions deploy google-connect calendar-sync`
-7. **Schedule** `calendar-sync` every 5 minutes with pg_cron and pg_net (enable both under *Database → Extensions*). In the SQL editor, keep the secret in Vault and send it in the `x-sync-secret` header. The anon key is only there to pass the platform's own login check; on its own it cannot start a sync.
+7. **Schedule** `calendar-sync` every 5 minutes with pg_cron and pg_net (enable both under *Database → Extensions*). In the SQL editor, keep the secret in Vault and send it in the `x-sync-secret` header. The anon key is only there to pass the platform's own login check; on its own it cannot start a sync. Use the **legacy anon key** (a long `eyJ…` token from *Project Settings → API Keys → Legacy API keys*), not the `sb_publishable_…` key in `src/config.ts`: the function gateway does not accept an `sb_publishable_` key, so every scheduled run would be refused.
    ```sql
    select vault.create_secret('<the same random value>', 'calendar_sync_secret');
    select cron.schedule('calendar-sync', '*/5 * * * *', $$
      select net.http_post(
        url := 'https://<project-ref>.supabase.co/functions/v1/calendar-sync',
        headers := jsonb_build_object(
-         'Authorization', 'Bearer <anon key>',
+         'Authorization', 'Bearer <legacy anon key, eyJ… (Project Settings → API Keys → Legacy API keys)>',
          'x-sync-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'calendar_sync_secret')
        )
      )
@@ -276,34 +290,42 @@ How it works for families:
 
 ## Round 4 setup checklist
 
-**Urgent: the web app deploys on merge and reads the new tables straight away. Run `20261008000000_homework.sql` through `20261013000000_review_fixes.sql` in the SQL editor now, before anything else.** Until they run, family lists, the parent home, admin billing, homework, the resource library and the Account screen's calendar and WhatsApp cards fail for every role.
+**Urgent: the web app deploys on merge and reads the new tables straight away. Run `20261008000000_homework.sql` through `20261014000000_round4_qa_fixes.sql` in the SQL editor now, before anything else.** Until they run, family lists, the parent home, admin billing, homework, the resource library and the Account screen's calendar and WhatsApp cards fail for every role.
 
 Complete these once, in this order. Each feature's section above carries the detail.
 
-1. **Database.** In the Supabase SQL editor, run each migration newer than `20261007000000_subjects.sql`, one file at a time in filename order: `20261008000000_homework.sql`, `20261009000000_calendar.sql`, `20261010000000_payments.sql`, `20261011000000_whatsapp.sql`, `20261012000000_invoice_notifications.sql`, `20261012010000_classwork_security.sql` and `20261013000000_review_fixes.sql`. Do not use `npx supabase db push`: the earlier migrations were applied in the SQL editor, so the project has no migration history and `db push` would try to run `20261002000000_init.sql` again and fail. (If you ever want to switch to `db push`, first mark the applied files with `npx supabase migration repair --status applied <version>` for each one.)
+1. **Database.** In the Supabase SQL editor, run each migration newer than `20261007000000_subjects.sql`, one file at a time in filename order: `20261008000000_homework.sql`, `20261009000000_calendar.sql`, `20261010000000_payments.sql`, `20261011000000_whatsapp.sql`, `20261012000000_invoice_notifications.sql`, `20261012010000_classwork_security.sql`, `20261013000000_review_fixes.sql` and `20261014000000_round4_qa_fixes.sql`. The last one corrects the links in office notifications, writes lesson dates on invoices as '17 Aug 2026', keeps the `classwork` bucket private, and lets the Stripe webhook alert the office if a card payment is taken but cannot be recorded (for example because the invoice was deleted meanwhile), so it can be reconciled by hand. Do not use `npx supabase db push`: the earlier migrations were applied in the SQL editor, so the project has no migration history and `db push` would try to run `20261002000000_init.sql` again and fail. (If you ever want to switch to `db push`, first mark the applied files with `npx supabase migration repair --status applied <version>` for each one.)
 2. **App address.** Set `APP_URL` once to `https://eliteeducation.me/app` (see *Web app at `/app`*). Email links, Stripe returns and Google Calendar returns all use this one value.
 3. **Google.** Reuse the OAuth client from *Sign in with Apple and Google*. In the Google Cloud Console, enable the **Google Calendar API**, add the `calendar.events` and `calendar.freebusy` scopes to the OAuth consent screen, and add `https://<project-ref>.supabase.co/functions/v1/google-connect` as an authorised redirect URI. Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SYNC_SECRET` (a long random value), and schedule `calendar-sync` with the Vault and `x-sync-secret` snippet under *Google Calendar*. Without `CALENDAR_SYNC_SECRET`, `calendar-sync` refuses every call.
 4. **Apple.** Follow the Apple steps under *Sign in with Apple and Google*.
 5. **Stripe.** In the Stripe Dashboard, switch on **Apple Pay** and **Google Pay** under *Settings → Payments → Payment methods* (hosted Checkout needs no domain registration), switch on and configure the **Customer portal**, and make sure the webhook lists all six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`. Without `payment_method.detached`, removing the last card never switches autopay off; without `customer.updated`, a change of default card is not shown.
 6. **Twilio.** Follow *WhatsApp reminders* above.
 7. **Deploy.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders ai-assist ics`. `ics`, `stripe-webhook` and `google-connect` must accept calls without a Supabase login; `supabase/config.toml` already sets `verify_jwt = false` for them, so deploy from this folder (or deploy those three separately with `--no-verify-jwt`).
-8. **Schedule.** `calendar-sync` every 5 minutes (Vault snippet under *Google Calendar*), `charge-invoice` every 15 minutes (Vault snippet under *Card payments*, legacy `service_role` key), `send-notifications` every minute and `send-reminders` hourly.
-9. **Lock the schedules (recommended).** `send-notifications` and `send-reminders` otherwise accept any caller holding the public anon key. First add an `x-cron-secret` header to both schedules, then set the same value with `npx supabase secrets set CRON_SECRET=<random value>` (`openssl rand -hex 32` produces one). Once `CRON_SECRET` is set, calls without the header are refused, so add the header first. With pg_cron:
+8. **Schedule.** `calendar-sync` every 5 minutes (Vault snippet under *Google Calendar*), `charge-invoice` every 15 minutes (Vault snippet under *Card payments*, legacy `service_role` key), `send-notifications` every minute and `send-reminders` hourly (both with the pg_cron snippet in step 9). Every snippet that sends `Bearer <legacy anon key…>` needs the legacy `eyJ…` anon key: an `sb_publishable_` key is not accepted by the function gateway, so every scheduled run would be refused without any visible error. If any of these four are already scheduled from the dashboard, remove those schedules first.
+9. **Schedule and lock `send-notifications` and `send-reminders`.** Without a secret they accept any caller holding the public anon key, who could run them early and repeatedly (the work is safe to repeat, but should not be). Store a random value in Vault and schedule both functions with the `x-cron-secret` header as below, then set the same value with `npx supabase secrets set CRON_SECRET=<random value>` (`openssl rand -hex 32` produces one). Once `CRON_SECRET` is set, calls without the header are refused, so schedule with the header first. `calendar-sync` is locked the same way by `CALENDAR_SYNC_SECRET` and its `x-sync-secret` header (step 3); without that secret it refuses every call, so calendar sync does nothing until it is set.
    ```sql
    select vault.create_secret('<the same random value>', 'cron_secret');
    select cron.schedule('send-notifications', '* * * * *', $$
      select net.http_post(
        url := 'https://<project-ref>.supabase.co/functions/v1/send-notifications',
        headers := jsonb_build_object(
-         'Authorization', 'Bearer <anon key>',
+         'Authorization', 'Bearer <legacy anon key, eyJ… (Project Settings → API Keys → Legacy API keys)>',
          'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
        )
      )
    $$);
-   -- The same for send-reminders, hourly ('0 * * * *'). Remove any older dashboard schedule for these two functions.
+   select cron.schedule('send-reminders', '0 * * * *', $$
+     select net.http_post(
+       url := 'https://<project-ref>.supabase.co/functions/v1/send-reminders',
+       headers := jsonb_build_object(
+         'Authorization', 'Bearer <legacy anon key, eyJ… (Project Settings → API Keys → Legacy API keys)>',
+         'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+       )
+     )
+   $$);
    ```
 10. **WhatsApp opt-outs.** A family who replies STOP on WhatsApp is not yet switched off automatically. Until an inbound handler is added, the office should switch WhatsApp off for them by asking them to do so under *Account*, or by clearing `whatsapp_opt_in` for that profile in the table editor.
-11. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
+11. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, a WhatsApp opt-in on your own number, and tapping a push notification (it should open the screen it refers to). Also print an invoice PDF on iPhone: iOS has neither Calibri nor Carlito, so the PDF body text may fall back to Helvetica; confirm that this is acceptable.
 
 ## Checks
 

@@ -76,7 +76,7 @@ export function WhatsAppCard() {
       {/* Same heading pattern as the Google Calendar and calendar subscription cards: the title, then the status badge. */}
       <Row gap={Spacing.two} style={{ justifyContent: 'space-between' }}>
         <Txt variant="h3">WhatsApp reminders</Txt>
-        <Badge label={savedOn ? 'On' : 'Off'} tone={savedOn ? 'gold' : 'neutral'} />
+        <Badge label={savedOn ? 'On' : 'Off'} tone={savedOn ? 'success' : 'neutral'} />
       </Row>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt style={{ flex: 1 }}>Send me reminders on WhatsApp</Txt>

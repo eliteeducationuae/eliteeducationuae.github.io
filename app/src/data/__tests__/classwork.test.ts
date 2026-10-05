@@ -79,6 +79,32 @@ describe('setting homework (mirrors save_homework)', () => {
   });
 });
 
+describe('homework set from a lesson (mirrors the review-fix rules)', () => {
+  it('needs a lesson the student was in and the caller teaches, and never moves it on edit', () => {
+    const db = createSeed(NOW);
+    const sarah = who(db, 'tutor');
+    const base = { studentId: 's-layla', title: 'From the lesson', dueDate: '2026-10-10', attachments: [] };
+    const own = db.lessons.find((l) => l.tutorId === sarah.tutorId && l.studentIds.includes('s-layla'))!;
+    const otherTutors = db.lessons.find((l) => l.tutorId !== sarah.tutorId)!;
+    const notLayla = db.lessons.find((l) => l.tutorId === sarah.tutorId && !l.studentIds.includes('s-layla'));
+    expect(() => cw.saveHomework(db, sarah, { ...base, lessonId: 'no-such-lesson' })).toThrow('Lesson not found');
+    expect(() => cw.saveHomework(db, sarah, { ...base, lessonId: otherTutors.id })).toThrow('Lesson not found');
+    if (notLayla) expect(() => cw.saveHomework(db, sarah, { ...base, lessonId: notLayla.id })).toThrow('Lesson not found');
+    const hw = cw.saveHomework(db, sarah, { ...base, lessonId: own.id }, NOW);
+    expect(hw.lessonId).toBe(own.id);
+    const edited = cw.saveHomework(db, sarah, { ...base, id: hw.id, title: 'Edited', lessonId: otherTutors.id });
+    expect(edited.lessonId).toBe(own.id);
+    const omarLesson = db.lessons.find((l) => l.studentIds.includes('s-omar'))!;
+    expect(cw.saveHomework(db, who(db, 'admin'), { ...base, studentId: 's-omar', lessonId: omarLesson.id }).lessonId).toBe(omarLesson.id);
+  });
+  it('accepts only the student’s own uploads in a hand-in', () => {
+    const db = createSeed(NOW);
+    const hw = db.homework.find((h) => h.studentId === 's-omar' && !h.done)!;
+    const resourceFile = { kind: 'file' as const, name: 'sheet.pdf', path: 'resources/sheet.pdf' };
+    expect(() => cw.submitHomework(db, who(db, 'student'), { homeworkId: hw.id, files: [resourceFile] })).toThrow('right place');
+  });
+});
+
 describe('handing in and feedback (mirrors submit_homework / give_homework_feedback)', () => {
   it('lets the student and the parent hand in, which marks the homework done', () => {
     const db = createSeed(NOW);

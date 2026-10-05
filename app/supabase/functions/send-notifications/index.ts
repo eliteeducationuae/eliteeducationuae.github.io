@@ -1,7 +1,7 @@
 // Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend,
 // and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account).
 // Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
-// Schedule every minute (Supabase → Edge Functions → Schedules).
+// Schedule every minute (Supabase → Integrations → Cron, or the pg_cron SQL in the README's Round 4 setup checklist).
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
 // WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,

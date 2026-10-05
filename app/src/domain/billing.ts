@@ -1,4 +1,4 @@
-import { addDays, minutesBetween, toDateKey } from './dates';
+import { addDays, formatDate, minutesBetween, toDateKey } from './dates';
 import type {
   Charge,
   Invoice,
@@ -100,7 +100,7 @@ export function chargesForLesson(
     }
     if (fee <= 0) continue;
 
-    const description = `${service.name} — ${student.fullName}, ${toDateKey(date)}${label ? ` (${label})` : ''}`;
+    const description = `${service.name} — ${student.fullName}, ${formatDate(date)}${label ? ` (${label})` : ''}`;
     const base = {
       lessonId: lesson.id,
       studentId,

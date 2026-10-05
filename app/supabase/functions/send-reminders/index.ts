@@ -1,6 +1,6 @@
 // Push reminders ~24 hours before each lesson, to the tutor and the family.
 // Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
-// Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
+// Schedule hourly (Supabase → Integrations → Cron, or the pg_cron SQL in the README's Round 4 setup checklist).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
 import { adminClient } from '../_shared/supabase.ts';

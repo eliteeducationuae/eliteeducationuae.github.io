@@ -44,6 +44,8 @@ function cleanAttachments(list: Attachment[] | undefined, allowedPrefixes: strin
 }
 
 const studentPrefixes = (studentId: string) => [`students/${studentId}/`, 'resources/'];
+/** Hand-ins may only be the student's own uploads (valid_handin_files in 20261013000000_review_fixes). */
+const handInPrefixes = (studentId: string) => [`students/${studentId}/`];
 
 export const cw = {
   getHomework(db: DemoDB, viewer: Profile, id: string): Homework | null {
@@ -60,6 +62,13 @@ export const cw = {
       throw new AccessError('Only the student’s tutor or an admin can set homework.');
     }
     if (!db.students.some((s) => s.id === studentId)) throw new Error('Student not found');
+    // Homework set from a lesson must belong to that lesson: the student was in it, and it is the caller's lesson.
+    if (!existing && input.lessonId) {
+      const lesson = db.lessons.find((l) => l.id === input.lessonId);
+      if (!lesson || !lesson.studentIds.includes(studentId) || !(viewer.role === 'admin' || lesson.tutorId === viewer.tutorId)) {
+        throw new Error('Lesson not found');
+      }
+    }
     const title = input.title.trim();
     if (!title) throw new Error('Please give the homework a title.');
     if (!/^\d{4}-\d{2}-\d{2}/.test(input.dueDate ?? '')) throw new Error('Please choose a due date.');
@@ -72,7 +81,6 @@ export const cw = {
       existing.details = details;
       existing.dueDate = dueDate;
       existing.attachments = attachments;
-      if (input.lessonId) existing.lessonId = input.lessonId;
       return existing;
     }
     const hw: Homework = {
@@ -115,7 +123,7 @@ export const cw = {
       throw new AccessError('Only the student or their family can hand in homework.');
     }
     const note = input.note?.trim() || undefined;
-    const files = cleanAttachments(input.files, studentPrefixes(hw.studentId));
+    const files = cleanAttachments(input.files, handInPrefixes(hw.studentId));
     if (!note && files.length === 0) throw new Error('Please add a note or attach your work.');
     const sub: HomeworkSubmission = {
       id: newId('sub'),

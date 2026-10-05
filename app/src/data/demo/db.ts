@@ -107,7 +107,7 @@ export function notifyAdmins(db: DemoDB, subject: string, body: string, url?: st
   (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'admins', subject, body, url });
 }
 
-export const DEMO_DB_VERSION = 8;
+export const DEMO_DB_VERSION = 9;
 
 let counter = 0;
 export function newId(prefix: string): string {

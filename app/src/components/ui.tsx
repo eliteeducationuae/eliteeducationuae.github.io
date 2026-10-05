@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { politeError } from '@/lib/polite-error';
 
 import { Icon, type IconName } from './icon';
 
@@ -321,7 +322,7 @@ export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null;
   return (
     <Banner tone="danger" icon="alert">
-      {error instanceof Error ? error.message : String(error)}
+      {politeError(error instanceof Error ? error.message : String(error))}
     </Banner>
   );
 }
