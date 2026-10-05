@@ -1,3 +1,4 @@
+import type { AuditActor, AuditCursor, AuditFilter, AuditPage } from '@/domain/audit';
 import type { EnrolmentDraft } from '@/domain/enrolments';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -367,6 +368,12 @@ export interface DataSource {
   openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+
+  // Audit trail
+  /** Admins only: the audit trail, newest first. Pass the previous page's `next` to continue. */
+  listAuditEvents?(filter: AuditFilter, page?: { before?: AuditCursor; limit?: number }): Promise<AuditPage>;
+  /** Admins only: everyone who appears in the audit trail, for the person filter. */
+  listAuditActors?(): Promise<AuditActor[]>;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */

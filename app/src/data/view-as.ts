@@ -266,6 +266,10 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   listFamilyContacts: 'read',
   saveFamilyContact: 'write',
   removeFamilyContact: 'write',
+
+  // Audit log (administrators only; a viewed person cannot read it)
+  listAuditEvents: 'read',
+  listAuditActors: 'read',
 };
 
 const refuse = async (): Promise<never> => {

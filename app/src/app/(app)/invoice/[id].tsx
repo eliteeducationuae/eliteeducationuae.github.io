@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
+import { HistorySection } from '@/components/history';
 import {
   AUTOPAY_MAY_HAVE_CHARGED,
   AutopayBadge,
@@ -210,6 +211,7 @@ export default function InvoicePage() {
           ) : null}
         </>
       ) : null}
+      <HistorySection filter={{ entityId: inv.id }} />
     </Screen>
   );
 }

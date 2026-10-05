@@ -38,6 +38,7 @@ export default function AdminMore() {
   const business = [
     { title: 'Money', subtitle: 'Profit, expenses, pay run and exports', icon: 'money', href: '/manage/money' },
     { title: 'Insights', subtitle: 'Trends, tutor capacity and students to check on', icon: 'trend', href: '/manage/insights' },
+    { title: 'Activity log', subtitle: 'Who changed what, and when', icon: 'clock', href: '/manage/activity' },
   ] as const;
   const links = [
     { title: 'Tutors', subtitle: 'Profiles, pay rates and calendar colours', icon: 'school', href: '/manage/tutors' },

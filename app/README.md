@@ -372,6 +372,26 @@ Tutor pay and family prices may be the same for every student or set individuall
 
 Please note that each tutor's usual hourly rate, held on `public.tutors`, remains readable by any signed-in user. This predates per-student rates and is flagged for a later tightening.
 
+## Audit log
+
+Every change to the records that matter is written to a permanent audit log (`public.audit_events`, created by `20261104000000_audit.sql`). Each entry records when the change was made, who made it (their name and role at the time, or *System* for automated jobs and payment webhooks), what was added, changed or removed, and the family, student, tutor and related records it belongs to. For an update, only the fields that changed are stored, with their previous and new values.
+
+**What is recorded.** Lessons, lesson notes, charges, invoices, payments, packages, tutor invoices, enrolments, students, families, tutors, settings, services and homework, together with status changes to student reports and the award of tutoring opportunities. Custom per-subject tutor pay and family prices, and family contacts, are recorded too once those tables exist. Routine housekeeping, such as reminder timestamps, invoice numbering and the progress of automatic card payments, is not recorded; the payment itself and the invoice being marked paid are.
+
+**Reading it.** Each entry is a plain sentence, with a short line naming the record it is about when the sentence does not (for example *Omar · Chemistry · Thu 8 Oct* for a lesson, or *Al Mansoori family · INV-1001* for a payment). These labels are saved with the entry, so they still read correctly after a lesson is moved or deleted. On a family's, student's or tutor's screen, entries about another record (a lesson, an invoice) open that record. The Activity log can be filtered by person (searchable, grouped into staff, tutors, families and students, or *The system* for automatic changes), by type and by date.
+
+**What is never recorded.** Bank details and IBANs, SWIFT codes and account numbers, tokens, secrets and passwords, and payment-provider references (Stripe payment, session and customer ids are hidden wherever they appear, including a payment's visible reference). A change to any of these is still logged, so it is clear that, for example, the bank details were changed and by whom, but the values themselves appear only as *[redacted]*. Card data is never held by Elite Education at all, and tutors' private lesson notes, private student notes, tutor payment details, sign-in profiles and calendar connections are not audited.
+
+**Who can see it.** Administrators only, in the *History* section of each record and under *Admin → More → Activity log*. Tutors, parents and students cannot read the log, and the reading functions (`list_audit_events`, `audit_actors`) refuse anyone who is not an administrator.
+
+**Immutability.** Entries are written automatically by a database trigger and cannot be added, edited or deleted by anyone through the app or the API, including administrators and the service role. Database triggers also block updates, deletions and truncation by the table owner.
+
+**Retention.** The log is kept indefinitely by default; there is no automatic expiry. To export it, run `copy (select * from public.audit_events order by at) to stdout with csv header` in the Supabase SQL editor (or `\copy` from `psql` to save a file), or use *Export to CSV* in the Table editor. Should a purge ever be legally required, a database owner must carry it out deliberately, outside the app, in the SQL editor: `alter table public.audit_events disable trigger audit_events_no_change;`, then the specific `delete`, then `alter table public.audit_events enable trigger audit_events_no_change;`. Record the reason for the purge separately.
+
+**Account deletion.** When a person is removed, the log keeps only their id and name for the deletion itself, not their contact details. Earlier entries about them are left intact until erasure: after the account deletion process anonymises the records, it must call `select public.audit_erase(p_family_ids, p_student_ids, p_tutor_ids, p_profile_ids);` (service role or database owner only). This keeps every entry, with its dates, amounts and statuses, but replaces names, contact details and free text in those entries with *[erased]* and removes the erased people's names as actors (shown as *A former user*). It is the only change the log ever accepts.
+
+**Adding tables.** A later migration adds a table to the log with `select public.audit_attach('public.<table>');`. The entry is filed under the row's `family_id`, `student_id`, `tutor_id` and `enrolment_id` columns when it has them (an `enrolment_id` also files it under that subject's student and tutor), and any column whose name suggests bank details, tokens or secrets is redacted automatically. Keep the rules in the migration's header comment and `AUDIT_RULES` in `src/domain/audit.ts` in step.
+
 ## Checks
 
 ```bash

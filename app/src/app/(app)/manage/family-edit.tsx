@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
 import { FamilyContactsSection } from '@/components/family-contacts';
+import { HistorySection } from '@/components/history';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
@@ -108,6 +109,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
             <FamilyCardAdmin family={existing} />
           </Section>
           <ViewAsActions familyId={existing.id} />
+          <HistorySection filter={{ familyId: existing.id }} />
         </>
       ) : null}
     </Screen>

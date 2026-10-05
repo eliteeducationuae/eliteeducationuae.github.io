@@ -3,6 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
 
+import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
 import { LessonStatusBadge } from '@/components/lessons';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
@@ -161,6 +162,7 @@ export default function LessonDetail() {
         />
       ) : null}
       {mode === 'move' ? <ReschedulePanel lesson={l} onDone={() => setMode('view')} /> : null}
+      <HistorySection filter={{ entityId: l.id }} />
     </Screen>
   );
 }

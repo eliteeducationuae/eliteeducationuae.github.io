@@ -1,4 +1,5 @@
 import { SYLLABUSES } from '@/data/curriculum';
+import type { AuditEvent } from '@/domain/audit';
 import { chargesForLesson, invoiceTotals, itemsFromCharges, newInvoiceDraft, roundMoney } from '@/domain/billing';
 import { toDateKey } from '@/domain/dates';
 import { enrolmentTitle, sameSubject, topicListKey, type EnrolmentDraft } from '@/domain/enrolments';
@@ -96,6 +97,8 @@ export interface DemoDB {
   packageOffers?: PackageOffer[];
   /** Family contacts. Optional because databases saved before it lack the field: read with allContacts in ./contacts, which backfills each family's main contact. */
   familyContacts?: FamilyContact[];
+  /** Audit trail (mirrors public.audit_events). Optional: databases saved before it lack the field. */
+  audit?: AuditEvent[];
 }
 
 export interface OutboxMessage {
