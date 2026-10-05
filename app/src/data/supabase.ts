@@ -1515,14 +1515,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
 
     // Session plans and handover packs
+    // Read through visible_lesson_plans so families only see planned homework for their own children.
     async getLessonPlan(lessonId) {
-      const row = check(await client.from('lesson_plans').select('*').eq('lesson_id', lessonId).maybeSingle());
-      return row ? toLessonPlan(row) : null;
+      const rows = check<Row[] | null>(await client.rpc('visible_lesson_plans', { p_lesson_id: lessonId }));
+      return rows?.[0] ? toLessonPlan(rows[0]) : null;
     },
     async listLessonPlans({ from, to }) {
-      const rows = check<Row[] | null>(
-        await client.from('lesson_plans').select('*, lessons!inner(start_at)').gte('lessons.start_at', from).lt('lessons.start_at', to),
-      );
+      const rows = check<Row[] | null>(await client.rpc('visible_lesson_plans', { p_from: from, p_to: to }));
       return (rows ?? []).map(toLessonPlan);
     },
     async saveLessonPlan(input) {

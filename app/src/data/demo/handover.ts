@@ -4,7 +4,7 @@ import { normalisePlan, validatePlan } from '@/domain/plans';
 import type { Enrolment, Handover, HandoverReason, Lesson, LessonPlan, Profile } from '@/domain/types';
 
 import type { LessonPlanInput } from '../source';
-import { AccessError, canSeeLesson, newId, type DemoDB } from './db';
+import { AccessError, canSeeLesson, newId, visibleStudentIds, type DemoDB } from './db';
 
 // Session plans and tutor handover packs. Mirrors the rules in the 20261022000000_handover migration
 // (lesson_plans policies, save_lesson_plan, delete_lesson_plan, handovers policies, handover_pack,
@@ -14,12 +14,15 @@ import { AccessError, canSeeLesson, newId, type DemoDB } from './db';
 const plansOf = (db: DemoDB) => (db.lessonPlans ??= []);
 const handoversOf = (db: DemoDB) => (db.handovers ??= []);
 
-/** A handover for the same student, tutor and lesson (or subject) within this many days is not repeated. */
+/**
+ * A second change of tutor for the same student, subject and incoming tutor within this many days reuses the
+ * existing handover (filling in any missing links), whichever lesson, enrolment or role caused it.
+ */
 export const HANDOVER_DEDUPE_DAYS = 14;
 /** How many past lessons a pack draws on. */
 export const HANDOVER_LESSON_LIMIT = 10;
-/** How many plans a pack draws on. */
-export const HANDOVER_PLAN_LIMIT = 10;
+/** How many plans a pack draws on (handover_pack uses the same limit). */
+export const HANDOVER_PLAN_LIMIT = 5;
 
 const norm = (v?: string) => (v ?? '').trim().toLowerCase();
 
@@ -34,6 +37,20 @@ function canReadPlan(db: DemoDB, viewer: Profile, plan: LessonPlan): boolean {
   if (viewer.role === 'admin') return true;
   if (viewer.role === 'tutor') return !!viewer.tutorId && lesson.tutorId === viewer.tutorId;
   return plan.sharedWithFamily && canSeeLesson(db, viewer, lesson);
+}
+
+const isStaffFor = (db: DemoDB, viewer: Profile, plan: LessonPlan) =>
+  viewer.role === 'admin' ||
+  (viewer.role === 'tutor' && !!viewer.tutorId && db.lessons.find((l) => l.id === plan.lessonId)?.tutorId === viewer.tutorId);
+
+/**
+ * What a reader may see of a plan, as visible_lesson_plans returns it. Staff see it whole; families see only
+ * general planned homework and homework for their own children (a group lesson spans several families).
+ */
+function planFor(db: DemoDB, viewer: Profile, plan: LessonPlan): LessonPlan {
+  if (isStaffFor(db, viewer, plan)) return plan;
+  const mine = visibleStudentIds(db, viewer);
+  return { ...plan, homework: plan.homework.filter((h) => !h.studentId || mine.has(h.studentId)) };
 }
 
 /** The lesson's tutor or an admin, on a scheduled lesson. */
@@ -65,14 +82,16 @@ export const ho = {
 
   plan(db: DemoDB, viewer: Profile, lessonId: string): LessonPlan | null {
     const plan = plansOf(db).find((p) => p.lessonId === lessonId);
-    return plan && canReadPlan(db, viewer, plan) ? plan : null;
+    return plan && canReadPlan(db, viewer, plan) ? planFor(db, viewer, plan) : null;
   },
 
   plans(db: DemoDB, viewer: Profile, range: { from: string; to: string }): LessonPlan[] {
-    return plansOf(db).filter((p) => {
-      const lesson = db.lessons.find((l) => l.id === p.lessonId);
-      return !!lesson && lesson.start >= range.from && lesson.start < range.to && canReadPlan(db, viewer, p);
-    });
+    return plansOf(db)
+      .filter((p) => {
+        const lesson = db.lessons.find((l) => l.id === p.lessonId);
+        return !!lesson && lesson.start >= range.from && lesson.start < range.to && canReadPlan(db, viewer, p);
+      })
+      .map((p) => planFor(db, viewer, p));
   },
 
   savePlan(db: DemoDB, viewer: Profile, input: LessonPlanInput, now = new Date()): LessonPlan {
@@ -163,6 +182,7 @@ export const ho = {
     for (const p of plans) for (const rid of p.resourceIds) referenced.add(rid);
     for (const h of homework) for (const a of h.attachments ?? []) if (a.resourceId) referenced.add(a.resourceId);
     const resources = (db.resources ?? [])
+      // Same filter as handover_pack: planned or attached, or shared with this student.
       .filter((r) => referenced.has(r.id) || (r.visibility === 'students' && r.studentIds.includes(student.id)))
       // Never reveal which other children a resource is shared with.
       .map((r) => ({ ...r, studentIds: [] }));
@@ -203,21 +223,28 @@ export const ho = {
   },
 
   /**
-   * Records a handover, unless the tutor is unchanged or the same handover (student, incoming tutor, and lesson
-   * or subject) was made in the last 14 days. Returns the new or existing handover, or null.
+   * Records a handover, unless the tutor is unchanged. Like create_handover, a handover for the same student,
+   * incoming tutor and subject within the last 14 days is reused: any missing lesson, enrolment, role or
+   * outgoing tutor is filled in and the existing handover is returned. Returns the new or existing handover, or null.
    */
   createHandover(db: DemoDB, input: NewHandover, now = new Date()): Handover | null {
     if (!input.toTutorId || input.fromTutorId === input.toTutorId) return null;
     const list = handoversOf(db);
     const since = new Date(now.getTime() - HANDOVER_DEDUPE_DAYS * 86_400_000).toISOString();
-    const duplicate = list.find(
-      (h) =>
-        h.studentId === input.studentId &&
-        h.toTutorId === input.toTutorId &&
-        h.createdAt >= since &&
-        (input.lessonId ? h.lessonId === input.lessonId : !h.lessonId && norm(h.subject) === norm(input.subject)),
-    );
-    if (duplicate) return duplicate;
+    const duplicate = list
+      .filter(
+        (h) =>
+          h.studentId === input.studentId &&
+          h.toTutorId === input.toTutorId &&
+          norm(h.subject) === norm(input.subject) &&
+          h.createdAt > since,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (duplicate) {
+      const links = ['lessonId', 'enrolmentId', 'opportunityId', 'fromTutorId'] as const;
+      for (const key of links) if (!duplicate[key] && input[key]) duplicate[key] = input[key];
+      return duplicate;
+    }
     const created: Handover = {
       id: input.id ?? newId('ho'),
       createdAt: now.toISOString(),

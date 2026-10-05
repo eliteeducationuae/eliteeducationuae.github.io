@@ -92,8 +92,8 @@ describe('assembleHandoverPack', () => {
     expect(p.subject).toBe('Maths');
   });
 
-  it('writes the goals and the days to the exam', () => {
-    expect(pack.goals).toEqual(['Target grade 6 (currently 4)', 'Exam on 5 Nov 2026', 'Secure probability before the mocks.']);
+  it('keeps the report’s next steps as goals, without repeating the grades or the exam date', () => {
+    expect(pack.goals).toEqual(['Secure probability before the mocks.']);
     expect(pack.examDate).toBe('2026-11-05');
     expect(pack.daysToExam).toBe(32);
     const plain = assembleHandoverPack(
@@ -101,7 +101,7 @@ describe('assembleHandoverPack', () => {
       topics,
       NOW,
     );
-    expect(plain.goals).toEqual(['Target grade 7']);
+    expect(plain.goals).toEqual([]);
     expect(plain.daysToExam).toBeUndefined();
     expect(plain.tutorNotes).toBeUndefined();
   });

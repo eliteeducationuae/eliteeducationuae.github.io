@@ -9,7 +9,7 @@ import { enr, type DemoDB } from '../demo/db';
 import { eq } from '../demo/engagement';
 import { ho } from '../demo/handover';
 import { ops } from '../demo/operations';
-import { createSeed, SEED_HANDOVER_NOTE, SEED_PLAN_OBJECTIVES, SEED_PRIVATE_NOTE } from '../demo/seed';
+import { createSeed, SEED_CHARLOTTE_NOTES, SEED_HANDOVER_NOTE, SEED_PLAN_OBJECTIVES, SEED_PRIVATE_NOTE } from '../demo/seed';
 
 const NOW = new Date(2026, 9, 4, 12, 0);
 const who = (db: DemoDB, role: string) => db.profiles.find((p) => p.role === role)!;
@@ -95,6 +95,21 @@ describe('seeded plans and handovers', () => {
     const admin = ho.sources(db, who(db, 'admin'), 'ho-charlotte');
     expect(admin.notes.some((n) => n.privateNote === SEED_PRIVATE_NOTE)).toBe(true);
   });
+
+  it('fills every part of Sarah’s pack with coherent content', () => {
+    const sources = ho.sources(db, who(db, 'tutor'), 'ho-charlotte');
+    const pack = assembleHandoverPack(sources, buildTopicLookup(SYLLABUSES, db.topicLists, db.topics), NOW);
+    expect(pack.examDate).toBeDefined();
+    expect(pack.daysToExam).toBeGreaterThan(0);
+    expect(pack.tutorNotes).toBe(SEED_CHARLOTTE_NOTES);
+    expect(pack.recentPlans.length).toBeGreaterThan(0);
+    expect(pack.recentPlans[0].homeworkTitles).toContain('Probability: tree diagrams exercise');
+    expect(pack.resources.map((r) => r.id)).toContain('res-1');
+    // The note mentions tree diagrams, and that homework is in the pack.
+    expect(SEED_HANDOVER_NOTE).toContain('tree diagrams');
+    expect(pack.openHomework.some((h) => h.title === 'Probability: tree diagrams exercise')).toBe(true);
+    expect(pack.goals.some((g) => /Target grade|Exam on/.test(g))).toBe(false);
+  });
 });
 
 describe('handover packs (mirror the handovers policies and handover_pack)', () => {
@@ -157,6 +172,34 @@ describe('handover packs (mirror the handovers policies and handover_pack)', () 
     expect(db.handovers!.filter((h) => h.lessonId === lesson.id && h.toTutorId === 't-james')).toHaveLength(2);
   });
 
+  it('reuses the handover for a second covered lesson with the same student, subject and tutor (as create_handover does)', () => {
+    const db = createSeed(NOW);
+    const next = db.lessons
+      .filter((l) => l.studentIds.includes('s-charlotte') && l.subject === 'Maths' && l.tutorId === 't-james' && l.status === 'scheduled' && new Date(l.start) > NOW)
+      .sort((a, b) => a.start.localeCompare(b.start))[0];
+    const created = reassign(db, next.id, 't-sarah');
+    expect(created.map((h) => h.id)).toEqual(['ho-charlotte']);
+    expect(db.handovers!.filter((h) => h.studentId === 's-charlotte' && h.toTutorId === 't-sarah')).toHaveLength(1);
+  });
+
+  it('reuses a recent cover handover when the enrolment then moves to the covering tutor, filling in the enrolment', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'admin');
+    const lesson = db.lessons.find((l) => l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > NOW)!;
+    const [cover] = reassign(db, lesson.id, 't-james');
+    delete cover.enrolmentId;
+    const before = { ...db.enrolments.find((e) => e.id === 'enr-arjun-maths')! };
+    const saved = enr.saveEnrolment(db, admin, { ...before, tutorId: 't-james' });
+    const h = ho.afterEnrolmentSaved(db, before, saved, NOW)!;
+    expect(h.id).toBe(cover.id);
+    expect(h).toMatchObject({ reason: 'cover', lessonId: lesson.id, enrolmentId: 'enr-arjun-maths' });
+    expect(db.handovers!.filter((x) => x.studentId === 's-arjun' && x.toTutorId === 't-james')).toHaveLength(1);
+    // Charlotte's seeded cover is reused the same way.
+    const charlotte = { ...db.enrolments.find((e) => e.studentId === 's-charlotte' && e.subject === 'Maths')! };
+    const moved = enr.saveEnrolment(db, admin, { ...charlotte, tutorId: 't-sarah' });
+    expect(ho.afterEnrolmentSaved(db, charlotte, moved, NOW)!.id).toBe('ho-charlotte');
+  });
+
   it('creates a handover when a subject gets a new tutor, and not otherwise', () => {
     const db = createSeed(NOW);
     const admin = who(db, 'admin');
@@ -197,6 +240,29 @@ describe('session plans (mirror lesson_plans policies and save_lesson_plan)', ()
     expect(ho.plan(db, who(db, 'parent'), lessonId)).toBeNull();
     expect(ho.plan(db, who(db, 'student'), lessonId)).toBeNull();
     expect(ho.plan(db, admin, lessonId)).toMatchObject({ sharedWithFamily: false, updatedAt: NOW.toISOString() });
+  });
+
+  it('shows each family only general homework and their own children’s in a shared group plan', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'admin');
+    const start = new Date(NOW.getTime() + 5 * 86_400_000);
+    db.lessons.push({
+      id: 'les-group-two-families', tutorId: 't-craig', studentIds: ['s-omar', 's-charlotte'], serviceId: 'svc-group', subject: 'Maths',
+      start: start.toISOString(), end: new Date(start.getTime() + 3_600_000).toISOString(), location: 'online', status: 'scheduled',
+    });
+    ho.savePlan(db, admin, {
+      lessonId: 'les-group-two-families', objectives: 'Vectors', topicIds: [], resourceIds: [], sharedWithFamily: true,
+      homework: [{ title: 'Read the notes' }, { studentId: 's-omar', title: 'Omar: extension set' }, { studentId: 's-charlotte', title: 'Charlotte: catch-up sheet' }],
+    }, NOW);
+    const titles = (viewer: Profile) => ho.plan(db, viewer, 'les-group-two-families')?.homework.map((h) => h.title);
+    expect(titles(admin)).toEqual(['Read the notes', 'Omar: extension set', 'Charlotte: catch-up sheet']);
+    expect(titles(who(db, 'parent'))).toEqual(['Read the notes', 'Omar: extension set']);
+    expect(titles(hughesParent)).toEqual(['Read the notes', 'Charlotte: catch-up sheet']);
+    expect(ho.plan(db, otherParent, 'les-group-two-families')).toBeNull();
+    const range = { from: start.toISOString(), to: new Date(start.getTime() + 1).toISOString() };
+    expect(ho.plans(db, hughesParent, range).flatMap((p) => p.homework).some((h) => h.studentId === 's-omar')).toBe(false);
+    // The stored plan is untouched.
+    expect(db.lessonPlans!.find((p) => p.lessonId === 'les-group-two-families')!.homework).toHaveLength(3);
   });
 
   it('lets only the lesson’s tutor or an admin save a plan, on scheduled lessons', () => {

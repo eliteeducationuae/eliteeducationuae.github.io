@@ -10,7 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandoverPack, useHandovers, useLesson, useLookup, type Lookup } from '@/data/hooks';
 import { useMe } from '@/data/session';
-import { formatDate, formatDay, formatTime } from '@/domain/dates';
+import { formatDate, formatDay, formatTime, toDateKey } from '@/domain/dates';
 import { HANDOVER_NOTE_LIMIT, HANDOVER_REASON_LABEL, handoverTitle, validateHandoverNote } from '@/domain/handover';
 import { dueLabel, resourceAttachment, resourceMeta } from '@/domain/homework';
 import { RATING_LABELS } from '@/domain/progress';
@@ -69,7 +69,7 @@ export function HandoverBanners() {
       {toRead.map((h) => (
         <Banner key={`read-${h.id}`} icon="book">
           Handover pack ready: {handoverTitle(h, studentName(lookup, h.studentId))}.{' '}
-          <Txt variant="muted" color="accent" onPress={() => router.push(handoverPath(h.id))}>
+          <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
             Open handover pack
           </Txt>
         </Banner>
@@ -77,7 +77,7 @@ export function HandoverBanners() {
       {toWrite.map((h) => (
         <Banner key={`write-${h.id}`} icon="chat">
           Please leave a handover note for {tutorName(lookup, h.toTutorId, 'the new tutor')} about {studentName(lookup, h.studentId)}.{' '}
-          <Txt variant="muted" color="accent" onPress={() => router.push(handoverPath(h.id))}>
+          <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
             Write handover note
           </Txt>
         </Banner>
@@ -222,7 +222,7 @@ function CoveredLessonLink({ lessonId }: { lessonId: string }) {
   const lesson = useLesson(lessonId);
   const start = lesson.data?.start;
   return (
-    <Txt color="accent" onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: lessonId } })}>
+    <Txt color="accent" accessibilityRole="link" onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: lessonId } })}>
       {start ? `Covered lesson: ${formatDay(start)}, ${formatTime(start)}` : 'Open the covered lesson'}
     </Txt>
   );
@@ -272,10 +272,14 @@ function HandoverNoteEditor({ handover, label }: { handover: Handover; label: st
 /** The full handover pack. Marks it as read when the incoming tutor opens it. */
 export function HandoverPackView({ id, markViewed, footer }: { id: string; markViewed: boolean; footer?: ReactNode }) {
   const theme = useTheme();
+  const me = useMe();
   const lookup = useLookup();
   const queryClient = useQueryClient();
   const { pack, isLoading, error, refetch } = useHandoverPack(id);
   const [now] = useState(() => new Date());
+  const today = toDateKey(now);
+  // The incoming tutor cannot open another tutor's lessons, so only their own (or any, for admins) link through.
+  const canOpenLesson = (tutorId: string) => me.role === 'admin' || (!!me.tutorId && tutorId === me.tutorId);
 
   useEffect(() => {
     if (!markViewed) return;
@@ -380,7 +384,10 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
       <Section title="Last five lessons">
         {pack.recentLessons.length ? (
           pack.recentLessons.map((l) => (
-            <Card key={l.lessonId} style={{ gap: Spacing.one }} onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: l.lessonId } })}>
+            <Card
+              key={l.lessonId}
+              style={{ gap: Spacing.one }}
+              onPress={canOpenLesson(l.tutorId) ? () => router.push({ pathname: '/lesson/[id]', params: { id: l.lessonId } }) : undefined}>
               <Txt variant="h3">
                 {formatDay(l.start)} · {tutorName(lookup, l.tutorId, 'Tutor')}
               </Txt>
@@ -407,7 +414,13 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
       <Section title="Open homework">
         {pack.openHomework.length ? (
           pack.openHomework.map((hw) => (
-            <ListItem key={hw.id} title={hw.title} subtitle={dueLabel(hw.dueDate, now)} onPress={() => router.push({ pathname: '/homework/[id]', params: { id: hw.id } })} />
+            <ListItem
+              key={hw.id}
+              title={hw.title}
+              subtitle={dueLabel(hw.dueDate, now)}
+              right={hw.dueDate.slice(0, 10) < today ? <Badge label="Overdue" tone="warning" /> : undefined}
+              onPress={() => router.push({ pathname: '/homework/[id]', params: { id: hw.id } })}
+            />
           ))
         ) : (
           <Txt variant="muted">There is no open homework.</Txt>

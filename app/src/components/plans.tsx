@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { View } from 'react-native';
 
 import { LessonCard } from '@/components/lessons';
@@ -284,7 +284,7 @@ function PlanForm({
             { value: 'family', label: 'Share with the family' },
           ]}
         />
-        <Txt variant="small">When shared, parents and the student can see the objectives, topics and planned homework before the lesson.</Txt>
+        <Txt variant="small">When shared, parents and the student can see the objectives, topics, resources and planned homework before the lesson.</Txt>
       </Section>
 
       {problem ? (
@@ -322,6 +322,9 @@ export function LessonPlanSection({ lesson }: { lesson: Lesson }) {
   // Families only see resources the library already shares with them.
   const visible = (resources.data ?? []).filter((r) => p.resourceIds.includes(r.id));
   const multiple = lesson.studentIds.length > 1;
+  // In a group lesson a family sees general homework and their own children's only (the server already filters
+  // it; this keeps the view safe whatever the source returns).
+  const homework = staff ? p.homework : p.homework.filter((h) => !h.studentId || !!lookup.student(h.studentId));
 
   return (
     <Section title="Lesson plan">
@@ -343,16 +346,16 @@ export function LessonPlanSection({ lesson }: { lesson: Lesson }) {
           <View style={{ gap: 4 }}>
             <Txt variant="label">Resources</Txt>
             {visible.map((r) => (
-              <Txt key={r.id} color="accent" onPress={() => openAttachment(resourceAttachment(r))}>
+              <Txt key={r.id} color="accent" accessibilityRole="link" onPress={() => openAttachment(resourceAttachment(r))}>
                 {r.title}
               </Txt>
             ))}
           </View>
         ) : null}
-        {p.homework.length ? (
+        {homework.length ? (
           <View style={{ gap: 4 }}>
             <Txt variant="label">Planned homework</Txt>
-            {p.homework.map((h, i) => (
+            {homework.map((h, i) => (
               <Txt key={i}>
                 {h.title}
                 {multiple && h.studentId ? ` (${lookup.student(h.studentId)?.fullName.split(' ')[0] ?? 'one student'})` : ''}
@@ -372,14 +375,26 @@ export function LessonPlanSection({ lesson }: { lesson: Lesson }) {
 // Tutor dashboard
 // ---------------------------------------------------------------------------
 
+/** The next 48 hours from now, to the minute (so the query key only changes once a minute). */
+function planWindow() {
+  const now = new Date(Math.floor(Date.now() / 60_000) * 60_000);
+  return { now, to: new Date(now.getTime() + 48 * 3_600_000) };
+}
+
 /** The tutor's lessons in the next 48 hours that have no plan yet. Renders nothing when all are planned. */
 export function PlansDueCard({ lessons }: { lessons: Lesson[] }) {
   const me = useMe();
   const lookup = useLookup();
-  const [range] = useState(() => {
-    const now = new Date();
-    return { now, to: new Date(now.getTime() + 48 * 3_600_000) };
-  });
+  const [range, setRange] = useState(planWindow);
+  // Today stays mounted as a tab, so move the 48-hour window on whenever the screen comes back into view.
+  useFocusEffect(
+    useCallback(() => {
+      setRange((current) => {
+        const next = planWindow();
+        return next.now.getTime() === current.now.getTime() ? current : next;
+      });
+    }, []),
+  );
   const plans = useLessonPlans(range.now, range.to);
   if (plans.isLoading || !lookup.ready) return null;
   const due = lessonsNeedingPlan(lessons, plans.data ?? [], me.tutorId, range.now);

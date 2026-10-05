@@ -634,7 +634,8 @@ function seedEngagement(db: DemoDB, now: Date) {
 // Session plans and handover packs
 /** Wording used by the seeded handover, kept here so tests can check it. */
 export const SEED_HANDOVER_NOTE =
-  'Charlotte responds well to short retrieval quizzes at the start of each lesson. We are mid-way through probability; please set the remaining exercise on tree diagrams.';
+  'Charlotte responds well to short retrieval quizzes at the start of each lesson. She missed two lessons recently, so some older homework is still open; please go through it with her before moving on. I have set a short exercise on tree diagrams to begin probability.';
+export const SEED_CHARLOTTE_NOTES = 'Works best with a calm, structured start. Encourage her to show every step of her working.';
 export const SEED_PRIVATE_NOTE = 'Charlotte is anxious about her mock examinations; please be encouraging.';
 export const SEED_PLAN_OBJECTIVES = 'Revise integration by parts and attempt two past-paper questions.';
 
@@ -671,11 +672,33 @@ function seedPlansAndHandovers(db: DemoDB, now: Date) {
   const latestNote = recorded[0] && db.notes.find((n) => n.lessonId === recorded[0].id);
   if (latestNote) latestNote.privateNote = SEED_PRIVATE_NOTE;
   const lastTaught = recorded[0];
-  if (lastTaught && !db.homework.some((h) => h.studentId === 's-charlotte' && !h.done)) {
+  if (lastTaught) {
     db.homework.push({
       id: 'hw-charlotte-probability', studentId: 's-charlotte', lessonId: lastTaught.id, tutorId: 't-james',
-      title: 'Probability: tree diagrams exercise', dueDate: toDateKey(addDays(now, 3)), done: false,
+      title: 'Probability: tree diagrams exercise', dueDate: toDateKey(addDays(now, 3)), done: false, attachments: [],
     });
+    // James planned that lesson beforehand, so the pack has a past plan and a resource to show.
+    const topicIds = latestNote?.topicIds ?? [];
+    const named = topicIds.map((id) => lookup.name(id));
+    (db.lessonPlans ??= []).push({
+      lessonId: lastTaught.id,
+      tutorId: 't-james',
+      objectives: named.length
+        ? `Review ${named.join(' and ')} with exam-style questions, then introduce probability with tree diagrams.`
+        : 'Review recent topics with exam-style questions, then introduce probability with tree diagrams.',
+      topicIds,
+      resourceIds: (db.resources ?? []).some((r) => r.id === 'res-1') ? ['res-1'] : [],
+      homework: [{ title: 'Probability: tree diagrams exercise', details: 'Draw each tree diagram in full before calculating.' }],
+      sharedWithFamily: false,
+      createdAt: addDays(new Date(lastTaught.start), -1).toISOString(),
+      updatedAt: addDays(new Date(lastTaught.start), -1).toISOString(),
+    });
+  }
+  // Her profile: the IB examinations in May, and a tutor-only note.
+  const charlotte = db.students.find((st) => st.id === 's-charlotte');
+  if (charlotte) {
+    charlotte.examDate ??= `${now.getMonth() >= 5 ? now.getFullYear() + 1 : now.getFullYear()}-05-06`;
+    charlotte.notes ??= SEED_CHARLOTTE_NOTES;
   }
 
   // (b) The lesson in James's absence goes to Sarah, with a handover.

@@ -11,6 +11,7 @@ import { getSyllabus } from '@/data/curriculum';
 import { source } from '@/data';
 import { PartialSaveError } from '@/data/source';
 import { useAction, useEnrolments, useLesson, useLessonPlan, useLookup, useRatings, useResources, useTopicLookup } from '@/data/hooks';
+import { useMe } from '@/data/session';
 import { addDays, formatDay, toDateKey } from '@/domain/dates';
 import { enrolmentFor, enrolmentTitle, lessonSubject } from '@/domain/enrolments';
 import { classworkFolder } from '@/domain/homework';
@@ -38,6 +39,7 @@ export default function CompleteLesson() {
 }
 
 function RecordForm({ id, prefill, planned }: { id: string; prefill: RecordPrefill; planned: boolean }) {
+  const me = useMe();
   const lookup = useLookup();
   const lesson = useLesson(id);
   const allRatings = useRatings();
@@ -173,7 +175,11 @@ function RecordForm({ id, prefill, planned }: { id: string; prefill: RecordPrefi
           onPress={save}
         />
       }>
-      {planned ? <Banner icon="book">Pre-filled from your lesson plan. Please review before saving.</Banner> : null}
+      {planned ? (
+        <Banner icon="book">
+          Pre-filled from {!!me.tutorId && l?.tutorId === me.tutorId ? 'your' : 'the'} lesson plan. Please review before saving.
+        </Banner>
+      ) : null}
       <Segmented
         value={status}
         onChange={setStatus}

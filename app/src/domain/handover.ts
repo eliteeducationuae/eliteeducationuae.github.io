@@ -1,4 +1,4 @@
-import { daysUntil, formatDate, fromDateAndTime } from './dates';
+import { daysUntil } from './dates';
 import { focusTopics as pickFocusTopics, masteryByTopic, summariseSyllabus } from './progress';
 import type { TopicLookup } from './topics';
 import type {
@@ -94,12 +94,9 @@ export function assembleHandoverPack(src: HandoverSources, topics: TopicLookup, 
   const { handover, student, enrolment } = src;
   const subject = handover.subject ?? enrolment?.subject;
 
+  // The card already shows the current and target grades and the exam date, so goals carry only the latest
+  // report's next steps.
   const goals: string[] = [];
-  if (student.targetGrade) {
-    goals.push(student.currentGrade ? `Target grade ${student.targetGrade} (currently ${student.currentGrade})` : `Target grade ${student.targetGrade}`);
-  }
-  const examDay = student.examDate ? (fromDateAndTime(student.examDate, '00:00') ?? new Date(student.examDate)) : undefined;
-  if (student.examDate && examDay && !Number.isNaN(examDay.getTime())) goals.push(`Exam on ${formatDate(examDay)}`);
   const nextSteps = src.latestReport?.nextSteps?.trim();
   if (nextSteps) goals.push(nextSteps);
 

@@ -118,24 +118,65 @@ select pg_temp.fails($$select public.save_lesson_plan('f0000000-0000-0000-0000-0
 
 -- (2) Who sees the plan ------------------------------------------------------
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
-select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'a private plan is hidden from the parent');
+select pg_temp.check((select count(*) from public.visible_lesson_plans()) = 0, 'a private plan is hidden from the parent');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
-select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'a private plan is hidden from the student');
+select pg_temp.check((select count(*) from public.visible_lesson_plans()) = 0, 'a private plan is hidden from the student');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select pg_temp.check((select count(*) from public.lesson_plans) = 1, 'the tutor sees their plan');
+select pg_temp.check((select count(*) from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000003')) = 1,
+  'the tutor reads their plan through visible_lesson_plans');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
 select pg_temp.check((select count(*) from public.lesson_plans) = 1, 'admins see every plan');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select public.save_lesson_plan('f0000000-0000-0000-0000-000000000003', 'Consolidate sequences.', '{ib-aa-sl-1.2}',
-  '{e2000000-0000-0000-0000-000000000002}', '[{"studentId":"d0000000-0000-0000-0000-000000000001","title":"Ex 5A"}]', true);
+  '{e2000000-0000-0000-0000-000000000002, e2000000-0000-0000-0000-0000000000ff}',
+  '[{"studentId":"d0000000-0000-0000-0000-000000000001","title":"Ex 5A"}]', true);
+select pg_temp.check((select resource_ids = '{e2000000-0000-0000-0000-000000000002}' from public.lesson_plans),
+  'unknown resources are dropped from the plan');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
-select pg_temp.check((select count(*) from public.lesson_plans) = 1, 'a shared plan is visible to the parent');
+select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'parents cannot read the plans table directly');
+select pg_temp.check((select count(*) from public.visible_lesson_plans()) = 1, 'a shared plan is visible to the parent');
+select pg_temp.check((select count(*) from public.visible_lesson_plans(null, now(), now() + interval '7 days')) = 1,
+  'the parent lists shared plans by date');
+select pg_temp.check((select count(*) from public.visible_lesson_plans(null, now() + interval '7 days', now() + interval '14 days')) = 0,
+  'the date range is respected');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
-select pg_temp.check((select count(*) from public.lesson_plans) = 1, 'a shared plan is visible to the student');
+select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'students cannot read the plans table directly');
+select pg_temp.check((select count(*) from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000003')) = 1,
+  'a shared plan is visible to the student');
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000e');
-select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'another family never sees the plan');
+select pg_temp.check((select count(*) from public.visible_lesson_plans()) = 0, 'another family never sees the plan');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
 select pg_temp.check((select count(*) from public.lesson_plans) = 0, 'another tutor does not see the plan');
+select pg_temp.check((select count(*) from public.visible_lesson_plans()) = 0, 'another tutor does not read the plan through the function');
+
+-- (2b) A group lesson shared with two families ----------------------------------
+reset role;
+insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end_at, location, status, subject) values
+  ('f0000000-0000-0000-0000-000000000009', 'b0000000-0000-0000-0000-000000000001',
+   '{d0000000-0000-0000-0000-000000000001, d0000000-0000-0000-0000-000000000002}',
+   'e0000000-0000-0000-0000-000000000001', now() + interval '4 days', now() + interval '4 days' + interval '1 hour', 'online', 'scheduled', 'Physics');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+select public.save_lesson_plan('f0000000-0000-0000-0000-000000000009', 'Forces.', null, null,
+  '[{"title":"Read chapter 2"},{"studentId":"d0000000-0000-0000-0000-000000000001","title":"Sami: momentum questions"},
+    {"studentId":"d0000000-0000-0000-0000-000000000002","title":"Ollie: catch-up sheet"}]', true);
+select pg_temp.check((select jsonb_array_length(homework) = 3 from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000009')),
+  'the group lesson''s tutor sees every planned homework item');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+select pg_temp.check((select string_agg(h->>'title', ',' order by o) from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000009') p,
+  jsonb_array_elements(p.homework) with ordinality x(h, o)) = 'Read chapter 2,Sami: momentum questions',
+  'a parent in a group lesson sees general homework and their own child''s only');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
+select pg_temp.check((select string_agg(h->>'title', ',' order by o) from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000009') p,
+  jsonb_array_elements(p.homework) with ordinality x(h, o)) = 'Read chapter 2,Sami: momentum questions',
+  'a student in a group lesson sees general homework and their own only');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000e');
+select pg_temp.check((select string_agg(h->>'title', ',' order by o) from public.visible_lesson_plans('f0000000-0000-0000-0000-000000000009') p,
+  jsonb_array_elements(p.homework) with ordinality x(h, o)) = 'Read chapter 2,Ollie: catch-up sheet',
+  'the other family never sees homework planned for Sami');
+select pg_temp.check(not exists (select 1 from public.visible_lesson_plans() p where p.homework::text like '%d0000000-0000-0000-0000-000000000001%'),
+  'the other family never sees Sami''s student id in a plan');
 
 -- (3) No direct writes --------------------------------------------------------
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
@@ -161,6 +202,8 @@ select pg_temp.check((select count(*) from public.notification_outbox where prof
   and subject = 'Handover pack: Sami Ahmed (Maths)' and url = '/handover/' || (select id from ids where k = 'cover')
   and body like 'You are covering Sami Ahmed''s Maths lesson on %. Your handover pack has%') = 1,
   'the incoming tutor is sent the handover pack');
+select pg_temp.check((select bool_and(body ~ ' on [A-Z][a-z]+day [1-9][0-9]? [A-Z][a-z]{2} at [0-9]{2}:[0-9]{2}\.') from public.notification_outbox
+  where subject = 'Handover pack: Sami Ahmed (Maths)'), 'the lesson date reads naturally, without a leading zero');
 select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-0000000000b1'
   and subject = 'Handover note for Sami Ahmed' and url = '/handover/' || (select id from ids where k = 'cover')
   and body like 'Tom Two is covering Sami Ahmed''s Maths lesson on %Please add a short handover note%') = 1,

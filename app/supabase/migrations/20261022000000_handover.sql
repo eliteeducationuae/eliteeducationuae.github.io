@@ -30,16 +30,42 @@ create table public.lesson_plans (
 create index lesson_plans_tutor_idx on public.lesson_plans (tutor_id);
 
 alter table public.lesson_plans enable row level security;
+-- Direct reads are for staff only: admins and the lesson's own tutor. Families read shared plans through
+-- visible_lesson_plans, which drops planned homework meant for children outside their family (group lessons).
 create policy "see lesson plans" on public.lesson_plans for select to authenticated using (
   public.is_admin() or exists (
-    select 1 from public.lessons l where l.id = lesson_id and (
-      l.tutor_id = public.my_tutor_id()
-      or (shared_with_family
-          and (select role from public.profiles where id = auth.uid()) in ('parent', 'student')
-          and public.can_see_lesson(l)))));
+    select 1 from public.lessons l where l.id = lesson_id and l.tutor_id = public.my_tutor_id()));
 -- Writes go through save_lesson_plan / delete_lesson_plan only.
 revoke all on public.lesson_plans from anon, authenticated;
 grant select on public.lesson_plans to authenticated;
+
+/**
+ * The plans the caller may read, for one lesson or for lessons starting in [p_from, p_to).
+ * Staff get the whole plan. Parents and students get shared plans of lessons they can see, with planned
+ * homework limited to general items and items for their own children.
+ */
+create function public.visible_lesson_plans(
+  p_lesson_id uuid default null, p_from timestamptz default null, p_to timestamptz default null
+) returns setof public.lesson_plans language plpgsql stable security definer set search_path = public as $$
+declare
+  admin boolean := public.is_admin(); me uuid := public.my_tutor_id();
+  v_role text := (select role from public.profiles where id = auth.uid());
+  mine text[] := coalesce(public.visible_student_ids()::text[], '{}');
+begin
+  return query
+  select p.lesson_id, p.tutor_id, p.objectives, p.topic_ids, p.resource_ids,
+    case when admin or coalesce(l.tutor_id = me, false) then p.homework
+      else coalesce((select jsonb_agg(item order by ord) from jsonb_array_elements(p.homework) with ordinality h(item, ord)
+                     where item->>'studentId' is null or item->>'studentId' = any (mine)), '[]'::jsonb) end,
+    p.shared_with_family, p.created_at, p.updated_at
+  from public.lesson_plans p join public.lessons l on l.id = p.lesson_id
+  where (p_lesson_id is null or p.lesson_id = p_lesson_id)
+    and (p_from is null or l.start_at >= p_from) and (p_to is null or l.start_at < p_to)
+    and (admin or coalesce(l.tutor_id = me, false)
+         or (p.shared_with_family and v_role in ('parent', 'student') and public.can_see_lesson(l)));
+end $$;
+revoke all on function public.visible_lesson_plans(uuid, timestamptz, timestamptz) from public, anon;
+grant execute on function public.visible_lesson_plans(uuid, timestamptz, timestamptz) to authenticated;
 
 /** Save (create or replace) the plan for a scheduled lesson. Admins, or the lesson's own tutor. */
 create function public.save_lesson_plan(
@@ -64,6 +90,9 @@ begin
   select coalesce(array_agg(r order by o), '{}') into v_resources from (
     select x r, min(ord) o from unnest(coalesce(p_resource_ids, '{}')) with ordinality u(x, ord)
     where x is not null group by x) s;
+  -- Unknown resources are dropped rather than stored.
+  v_resources := array(select r from unnest(v_resources) with ordinality u(r, o)
+    where exists (select 1 from public.resources x where x.id = u.r) order by o);
   if cardinality(v_topics) > 50 then raise exception 'A plan can include up to 50 topics.'; end if;
   if cardinality(v_resources) > 20 then raise exception 'A plan can include up to 20 resources.'; end if;
 
@@ -187,7 +216,7 @@ begin
   select full_name into to_name from public.tutors where id = p_to;
   if p_lesson is not null then select * into l from public.lessons where id = p_lesson; end if;
   when_text := case when l.id is not null
-    then ' on ' || to_char(l.start_at at time zone 'Asia/Dubai', 'FMDay DD Mon at HH24:MI') else '' end;
+    then ' on ' || to_char(l.start_at at time zone 'Asia/Dubai', 'FMDay FMDD Mon "at" HH24:MI') else '' end;
 
   body := case p_reason
     when 'cover' then 'You are covering ' || public.handover_whose(st.full_name, v_subject, 'lesson') || when_text || '.'
@@ -341,7 +370,7 @@ begin
 
   select coalesce(jsonb_agg(to_jsonb(x) - 'student_ids' order by x.created_at desc), '[]') into v_resources
   from (select r.* from public.resources r
-        where r.id::text = any (plan_resources) or r.id::text = any (homework_resources) or h.student_id = any (r.student_ids)
+        where r.id::text = any (plan_resources) or r.id::text = any (homework_resources) or (r.visibility = 'students' and h.student_id = any (r.student_ids))
         order by r.created_at desc limit 30) x;
 
   select to_jsonb(r) into v_report from public.student_reports r
