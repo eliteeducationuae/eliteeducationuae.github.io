@@ -13,19 +13,20 @@ import {
   describeRecipients,
   describeWhatsAppRecipients,
   draftFromContact,
+  emailLockHint,
   emptyContactDraft,
   NOTICE_KIND_LABELS,
   normaliseContactDraft,
+  noticeDefaultsFor,
   RELATIONSHIP_LABELS,
   RELATIONSHIP_ORDER,
   validateContactDraft,
   type NoticeKind,
 } from '@/domain/contacts';
 import type { ContactChannel, FamilyContact, FamilyContactDraft } from '@/domain/types';
-import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 
-import { Avatar, Badge, Button, Card, Chip, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Segmented, Txt, type Tone } from './ui';
+import { Avatar, Badge, Button, Card, Chip, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Segmented, Txt, useSwitchColors, type Tone } from './ui';
 
 const NOTICE_KINDS: NoticeKind[] = ['invoices', 'reports', 'lesson_notes', 'general'];
 
@@ -140,7 +141,7 @@ function SwitchRow({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
-  const theme = useTheme();
+  const switchColors = useSwitchColors(value);
   return (
     <View style={{ gap: 2 }}>
       <Row gap={Spacing.three} style={{ justifyContent: 'space-between' }}>
@@ -149,9 +150,7 @@ function SwitchRow({
           value={value}
           onValueChange={onChange}
           disabled={disabled}
-          trackColor={{ true: theme.accent, false: theme.textMuted }}
-          thumbColor={value ? theme.onGold : theme.text}
-          {...({ activeThumbColor: theme.onGold } as object)}
+          {...switchColors}
           accessibilityLabel={label}
         />
       </Row>
@@ -192,6 +191,8 @@ export function ContactEditor({
     existing ? draftFromContact(existing) : { ...emptyContactDraft(), isPrimary: firstContact },
   );
   const [touched, setTouched] = useState(false);
+  // Until someone sets the notices of a new contact by hand, they follow the relationship (see noticeDefaultsFor).
+  const [noticesChosen, setNoticesChosen] = useState(false);
 
   const others = all.filter((c) => c.id !== existing?.id);
   const problem = validateContactDraft({ ...draft, hasLogin: existing?.hasLogin }, others, me.role);
@@ -202,6 +203,19 @@ export function ContactEditor({
   function set<K extends keyof FamilyContactDraft>(key: K, value: FamilyContactDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
     setTouched(true);
+  }
+
+  function setNotice(key: 'receivesInvoices' | 'receivesReports' | 'receivesLessonNotes', value: boolean) {
+    set(key, value);
+    setNoticesChosen(true);
+  }
+
+  function setRelationship(r: FamilyContactDraft['relationship']) {
+    if (existing || noticesChosen) set('relationship', r);
+    else {
+      setDraft((d) => ({ ...d, relationship: r, ...noticeDefaultsFor(r) }));
+      setTouched(true);
+    }
   }
 
   async function onSave() {
@@ -252,7 +266,7 @@ export function ContactEditor({
         <Txt variant="label">Relationship</Txt>
         <Row wrap gap={Spacing.two}>
           {RELATIONSHIP_ORDER.map((r) => (
-            <Chip key={r} label={RELATIONSHIP_LABELS[r]} selected={draft.relationship === r} onPress={() => set('relationship', r)} />
+            <Chip key={r} label={RELATIONSHIP_LABELS[r]} selected={draft.relationship === r} onPress={() => setRelationship(r)} />
           ))}
         </Row>
       </View>
@@ -265,7 +279,7 @@ export function ContactEditor({
         keyboardType="email-address"
         autoComplete="email"
         editable={!existing?.hasLogin}
-        hint={existing?.hasLogin ? 'This is the address they sign in with.' : undefined}
+        hint={existing?.hasLogin ? emailLockHint(existing, all, me) : undefined}
       />
       <Field
         label="Telephone"
@@ -290,19 +304,19 @@ export function ContactEditor({
           label="Receives invoices and payment notices"
           explanation="Invoices, receipts and payment reminders."
           value={draft.receivesInvoices}
-          onChange={(v) => set('receivesInvoices', v)}
+          onChange={(v) => setNotice('receivesInvoices', v)}
         />
         <SwitchRow
           label="Receives reports"
           explanation="Progress reports and termly updates from the tutors."
           value={draft.receivesReports}
-          onChange={(v) => set('receivesReports', v)}
+          onChange={(v) => setNotice('receivesReports', v)}
         />
         <SwitchRow
           label="Receives lesson notes and homework"
           explanation="Notes after each lesson and the homework set."
           value={draft.receivesLessonNotes}
-          onChange={(v) => set('receivesLessonNotes', v)}
+          onChange={(v) => setNotice('receivesLessonNotes', v)}
         />
         <SwitchRow
           label="Receives WhatsApp messages"

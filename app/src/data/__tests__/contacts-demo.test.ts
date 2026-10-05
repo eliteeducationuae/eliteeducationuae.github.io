@@ -90,6 +90,10 @@ describe('parents', () => {
     expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Priya', email: 'priya@example.com', canLogIn: true }))).toThrow(CONTACT_ERRORS.loginReferred);
     expect(db.outbox.at(-1)?.subject).toBe('Contact sign-in to review: Al Mansoori family');
     expect(db.outbox.at(-1)?.body).toContain('Fatima Al Mansoori asked to give Priya (priya@example.com) sign-in access');
+    // Asking again for the same address the same day gives the same reply but does not tell the office twice.
+    const told = db.outbox.length;
+    expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Priya', email: 'priya@example.com', canLogIn: true }))).toThrow(CONTACT_ERRORS.loginReferred);
+    expect(db.outbox.length).toBe(told);
     expect(() => saveFamilyContact(db, fatima, 'f-mansoori', draft({ name: 'Sarah', email: 'sarah@eliteeducation.me', canLogIn: true }))).toThrow(CONTACT_ERRORS.loginReferred);
     expect(db.familyContacts!.length).toBe(before);
     // The office is told the reason.

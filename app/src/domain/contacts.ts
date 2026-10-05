@@ -109,22 +109,56 @@ export function contactFlagsSummary(c: FamilyContact): string[] {
   return flags;
 }
 
+export type NoticeDefaults = Pick<FamilyContactDraft, 'receivesInvoices' | 'receivesReports' | 'receivesLessonNotes'>;
+
+/**
+ * Which notices a new contact receives until someone chooses otherwise. Discretion first: a pupil's reports and lesson
+ * notes go to parents and guardians only; a personal assistant or family office receives invoices; a driver or anyone
+ * else receives nothing until switched on. WhatsApp is never on by default, as the contact must agree to it first.
+ */
+export function noticeDefaultsFor(relationship: ContactRelationship): NoticeDefaults {
+  switch (relationship) {
+    case 'mother':
+    case 'father':
+    case 'parent':
+    case 'guardian':
+      return { receivesInvoices: false, receivesReports: true, receivesLessonNotes: true };
+    case 'pa':
+    case 'family_office':
+      return { receivesInvoices: true, receivesReports: false, receivesLessonNotes: false };
+    default:
+      return { receivesInvoices: false, receivesReports: false, receivesLessonNotes: false };
+  }
+}
+
 /** A blank contact form. */
-export function emptyContactDraft(): FamilyContactDraft {
+export function emptyContactDraft(relationship: ContactRelationship = 'parent'): FamilyContactDraft {
   return {
     name: '',
-    relationship: 'parent',
+    relationship,
     email: undefined,
     phone: undefined,
     preferredChannel: 'email',
     canLogIn: false,
-    receivesInvoices: false,
-    receivesReports: true,
-    receivesLessonNotes: true,
+    ...noticeDefaultsFor(relationship),
     receivesWhatsApp: false,
     emergencyContact: false,
     isPrimary: false,
   };
+}
+
+/**
+ * The note under a locked sign-in email: how the address can be changed, if the viewer can change it at all. A parent
+ * cannot switch off their own sign-in or the family's last one, so they are sent to the office instead.
+ */
+export function emailLockHint(contact: FamilyContact, all: FamilyContact[], viewer: { id: string; role: Role }): string {
+  if (viewer.role !== 'admin') {
+    if (contact.profileId === viewer.id) return 'This is the address you sign in with. To change it, please ask the office.';
+    if (!all.some((c) => c.id !== contact.id && c.canLogIn)) {
+      return 'This is the address they sign in with. To change it, please ask the office.';
+    }
+  }
+  return 'This is the address they sign in with. To use a different address, switch off their sign-in and save first; they will not be able to sign in until they are given access again with the new address.';
 }
 
 /** The editable part of a contact. */

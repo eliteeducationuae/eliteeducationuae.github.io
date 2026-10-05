@@ -114,13 +114,19 @@ language sql stable security definer set search_path = public as $$
     from public.families f where f.id = c.family_id), false)
 $$;
 
-/** True when another family has a sign-in contact with this email that cannot give it up to whoever is asking. */
+/**
+ * True when another family has a sign-in contact with this email that cannot give it up to whoever is asking, or when
+ * the address belongs to a tutor or the office (a family contact must never sign in as staff).
+ */
 create function public.login_email_taken(p_email text, p_family_id uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.family_contacts c
     where c.email = lower(btrim(p_email)) and c.can_log_in and c.family_id <> p_family_id
       and not public.contact_login_releasable(c, public.contact_may_move_login()))
+  or exists (select 1 from public.profiles p
+    where lower(btrim(p.email)) = lower(btrim(p_email)) and p.role in ('admin', 'tutor'))
+  or exists (select 1 from public.tutors t where lower(btrim(t.email)) = lower(btrim(p_email)))
 $$;
 
 /**
@@ -676,6 +682,12 @@ begin
       -- Discretion: a family is never told whether an address belongs to another client or has an account. Nothing is
       -- saved; the office is told (this commits, so the RPC returns null rather than raising) and the app shows
       -- CONTACT_ERRORS.loginReferred.
+      -- The same request for the same address is reported once a day, so repeated attempts do not flood the office.
+      if exists (select 1 from public.notification_outbox o
+          where o.subject = 'Contact sign-in to review: ' || fam.name and o.created_at > now() - interval '24 hours'
+            and o.url = '/manage/family-edit?id=' || p_family_id and position('(' || v_email || ')' in o.body) > 0) then
+        return null;
+      end if;
       select * into me from public.profiles where id = auth.uid();
       perform public.notify_admins('Contact sign-in to review: ' || fam.name,
         coalesce(nullif(btrim(me.full_name), ''), 'A parent') || ' asked to give ' || v_name || ' (' || v_email

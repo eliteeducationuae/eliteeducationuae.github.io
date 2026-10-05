@@ -472,6 +472,9 @@ select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
 select pg_temp.check(public.save_family_contact('c0000000-0000-0000-0000-000000000001',
   '{"name":"Otto Again","email":"olga@x.ae","can_log_in":true}') is null,
   'a parent is not told that an address signs in to another family');
+select pg_temp.check(public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Typo Contact","email":"stranger@privaterelay.appleid.com","can_log_in":true}') is null,
+  'asking again gives the same neutral reply');
 reset role;
 select pg_temp.check(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Typo Contact') is null
   and pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Otto Again') is null, 'neither contact is saved');
@@ -479,11 +482,29 @@ select pg_temp.check((select count(*) from public.notification_outbox where prof
   and subject = 'Contact sign-in to review: Haddad'
   and body like 'Rana Haddad asked to give % sign-in access to the Haddad family''s account. That address already has a '
     || 'sign-in elsewhere, so nothing was saved.%') = 2,
-  'the office is told each time so it can follow up');
+  'the office is told once per address each day, so repeated attempts do not flood it');
 select pg_temp.check(not exists (select 1 from public.notification_outbox where email = 'stranger@privaterelay.appleid.com' and subject = 'Your access to Elite Education'), 'nobody is invited');
 select pg_temp.check((select family_id from public.profiles where id = 'a0000000-0000-0000-0000-000000000016') = :'stranger_fam'
   and (select status from public.families where id = :'stranger_fam') = 'prospect',
   'the other login and its prospect family are left untouched');
+-- A tutor's or the office's address is never given family sign-in (as in the demo).
+insert into public.tutors (id, full_name, email) values ('b0000000-0000-0000-0000-000000000003', 'Tara Tutor', 'tara@x.ae');
+update public.profiles set email = 'boss@x.ae' where id = 'a0000000-0000-0000-0000-00000000000a';
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-000000000013');
+select pg_temp.check(public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Tia Again","email":"Tara@X.ae","can_log_in":true}') is null,
+  'a parent cannot give a tutor''s address family sign-in (same neutral reply)');
+reset role;
+select pg_temp.raises($$select pg_temp.admin_save('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Boss Again","email":"boss@x.ae","can_log_in":true}')$$,
+  'That email address already signs in to another family. Please use a different address.',
+  'nor can the office give an admin''s address family sign-in');
+select pg_temp.check(pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Tia Again') is null
+  and pg_temp.cid('c0000000-0000-0000-0000-000000000001', 'Boss Again') is null, 'no staff address is saved as a sign-in contact');
+update public.profiles set email = 'boss@x' where id = 'a0000000-0000-0000-0000-00000000000a';
+delete from public.notification_outbox where body like '%(tara@x.ae)%';
+delete from public.tutors where id = 'b0000000-0000-0000-0000-000000000003';
 set role authenticated;
 
 set role authenticated;

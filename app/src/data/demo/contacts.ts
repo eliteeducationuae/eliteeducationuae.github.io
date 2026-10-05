@@ -111,12 +111,19 @@ export function saveFamilyContact(db: DemoDB, viewer: Profile, familyId: string,
       db.profiles.some((p) => sameEmail(p.email, d.email) && !(p.role === 'parent' && p.familyId === familyId)) ||
       allContacts(db).some((c) => c.familyId !== familyId && c.canLogIn && sameEmail(c.email, d.email));
     if (elsewhere && viewer.role !== 'admin') {
-      // Discretion: a parent is never told why, so they cannot learn who else is a client. The office follows up.
-      notifyAdmins(
+      // Discretion: a parent is never told why, so they cannot learn who else is a client. The office follows up,
+      // told once a day per address so repeated attempts do not flood it (as in save_family_contact).
+      const subject = `Contact sign-in to review: ${familyLabel(family)}`;
+      const url = `/manage/family-edit?id=${familyId}`;
+      const dayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+      const alreadyTold = (db.outbox ?? []).some(
+        (o) => o.subject === subject && o.url === url && o.body.includes(`(${d.email})`) && Date.parse(o.createdAt) > dayAgo,
+      );
+      if (!alreadyTold) notifyAdmins(
         db,
-        `Contact sign-in to review: ${familyLabel(family)}`,
+        subject,
         `${viewer.fullName} asked to give ${d.name} (${d.email}) sign-in access to the ${familyLabel(family)}'s account. That address already has a sign-in elsewhere, so nothing was saved. Please follow up with the family and add the contact if appropriate.`,
-        `/manage/family-edit?id=${familyId}`,
+        url,
         now,
       );
       throw new Error(CONTACT_ERRORS.loginReferred);

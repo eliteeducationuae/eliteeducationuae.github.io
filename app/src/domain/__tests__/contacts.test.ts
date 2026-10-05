@@ -8,10 +8,12 @@ import {
   describeRecipients,
   describeWhatsAppRecipients,
   draftFromContact,
+  emailLockHint,
   emptyContactDraft,
   formatPhoneForDisplay,
   normaliseContactDraft,
   NOTICE_KIND_LABELS,
+  noticeDefaultsFor,
   noticeKindForUrl,
   primaryContact,
   recipientsFor,
@@ -169,6 +171,61 @@ describe('drafts', () => {
     // Not a number we can put in E.164 form: kept as typed.
     expect(normaliseContactDraft(draft({ phone: ' ext. 12 ' })).phone).toBe('ext. 12');
     expect(normaliseContactDraft(draft({ id: 'c3' })).id).toBe('c3');
+  });
+});
+
+describe('notice defaults by relationship', () => {
+  it('sends reports and lesson notes to parents and guardians only', () => {
+    for (const r of ['mother', 'father', 'parent', 'guardian'] as const) {
+      expect(noticeDefaultsFor(r)).toEqual({ receivesInvoices: false, receivesReports: true, receivesLessonNotes: true });
+    }
+  });
+
+  it('sends a personal assistant or family office invoices but not the child\'s reports or notes', () => {
+    for (const r of ['pa', 'family_office'] as const) {
+      expect(noticeDefaultsFor(r)).toEqual({ receivesInvoices: true, receivesReports: false, receivesLessonNotes: false });
+    }
+  });
+
+  it('sends a driver or anyone else nothing until switched on', () => {
+    for (const r of ['driver', 'other'] as const) {
+      expect(noticeDefaultsFor(r)).toEqual({ receivesInvoices: false, receivesReports: false, receivesLessonNotes: false });
+    }
+  });
+
+  it('a new contact follows its relationship, and WhatsApp is never on without consent', () => {
+    for (const r of RELATIONSHIP_ORDER) {
+      const d = emptyContactDraft(r);
+      expect(d.relationship).toBe(r);
+      expect(d).toMatchObject(noticeDefaultsFor(r));
+      expect(d.receivesWhatsApp).toBe(false);
+      expect(d.canLogIn).toBe(false);
+    }
+  });
+});
+
+describe('emailLockHint', () => {
+  const second: FamilyContact = { ...base, id: 'c2', name: 'Second', email: 'second@example.com', isPrimary: false, profileId: 'u2' };
+  const driver: FamilyContact = { ...base, id: 'c3', name: 'Driver', relationship: 'driver', canLogIn: false, hasLogin: false, isPrimary: false, profileId: undefined };
+
+  it('sends a parent to the office for their own address', () => {
+    expect(emailLockHint(base, [base, second], { id: 'u1', role: 'parent' })).toBe(
+      'This is the address you sign in with. To change it, please ask the office.',
+    );
+  });
+
+  it('sends a parent to the office for the family\'s last sign-in', () => {
+    expect(emailLockHint(second, [second, driver], { id: 'u9', role: 'parent' })).toBe(
+      'This is the address they sign in with. To change it, please ask the office.',
+    );
+  });
+
+  it('otherwise explains switching off sign-in, and warns that access is lost meanwhile', () => {
+    const hint = emailLockHint(second, [base, second], { id: 'u1', role: 'parent' });
+    expect(hint).toContain('switch off their sign-in and save first');
+    expect(hint).toContain('will not be able to sign in until');
+    // The office may always do so, even for the last sign-in.
+    expect(emailLockHint(second, [second], { id: 'u-admin', role: 'admin' })).toBe(hint);
   });
 });
 
