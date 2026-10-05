@@ -261,7 +261,7 @@ How it works for families:
 
 **Spam and abuse protection (round 5).** The two public forms on eliteeducation.me (*Request a consultation* and *Apply to tutor with us*) and the app's own enquiry and application forms are protected against automated and repeated submissions, without ever turning a genuine family away. Set it up once, in this order:
 
-1. **Database.** Run `supabase/migrations/20261021000000_spam.sql` in the Supabase SQL editor, after the earlier migrations. If the website goes live first, the forms fall back automatically to the older form of each request, so no enquiry or application is lost in the meantime.
+1. **Database.** Run `supabase/migrations/20261109000000_spam.sql` in the Supabase SQL editor, after the earlier migrations. If the website goes live first, the forms fall back automatically to the older form of each request, so no enquiry or application is lost in the meantime.
 2. **Optional security check (Cloudflare Turnstile).** The protections below work without it; turn it on only if spam still gets through.
    1. In the [Cloudflare dashboard](https://dash.cloudflare.com), open **Turnstile → Add widget**. Name it *Elite Education website*, add the hostnames `eliteeducation.me`, `www.eliteeducation.me` and, if the site is also reached there, `eliteeducationuae.github.io`, and choose the **Managed** mode.
    2. Copy the **site key** into `data-turnstile-sitekey=""` on the `<html>` line at the top of `index.html` (the comment above it marks the place), and publish the website. The site key is public; the **secret key** must never go into the website or the repository.
