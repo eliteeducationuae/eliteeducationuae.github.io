@@ -21,6 +21,7 @@ interface Hit {
 
 const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
 const matches = (q: string, ...fields: (string | undefined)[]) => fields.some((f) => f && norm(f).includes(q));
+const PEOPLE_GROUPS = ['Students', 'Families', 'Tutors'];
 
 /** Find anyone or anything: students, families, tutors, invoices, enquiries, roles and applications. */
 export default function Search() {
@@ -115,6 +116,16 @@ export default function Search() {
     return viewAsRows(viewTargets.data, { families: ids('Families'), tutors: ids('Tutors'), students: ids('Students') });
   }, [canViewAs, viewTargets.data, groups]);
 
+  const renderGroup = (g: (typeof groups)[number]) => (
+    <Section key={g.title} title={g.title}>
+      <View style={{ gap: Spacing.two }}>
+        {g.hits.map((h) => (
+          <ListItem key={h.key} title={h.title} subtitle={h.subtitle} left={<Icon name={g.icon} size={20} color={theme.accent} />} onPress={() => router.replace(h.href)} />
+        ))}
+      </View>
+    </Section>
+  );
+
   return (
     <Screen>
       <Field
@@ -136,32 +147,28 @@ export default function Search() {
       ) : groups.length === 0 ? (
         <EmptyState icon="search" title="No matches" message={`We could not find anything for “${query.trim()}”.`} />
       ) : (
-        groups.map((g) => (
-          <Section key={g.title} title={g.title}>
-            <View style={{ gap: Spacing.two }}>
-              {g.hits.map((h) => (
-                <ListItem key={h.key} title={h.title} subtitle={h.subtitle} left={<Icon name={g.icon} size={20} color={theme.accent} />} onPress={() => router.replace(h.href)} />
-              ))}
-            </View>
-          </Section>
-        ))
+        <>
+          {/* People first, then View as for them, so it is not pushed below invoices and enquiries. */}
+          {groups.filter((g) => PEOPLE_GROUPS.includes(g.title)).map(renderGroup)}
+          {viewRows.length ? (
+            <Section title="View as">
+              <View style={{ gap: Spacing.two }}>
+                {viewRows.map(({ key, title, subtitle, target }) => (
+                  <ListItem
+                    key={key}
+                    title={title}
+                    subtitle={subtitle}
+                    left={<Icon name="eye" size={20} color={target ? theme.accent : theme.textMuted} />}
+                    onPress={target && !viewAs.busyId ? () => void viewAs.start(target) : undefined}
+                  />
+                ))}
+                <ErrorNote error={viewAs.error} />
+              </View>
+            </Section>
+          ) : null}
+          {groups.filter((g) => !PEOPLE_GROUPS.includes(g.title)).map(renderGroup)}
+        </>
       )}
-      {viewRows.length ? (
-        <Section title="View as">
-          <View style={{ gap: Spacing.two }}>
-            {viewRows.map(({ key, title, subtitle, target }) => (
-              <ListItem
-                key={key}
-                title={title}
-                subtitle={subtitle}
-                left={<Icon name="eye" size={20} color={target ? theme.accent : theme.textMuted} />}
-                onPress={target && !viewAs.busyId ? () => void viewAs.start(target) : undefined}
-              />
-            ))}
-            <ErrorNote error={viewAs.error} />
-          </View>
-        </Section>
-      ) : null}
     </Screen>
   );
 }

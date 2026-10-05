@@ -7,7 +7,7 @@
 --   * refuses everything once the view has ended or expired (VIEW_ENDED_MESSAGE);
 --   * marks the transaction read-only, so nothing can be written even by a security-definer function;
 --   * allows only GET/HEAD/OPTIONS on tables and views, and only the read RPCs in view_as_read_rpcs().
--- Storage uploads, changes and deletes are refused by restrictive policies, and an auth.users trigger stops the
+-- Storage uploads, changes and deletes are refused by restrictive policies (and reads once the view has ended), and an auth.users trigger stops the
 -- person's email, phone or password being changed while a view of their account is active.
 -- Ending a view revokes its auth session on the server (end_view_as), and the auth schema refuses to refresh a view's
 -- session once the view has ended or expired, so its tokens cannot be used for long afterwards.
@@ -149,6 +149,16 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.view_as_sessions where session_id = public.view_as_session_id())
 $$;
 
+-- True when the caller's session belongs to a view that has ended or expired (storage then refuses even reads).
+create function public.view_as_closed() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.view_as_sessions
+    where session_id = public.view_as_session_id() and (ended_at is not null or expires_at <= now()))
+$$;
+
+revoke all on function public.view_as_closed() from public, anon;
+grant execute on function public.view_as_closed() to authenticated;
+
 -- The view the caller's session belongs to, or null.
 create function public.current_view_as() returns public.view_as_sessions
 language sql stable security definer set search_path = public as $$
@@ -212,7 +222,8 @@ revoke all on function public.view_as_guard() from public;
 grant execute on function public.view_as_guard() to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- Storage: a view can read files it may see but never upload, change or delete them
+-- Storage: a view can read files it may see but never upload, change or delete them, and reads nothing once it has
+-- ended or expired
 -- ---------------------------------------------------------------------------
 
 do $$
@@ -224,6 +235,8 @@ begin
       using (not public.is_view_as_session()) with check (not public.is_view_as_session())$p$;
     execute $p$create policy "view as cannot delete" on storage.objects as restrictive for delete to authenticated
       using (not public.is_view_as_session())$p$;
+    execute $p$create policy "view as ended cannot read" on storage.objects as restrictive for select to authenticated
+      using (not public.view_as_closed())$p$;
   end if;
 end $$;
 

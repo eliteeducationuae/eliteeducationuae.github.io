@@ -190,10 +190,12 @@ set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000004');
 select pg_temp.req('e0000000-0000-0000-0000-000000000001', 'POST', '/rpc/is_view_as_session');
 select pg_temp.check(public.is_view_as_session(), 'a view session is recognised');
+select pg_temp.check(not public.view_as_closed(), 'an active view is not closed, so storage lets it read');
 select pg_temp.check((select id is not null and target_id = 'a0000000-0000-0000-0000-000000000004' from public.current_view_as()),
   'current_view_as returns the view');
 select pg_temp.req('e0000000-0000-0000-0000-0000000000aa', 'POST', '/rpc/is_view_as_session');
 select pg_temp.check(not public.is_view_as_session(), 'a normal session is not a view');
+select pg_temp.check(not public.view_as_closed(), 'a normal session is never closed');
 select pg_temp.check((select id is null from public.current_view_as()), 'current_view_as is null for a normal session');
 select pg_temp.req(null, 'POST', '/rpc/is_view_as_session');
 select pg_temp.check(not public.is_view_as_session(), 'no session is not a view');
@@ -283,8 +285,11 @@ select pg_temp.check(pg_temp.guard('e0000000-0000-0000-0000-000000000002', 'POST
   'an expired view cannot call read RPCs');
 select pg_temp.req('e0000000-0000-0000-0000-000000000002', 'POST', '/rpc/is_view_as_session');
 select pg_temp.check(public.is_view_as_session(), 'an expired view is still recognised as a view');
+select pg_temp.check(public.view_as_closed(), 'an expired view is closed, so storage refuses its reads');
 select pg_temp.as_user('a0000000-0000-0000-0000-000000000004');
 select pg_temp.check(pg_temp.guard('e0000000-0000-0000-0000-000000000001', 'GET', '/lessons') = :view_ended, 'an ended view cannot even read');
+select pg_temp.req('e0000000-0000-0000-0000-000000000001', 'GET', '/storage');
+select pg_temp.check(public.view_as_closed(), 'an ended view is closed, so storage refuses its reads');
 reset role;
 select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user_id, session_id)
     values ('t2b', 'a0000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-000000000002')$q$) like '42501:%',

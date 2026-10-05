@@ -8,6 +8,26 @@ export const VIEW_ENDED_MESSAGE = 'This view has ended. Please return to your ow
 /** The longest a view may last, in minutes (begin_view_as also clamps to this). */
 export const VIEW_MINUTES = 60;
 
+/** Shown when the View as check itself cannot run (for example a transient database error). */
+export const VIEW_CHECK_UNAVAILABLE_MESSAGE = 'This is not available right now. Please try again shortly.';
+
+/**
+ * Maps the result of the is_view_as_session RPC to a refusal, or null when the caller may go ahead.
+ * A view (active, ended or expired) gets 403 VIEW_ONLY_MESSAGE; the guard refusing an ended view counts as a view.
+ * Any other error still fails closed, but with a neutral 503 so that real families are not told they are "viewing".
+ */
+export function viewAsRefusal(
+  data: unknown,
+  error: { message?: string | null } | null | undefined,
+): { status: 403 | 503; message: string } | null {
+  if (error) {
+    return typeof error.message === 'string' && error.message.includes(VIEW_ENDED_MESSAGE)
+      ? { status: 403, message: VIEW_ONLY_MESSAGE }
+      : { status: 503, message: VIEW_CHECK_UNAVAILABLE_MESSAGE };
+  }
+  return data === true ? { status: 403, message: VIEW_ONLY_MESSAGE } : null;
+}
+
 export const NO_LOGIN_MESSAGE = 'This person does not have a login yet.';
 export const ADMIN_ONLY_MESSAGE = 'Only the office can view the app as someone else.';
 

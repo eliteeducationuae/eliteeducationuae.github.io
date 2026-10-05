@@ -5,6 +5,7 @@ import {
   parseStartBody,
   sessionIdFromJwt,
   startResponse,
+  viewAsRefusal,
 } from '../../../supabase/functions/_shared/view-as-core';
 
 const SID = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
@@ -79,5 +80,23 @@ describe('startResponse', () => {
         { access_token: 'access', refresh_token: 'refresh' },
       ),
     ).toEqual({ viewId: 'view-1', accessToken: 'access', refreshToken: 'refresh', expiresAt: '2026-10-04T06:00:00.000Z' });
+  });
+});
+
+describe('viewAsRefusal', () => {
+  it('lets a normal session through', () => {
+    expect(viewAsRefusal(false, null)).toBeNull();
+    expect(viewAsRefusal(null, undefined)).toBeNull();
+  });
+  it('refuses a view session as view only', () => {
+    expect(viewAsRefusal(true, null)).toEqual({ status: 403, message: VIEW_ONLY_MESSAGE });
+  });
+  it('refuses an ended or expired view, which the guard rejects, as view only', () => {
+    expect(viewAsRefusal(null, { message: VIEW_ENDED_MESSAGE })).toEqual({ status: 403, message: VIEW_ONLY_MESSAGE });
+  });
+  it('fails closed with a neutral message on any other error', () => {
+    const neutral = { status: 503, message: 'This is not available right now. Please try again shortly.' };
+    expect(viewAsRefusal(null, { message: 'function public.is_view_as_session() does not exist' })).toEqual(neutral);
+    expect(viewAsRefusal(true, { message: null })).toEqual(neutral);
   });
 });

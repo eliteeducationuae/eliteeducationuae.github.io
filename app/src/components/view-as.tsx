@@ -4,7 +4,7 @@
  */
 import { router, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, font, Spacing } from '@/constants/theme';
@@ -120,15 +120,29 @@ export function ViewAsFrame({ children }: { children: ReactNode }) {
   const palette = useTheme();
   const viewing = useViewing();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  // The notice sits just below the screen's header, so it never hides the title or the back button.
+  const toastTop = (viewing ? 0 : insets.top) + stackHeaderHeight(false, width > height) + Spacing.two;
   return (
     <View style={{ flex: 1, backgroundColor: palette.background }}>
       <ViewAsBanner />
       <View style={{ flex: 1 }}>
         <SafeAreaInsetsContext.Provider value={viewing ? { ...insets, top: 0 } : insets}>{children}</SafeAreaInsetsContext.Provider>
-        <ViewAsToast top={viewing ? Spacing.two : insets.top + Spacing.two} />
+        <ViewAsToast top={toastTop} />
       </View>
     </View>
   );
+}
+
+/**
+ * The height of a stack or tab header without the status bar, matching React Navigation's default header
+ * (iOS 44, or 56 for a modal sheet and 32 in landscape on a phone; iPad 50 or 56; Android and web 64).
+ */
+function stackHeaderHeight(modal: boolean, landscape: boolean): number {
+  if (Platform.OS !== 'ios') return 64;
+  if (Platform.isPad) return modal ? 56 : 50;
+  if (landscape) return 32;
+  return modal ? 56 : 44;
 }
 
 const isModal = (presentation: unknown) => typeof presentation === 'string' && presentation !== 'card';
@@ -145,12 +159,13 @@ export function viewAsScreenLayout({ options, children }: { options: { presentat
 
 function ViewAsModalFrame({ children }: { children: ReactElement }) {
   const viewing = useViewing();
+  const { width, height } = useWindowDimensions();
   return (
     <View style={{ flex: 1 }}>
       {viewing ? <ViewAsModalStrip name={viewing.profile.fullName} /> : null}
       <View style={{ flex: 1 }}>
         {children}
-        {viewing ? <ViewAsToast top={Spacing.two} /> : null}
+        {viewing ? <ViewAsToast top={stackHeaderHeight(true, width > height) + Spacing.two} /> : null}
       </View>
     </View>
   );
@@ -196,8 +211,8 @@ function ExitButton({ exiting, onPress }: { exiting: boolean; onPress: () => voi
 }
 
 /**
- * The calm notice: a small Noir (or ivory, in dark mode) note that floats just below the banner for a few
- * seconds, so the gold strip itself never grows. It never blocks a tap.
+ * The calm notice: a small Noir (or ivory, in dark mode) note that floats just below the screen's header for a few
+ * seconds, so the gold strip itself never grows and the title and back button stay visible. It never blocks a tap.
  */
 function ViewAsToast({ top }: { top: number }) {
   const palette = useTheme();
@@ -209,7 +224,7 @@ function ViewAsToast({ top }: { top: number }) {
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
       style={[styles.toast, { top, backgroundColor: palette.text, pointerEvents: 'none' }]}>
-      <Icon name="info" size={16} color={palette.background} />
+      <Icon name="eye" size={16} color={palette.background} />
       <Text style={[styles.toastText, { color: palette.background }]}>{message}</Text>
     </View>
   );
