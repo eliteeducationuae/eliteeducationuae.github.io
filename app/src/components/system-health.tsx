@@ -92,7 +92,7 @@ export function SystemHealthScreen() {
         <>
           <Card variant="hero" style={{ gap: Spacing.two }}>
             <Txt variant="label">Overall</Txt>
-            <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+            <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
             <Txt variant="h2">{overallHeadline(data)}</Txt>
             <Txt variant="small">
               Checked {sinceLabel(data.checkedAt, nowMs).toLowerCase()} ({when(data.checkedAt)}).{' '}

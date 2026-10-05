@@ -419,5 +419,5 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 1.5 },
+  rule: { width: 28, height: 2 },
 });

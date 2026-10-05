@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   hero: { borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.four, paddingVertical: Spacing.four + 4 },
   dateLabel: { fontSize: 12, lineHeight: 16, letterSpacing: 1.6, textTransform: 'uppercase', opacity: 0.75 },
   heroTitle: { fontSize: 28, lineHeight: 36 },
-  rule: { width: 32, height: 1.5, marginVertical: 2 },
+  rule: { width: 32, height: 2, marginVertical: 2 },
   heroSubtitle: { fontSize: 16, lineHeight: 23, opacity: 0.85 },
   next: { borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, borderLeftWidth: 3, padding: Spacing.three, gap: Spacing.one },
   nextWhen: { fontSize: 20, lineHeight: 27 },

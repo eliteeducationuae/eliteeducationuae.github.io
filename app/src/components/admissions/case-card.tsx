@@ -99,5 +99,5 @@ export function CaseCard({
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 1.5 },
+  rule: { width: 28, height: 2 },
 });

@@ -78,7 +78,7 @@ export function DeleteAccountScreen() {
     <Screen>
       <Card style={{ gap: Spacing.three }}>
         <Txt variant="h2">Before you go</Txt>
-        <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+        <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
         <Txt>
           Deleting your account is permanent. We are sorry to see you leave, and we would be glad to help with anything first: please write to{' '}
           {SUPPORT_EMAIL}.

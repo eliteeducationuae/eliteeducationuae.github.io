@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headline: { fontSize: 28, lineHeight: 36, textAlign: 'center' },
-  rule: { width: 32, height: 1.5 },
+  rule: { width: 32, height: 2 },
   essence: {
     fontSize: 13,
     lineHeight: 18,

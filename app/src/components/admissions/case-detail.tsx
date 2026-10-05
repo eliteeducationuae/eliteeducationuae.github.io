@@ -148,5 +148,5 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 1.5 },
+  rule: { width: 28, height: 2 },
 });

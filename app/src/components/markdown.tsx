@@ -39,7 +39,7 @@ export function Markdown({ text }: { text: string }) {
                 <Txt variant={HEADING_VARIANT[b.level]} accessibilityRole="header">
                   <Inline segments={b.segments} />
                 </Txt>
-                {b.level < 3 ? <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} /> : null}
+                {b.level < 3 ? <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} /> : null}
               </View>
             );
           case 'paragraph':

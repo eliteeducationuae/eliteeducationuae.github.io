@@ -51,7 +51,7 @@ export function AdmissionsIntro({ onSpeak }: { onSpeak?: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 1.5 },
+  rule: { width: 28, height: 2 },
   icon: {
     width: 38,
     height: 38,

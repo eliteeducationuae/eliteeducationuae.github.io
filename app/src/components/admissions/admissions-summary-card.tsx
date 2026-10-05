@@ -90,6 +90,6 @@ export function AdmissionsSummaryCard() {
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 1.5 },
+  rule: { width: 28, height: 2 },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.three },
 });

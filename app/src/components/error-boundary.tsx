@@ -30,7 +30,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
             <Txt variant="h2" accessibilityRole="header">
               Something has gone wrong
             </Txt>
-            <View style={{ width: 28, height: 1.5, backgroundColor: palette.gold }} />
+            <View style={{ width: 28, height: 2, backgroundColor: palette.gold }} />
             <Txt>
               We are sorry for the inconvenience. The problem has been reported to Elite Education, and you may try again now.
             </Txt>
