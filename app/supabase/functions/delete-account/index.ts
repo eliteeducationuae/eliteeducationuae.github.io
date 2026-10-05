@@ -6,7 +6,7 @@
 //   upcomingLessonsNeedingTutor, invoicesRetained, paymentsRetained, filesRemoved, loginsRemoved } };
 //   401 not signed in; 403 not an admin (with requestId); 404 no such request; 409 the only administrator, or a request
 //   already dealt with; 500 when it could not be finished (the request is marked failed so the office can try again).
-// The database work happens in perform_account_deletion (migration 20261020000000_launch.sql). No extra secrets.
+// The database work happens in perform_account_deletion (migration 20261108000000_launch.sql). No extra secrets.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { errorMessage, logFunctionError, withMonitoring } from '../_shared/monitoring.ts';
 
