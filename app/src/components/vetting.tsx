@@ -9,12 +9,15 @@ import { useAction, useTutorCompliance, useTutors } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import type { TutorCompliance, TutorDocument, TutorDocumentType, VettingStatus } from '@/domain/types';
 import {
+  blockedReasonPhrase,
   canAssignTutor,
+  describeDateInput,
   DOCUMENT_TYPES,
   documentState,
   documentTypeLabel,
   formatLongDate,
   isCleared,
+  maskDateInput,
   needsAttention,
   onboardingChecklist,
   onboardingProgress,
@@ -123,12 +126,21 @@ export function OnboardingChecklist({ compliance, today, links }: { compliance: 
             {links && !item.done ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
           </Row>
         );
-        if (!links || item.done) return <View key={item.key}>{body}</View>;
+        const spoken = `${item.label}${item.optional ? ', optional' : ''}, ${item.done ? 'complete' : 'to do'}`;
+        if (!links || item.done) {
+          return (
+            <View key={item.key} accessible accessibilityRole="checkbox" accessibilityState={{ checked: item.done }} accessibilityLabel={spoken}>
+              {body}
+            </View>
+          );
+        }
         return (
           <Pressable
             key={item.key}
             accessibilityRole="link"
-            accessibilityLabel={item.label}
+            accessibilityState={{ checked: item.done }}
+            accessibilityLabel={spoken}
+            accessibilityHint="Opens the page to complete this step"
             onPress={() => router.navigate(CHECKLIST_LINKS[item.key])}
             style={({ pressed }) => pressed && { opacity: 0.7 }}>
             {body}
@@ -281,11 +293,11 @@ export function VettingWarning({
     return (
       <View style={{ gap: Spacing.two }}>
         <Banner tone="danger" icon="alert">
-          {name} cannot be assigned {what} until their police clearance has been verified ({vettingSummary(c, today).toLowerCase()}).
+          {name} cannot be assigned {what} until their police clearance has been verified; {blockedReasonPhrase(c)}.
           {me.role === 'admin' && !showForm ? (
             <>
               {' '}
-              <Txt variant="muted" color="accent" onPress={() => setOpen(true)}>
+              <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => setOpen(true)}>
                 Record an override
               </Txt>
             </>
@@ -352,7 +364,7 @@ export function TutorChecksRow() {
   const name = (id: string) => tutors.data?.find((t) => t.id === id)?.fullName ?? 'A tutor';
   return (
     <ListItem
-      title="Tutor checks needing attention"
+      title={list.length === 1 ? '1 tutor check to review' : `${list.length} tutor checks to review`}
       subtitle={list.map((c) => `${name(c.tutorId)}: ${attentionLine(c, today)}`).join(' · ')}
       left={<Icon name="alert" size={22} color={theme.warning} />}
       onPress={() => router.push('/manage/vetting')}
@@ -425,9 +437,11 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
     setError(problem);
     if (problem || !file) return;
     setUploading(true);
+    let uploaded: string | null = null;
     try {
       const folder = `tutors/${tutorId}`;
       const filePath = source.uploadFile ? await source.uploadFile('vetting', folder, file) : `${folder}/${file.name}`;
+      if (source.uploadFile) uploaded = filePath;
       await submit.mutateAsync([
         {
           tutorId,
@@ -446,6 +460,8 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
       setExpiryDate('');
       setType('police_clearance');
     } catch (e) {
+      // The file reached storage but was not recorded: remove it so no orphan is left in the private bucket.
+      if (uploaded && source.removeFile) await source.removeFile('vetting', uploaded).catch(() => undefined);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
@@ -466,10 +482,24 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
       {type === 'other' ? <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, first aid certificate" /> : null}
       <Row gap={Spacing.two} wrap style={{ alignItems: 'flex-start' }}>
         <View style={{ flexGrow: 1, flexBasis: 140 }}>
-          <Field label="Issue date" value={issueDate} onChangeText={setIssueDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+          <DateKeyField
+            label="Issue date"
+            value={issueDate}
+            onChange={(v) => {
+              setIssueDate(v);
+              setError(null);
+            }}
+          />
         </View>
         <View style={{ flexGrow: 1, flexBasis: 140 }}>
-          <Field label={needsExpiry ? 'Expiry date' : 'Expiry date (optional)'} value={expiryDate} onChangeText={setExpiryDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+          <DateKeyField
+            label={needsExpiry ? 'Expiry date' : 'Expiry date (optional)'}
+            value={expiryDate}
+            onChange={(v) => {
+              setExpiryDate(v);
+              setError(null);
+            }}
+          />
         </View>
       </Row>
       <Row gap={Spacing.two} wrap>
@@ -516,12 +546,40 @@ export function tutorChipLabel(name: string, c: TutorCompliance | undefined): st
 
 /** On a scheduled lesson (admin and the lesson's tutor): the lesson stands, but new work waits for clearance. */
 export function LessonVettingNote({ tutorId }: { tutorId: string }) {
+  const today = useToday();
   const { compliance: c } = useComplianceFor(tutorId);
   if (!c || !notCleared(c)) return null;
+  const verdict = canAssignTutor(c, today);
+  const rest = !c.enforced
+    ? 'Police clearance is not enforced at present.'
+    : verdict.overridden && c.override
+      ? `This lesson can go ahead. Override in place until ${formatLongDate(c.override.until)}.`
+      : 'This lesson can go ahead, but no new lessons can be assigned until it is verified.';
   return (
-    <Banner tone="warning" icon="alert">
-      This tutor’s police clearance is {VETTING_PHRASE[c.vettingStatus]}. This lesson can go ahead, but no new lessons can be assigned until it is verified.
+    <Banner tone={c.enforced && !verdict.overridden ? 'warning' : 'info'} icon="alert">
+      This tutor’s police clearance is {VETTING_PHRASE[c.vettingStatus]}. {rest}
     </Banner>
+  );
+}
+
+/**
+ * A `YYYY-MM-DD` date field with a number pad, dashes added as the user types, and the date in words beneath
+ * it (for example '5 October 2027') so the entry can be checked at a glance.
+ */
+export function DateKeyField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const words = describeDateInput(value);
+  return (
+    <Field
+      label={label}
+      value={value}
+      onChangeText={(text) => onChange(maskDateInput(text))}
+      placeholder="YYYY-MM-DD"
+      autoCapitalize="none"
+      keyboardType="number-pad"
+      inputMode="numeric"
+      maxLength={10}
+      hint={words ?? (value.trim() ? 'Please enter the full date as YYYY-MM-DD' : undefined)}
+    />
   );
 }
 
@@ -540,7 +598,7 @@ export function ClearanceBanner() {
   return (
     <Banner tone={c.vettingStatus === 'pending' ? 'info' : c.vettingStatus === 'expiring' ? 'warning' : 'danger'} icon={c.vettingStatus === 'pending' ? 'clock' : 'alert'}>
       {message[c.vettingStatus]}{' '}
-      <Txt variant="muted" color="accent" onPress={() => router.push('/checks')}>
+      <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push('/checks')}>
         My checks
       </Txt>
     </Banner>

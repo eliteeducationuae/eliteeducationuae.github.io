@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Avatar, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
-import { DocumentRow, DocumentUploadCard, OnboardingChecklist, OverrideForm, useToday, VettingBadge } from '@/components/vetting';
+import { DateKeyField, DocumentRow, DocumentUploadCard, OnboardingChecklist, OverrideForm, useToday, VettingBadge } from '@/components/vetting';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandbookAcks, useTutorCompliance, useTutorDocuments, useTutors, useVettingOverrides } from '@/data/hooks';
@@ -171,10 +171,10 @@ function ReviewPanel({ doc, today }: { doc: TutorDocument; today: Date }) {
       <Txt variant="muted">Please check the dates against the certificate before verifying it.</Txt>
       <Row gap={Spacing.two} wrap style={{ alignItems: 'flex-start' }}>
         <View style={{ flexGrow: 1, flexBasis: 140 }}>
-          <Field label="Issue date" value={issueDate} onChangeText={setIssueDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+          <DateKeyField label="Issue date" value={issueDate} onChange={setIssueDate} />
         </View>
         <View style={{ flexGrow: 1, flexBasis: 140 }}>
-          <Field label="Expiry date" value={expiryDate} onChangeText={setExpiryDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+          <DateKeyField label="Expiry date" value={expiryDate} onChange={setExpiryDate} />
         </View>
       </Row>
       {rejecting ? (

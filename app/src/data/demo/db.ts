@@ -111,7 +111,10 @@ export interface DemoDB {
 export interface OutboxMessage {
   id: string;
   createdAt: string;
-  audience: 'admins';
+  /** 'admins' mirrors notify_admins; 'tutor' mirrors notify_tutor (one message per login linked to the tutor). */
+  audience: 'admins' | 'tutor';
+  tutorId?: string;
+  profileId?: string;
   subject: string;
   body: string;
   url?: string;
@@ -120,6 +123,13 @@ export interface OutboxMessage {
 /** Mirrors public.notify_admins: queue a message for the office. */
 export function notifyAdmins(db: DemoDB, subject: string, body: string, url?: string, now = new Date()) {
   (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'admins', subject, body, url });
+}
+
+/** Mirrors public.notify_tutor: queue a message for each login linked to the tutor (tutor or admin role). */
+export function notifyTutor(db: DemoDB, tutorId: string, subject: string, body: string, url?: string, now = new Date()) {
+  for (const p of db.profiles.filter((x) => x.tutorId === tutorId && (x.role === 'tutor' || x.role === 'admin'))) {
+    (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'tutor', tutorId, profileId: p.id, subject, body, url });
+  }
 }
 
 export const DEMO_DB_VERSION = 8;

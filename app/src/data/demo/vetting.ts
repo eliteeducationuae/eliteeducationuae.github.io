@@ -10,7 +10,7 @@ import { toDateKey } from '@/domain/dates';
 import { activeOverride, formatLongDate, isCleared, vettingBlockMessage, vettingStatus } from '@/domain/vetting';
 
 import type { NewTutorDocument } from '../source';
-import { AccessError, newId, notifyAdmins, requireAdmin, type DemoDB } from './db';
+import { AccessError, newId, notifyAdmins, notifyTutor, requireAdmin, type DemoDB } from './db';
 
 /**
  * Demo versions of tutor vetting and onboarding. Each mirrors a database function or policy in the
@@ -31,6 +31,7 @@ const SENTENCE_LABELS: Record<TutorDocument['type'], string> = {
   other: 'document',
 };
 const FOOTER = '\n\nElite Education | eliteeducation.me';
+const firstName = (db: DemoDB, tutorId: string) => tutorName(db, tutorId).split(' ')[0];
 const newestFirst = <T extends { createdAt: string }>(rows: T[]) => [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 /** Rows the viewer may see: admins all, tutors their own, everyone else none. */
@@ -146,10 +147,31 @@ export const vet = {
       if (issueDate && issueDate > today) throw new Error('The issue date cannot be in the future');
       if (issueDate && expiryDate && expiryDate < issueDate) throw new Error('The expiry date cannot be before the issue date');
       Object.assign(doc, { status: 'verified', issueDate, expiryDate, reviewNote: note, verifiedAt: now.toISOString(), verifiedByName: viewer.fullName });
+      // As in review_tutor_document: the tutor is told, never with the file path.
+      notifyTutor(
+        db,
+        doc.tutorId,
+        police ? 'Your police clearance has been verified' : `Your ${SENTENCE_LABELS[doc.type]} has been verified`,
+        `Dear ${firstName(db, doc.tutorId)},\n\nThank you for uploading your ${SENTENCE_LABELS[doc.type]}. It has now been verified by Elite Education` +
+          (expiryDate ? ` and is valid until ${formatLongDate(expiryDate)}` : '') +
+          '.' +
+          (police && expiryDate ? ' We will remind you well before it expires so that you can upload a renewed certificate in good time.' : '') +
+          FOOTER,
+        '/checks',
+        now,
+      );
     } else {
       if (!note) throw new Error('Please give a reason so that the tutor knows what to upload');
       if (note.length > 1000) throw new Error('Please keep the reason to 1000 characters');
       Object.assign(doc, { status: 'rejected', reviewNote: note, verifiedAt: undefined, verifiedByName: undefined });
+      notifyTutor(
+        db,
+        doc.tutorId,
+        `Please upload a new ${SENTENCE_LABELS[doc.type]}`,
+        `Dear ${firstName(db, doc.tutorId)},\n\nThank you for uploading your ${SENTENCE_LABELS[doc.type]}. Unfortunately we are unable to accept it, for the following reason:\n\n${note}\n\nPlease upload a replacement in the Elite Education app under Checks.${FOOTER}`,
+        '/checks',
+        now,
+      );
     }
   },
 
@@ -242,6 +264,20 @@ export const vet = {
       publishedByName: viewer.fullName,
     };
     (db.handbookVersions ??= []).push(version);
+    // As in publish_handbook: every tutor with a login, by first name, except the publishing administrator.
+    const tutorIds = new Set(
+      db.profiles.filter((p) => p.tutorId && (p.role === 'tutor' || p.role === 'admin') && p.tutorId !== viewer.tutorId).map((p) => p.tutorId!),
+    );
+    for (const tutorId of tutorIds) {
+      notifyTutor(
+        db,
+        tutorId,
+        'Updated tutor handbook',
+        `Dear ${firstName(db, tutorId)},\n\nWe have published version ${version.version} of the Elite Education tutor handbook. Please read it in the app and confirm that you have read and agree to follow it.${FOOTER}`,
+        '/handbook',
+        now,
+      );
+    }
     return version;
   },
 

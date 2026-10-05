@@ -28,6 +28,7 @@ import { formatAED } from '@/domain/billing';
 import { lessonSubject, studentSubjects } from '@/domain/enrolments';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
+import { canAssignTutor } from '@/domain/vetting';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -218,16 +219,20 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   const busyBlocks = useBusyBlocks(day, addDays(day, 1));
   const reassign = useAction(source.reassignLesson);
   const vetting = useComplianceMap();
+  const [now] = useState(() => new Date());
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
-  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
+  // Tutors who cannot take new lessons (clearance enforced, no override) go last, with a way to resolve it.
+  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? [])
+    .map((o, i) => ({ o, i, blocked: !canAssignTutor(vetting.get(o.tutor.id), now).allowed }))
+    .sort((a, b) => Number(a.blocked) - Number(b.blocked) || a.i - b.i);
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Choose a tutor</Txt>
       {away ? <Banner tone="warning" icon="alert">The usual tutor is away that day.</Banner> : null}
       {options.length === 0 ? <Txt variant="muted">Nobody else is free at this time.</Txt> : null}
-      {options.map((o) => (
-        <Row key={o.tutor.id} style={{ justifyContent: 'space-between' }}>
+      {options.map(({ o, blocked }) => (
+        <Row key={o.tutor.id} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
           <Row gap={Spacing.two} style={{ flex: 1 }}>
             <Avatar name={o.tutor.fullName} color={o.tutor.color} size={32} />
             <View style={{ flex: 1 }}>
@@ -235,19 +240,34 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
                 <Txt>{o.tutor.fullName}</Txt>
                 {notCleared(vetting.get(o.tutor.id)) ? <VettingBadge status={vetting.get(o.tutor.id)!.vettingStatus} /> : null}
               </Row>
-              <Txt variant="small">{o.available ? 'Free and within their availability' : 'Free, but outside their usual hours'}</Txt>
+              <Txt variant="small">
+                {blocked
+                  ? 'Police clearance must be verified, or an override recorded, before new lessons can be assigned'
+                  : o.available
+                    ? 'Free and within their availability'
+                    : 'Free, but outside their usual hours'}
+              </Txt>
             </View>
           </Row>
-          <Button
-            title="Assign"
-            size="sm"
-            loading={reassign.isPending && reassign.variables?.[1] === o.tutor.id}
-            onPress={async () => {
-              await reassign.mutateAsync([lesson.id, o.tutor.id]);
-              onDone();
-              notify('Tutor changed', `${o.tutor.fullName} is now teaching this lesson and has been notified.`);
-            }}
-          />
+          {blocked ? (
+            <Button
+              title="Record override"
+              size="sm"
+              variant="outline"
+              onPress={() => router.push({ pathname: '/manage/vetting/[tutorId]', params: { tutorId: o.tutor.id } })}
+            />
+          ) : (
+            <Button
+              title="Assign"
+              size="sm"
+              loading={reassign.isPending && reassign.variables?.[1] === o.tutor.id}
+              onPress={async () => {
+                await reassign.mutateAsync([lesson.id, o.tutor.id]);
+                onDone();
+                notify('Tutor changed', `${o.tutor.fullName} is now teaching this lesson and has been notified.`);
+              }}
+            />
+          )}
         </Row>
       ))}
       <ErrorNote error={reassign.error} />

@@ -259,3 +259,35 @@ export function vettingSummary(c: TutorCompliance, today: Date): string {
   }
   return text;
 }
+
+/**
+ * Why a tutor cannot take new work, phrased to sit inside a sentence, e.g. 'no certificate has been uploaded'
+ * or 'their certificate expired on 1 September 2026'.
+ */
+export function blockedReasonPhrase(c: TutorCompliance): string {
+  switch (c.vettingStatus) {
+    case 'missing':
+      return 'no certificate has been uploaded';
+    case 'pending':
+      return 'their certificate is awaiting review';
+    case 'expired':
+      return c.clearanceExpiry ? `their certificate expired on ${formatLongDate(c.clearanceExpiry)}` : 'their certificate has expired';
+    case 'expiring':
+    case 'cleared':
+      return 'their certificate is valid';
+  }
+}
+
+/** Shapes typed digits into `YYYY-MM-DD` as the user types, e.g. '2027100' → '2027-10-0'. */
+export function maskDateInput(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+/** A complete, real `YYYY-MM-DD` date in words ('5 October 2027'), or null while incomplete or invalid. */
+export function describeDateInput(text: string): string | null {
+  const value = text.trim();
+  return isDateKey(value) ? formatLongDate(value) : null;
+}

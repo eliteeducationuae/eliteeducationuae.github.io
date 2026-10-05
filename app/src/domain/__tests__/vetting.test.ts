@@ -1,6 +1,9 @@
 import type { TutorCompliance, TutorDocument, VettingOverride } from '../types';
 import {
   activeOverride,
+  blockedReasonPhrase,
+  describeDateInput,
+  maskDateInput,
   canAssignTutor,
   clearanceDocument,
   daysUntil,
@@ -242,5 +245,36 @@ describe('summaries', () => {
       comp({ tutorId: 'd', vettingStatus: 'missing' }),
     ];
     expect(needsAttention(list).map((c) => c.tutorId)).toEqual(['b', 'c', 'd']);
+  });
+});
+
+describe('sentence-safe vetting copy and date entry', () => {
+  const base: TutorCompliance = {
+    tutorId: 't1',
+    vettingStatus: 'missing',
+    documentsPending: 0,
+    bankDetails: false,
+    availabilitySet: false,
+    calendarConnected: false,
+    whatsappOptIn: false,
+    enforced: true,
+  };
+  it('phrases each blocked state for use mid-sentence, keeping month names capitalised', () => {
+    expect(blockedReasonPhrase(base)).toBe('no certificate has been uploaded');
+    expect(blockedReasonPhrase({ ...base, vettingStatus: 'pending' })).toBe('their certificate is awaiting review');
+    expect(blockedReasonPhrase({ ...base, vettingStatus: 'expired', clearanceExpiry: '2026-09-01' })).toBe('their certificate expired on 1 September 2026');
+    expect(blockedReasonPhrase({ ...base, vettingStatus: 'expired' })).toBe('their certificate has expired');
+  });
+  it('masks typed digits into YYYY-MM-DD', () => {
+    expect(maskDateInput('2027')).toBe('2027');
+    expect(maskDateInput('20271')).toBe('2027-1');
+    expect(maskDateInput('2027100')).toBe('2027-10-0');
+    expect(maskDateInput('2027-10-05')).toBe('2027-10-05');
+    expect(maskDateInput('20271005999')).toBe('2027-10-05');
+  });
+  it('describes a complete date in words and nothing else', () => {
+    expect(describeDateInput('2027-10-05')).toBe('5 October 2027');
+    expect(describeDateInput('2027-10-0')).toBeNull();
+    expect(describeDateInput('2027-02-30')).toBeNull();
   });
 });

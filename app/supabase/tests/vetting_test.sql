@@ -246,6 +246,23 @@ select pg_temp.fails($q$select public.queue_vetting_alerts()$q$, 'permission den
 reset role;
 set role anon;
 select pg_temp.fails($q$select count(*) from public.tutor_documents$q$, 'permission denied%', 'the public cannot read documents');
+select pg_temp.as_user('');
+select pg_temp.fails($q$select public.tutor_vetting_status('b0000000-0000-0000-0000-000000000002')$q$, 'permission denied%',
+  'anonymous callers cannot read a tutor''s vetting status');
+select pg_temp.fails($q$select public.tutor_is_cleared('b0000000-0000-0000-0000-000000000002')$q$, 'permission denied%',
+  'anonymous callers cannot ask whether a tutor is cleared');
+reset role;
+select pg_temp.check(not has_function_privilege('anon', 'public.tutor_vetting_status(uuid, date)', 'execute')
+  and not has_function_privilege('anon', 'public.tutor_is_cleared(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.publish_handbook(text, text)', 'execute'), 'no vetting function is executable by anon');
+-- Even if granted, a request with no signed-in user is not treated as trusted server context.
+set role authenticated;
+select pg_temp.as_user('');
+select pg_temp.check(public.tutor_vetting_status('b0000000-0000-0000-0000-000000000002') is null, 'a request with no user sees no status');
+select pg_temp.check(public.tutor_is_cleared('b0000000-0000-0000-0000-000000000002') is null, 'a request with no user sees no clearance');
+select set_config('request.jwt.claim.role', 'service_role', false);
+select pg_temp.check(public.tutor_vetting_status('b0000000-0000-0000-0000-000000000002') = 'cleared', 'the service role sees the status');
+select set_config('request.jwt.claim.role', '', false);
 reset role;
 
 -- 9. Expiry alerts -----------------------------------------------------------------
@@ -277,8 +294,8 @@ select pg_temp.check(exists (select 1 from public.notification_outbox where subj
 select pg_temp.check(public.queue_vetting_alerts(now() + interval '19 days') = 0, 'and only once');
 select pg_temp.check(public.queue_vetting_alerts(now() + interval '25 days') = 1, 'on the expiry date the final alert goes');
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Police clearance expires today'
-  and profile_id = 'a0000000-0000-0000-0000-0000000000b5' and body like '%No new lessons can be assigned to you until a renewed certificate has been verified%') = 1,
-  'the expiry message says no new lessons can be assigned');
+  and profile_id = 'a0000000-0000-0000-0000-0000000000b5' and body like '%From tomorrow, no new lessons can be assigned to you until a renewed certificate has been verified%') = 1,
+  'on the expiry date the message says lessons stop from tomorrow, since the certificate is still valid today');
 select pg_temp.check(public.queue_vetting_alerts(now() + interval '30 days') = 0, 'nothing more after expiry');
 select pg_temp.check(not exists (select 1 from public.tutor_document_alerts where document_id = '20000000-0000-0000-0000-000000000001'),
   'the superseded certificate still gets nothing');
@@ -290,6 +307,17 @@ select pg_temp.check((select count(*) from public.notification_outbox where prof
   'with a single message');
 select pg_temp.check((select array_agg(threshold order by threshold) from public.tutor_document_alerts
   where document_id = '20000000-0000-0000-0000-000000000003') = '{7,30,60}', 'and the 60, 30 and 7 day alerts are all recorded');
+-- Fay uploads her renewal; the expiry-day alert thanks her rather than asking again.
+insert into public.tutor_documents (tutor_id, doc_type, file_path, status)
+values ('b0000000-0000-0000-0000-000000000006', 'police_clearance', 'tutors/b0000000-0000-0000-0000-000000000006/renewal.pdf', 'pending');
+select pg_temp.check(public.queue_vetting_alerts(now() + interval '5 days') = 1, 'the expiry-day alert still goes when a renewal is pending');
+select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-0000000000b6'
+  and subject = 'Police clearance expires today' and body like '%Thank you for uploading your renewed certificate; we will review it shortly.%'
+  and body not like '%Please upload%') = 1, 'a tutor with a renewal awaiting review is thanked, not asked to upload again');
+select pg_temp.check((select count(*) from public.notification_outbox where profile_id = 'a0000000-0000-0000-0000-00000000000a'
+  and subject = 'Police clearance expires today: Fay Six' and body like '%A renewal has been uploaded and is awaiting review.%Elite Education | eliteeducation.me') = 1,
+  'the office is told a renewal is awaiting review');
+delete from public.tutor_documents where file_path = 'tutors/b0000000-0000-0000-0000-000000000006/renewal.pdf';
 select pg_temp.check(not exists (select 1 from public.notification_outbox
   where body like '%AE0703312345%' or body ~ '[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}' or body like '%tutors/%'
      or push_body like '%tutors/%' or subject like '%tutors/%'),
@@ -309,6 +337,8 @@ select pg_temp.check((select published_by_name from public.handbook_versions whe
 reset role;
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Updated tutor handbook' and url = '/handbook') = 4,
   'every tutor with a login is asked to acknowledge it');
+select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Updated tutor handbook'
+  and profile_id = 'a0000000-0000-0000-0000-0000000000b1' and body like 'Dear Tia,%version 2%') = 1, 'tutors are addressed by first name');
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select pg_temp.fails($q$select public.acknowledge_handbook(1)$q$, 'Please acknowledge the current version of the handbook', 'an old version cannot be acknowledged');

@@ -91,8 +91,8 @@ export default function TutorChecks() {
             {pending.map((d) => (
               <ListItem
                 key={d.id}
-                title={`${name(d.tutorId)}: ${d.type === 'other' && d.title ? d.title : documentTypeLabel(d.type)}`}
-                subtitle={`Uploaded ${formatLongDate(d.createdAt)}${d.expiryDate ? ` · expires ${formatLongDate(d.expiryDate)}` : ''}`}
+                title={name(d.tutorId)}
+                subtitle={`${d.type === 'other' && d.title ? d.title : documentTypeLabel(d.type)} · uploaded ${formatLongDate(d.createdAt)}${d.expiryDate ? ` · expires ${formatLongDate(d.expiryDate)}` : ''}`}
                 onPress={() => open(d.tutorId)}
               />
             ))}

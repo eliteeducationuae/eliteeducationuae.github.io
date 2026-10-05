@@ -35,8 +35,9 @@ export default function Handbook() {
     );
   }
   const shown = list.find((v) => v.version === viewing) ?? latest;
-  const isTutor = me.role === 'tutor';
-  const myAck = isTutor ? (acks.data ?? []).filter((a) => a.tutorId === me.tutorId && a.version === latest.version)[0] : undefined;
+  // Anyone who teaches acknowledges, including an administrator who also tutors (admins load everyone's acks).
+  const isTutor = !!me.tutorId && (me.role === 'tutor' || me.role === 'admin');
+  const myAck = isTutor ? (acks.data ?? []).find((a) => a.tutorId === me.tutorId && a.version === latest.version) : undefined;
   const needsAck = isTutor && !myAck;
 
   return (

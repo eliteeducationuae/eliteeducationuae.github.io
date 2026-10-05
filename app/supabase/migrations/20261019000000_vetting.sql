@@ -166,10 +166,17 @@ begin
   return 'missing';
 end $$;
 
-/** May the caller see this tutor's vetting? Admins, the tutor themselves, and server-side code. */
+/**
+ * May the caller see this tutor's vetting? Admins, the tutor themselves, and the service role. A missing
+ * auth.uid() is not trusted on its own, because anonymous requests have none; server code that needs the
+ * status calls vetting_status_of directly.
+ */
 create function public.can_see_vetting(p_tutor_id uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select auth.uid() is null or public.is_admin() or public.my_tutor_id() = p_tutor_id
+  select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''),
+                  nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role') = 'service_role'
+    or coalesce(public.is_admin(), false)
+    or (auth.uid() is not null and public.my_tutor_id() = p_tutor_id)
 $$;
 
 create function public.tutor_vetting_status(p_tutor_id uuid, p_on date default null) returns text
@@ -340,7 +347,7 @@ begin
     if expiry is distinct from d.expiry_date then delete from public.tutor_document_alerts where document_id = d.id; end if;
     perform public.notify_tutor(t.id,
       case when d.doc_type = 'police_clearance' then 'Your police clearance has been verified'
-           else 'Your ' || lower(public.vetting_doc_label(d.doc_type)) || ' has been verified' end,
+           else 'Your ' || label || ' has been verified' end,
       'Dear ' || v_first || E',\n\nThank you for uploading your ' || label || '. It has now been verified by Elite Education'
         || coalesce(' and is valid until ' || public.vetting_date(expiry), '') || '.'
         || case when d.doc_type = 'police_clearance' and expiry is not null
@@ -474,9 +481,12 @@ begin
   select full_name into admin_name from public.profiles where id = auth.uid();
   insert into public.handbook_versions (version, title, body, published_by, published_by_name)
   values (v, trim(p_title), trim(p_body), auth.uid(), admin_name);
-  for t in select distinct p.tutor_id from public.profiles p where p.tutor_id is not null and p.role in ('tutor', 'admin') loop
+  -- Every tutor with a login, by first name; the publishing administrator (if they also tutor) already knows.
+  for t in select distinct p.tutor_id, split_part(x.full_name, ' ', 1) as first_name
+           from public.profiles p join public.tutors x on x.id = p.tutor_id
+           where p.role in ('tutor', 'admin') and p.tutor_id is distinct from public.my_tutor_id() loop
     perform public.notify_tutor(t.tutor_id, 'Updated tutor handbook',
-      E'Dear tutor,\n\nWe have published version ' || v || ' of the Elite Education tutor handbook. '
+      'Dear ' || t.first_name || E',\n\nWe have published version ' || v || ' of the Elite Education tutor handbook. '
         || 'Please read it in the app and confirm that you have read and agree to follow it.'
         || E'\n\nElite Education | eliteeducation.me',
       'Tutor handbook updated', 'Please read and acknowledge', '/handbook');
@@ -505,6 +515,7 @@ create function public.queue_vetting_alerts(p_now timestamptz default now()) ret
 language plpgsql security definer set search_path = public as $$
 declare today date := public.vetting_today(p_now); d record; days_left int; v_threshold int; n int := 0;
   v_first text; subject text; tutor_body text; admin_body text; label text; sentence text; police boolean;
+  renewal_pending boolean; tutor_short text;
 begin
   for d in
     select distinct on (x.tutor_id, x.doc_type) x.id, x.tutor_id, x.doc_type, x.expiry_date, t.full_name
@@ -528,6 +539,9 @@ begin
     label := public.vetting_doc_label(d.doc_type);
     sentence := public.vetting_doc_label(d.doc_type, true);
     v_first := split_part(d.full_name, ' ', 1);
+    -- A renewal already uploaded and awaiting review: thank the tutor rather than ask again.
+    renewal_pending := exists (select 1 from public.tutor_documents p
+                               where p.tutor_id = d.tutor_id and p.doc_type = d.doc_type and p.status = 'pending');
     if v_threshold > 0 then
       subject := case when police then 'Police clearance expires in ' || days_left || case when days_left = 1 then ' day' else ' days' end
                       else 'Document expires in ' || days_left || case when days_left = 1 then ' day' else ' days' end || ': ' || label end;
@@ -547,18 +561,32 @@ begin
         || case when days_left = 0 then ' expires today (' else ' expired on ' end || public.vetting_date(d.expiry_date)
         || case when days_left = 0 then ').' else '.' end
         || case when police
-             then ' No new lessons can be assigned to you until a renewed certificate has been verified. Please upload it in the Elite Education app under Checks.'
+             then case when days_left = 0 then ' From tomorrow, no new lessons can be assigned to you' else ' No new lessons can be assigned to you' end
+               || ' until a renewed certificate has been verified. Please upload it in the Elite Education app under Checks.'
              else ' Please upload a renewed copy in the Elite Education app under Checks.' end
         || E'\n\nElite Education | eliteeducation.me';
       admin_body := d.full_name || '''s ' || sentence
         || case when days_left = 0 then ' expires today (' else ' expired on ' end || public.vetting_date(d.expiry_date)
         || case when days_left = 0 then ').' else '.' end
         || case when police
-             then ' No new lessons can be assigned to them until a renewed certificate has been verified.'
+             then case when days_left = 0 then ' From tomorrow, no new lessons can be assigned to them' else ' No new lessons can be assigned to them' end
+               || ' until a renewed certificate has been verified.'
              else ' They have been asked to upload a renewed copy.' end
         || E'\n\nElite Education | eliteeducation.me';
     end if;
-    perform public.notify_tutor(d.tutor_id, subject, tutor_body, subject, 'Please upload a renewed ' || sentence, '/checks');
+    tutor_short := 'Please upload a renewed ' || sentence;
+    if renewal_pending then
+      tutor_body := 'Dear ' || v_first || E',\n\nYour ' || sentence
+        || case when days_left > 0 then ' expires on ' when days_left = 0 then ' expires today (' else ' expired on ' end
+        || public.vetting_date(d.expiry_date) || case when days_left = 0 then ').' else '.' end
+        || ' Thank you for uploading your renewed ' || case when police then 'certificate' else 'copy' end
+        || '; we will review it shortly.'
+        || E'\n\nElite Education | eliteeducation.me';
+      tutor_short := 'Your renewal is awaiting review';
+      admin_body := replace(admin_body, E'\n\nElite Education | eliteeducation.me',
+        E' A renewal has been uploaded and is awaiting review.\n\nElite Education | eliteeducation.me');
+    end if;
+    perform public.notify_tutor(d.tutor_id, subject, tutor_body, subject, tutor_short, '/checks');
     perform public.notify_admins(subject || ': ' || d.full_name, admin_body, subject, d.full_name, '/manage/vetting/' || d.tutor_id);
     n := n + 1;
   end loop;
@@ -591,7 +619,7 @@ revoke execute on function
   public.set_vetting_enforced(boolean),
   public.tutor_compliance(),
   public.publish_handbook(text, text),
-  public.acknowledge_handbook(int) from anon;
+  public.acknowledge_handbook(int) from public, anon;
 
 -- ---------------------------------------------------------------------------
 -- Default handbook (version 1)
@@ -628,8 +656,9 @@ Welcome to Elite Education. This handbook sets out the standards we expect of ev
 **Excellence. Discretion. Results.**$handbook$, null, 'Elite Education');
 
 -- ---------------------------------------------------------------------------
--- File storage: private 'vetting' bucket, objects at tutors/<tutor_id>/<file>. Tutors may remove only
--- their own files that are not behind a verified or rejected document; admins may remove any.
+-- File storage: private 'vetting' bucket, objects at tutors/<tutor_id>/<file>. Tutors may remove files in
+-- their own folder (including ones an admin uploaded for them) that are not behind a verified or rejected
+-- document; admins may remove any.
 -- Skipped where the storage schema doesn't exist (local tests).
 -- ---------------------------------------------------------------------------
 
@@ -647,7 +676,8 @@ begin
       using (bucket_id = 'vetting' and (storage.foldername(name))[1] = 'tutors'
              and ((storage.foldername(name))[2] = public.my_tutor_id()::text or public.is_admin()))$p$;
     execute $p$create policy "vetting delete" on storage.objects for delete to authenticated
-      using (bucket_id = 'vetting' and (public.is_admin() or (owner_id = auth.uid()::text
+      using (bucket_id = 'vetting' and (public.is_admin() or ((storage.foldername(name))[1] = 'tutors'
+             and (storage.foldername(name))[2] = public.my_tutor_id()::text
              and not exists (select 1 from public.tutor_documents d where d.file_path = name and d.status <> 'pending'))))$p$;
   end if;
 end $$;

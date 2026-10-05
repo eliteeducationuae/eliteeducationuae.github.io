@@ -180,3 +180,39 @@ describe('onboarding', () => {
     expect(row).toMatchObject({ onboardingStartedAt: NOW.toISOString(), vettingStatus: 'missing', bankDetails: false });
   });
 });
+
+describe('tutor notifications in the demo (mirrors notify_tutor)', () => {
+  it('publishing the handbook notifies every tutor but the publisher, and an admin who tutors can acknowledge it', () => {
+    const db = createSeed(NOW);
+    const craig = who(db, 'admin');
+    expect(craig.tutorId).toBe('t-craig');
+    const v = vet.publishHandbook(db, craig, 'Elite Education Tutor Handbook', '# Handbook\n\nUpdated.', NOW);
+    const sent = db.outbox.filter((o) => o.audience === 'tutor' && o.subject === 'Updated tutor handbook');
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.every((o) => o.url === '/handbook' && o.body.includes(`version ${v.version}`))).toBe(true);
+    expect(sent.some((o) => o.tutorId === 't-craig')).toBe(false);
+    expect(sent.find((o) => o.tutorId === 't-sarah')?.body).toMatch(/^Dear Sarah,/);
+
+    const craigRow = () => vet.compliance(db, craig, NOW).find((c) => c.tutorId === 't-craig')!;
+    expect(craigRow().handbookAcknowledgedVersion ?? 0).toBeLessThan(v.version);
+    vet.acknowledgeHandbook(db, craig, v.version, NOW);
+    expect(craigRow()).toMatchObject({ handbookVersion: v.version, handbookAcknowledgedVersion: v.version });
+  });
+
+  it('verifying or rejecting a document tells a tutor with a login, without the file path', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'admin');
+    const sarah = who(db, 'tutor');
+    const doc = vet.submitDocument(db, sarah, { tutorId: 't-sarah', type: 'police_clearance', filePath: 'tutors/t-sarah/pcc.pdf', fileName: 'pcc.pdf', expiryDate: '2027-10-05' }, NOW);
+    vet.reviewDocument(db, admin, doc.id, { approve: true }, NOW);
+    const verified = db.outbox.filter((o) => o.audience === 'tutor' && o.tutorId === 't-sarah').at(-1)!;
+    expect(verified).toMatchObject({ subject: 'Your police clearance has been verified', url: '/checks' });
+    expect(verified.body).toContain('valid until 5 October 2027');
+    const other = vet.submitDocument(db, sarah, { tutorId: 't-sarah', type: 'passport_id', filePath: 'tutors/t-sarah/id.pdf', fileName: 'id.pdf' }, NOW);
+    vet.reviewDocument(db, admin, other.id, { approve: false, note: 'The photo is too blurred to read.' }, NOW);
+    const rejected = db.outbox.filter((o) => o.audience === 'tutor' && o.tutorId === 't-sarah').at(-1)!;
+    expect(rejected.subject).toBe('Please upload a new passport or identity document');
+    expect(rejected.body).toContain('The photo is too blurred to read.');
+    expect(db.outbox.some((o) => o.body.includes('tutors/') || o.subject.includes('tutors/'))).toBe(false);
+  });
+});
