@@ -5,6 +5,7 @@ import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatu
 
 import type { NewOpportunity, NewTutorApplication, ReportFields } from '../source';
 import { AccessError, isFinanceReader, lessonCountsFor, linkList, newId, requireAdmin, type DemoDB } from './db';
+import { assertCleared, vet } from './vetting';
 
 /** Demo versions of roles, hiring, tutor pay, reports and expenses. Each mirrors a database function or policy. */
 
@@ -72,6 +73,7 @@ export const ops = {
     if (!b || b.status !== 'pending') throw new Error('That bid is no longer available');
     const o = db.opportunities.find((x) => x.id === b.opportunityId)!;
     if (o.status !== 'open') throw new Error('This opportunity has already been awarded or closed');
+    assertCleared(db, b.tutorId, 'role', now);
     Object.assign(o, { status: 'awarded', awardedTutorId: b.tutorId, awardedAt: now.toISOString() });
     b.status = 'awarded';
     for (const other of db.bids) if (other.opportunityId === o.id && other.id !== b.id && other.status === 'pending') other.status = 'declined';
@@ -115,11 +117,13 @@ export const ops = {
     requireAdmin(viewer);
     return db.applications;
   },
-  updateApplication(db: DemoDB, viewer: Profile, id: string, patch: Partial<DemoDB['applications'][number]>) {
+  updateApplication(db: DemoDB, viewer: Profile, id: string, patch: Partial<DemoDB['applications'][number]>, now = new Date()) {
     requireAdmin(viewer);
     const a = db.applications.find((x) => x.id === id);
     if (!a) throw new Error('Application not found');
     Object.assign(a, patch);
+    // Tutor vetting and onboarding: hiring starts the new tutor's onboarding checklist.
+    if (a.status === 'hired' && a.tutorId) vet.startOnboarding(db, a.tutorId, now);
   },
 
   paymentDetails(db: DemoDB, viewer: Profile, tutorId: string): PaymentDetails | null {

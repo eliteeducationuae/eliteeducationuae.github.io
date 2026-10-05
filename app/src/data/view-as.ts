@@ -305,6 +305,22 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   listAdmissionsEvents: 'read',
   addAdmissionsMilestone: 'write',
   billAdmissionsFee: 'write',
+
+  // Tutor vetting and onboarding
+  listTutorDocuments: 'read',
+  submitTutorDocument: 'write',
+  reviewTutorDocument: 'write',
+  deleteTutorDocument: 'write',
+  listTutorCompliance: 'read',
+  listVettingOverrides: 'read',
+  grantVettingOverride: 'write',
+  revokeVettingOverride: 'write',
+  getVettingEnforced: 'read',
+  setVettingEnforced: 'write',
+  listHandbookVersions: 'read',
+  publishHandbook: 'write',
+  listHandbookAcknowledgements: 'read',
+  acknowledgeHandbook: 'write',
 };
 
 const refuse = async (): Promise<never> => {

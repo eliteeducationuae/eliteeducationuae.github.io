@@ -832,3 +832,81 @@ export interface VatSummary {
   netVatPayable: number;
   rows: VatSummaryRow[];
 }
+
+// ---------------------------------------------------------------------------
+// Tutor vetting and onboarding
+// ---------------------------------------------------------------------------
+
+export type TutorDocumentType = 'police_clearance' | 'passport_id' | 'qualification' | 'other';
+export type TutorDocumentReview = 'pending' | 'verified' | 'rejected';
+
+/** A document a tutor uploads for vetting, e.g. a police clearance certificate. Dates are `YYYY-MM-DD`. */
+export interface TutorDocument {
+  id: string;
+  tutorId: string;
+  type: TutorDocumentType;
+  title?: string;
+  /** Path in the private 'vetting' bucket, `tutors/<tutorId>/<file>`. */
+  filePath: string;
+  fileName?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: TutorDocumentReview;
+  reviewNote?: string;
+  createdAt: string;
+  verifiedAt?: string;
+  verifiedByName?: string;
+}
+
+/** A tutor's police clearance position: 'expiring' is still cleared, within 60 days of expiry. */
+export type VettingStatus = 'cleared' | 'expiring' | 'pending' | 'expired' | 'missing';
+
+/** An administrator's time-limited permission to assign work to a tutor who is not yet cleared. */
+export interface VettingOverride {
+  id: string;
+  tutorId: string;
+  reason: string;
+  createdAt: string;
+  createdByName?: string;
+  expiresAt: string;
+  revokedAt?: string;
+  revokedByName?: string;
+}
+
+/** One tutor's vetting and onboarding position (mirrors public.tutor_compliance()). */
+export interface TutorCompliance {
+  tutorId: string;
+  vettingStatus: VettingStatus;
+  /** Expiry of the police clearance that determines the status. */
+  clearanceExpiry?: string;
+  /** Documents of any type awaiting review. */
+  documentsPending: number;
+  bankDetails: boolean;
+  availabilitySet: boolean;
+  calendarConnected: boolean;
+  whatsappOptIn: boolean;
+  /** Current handbook version, if one has been published. */
+  handbookVersion?: number;
+  handbookAcknowledgedVersion?: number;
+  onboardingStartedAt?: string;
+  /** The active override, if any. `until` is an ISO time. */
+  override?: { id: string; reason: string; until: string };
+  /** Whether assignments are blocked for tutors who are not cleared. */
+  enforced: boolean;
+}
+
+export interface HandbookVersion {
+  id: string;
+  version: number;
+  title: string;
+  /** Markdown. */
+  body: string;
+  publishedAt: string;
+  publishedByName?: string;
+}
+
+export interface HandbookAcknowledgement {
+  tutorId: string;
+  version: number;
+  acknowledgedAt: string;
+}

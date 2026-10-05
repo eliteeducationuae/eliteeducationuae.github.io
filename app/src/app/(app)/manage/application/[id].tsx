@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { APPLICATION_STATUS, teachingFromApplication } from '@/components/hiring';
+import { TutorChecksSummary } from '@/components/vetting';
 import { tutorColorFor } from '@/lib/tutor-colors';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -103,12 +104,16 @@ function Detail({ a }: { a: TutorApplication }) {
       </Section>
 
       {a.status === 'hired' && a.tutorId ? (
-        <Banner tone="success" icon="check">
-          Hired — their tutor profile is set up.{' '}
-          <Txt variant="muted" color="accent" onPress={() => router.push({ pathname: '/manage/tutor-edit', params: { id: a.tutorId! } })}>
-            Open profile and send invitation
-          </Txt>
-        </Banner>
+        <View style={{ gap: Spacing.two }}>
+          <Banner tone="success" icon="check">
+            Hired — their tutor profile is set up.{' '}
+            <Txt variant="muted" color="accent" onPress={() => router.push({ pathname: '/manage/tutor-edit', params: { id: a.tutorId! } })}>
+              Open profile and send invitation
+            </Txt>
+          </Banner>
+          <Txt variant="muted">Their onboarding checklist has started: police clearance, bank details, availability and the tutor handbook.</Txt>
+          <TutorChecksSummary tutorId={a.tutorId} />
+        </View>
       ) : (
         <Card style={{ gap: Spacing.three }}>
           <Txt variant="h3">Hire {a.fullName.split(' ')[0]}</Txt>

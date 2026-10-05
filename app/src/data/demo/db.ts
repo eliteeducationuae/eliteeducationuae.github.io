@@ -49,6 +49,11 @@ import type {
   CreditNote,
   Refund,
   TaxParty,
+  // Tutor vetting and onboarding
+  HandbookAcknowledgement,
+  HandbookVersion,
+  TutorDocument,
+  VettingOverride,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -56,6 +61,7 @@ import type { CompleteLessonInput, NewLesson } from '../source';
 import type { AdmissionsStore } from './admissions';
 
 import { syncPrimaryFromFamily } from './contacts';
+import { assertCleared } from './vetting';
 
 /** The whole demo database — a plain object so it can be persisted as JSON and tested directly. */
 export interface DemoDB {
@@ -112,6 +118,15 @@ export interface DemoDB {
   accountantInvites?: AccountantInvite[];
   // Admissions advisory. Optional and seeded lazily (see demo/admissions.ts) so saved databases need no migration.
   admissions?: AdmissionsStore;
+  // Tutor vetting and onboarding. Optional because databases saved before it lack them: read with `?? []`.
+  tutorDocuments?: TutorDocument[];
+  vettingOverrides?: VettingOverride[];
+  handbookVersions?: HandbookVersion[];
+  handbookAcks?: HandbookAcknowledgement[];
+  /** Block new lessons, students and roles for tutors who are not cleared. Off when absent. */
+  vettingEnforced?: boolean;
+  /** tutorId → when onboarding began (the application was marked hired). */
+  tutorOnboarding?: Record<string, string>;
 }
 
 /** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */
@@ -120,7 +135,10 @@ export type DemoRefund = Refund & { requestKey?: string };
 export interface OutboxMessage {
   id: string;
   createdAt: string;
-  audience: 'admins';
+  /** 'admins' mirrors notify_admins; 'tutor' mirrors notify_tutor (one message per login linked to the tutor). */
+  audience: 'admins' | 'tutor';
+  tutorId?: string;
+  profileId?: string;
   subject: string;
   body: string;
   url?: string;
@@ -129,6 +147,13 @@ export interface OutboxMessage {
 /** Mirrors public.notify_admins: queue a message for the office. */
 export function notifyAdmins(db: DemoDB, subject: string, body: string, url?: string, now = new Date()) {
   (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'admins', subject, body, url });
+}
+
+/** Mirrors public.notify_tutor: queue a message for each login linked to the tutor (tutor or admin role). */
+export function notifyTutor(db: DemoDB, tutorId: string, subject: string, body: string, url?: string, now = new Date()) {
+  for (const p of db.profiles.filter((x) => x.tutorId === tutorId && (x.role === 'tutor' || x.role === 'admin'))) {
+    (db.outbox ??= []).push({ id: newId('out'), createdAt: now.toISOString(), audience: 'tutor', tutorId, profileId: p.id, subject, body, url });
+  }
 }
 
 export const DEMO_DB_VERSION = 9;
@@ -302,8 +327,10 @@ export const cmd = {
     return upsert(db.services, service, 'svc');
   },
 
-  createLessons(db: DemoDB, viewer: Profile, lessons: NewLesson[]): Lesson[] {
+  createLessons(db: DemoDB, viewer: Profile, lessons: NewLesson[], now = new Date()): Lesson[] {
     requireAdmin(viewer);
+    // Tutor vetting and onboarding: new lessons only go to cleared tutors.
+    for (const tutorId of new Set(lessons.map((l) => l.tutorId))) assertCleared(db, tutorId, 'lesson', now);
     const created = lessons.map((l) => ({ ...l, id: newId('les'), status: 'scheduled' as const }));
     db.lessons.push(...created);
     return created;
@@ -564,6 +591,10 @@ export const enr = {
       throw new Error(`${subject} is listed twice. Please remove one.`);
     }
     const existing = draft.id ? db.enrolments.find((e) => e.id === draft.id) : undefined;
+    // Tutor vetting and onboarding: a new (or reactivated) student for a tutor needs their clearance.
+    if (draft.active && draft.tutorId && (!existing || existing.tutorId !== draft.tutorId || !existing.active)) {
+      assertCleared(db, draft.tutorId, 'enrolment', now);
+    }
     const saved: Enrolment = {
       id: existing?.id ?? draft.id ?? newId('enr'),
       studentId: draft.studentId,

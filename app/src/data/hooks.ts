@@ -264,3 +264,17 @@ export const useAdvisoryUpdates = (caseId?: string) =>
 
 export const useAdmissionsEvents = (caseId?: string) =>
   useQuery({ queryKey: ['admissions-events', caseId], queryFn: () => source.listAdmissionsEvents({ caseId }) });
+// Tutor vetting and onboarding
+
+export const useTutorDocuments = (tutorId?: string) =>
+  useQuery({ queryKey: ['tutor-documents', tutorId], queryFn: () => source.listTutorDocuments(tutorId ? { tutorId } : undefined) });
+export const useTutorCompliance = () => useQuery({ queryKey: ['tutor-compliance'], queryFn: () => source.listTutorCompliance() });
+export const useVettingOverrides = (tutorId?: string) =>
+  useQuery({ queryKey: ['vetting-overrides', tutorId], queryFn: () => source.listVettingOverrides(tutorId ? { tutorId } : undefined) });
+export const useVettingEnforced = () => useQuery({ queryKey: ['vetting-enforced'], queryFn: () => source.getVettingEnforced() });
+export const useHandbookVersions = () => useQuery({ queryKey: ['handbook-versions'], queryFn: () => source.listHandbookVersions() });
+export const useHandbookAcks = (tutorId?: string) =>
+  useQuery({
+    queryKey: ['handbook-acks', tutorId],
+    queryFn: () => source.listHandbookAcknowledgements(tutorId ? { tutorId } : undefined),
+  });

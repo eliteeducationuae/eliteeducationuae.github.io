@@ -426,6 +426,27 @@ Guidance for families applying to schools, boarding schools and UK or US univers
 - Documents are private to the family, the adviser and admins. The adviser can keep a document from the family; anything the family uploads is always visible to them. Notifications never include the file itself, the text of an advisory update or bank details.
 - Open key dates appear in each person's calendar feed (`ics`): parents for their children, students for themselves, advisers for their cases and admins for every case.
 
+## Tutor vetting and onboarding
+
+Every tutor must hold a police clearance certificate, verified by Elite Education, before they teach. Tutors upload their certificate and other documents (passport or ID, qualifications) under *Checks*; an administrator verifies or rejects each one in *Manage → Tutor checks* and records the expiry date. A certificate is valid on its expiry date and expired the day after.
+
+**Setting it up.**
+
+1. Run the migration `20261107000000_vetting.sql` (or `npx supabase db push`). It creates the private `vetting` storage bucket (PDFs and photos, 10 MB per file); tutors can read only their own folder and administrators can read everything. No other role can read the files.
+2. Redeploy `send-reminders` (`npx supabase functions deploy send-reminders`). Its hourly run now also queues police clearance expiry alerts 60, 30 and 7 days before a certificate expires and on the expiry date itself, for the tutor and for the office; `send-notifications` delivers them. A certificate verified late sends a single alert rather than several, and an older certificate that has been replaced sends none. Alerts never include bank details or file names.
+
+**Switching on enforcement.** Enforcement is off when the migration is first run, so that existing tutors are not blocked while they upload their certificates; until then the app warns but blocks nothing. Once your current tutors' certificates have been verified, switch it on in *Manage → Tutor checks*. From then on, a tutor without a verified, unexpired police clearance cannot be:
+
+- assigned new lessons (including by reassigning a lesson or approving a booking request);
+- given new students (enrolments); or
+- awarded roles for which they have expressed interest.
+
+Their existing lessons are not blocked: they can still be rescheduled, completed or cancelled, and the app shows a warning. Where there is good reason (for example, a renewal has been applied for and the receipt has been seen), an administrator can record an override for up to 90 days. Every override requires a reason of at least ten characters, records who granted it and when it ends, and is reported to all administrators. Overrides can be revoked at any time.
+
+**Tutor handbook.** Edit the handbook in *Manage → Tutor handbook*. Each time you publish, a new version is created and every tutor is asked to read and acknowledge it; the *Tutor handbook* screen lists each tutor's acknowledged version, and *Manage → Tutor checks* shows it per tutor. The migration installs version 1, the default Elite Education Tutor Handbook.
+
+**Onboarding checklist.** Marking a tutor application as *Hired*, with the tutor's record linked, starts their onboarding. The checklist shows, for every tutor, their police clearance status, documents awaiting review, bank details, availability, calendar connection, WhatsApp opt-in and handbook acknowledgement.
+
 ## Checks
 
 ```bash

@@ -4,6 +4,8 @@
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
 // Admissions advisory reminders (key dates and tasks) are queued as push and email notifications, 08:00–20:59 UAE time.
+// It also queues police clearance expiry alerts (60, 30 and 7 days before, and on expiry) for tutors and the office,
+// which send-notifications delivers in the same way.
 import { adminClient } from '../_shared/supabase.ts';
 import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
 
@@ -14,9 +16,12 @@ Deno.serve(async (req) => {
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
   const { data: admissionsQueued, error: admissionsError } = await db.rpc('queue_admissions_reminders');
   if (admissionsError) console.error('queue_admissions_reminders failed', admissionsError.message);
+  const { data: vetting, error: vettingError } = await db.rpc('queue_vetting_alerts');
+  if (vettingError) console.error('queue_vetting_alerts failed', vettingError.message);
   const whatsapp =
     `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages` +
-    ` and ${typeof admissionsQueued === 'number' ? admissionsQueued : 0} admissions reminders`;
+    `, ${typeof admissionsQueued === 'number' ? admissionsQueued : 0} admissions reminders` +
+    ` and ${typeof vetting === 'number' ? vetting : 0} clearance alerts`;
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')

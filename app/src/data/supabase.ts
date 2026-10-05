@@ -82,6 +82,15 @@ import {
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { addChildSubjects, enrolmentRatesFromRow, familyContactPayload, setEnrolmentRatesArgs, toFamilyContact } from './rpc-mapping';
+import {
+  reviewDocumentParams,
+  submitDocumentParams,
+  toHandbookAck,
+  toHandbookVersion,
+  toTutorCompliance,
+  toTutorDocument,
+  toVettingOverride,
+} from './vetting-mapping';
 import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 import { readOnlySource, VIEW_ENDED_MESSAGE, VIEW_ONLY_MESSAGE, ViewOnlyError, type ViewTarget } from './view-as';
 
@@ -1990,6 +1999,65 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       );
       chargeIfAutopay(row);
       return toInvoice(row);
+    },
+
+    // Tutor vetting and onboarding (rules live in the database functions; errors pass through unchanged)
+    async listTutorDocuments(filter) {
+      let query = client.from('tutor_documents').select('*');
+      if (filter?.tutorId) query = query.eq('tutor_id', filter.tutorId);
+      return check<Row[]>(await query.order('created_at', { ascending: false })).map(toTutorDocument);
+    },
+    async submitTutorDocument(input) {
+      const id = check<string>(await client.rpc('submit_tutor_document', submitDocumentParams(input)));
+      return toTutorDocument(check(await client.from('tutor_documents').select('*').eq('id', id).single()));
+    },
+    async reviewTutorDocument(id, decision) {
+      check(await client.rpc('review_tutor_document', reviewDocumentParams(id, decision)));
+    },
+    async deleteTutorDocument(id) {
+      const path = check<string | null>(await client.rpc('delete_tutor_document', { p_id: id }));
+      if (path) {
+        const { error } = await client.storage.from('vetting').remove([path]);
+        if (error) console.warn(`Could not remove vetting/${path}: ${error.message}`);
+      }
+    },
+    async listTutorCompliance() {
+      return (check<Row[] | null>(await client.rpc('tutor_compliance')) ?? []).map(toTutorCompliance);
+    },
+    async listVettingOverrides(filter) {
+      let query = client.from('tutor_vetting_overrides').select('*');
+      if (filter?.tutorId) query = query.eq('tutor_id', filter.tutorId);
+      return check<Row[]>(await query.order('created_at', { ascending: false })).map(toVettingOverride);
+    },
+    async grantVettingOverride(tutorId, reason, days) {
+      const params: Row = { p_tutor_id: tutorId, p_reason: reason.trim() };
+      if (days !== undefined) params.p_days = days;
+      check(await client.rpc('grant_vetting_override', params));
+    },
+    async revokeVettingOverride(id) {
+      check(await client.rpc('revoke_vetting_override', { p_id: id }));
+    },
+    async getVettingEnforced() {
+      const row = check<Row | null>(await client.from('settings').select('vetting_enforced').eq('id', 1).single());
+      return !!row?.vetting_enforced;
+    },
+    async setVettingEnforced(on) {
+      check(await client.rpc('set_vetting_enforced', { p_on: on }));
+    },
+    async listHandbookVersions() {
+      return check<Row[]>(await client.from('handbook_versions').select('*').order('version', { ascending: false })).map(toHandbookVersion);
+    },
+    async publishHandbook(title, body) {
+      const version = check<number>(await client.rpc('publish_handbook', { p_title: title.trim(), p_body: body }));
+      return toHandbookVersion(check(await client.from('handbook_versions').select('*').eq('version', version).single()));
+    },
+    async listHandbookAcknowledgements(filter) {
+      let query = client.from('handbook_acknowledgements').select('*');
+      if (filter?.tutorId) query = query.eq('tutor_id', filter.tutorId);
+      return check<Row[]>(await query.order('acknowledged_at', { ascending: false })).map(toHandbookAck);
+    },
+    async acknowledgeHandbook(version) {
+      check(await client.rpc('acknowledge_handbook', { p_version: version }));
     },
   };
 }
