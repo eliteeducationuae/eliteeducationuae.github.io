@@ -34,7 +34,9 @@ export function vatSummaryHTML(summary: VatSummary, settings: Settings | undefin
   <h2>Summary</h2>
   <table class="totals" style="width:100%;margin-left:0">
     ${totalRow(`Standard-rated supplies (${plural(summary.invoiceCount, 'tax invoice')}), net`, aed(summary.standardRatedNet))}
+    ${summary.standardRatedCreditsNet > 0 ? totalRow('Less credit notes, net', `−${aed(summary.standardRatedCreditsNet)}`) : ''}
     ${totalRow('Zero-rated supplies, net', aed(summary.zeroRatedNet))}
+    ${summary.outOfScopeNet > 0 ? totalRow('Outside the scope of VAT (issued before registration), net', aed(summary.outOfScopeNet)) : ''}
     ${totalRow('Output VAT', aed(summary.outputVat))}
     ${totalRow(`Less credit notes VAT (${plural(summary.creditNoteCount, 'credit note')}, net ${aed(summary.creditsNet)})`, `−${aed(summary.creditsVat)}`)}
     ${totalRow('Net output VAT', aed(summary.netOutputVat))}

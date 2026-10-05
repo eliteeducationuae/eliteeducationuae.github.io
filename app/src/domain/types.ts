@@ -47,6 +47,8 @@ export interface Family {
   trn?: string;
   /** Address shown on tax invoices. Only present for admins and the family itself. */
   billingAddress?: string;
+  /** Company or legal name billed on tax invoices (defaults to the parent's name). Only present for admins and the family itself. */
+  billingName?: string;
 }
 
 export interface Student {
@@ -755,7 +757,12 @@ export interface VatSummary {
   quarter: VatQuarter;
   invoiceCount: number;
   standardRatedNet: number;
+  /** Net of credit notes against standard-rated invoices (shown as 'Less credit notes (net)'). */
+  standardRatedCreditsNet: number;
+  /** 0% invoices issued while the business had a TRN. */
   zeroRatedNet: number;
+  /** 0% invoices issued without a TRN (before VAT registration): outside the scope of VAT, not zero-rated. */
+  outOfScopeNet: number;
   outputVat: number;
   creditNoteCount: number;
   creditsNet: number;

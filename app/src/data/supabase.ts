@@ -181,7 +181,7 @@ const toFamily = (r: Row): Family => ({
  * The embedded family_billing row (one-to-one, so PostgREST may give an object, a one-element array or null).
  * RLS only returns it to admins and the family itself; everyone else gets no card or autopay fields at all.
  */
-function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard' | 'trn' | 'billingAddress'> {
+function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard' | 'trn' | 'billingAddress' | 'billingName'> {
   const b = (Array.isArray(embedded) ? embedded[0] : embedded) as Row | null | undefined;
   if (!b) return {};
   return {
@@ -190,6 +190,7 @@ function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard' | 't
     // Tax
     trn: b.trn ?? undefined,
     billingAddress: b.billing_address ?? undefined,
+    billingName: b.billing_name ?? undefined,
   };
 }
 
@@ -910,12 +911,13 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     async saveFamily(f) {
       const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone, status: f.status });
       const saved = check(await client.from('families').upsert(row).select('*, family_billing(*)').single());
-      // Tax: TRN and billing address live in family_billing (admins only); only written when given, a blank clears them.
-      if (f.trn !== undefined || f.billingAddress !== undefined) {
+      // Tax: billing name, TRN and billing address live in family_billing (admins only); only written when given, a blank clears them.
+      if (f.trn !== undefined || f.billingAddress !== undefined || f.billingName !== undefined) {
         const billing = strip({
           family_id: saved.id,
           trn: f.trn === undefined ? undefined : normaliseTrn(f.trn) || null,
           billing_address: blankToNull(f.billingAddress),
+          billing_name: blankToNull(f.billingName),
         });
         check(await client.from('family_billing').upsert(billing, { onConflict: 'family_id' }));
         return toFamily(check(await client.from('families').select('*, family_billing(*)').eq('id', saved.id).single()));
@@ -1642,6 +1644,8 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_reason: input.reason,
           p_lines: input.lines.map((l) => ({ description: l.description, invoiceLine: l.invoiceLine ?? null, net: l.net })),
           p_release_charges: !!input.releaseCharges,
+          // An amount including VAT: the database works out the net and VAT so the total is exactly this.
+          p_gross: input.gross ?? null,
         }),
       );
       const row = check(await client.from('credit_notes').select(CREDIT_NOTE_SELECT).eq('id', created.id).maybeSingle());
@@ -1683,6 +1687,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
             p_reference: input.reference ?? null,
             p_with_credit_note: input.withCreditNote,
             p_request_key: input.requestKey,
+            p_method: input.method ?? null,
           }),
         );
         refundId = created.id;

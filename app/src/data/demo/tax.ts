@@ -80,20 +80,33 @@ export const tax = {
       throw new Error('Autopay is charging this invoice at the moment. Please wait for it to finish before issuing a credit note.');
     }
     const reason = checkReason(input.reason, 'Please give a reason for the credit note.');
-    const notes = () => creditNotesOf(db).filter((n) => n.invoiceId === invoice.id);
-    const plan = planCreditNote(invoice, notes(), input.lines ?? []);
-    const release = !!input.releaseCharges;
-    const note = addCreditNote(db, invoice, plan, { reason, rebilled: release, now });
-    if (release) {
-      // Lessons on lines that are now fully credited go back to be invoiced again.
-      const done = new Set(
-        creditableLines(invoice, notes())
-          .filter((l) => l.remaining <= 0 && invoice.items[l.index]?.chargeId)
-          .map((l) => invoice.items[l.index].chargeId!),
-      );
-      releaseCharges(db, invoice.id, done);
+    const notes = creditNotesOf(db).filter((n) => n.invoiceId === invoice.id);
+    if (input.gross !== undefined && input.gross !== null) {
+      // An amount including VAT: one line whose net and VAT add up to exactly that amount. Nothing is released.
+      const plan = planCreditFromGross(invoice, notes, input.gross, `Credit: ${reason}`);
+      const note = addCreditNote(db, invoice, plan, { reason, rebilled: false, now });
+      settleInvoice(db, invoice, false);
+      return note;
     }
-    settleInvoice(db, invoice, release);
+    const lines = input.lines ?? [];
+    const plan = planCreditNote(invoice, notes, lines);
+    // Lessons on the lines this note credits in full (with earlier notes) go back to be invoiced again. The note is
+    // marked rebilled only when at least one lesson is actually released.
+    const released = new Set<string>();
+    if (input.releaseCharges) {
+      for (const line of creditableLines(invoice, notes)) {
+        const chargeId = invoice.items[line.index]?.chargeId;
+        const thisNote = round2(lines.filter((l) => l.invoiceLine === line.index).reduce((s, l) => s + round2(l.net), 0));
+        if (chargeId && thisNote > 0 && round2(line.credited + thisNote) >= line.net
+          && db.charges.some((c) => c.id === chargeId && c.invoiceId === invoice.id)) {
+          released.add(chargeId);
+        }
+      }
+    }
+    const note = addCreditNote(db, invoice, plan, { reason, rebilled: released.size > 0, now });
+    if (released.size > 0) releaseCharges(db, invoice.id, released);
+    // Anything to release has been released, so a note that cancels the invoice keeps its other lessons billed.
+    settleInvoice(db, invoice, false);
     return note;
   },
 
@@ -137,17 +150,20 @@ export const tax = {
     const creditNoteId = plan ? addCreditNote(db, invoice, plan, { reason, rebilled: false, now }).id : undefined;
 
     const byCard = payment.method === 'card' && !!payment.viaStripe;
+    if (input.method !== undefined && (byCard || (input.method !== 'bank-transfer' && input.method !== 'cash'))) {
+      throw new Error('Choose bank transfer or cash for a refund recorded by hand.');
+    }
     const refund = {
       id: newId('ref'),
       invoiceId: invoice.id,
       familyId: invoice.familyId,
       paymentId: payment.id,
       amount,
-      method: payment.method,
+      method: byCard ? payment.method : (input.method ?? payment.method),
       // The demo has no card processor: card refunds complete at once, as Stripe usually does.
       status: 'succeeded' as const,
       reason,
-      ...(byCard ? { reference: 'Refund to card' } : input.reference?.trim() ? { reference: input.reference.trim() } : {}),
+      ...(!byCard && input.reference?.trim() ? { reference: input.reference.trim() } : {}),
       ...(creditNoteId ? { creditNoteId } : {}),
       createdAt: now.toISOString(),
       settledAt: now.toISOString(),

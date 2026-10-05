@@ -37,8 +37,8 @@ export default function Accountants() {
       <Card variant="highlight" style={{ gap: Spacing.one }}>
         <Txt variant="h3">What your accountant can see</Txt>
         <Txt variant="muted">
-          Money, invoices, credit notes, payments, refunds, expenses and receipts, tutor invoice totals and VAT returns, read only. They never see
-          students, lesson notes, messages or tutors’ bank details.
+          Money, invoices, credit notes, payments, refunds, expenses and receipts, tutor invoice totals and VAT returns, read only. Invoice lines name
+          the pupil taught, but they never see pupil records, lessons, lesson notes, messages or tutors’ bank details.
         </Txt>
       </Card>
 

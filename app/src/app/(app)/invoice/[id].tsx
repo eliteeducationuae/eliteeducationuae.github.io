@@ -138,7 +138,7 @@ export default function InvoicePage() {
               <Rule />
               <View style={{ gap: Spacing.one }}>
                 {totals.credited > 0 ? <AmountLine label="Credited" value={`−${aed(totals.credited)}`} /> : null}
-                <AmountLine label="Paid" value={`−${aed(totals.paid)}`} />
+                {totals.paid > 0 ? <AmountLine label="Paid" value={`−${aed(totals.paid)}`} /> : null}
                 {totals.refunded > 0 ? <AmountLine label="Refunded" value={aed(totals.refunded)} /> : null}
                 <AmountLine label={balance.label} value={balance.value} strong tone={totals.balance < 0 ? 'warning' : undefined} />
               </View>

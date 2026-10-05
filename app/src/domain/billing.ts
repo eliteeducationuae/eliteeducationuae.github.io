@@ -1,5 +1,5 @@
 import { addDays, minutesBetween, toDateKey } from './dates';
-import { round2 } from './tax';
+import { round2 } from './money';
 import type {
   Charge,
   Invoice,
@@ -18,8 +18,16 @@ export function roundMoney(n: number): number {
 }
 
 export function formatAED(n: number): string {
-  const fixed = roundMoney(n).toFixed(Number.isInteger(roundMoney(n)) ? 0 : 2);
-  return `AED ${fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  const v = roundMoney(n);
+  const fixed = Math.abs(v).toFixed(Number.isInteger(v) ? 0 : 2);
+  // A negative amount takes a minus sign before the currency ('−AED 2,480'), as on invoices and credit notes.
+  return `${v < 0 ? '−' : ''}AED ${fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+}
+
+/** A share (0–1) as a whole percentage with a true minus sign, e.g. -2.07 -> '−207%'. */
+export function formatPercent(share: number): string {
+  const p = Math.round(share * 100);
+  return `${p < 0 ? '−' : ''}${Math.abs(p)}%`;
 }
 
 export interface InvoiceTotals {

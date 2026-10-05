@@ -153,10 +153,10 @@ export function createSeed(now: Date = new Date()): DemoDB {
       { id: 'f-mansoori', name: 'Al Mansoori', parentName: 'Fatima Al Mansoori', email: 'fatima@example.com', phone: '+971 50 000 0001' },
       { id: 'f-sharma', name: 'Sharma', parentName: 'Priya Sharma', email: 'priya@example.com', phone: '+971 50 000 0002' },
       { id: 'f-hughes', name: 'Hughes', parentName: 'Emma Hughes', email: 'emma@example.com', phone: '+971 50 000 0003' },
-      // Tax: the Haddads' fees are paid by Rami's company, so its address and TRN appear on their tax invoices.
+      // Tax: the Haddads' fees are paid by Rami's company, so its name, address and TRN appear on their tax invoices.
       {
         id: 'f-haddad', name: 'Haddad', parentName: 'Rami Haddad', email: 'rami@example.com', phone: '+971 50 000 0004',
-        billingAddress: 'Haddad Trading LLC (demo), PO Box 00000, Dubai, United Arab Emirates', trn: '100000000000012',
+        billingName: 'Haddad Trading LLC (demo)', billingAddress: 'PO Box 00000, Dubai, United Arab Emirates', trn: '100000000000012',
       },
     ],
     students: [

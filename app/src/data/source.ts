@@ -378,8 +378,17 @@ export interface CreditNoteLineInput {
 export interface CreditNoteInput {
   invoiceId: string;
   reason: string;
+  /** Net amounts by line. Ignored when `gross` is given. */
   lines: CreditNoteLineInput[];
-  /** Put the credited lessons back to unbilled so they can be invoiced again. */
+  /**
+   * Credit this amount including VAT instead of by line: one line with the VAT worked out from the gross, so the
+   * note's total is exactly this amount.
+   */
+  gross?: number;
+  /**
+   * Put the lessons on lines credited in full back to unbilled so they can be invoiced again. The note is marked
+   * rebilled only when a lesson is actually released (never for a gross amount).
+   */
   releaseCharges?: boolean;
 }
 
@@ -390,6 +399,8 @@ export interface RefundInput {
   reason: string;
   /** Bank or cash reference for manual refunds. */
   reference?: string;
+  /** How a refund recorded by hand went back. Defaults to the payment's own method. Ignored for card refunds. */
+  method?: 'bank-transfer' | 'cash';
   /** Issue a credit note for the refunded amount at the same time. */
   withCreditNote: boolean;
   /** Unique per attempt so a retried request never refunds twice. */

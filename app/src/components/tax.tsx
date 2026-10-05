@@ -86,7 +86,7 @@ export function RefundRow({ refund, invoiceNumber, onPress }: { refund: Refund; 
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
         <View style={{ flex: 1, gap: 2 }}>
           <Txt>
-            {formatDate(date)} · {paymentLabel({ method: refund.method, reference: refund.reference })}
+            {formatDate(date)} · {refund.method === 'card' ? 'Card refund' : paymentLabel({ method: refund.method, reference: refund.reference })}
           </Txt>
           {invoiceNumber ? <Txt variant="small">Against {invoiceNumber}</Txt> : null}
           {refund.reason ? <Txt variant="small">{refund.reason}</Txt> : null}

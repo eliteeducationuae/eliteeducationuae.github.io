@@ -661,7 +661,7 @@ export function supplierSnapshot(settings: Settings): TaxParty {
 export function customerSnapshot(family: Family | undefined): TaxParty | undefined {
   if (!family) return undefined;
   return {
-    name: family.parentName || family.name,
+    name: family.billingName?.trim() || family.parentName || family.name,
     ...(family.billingAddress?.trim() ? { address: family.billingAddress.trim() } : {}),
     ...(family.trn ? { trn: normaliseTrn(family.trn) } : {}),
     ...(family.email ? { email: family.email } : {}),

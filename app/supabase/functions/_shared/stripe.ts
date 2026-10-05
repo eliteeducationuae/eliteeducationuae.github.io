@@ -483,6 +483,8 @@ function wholeNumber(v: unknown): number | undefined {
 }
 
 /** A Stripe Refund object as a 'refund-updated' event; malformed objects are ignored. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function refundEvent(o: Obj): ClassifiedEvent {
   const stripeRefundId = str(o.id);
   const amountMinor = o.amount;
@@ -490,7 +492,10 @@ function refundEvent(o: Obj): ClassifiedEvent {
   if (typeof amountMinor !== 'number' || !Number.isInteger(amountMinor) || amountMinor <= 0) return IGNORE;
   const md = isObj(o.metadata) ? o.metadata : {};
   const status = mapRefundStatus(o.status);
-  const refundId = str(md.refund_id);
+  // Only a well-formed refund id is passed to the database; anything else is treated as a refund made outside the app,
+  // so a bad value cannot make the webhook fail (and Stripe retry it for days).
+  const rawRefundId = str(md.refund_id);
+  const refundId = rawRefundId && UUID_RE.test(rawRefundId) ? rawRefundId : undefined;
   const paymentIntent = ref(o.payment_intent);
   return {
     kind: 'refund-updated',

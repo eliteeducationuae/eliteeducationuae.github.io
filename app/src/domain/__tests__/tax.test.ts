@@ -226,6 +226,19 @@ describe('planCreditFromGross', () => {
     expect(() => planCreditFromGross(inv, [n1], 700, 'x')).toThrow('Only AED 699.99 is left to credit on this invoice.');
     expect(() => planCreditFromGross(inv, [n1], 0, 'x')).toThrow('Enter an amount to credit.');
   });
+
+  it('always totals exactly the gross asked for (AED 10.00 to 199.99 at 5%)', () => {
+    const inv = invoice();
+    for (let fils = 1000; fils < 20000; fils++) {
+      const gross = fils / 100;
+      const plan = planCreditFromGross(inv, [], gross, 'Credit');
+      expect(plan.total).toBe(gross);
+      expect(round2(plan.subtotal + plan.vat)).toBe(gross);
+    }
+    // The amounts QA found a fils out when only the net was sent.
+    expect(planCreditFromGross(inv, [], 10.18, 'x')).toMatchObject({ subtotal: 9.7, vat: 0.48, total: 10.18 });
+    expect(planCreditFromGross(inv, [], 105.1, 'x')).toMatchObject({ subtotal: 100.1, vat: 5, total: 105.1 });
+  });
 });
 
 describe('refunds', () => {
@@ -325,7 +338,16 @@ describe('VAT quarters', () => {
 describe('vatSummary', () => {
   const q = vatQuarterFor('2026-02-01', 1);
   const issued = invoice({ id: 'a', number: 'INV-0002', issueDate: '2026-02-10' });
-  const zeroRated = invoice({ id: 'b', number: 'INV-0003', issueDate: '2026-03-01', vatRate: 0, items: [{ description: 'x', quantity: 1, unitPrice: 200 }] });
+  const zeroRated = invoice({
+    id: 'b',
+    number: 'INV-0003',
+    issueDate: '2026-03-01',
+    vatRate: 0,
+    items: [{ description: 'x', quantity: 1, unitPrice: 200 }],
+    supplier: { name: 'Elite Education', trn: '100000000000003' },
+  });
+  // Issued at 0% before the business registered for VAT (no TRN): outside the scope of VAT, not zero-rated.
+  const preRegistration = invoice({ id: 'g', number: 'INV-0008', issueDate: '2026-03-02', vatRate: 0, items: [{ description: 'y', quantity: 1, unitPrice: 150 }], supplier: { name: 'Elite Education' } });
   const draft = invoice({ id: 'c', number: 'INV-0004', status: 'draft' });
   const legacyVoid = invoice({ id: 'd', number: 'INV-0005', status: 'void' });
   const outside = invoice({ id: 'e', number: 'INV-0006', issueDate: '2026-04-01' });
@@ -342,7 +364,7 @@ describe('vatSummary', () => {
   ];
 
   const summary = vatSummary(q, {
-    invoices: [issued, zeroRated, draft, legacyVoid, outside, cancelled],
+    invoices: [issued, zeroRated, preRegistration, draft, legacyVoid, outside, cancelled],
     creditNotes: [credit, closing],
     expenses,
     familyName: () => 'Haddad',
@@ -350,9 +372,11 @@ describe('vatSummary', () => {
 
   it('adds up output VAT, credits and input VAT', () => {
     expect(summary).toMatchObject({
-      invoiceCount: 3,
+      invoiceCount: 4,
       standardRatedNet: 1999.98,
+      standardRatedCreditsNet: 433.33,
       zeroRatedNet: 200,
+      outOfScopeNet: 150,
       outputVat: 100,
       creditNoteCount: 2,
       creditsNet: 433.33,
@@ -366,7 +390,7 @@ describe('vatSummary', () => {
   });
 
   it('lists rows by date with credit notes negative', () => {
-    expect(summary.rows.map((r) => r.reference)).toEqual(['INV-0007', 'Room', 'INV-0002', 'INV-0003', 'CN-0001', 'CN-0002']);
+    expect(summary.rows.map((r) => r.reference)).toEqual(['INV-0007', 'Room', 'INV-0002', 'INV-0003', 'INV-0008', 'CN-0001', 'CN-0002']);
     const cn = summary.rows.find((r) => r.reference === 'CN-0001')!;
     expect(cn).toMatchObject({ kind: 'credit-note', net: -333.33, vat: -16.67, gross: -350, party: 'Haddad' });
     expect(summary.rows.find((r) => r.kind === 'expense')).toMatchObject({ net: 2500, vat: 125, gross: 2625, party: 'Rent' });
@@ -377,9 +401,11 @@ describe('vatSummary', () => {
     expect(rows[0]).toEqual(['Type', 'Date', 'Reference', 'Customer or category', 'Net (AED)', 'VAT rate', 'VAT (AED)', 'Gross (AED)']);
     expect(rows[1]).toEqual(['Invoice', '2026-01-05', 'INV-0007', 'Haddad', 999.99, '5%', 50, 1049.99]);
     expect(rows[summary.rows.length + 1]).toEqual([]);
-    expect(rows.slice(-6).map((r) => r[0])).toEqual([
+    expect(rows.slice(-8).map((r) => r[0])).toEqual([
       'Standard-rated supplies',
+      'Less credit notes (net)',
       'Zero-rated supplies',
+      'Outside the scope of VAT',
       'Output VAT',
       'Credit notes VAT',
       'Input VAT',

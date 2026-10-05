@@ -182,7 +182,7 @@ export const pay = {
     if (viewer.role === 'admin') return families;
     return families.map((f) => {
       if (viewer.role === 'parent' && viewer.familyId === f.id) return f;
-      const { autopay: _autopay, savedCard: _card, trn: _trn, billingAddress: _address, ...rest } = f;
+      const { autopay: _autopay, savedCard: _card, trn: _trn, billingAddress: _address, billingName: _billingName, ...rest } = f;
       return rest;
     });
   },

@@ -52,6 +52,8 @@ describe('mapRefundStatus', () => {
   });
 });
 
+const REFUND_ID = '6f1c2b9e-3d4a-4c5b-9e8f-0a1b2c3d4e5f';
+
 describe('classifyEvent: refunds', () => {
   const refund = {
     id: 're_1',
@@ -59,13 +61,13 @@ describe('classifyEvent: refunds', () => {
     amount: 34999,
     status: 'succeeded',
     payment_intent: 'pi_1',
-    metadata: { refund_id: 'ref-1', invoice_id: 'inv-1' },
+    metadata: { refund_id: REFUND_ID, invoice_id: 'inv-1' },
   };
 
   it.each(['refund.created', 'refund.updated', 'refund.failed', 'charge.refund.updated'])('reads %s', (type) => {
     expect(classifyEvent(refundEvent(type, refund))).toEqual({
       kind: 'refund-updated',
-      refundId: 'ref-1',
+      refundId: REFUND_ID,
       stripeRefundId: 're_1',
       paymentIntent: 'pi_1',
       amount: 349.99,
@@ -85,6 +87,17 @@ describe('classifyEvent: refunds', () => {
     delete noMetadata.metadata;
     expect(classifyEvent(refundEvent('refund.updated', noMetadata))).toMatchObject({ kind: 'refund-updated', stripeRefundId: 're_1' });
     expect(classifyEvent(refundEvent('refund.updated', noMetadata))).not.toHaveProperty('refundId');
+  });
+
+  it('treats a refund id that is not a uuid as a refund made outside the app', () => {
+    for (const bad of ['ref-1', 'x', "1'; drop table refunds; --", `${REFUND_ID}0`]) {
+      const event = classifyEvent(refundEvent('refund.updated', { ...refund, metadata: { refund_id: bad } }));
+      expect(event).toMatchObject({ kind: 'refund-updated', stripeRefundId: 're_1', paymentIntent: 'pi_1' });
+      expect(event).not.toHaveProperty('refundId');
+    }
+    expect(classifyEvent(refundEvent('refund.updated', { ...refund, metadata: { refund_id: REFUND_ID.toUpperCase() } }))).toMatchObject({
+      refundId: REFUND_ID.toUpperCase(),
+    });
   });
 
   it('accepts an expanded payment intent', () => {

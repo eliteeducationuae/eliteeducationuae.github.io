@@ -1,4 +1,5 @@
 import { displayStatus, invoiceTotals } from '@/domain/billing';
+import { monthFigures } from '@/domain/finance';
 import { refundableAmount } from '@/domain/tax';
 import type { Profile } from '@/domain/types';
 
@@ -32,6 +33,15 @@ describe('seeded tax data', () => {
     expect(invoiceOf(db, 'inv-f-haddad').customer).toMatchObject({ trn: '100000000000012' });
   });
 
+  it('names the company, not the parent, as the customer on a company-paid tax invoice', () => {
+    expect(db.families.find((f) => f.id === 'f-haddad')).toMatchObject({ billingName: 'Haddad Trading LLC (demo)' });
+    const customer = invoiceOf(db, 'inv-f-haddad').customer!;
+    expect(customer).toMatchObject({ name: 'Haddad Trading LLC (demo)', trn: '100000000000012', address: 'PO Box 00000, Dubai, United Arab Emirates' });
+    expect(customer.address).not.toContain('Haddad');
+    // Families without a billing name are billed in the parent's name.
+    expect(invoiceOf(db, 'inv-f-hughes').customer?.name).toBe('Emma Hughes');
+  });
+
   it('has credit notes with refunds linked, numbered from CN-0001', () => {
     expect(db.creditNotes?.map((n) => n.number)).toEqual(['CN-0001', 'CN-0002']);
     expect(db.settings.nextCreditNoteNumber).toBe(3);
@@ -40,7 +50,8 @@ describe('seeded tax data', () => {
     expect(refunds.every((r) => r.status === 'succeeded' && r.creditNoteId)).toBe(true);
     expect(refunds.find((r) => r.method === 'bank-transfer')?.reference).toBe('FT-DEMO-0001');
     const card = refunds.find((r) => r.paymentId === 'pay-pkg')!;
-    expect(card).toMatchObject({ method: 'card', reference: 'Refund to card', amount: 1050 });
+    expect(card).toMatchObject({ method: 'card', amount: 1050 });
+    expect(card.reference).toBeUndefined();
     // Money is still refundable on the card payment.
     const pkgPayment = invoiceOf(db, 'inv-pkg-sharma').payments[0];
     expect(pkgPayment.viaStripe).toBe(true);
@@ -184,6 +195,57 @@ describe('credit notes', () => {
     expect(db.creditNotes?.at(-1)?.rebilled).toBe(true);
   });
 
+  it('credits a gross amount to the fils, whatever the rounding', () => {
+    for (const gross of [10.18, 105.1, 10, 199.99, 33.33]) {
+      const db = createSeed(NOW);
+      const admin = who(db, 'u-admin');
+      const hughes = invoiceOf(db, 'inv-f-hughes');
+      const note = tax.issueCreditNote(db, admin, { invoiceId: hughes.id, reason: 'Goodwill', lines: [], gross, releaseCharges: true }, NOW);
+      expect(note.total).toBe(gross);
+      expect(Math.round((note.subtotal + note.vat) * 100) / 100).toBe(gross);
+      expect(note.lines).toEqual([{ description: 'Credit: Goodwill', net: note.subtotal, vat: note.vat }]);
+      // A gross amount is a lower price: nothing goes back to be invoiced again.
+      expect(note.rebilled).toBe(false);
+      expect(db.charges.filter((c) => c.invoiceId === hughes.id)).toHaveLength(hughes.items.filter((i) => i.chargeId).length);
+    }
+    const db = createSeed(NOW);
+    const note = tax.issueCreditNote(db, who(db, 'u-admin'), { invoiceId: 'inv-f-hughes', reason: 'x', lines: [], gross: 10.18 }, NOW);
+    expect(note).toMatchObject({ subtotal: 9.7, vat: 0.48, total: 10.18 });
+  });
+
+  it('marks a note rebilled only when a lesson is actually released', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'u-admin');
+    const hughes = invoiceOf(db, 'inv-f-hughes');
+    const item = hughes.items[0];
+    // A partial credit of a lesson line with 'Invoice these lessons again' on is still a lower price.
+    const partial = tax.issueCreditNote(
+      db,
+      admin,
+      { invoiceId: hughes.id, reason: 'Shortened lesson', releaseCharges: true, lines: [{ description: '', invoiceLine: 0, net: 100 }] },
+      NOW,
+    );
+    expect(partial.rebilled).toBe(false);
+    expect(db.charges.find((c) => c.id === item.chargeId)).toMatchObject({ status: 'invoiced', invoiceId: hughes.id });
+    const empty = { charges: [], packages: [], invoices: [], lessons: [], tutors: [], tutorInvoices: [], expenses: [], settings: { payTutorForLateCancel: false } };
+    expect(monthFigures(NOW, { ...empty, creditNotes: [partial] }).credits).toBe(100);
+
+    // Crediting the rest of that line releases its lesson, and only then is the note rebilled.
+    const rest = Math.round((item.quantity * item.unitPrice - 100) * 100) / 100;
+    const full = tax.issueCreditNote(
+      db,
+      admin,
+      { invoiceId: hughes.id, reason: 'Lesson to be re-invoiced', releaseCharges: true, lines: [{ description: '', invoiceLine: 0, net: rest }] },
+      NOW,
+    );
+    expect(full.rebilled).toBe(true);
+    expect(db.charges.find((c) => c.id === item.chargeId)).toMatchObject({ status: 'unbilled', invoiceId: undefined });
+    expect(monthFigures(NOW, { ...empty, creditNotes: [partial, full] }).credits).toBe(100);
+    // Other lessons on the invoice stay billed.
+    const others = hughes.items.slice(1).filter((i) => i.chargeId);
+    for (const other of others) expect(db.charges.find((c) => c.id === other.chargeId)?.invoiceId).toBe(hughes.id);
+  });
+
   it('cancelling a sent invoice issues a closing credit note and releases its lessons', () => {
     const db = createSeed(NOW);
     const admin = who(db, 'u-admin');
@@ -207,7 +269,7 @@ describe('refunds', () => {
     const admin = who(db, 'u-admin');
     const input = { paymentId: 'pay-pkg', amount: 105, reason: 'One lesson not taken', withCreditNote: true, requestKey: 'k-1' };
     const r1 = tax.refundPayment(db, admin, input, NOW);
-    expect(r1).toMatchObject({ status: 'succeeded', method: 'card', reference: 'Refund to card', amount: 105 });
+    expect(r1).toMatchObject({ status: 'succeeded', method: 'card', amount: 105 });
     const r2 = tax.refundPayment(db, admin, input, NOW);
     expect(r2.id).toBe(r1.id);
     expect(db.refunds).toHaveLength(3);
@@ -234,6 +296,14 @@ describe('refunds', () => {
     const r = tax.refundPayment(db, admin, { paymentId, amount: 20, reason: 'Overpaid', reference: 'FT2', withCreditNote: false, requestKey: 'k-4' }, NOW);
     expect(r).toMatchObject({ method: 'bank-transfer', reference: 'FT2', status: 'succeeded' });
     expect(r.creditNoteId).toBeUndefined();
+    // A refund of a bank-transfer payment made in cash is recorded as cash.
+    cmd.recordPayment(db, admin, hughes.id, 30, 'bank-transfer', 'FT3', NOW);
+    const extra = hughes.payments[1].id;
+    const cash = tax.refundPayment(db, admin, { paymentId: extra, amount: 30, reason: 'Paid twice', method: 'cash', withCreditNote: false, requestKey: 'k-5' }, NOW);
+    expect(cash).toMatchObject({ method: 'cash', amount: 30 });
+    expect(() =>
+      tax.refundPayment(db, admin, { paymentId: 'pay-pkg', amount: 1, reason: 'x', method: 'cash', withCreditNote: true, requestKey: 'k-6' }, NOW),
+    ).toThrow('Choose bank transfer or cash for a refund recorded by hand.');
     expect(invoiceTotals(q.invoices(db, admin).find((i) => i.id === hughes.id)!).balance).toBe(0);
   });
 });

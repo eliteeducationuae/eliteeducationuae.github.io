@@ -48,7 +48,9 @@ alter table public.settings
 -- Kept on family_billing, not families, so tutors (who can read families) never see them.
 alter table public.family_billing
   add column trn text check (trn is null or trn ~ '^[0-9]{15}$'),
-  add column billing_address text;
+  add column billing_address text,
+  -- The company or legal name billed on tax invoices; when blank the parent's name is used.
+  add column billing_name text;
 
 -- Snapshots taken when the invoice is issued: {"name": text, "address": text|null, "trn": text|null, "email": text|null}.
 alter table public.invoices
@@ -86,7 +88,8 @@ create table public.credit_notes (
   number text not null unique,
   invoice_id uuid not null constraint credit_notes_invoice_id_fkey references public.invoices(id) on delete restrict,
   family_id uuid not null constraint credit_notes_family_id_fkey references public.families(id),
-  issue_date date not null default current_date,
+  -- The date in Dubai (the database clock runs on UTC), so a note issued just after midnight is not dated the day before.
+  issue_date date not null default (now() at time zone 'Asia/Dubai')::date,
   reason text not null check (length(trim(reason)) between 1 and 500),
   vat_rate numeric(5,4) not null,
   -- [{ description, invoiceLine (0-based index into invoices.items, or null), net, vat }]
@@ -183,10 +186,10 @@ language sql stable security definer set search_path = public as $$
   from public.settings s where s.id = 1
 $$;
 
-/** The customer (the paying parent or company) as it stands now. */
+/** The customer (the paying company, or else the parent) as it stands now. */
 create function public._tax_customer(p_family_id uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
-  select jsonb_build_object('name', f.parent_name, 'address', nullif(trim(b.billing_address), ''), 'trn', b.trn, 'email', f.email)
+  select jsonb_build_object('name', coalesce(nullif(trim(b.billing_name), ''), f.parent_name), 'address', nullif(trim(b.billing_address), ''), 'trn', b.trn, 'email', f.email)
   from public.families f left join public.family_billing b on b.family_id = f.id
   where f.id = p_family_id
 $$;
@@ -456,46 +459,8 @@ begin
   end if;
 end $$;
 
-/** Admin: issue a credit note against a sent or paid invoice. */
-create function public.issue_credit_note(p_invoice_id uuid, p_reason text, p_lines jsonb, p_release_charges boolean default false)
-returns public.credit_notes language plpgsql security definer set search_path = public as $$
-declare inv public.invoices; note public.credit_notes; s public.settings; it jsonb; k int := 0; release boolean := coalesce(p_release_charges, false);
-begin
-  if not public.is_admin() then raise exception 'Admins only' using errcode = '42501'; end if;
-  -- Locking the invoice serialises credit notes, refunds and cancellations on it.
-  select * into inv from public.invoices where id = p_invoice_id for update;
-  if inv.id is null then raise exception 'Invoice not found.'; end if;
-  if inv.status = 'draft' then raise exception 'Draft invoices can be edited; only issued invoices take credit notes.'; end if;
-  if inv.status = 'void' then raise exception 'This invoice has already been cancelled.'; end if;
-  if inv.autopay_status in ('processing', 'unknown') then
-    raise exception 'Autopay is charging this invoice at the moment. Please wait for it to finish before issuing a credit note.';
-  end if;
-
-  note := public._make_credit_note(inv, p_reason, p_lines, release);
-
-  if release then
-    -- Lessons on lines that are now fully credited go back to be invoiced again.
-    for it in select * from jsonb_array_elements(coalesce(inv.items, '[]'::jsonb)) loop
-      if it ? 'chargeId' and public._tax_line_credited(inv.id, k) >= round((it->>'quantity')::numeric * (it->>'unitPrice')::numeric, 2) then
-        update public.charges set status = 'unbilled', invoice_id = null where id::text = it->>'chargeId' and invoice_id = inv.id;
-      end if;
-      k := k + 1;
-    end loop;
-  end if;
-  perform public._tax_settle_invoice(inv.id, release);
-
-  select * into s from public.settings where id = 1;
-  perform public.notify_family(inv.family_id,
-    'Credit note ' || note.number || ' from ' || s.business_name,
-    'A credit note for ' || public._tax_aed(note.total) || ' has been issued against invoice ' || inv.number
-      || '. You can view it in the Elite Education app.',
-    'Credit note ' || note.number, public._tax_aed(note.total) || ' credited against invoice ' || inv.number,
-    '/credit-note/' || note.id, s.email_invoices);
-  return note;
-end $$;
-
 /** A credit note for a gross amount (net plus VAT), used with refunds. Not granted to anyone. */
-create function public._issue_credit_from_gross(inv public.invoices, p_gross numeric, p_reason text)
+create function public._issue_credit_from_gross(inv public.invoices, p_gross numeric, p_reason text, p_description text default null)
 returns public.credit_notes language plpgsql security definer set search_path = public as $$
 declare
   r numeric := coalesce(inv.vat_rate, 0);
@@ -520,8 +485,70 @@ begin
   end if;
   if net <= 0 then raise exception 'Enter an amount to credit.'; end if;
   return public._make_credit_note(inv, p_reason,
-    jsonb_build_array(jsonb_build_object('description', 'Refund: ' || trim(coalesce(p_reason, '')), 'invoiceLine', null, 'net', net)),
+    jsonb_build_array(jsonb_build_object('description',
+      coalesce(nullif(trim(p_description), ''), 'Refund: ' || trim(coalesce(p_reason, ''))), 'invoiceLine', null, 'net', net)),
     false, vat);
+end $$;
+
+/**
+ * Admin: issue a credit note against a sent or paid invoice, either by line (p_lines, net amounts) or for a gross
+ * amount including VAT (p_gross, one line with no invoice line; p_lines is then ignored), so the note's total is
+ * exactly the amount the office confirmed.
+ *
+ * p_release_charges ('Invoice these lessons again') returns to the unbilled list the lessons on the lines this note
+ * credits in full. The note is marked rebilled only when at least one lesson is actually released; a partial line
+ * credit or a gross amount is a lower price and always counts as a credit in the accounts.
+ */
+create function public.issue_credit_note(p_invoice_id uuid, p_reason text, p_lines jsonb,
+  p_release_charges boolean default false, p_gross numeric default null)
+returns public.credit_notes language plpgsql security definer set search_path = public as $$
+declare
+  inv public.invoices; note public.credit_notes; s public.settings; it jsonb; el jsonb;
+  k int := 0; this_k numeric; cap numeric; released text[] := '{}';
+begin
+  if not public.is_admin() then raise exception 'Admins only' using errcode = '42501'; end if;
+  -- Locking the invoice serialises credit notes, refunds and cancellations on it.
+  select * into inv from public.invoices where id = p_invoice_id for update;
+  if inv.id is null then raise exception 'Invoice not found.'; end if;
+  if inv.status = 'draft' then raise exception 'Draft invoices can be edited; only issued invoices take credit notes.'; end if;
+  if inv.status = 'void' then raise exception 'This invoice has already been cancelled.'; end if;
+  if inv.autopay_status in ('processing', 'unknown') then
+    raise exception 'Autopay is charging this invoice at the moment. Please wait for it to finish before issuing a credit note.';
+  end if;
+
+  if p_gross is not null then
+    note := public._issue_credit_from_gross(inv, p_gross, p_reason, 'Credit: ' || trim(coalesce(p_reason, '')));
+  else
+    if coalesce(p_release_charges, false) and jsonb_typeof(p_lines) = 'array' then
+      -- Lessons on the lines this note credits in full (with what earlier notes credited) and still on this invoice.
+      for it in select * from jsonb_array_elements(coalesce(inv.items, '[]'::jsonb)) loop
+        select coalesce(sum(round(nullif(e->>'net', '')::numeric, 2)), 0) into this_k
+          from jsonb_array_elements(p_lines) e
+          where jsonb_typeof(e->'invoiceLine') = 'number' and (e->>'invoiceLine')::int = k
+            and jsonb_typeof(e->'net') in ('number', 'string') and (e->>'net') ~ '^\s*[0-9]+(\.[0-9]+)?\s*$';
+        cap := round((it->>'quantity')::numeric * (it->>'unitPrice')::numeric, 2);
+        if it ? 'chargeId' and this_k > 0 and public._tax_line_credited(inv.id, k) + this_k >= cap
+           and exists (select 1 from public.charges c where c.id::text = it->>'chargeId' and c.invoice_id = inv.id) then
+          released := array_append(released, it->>'chargeId');
+        end if;
+        k := k + 1;
+      end loop;
+    end if;
+    note := public._make_credit_note(inv, p_reason, p_lines, cardinality(released) > 0);
+    update public.charges set status = 'unbilled', invoice_id = null
+      where id::text = any (released) and invoice_id = inv.id;
+  end if;
+  -- Anything to release has been released above, so a note that cancels the invoice keeps its other lessons billed.
+  perform public._tax_settle_invoice(inv.id, false);
+
+  select * into s from public.settings where id = 1;
+  perform public.notify_family(inv.family_id,
+    'Credit note ' || note.number || ' from ' || s.business_name,
+    'A credit note for ' || public._tax_aed(note.total) || ' has been issued against invoice ' || inv.number
+      || '. You can view it in the Elite Education app.',
+    'Credit note ' || note.number, public._tax_aed(note.total) || ' credited against invoice ' || inv.number,
+    '/credit-note/' || note.id, s.email_invoices);
+  return note;
 end $$;
 
 -- Cancelling a sent or paid invoice issues a closing credit note for whatever is not yet credited. The credited
@@ -600,7 +627,8 @@ $$;
 
 /** Shared by begin_card_refund and record_manual_refund. Not granted to anyone. */
 create function public._create_refund(
-  p_payment_id uuid, p_amount numeric, p_reason text, p_with_credit_note boolean, p_request_key text, p_card boolean, p_reference text
+  p_payment_id uuid, p_amount numeric, p_reason text, p_with_credit_note boolean, p_request_key text, p_card boolean, p_reference text,
+  p_method text default null
 ) returns public.refunds language plpgsql security definer set search_path = public as $$
 declare
   pay public.payments; inv public.invoices; existing public.refunds; note public.credit_notes; v_row public.refunds;
@@ -625,6 +653,9 @@ begin
   if p_card and pay.stripe_payment_intent is null then
     raise exception 'This payment was not taken by card through Stripe; record the refund manually.';
   end if;
+  if p_method is not null and (p_card or p_method not in ('bank-transfer', 'cash')) then
+    raise exception 'Choose bank transfer or cash for a refund recorded by hand.';
+  end if;
   if v_reason = '' then raise exception 'Please give a reason for the refund.'; end if;
   if length(v_reason) > 500 then raise exception 'Please keep the reason to 500 characters or fewer.'; end if;
   if amt is null or amt <= 0 then raise exception 'Enter an amount to refund.'; end if;
@@ -647,7 +678,7 @@ begin
 
   insert into public.refunds (invoice_id, family_id, payment_id, amount, method, status, reason, reference, request_key,
                               credit_note_id, created_by, settled_at)
-  values (inv.id, inv.family_id, pay.id, amt, case when p_card then 'card' else pay.method end,
+  values (inv.id, inv.family_id, pay.id, amt, case when p_card then 'card' else coalesce(p_method, pay.method) end,
           case when p_card then 'pending' else 'succeeded' end, v_reason, nullif(trim(coalesce(p_reference, '')), ''), v_key,
           note.id, auth.uid(), case when p_card then null else now() end)
   returning * into v_row;
@@ -673,12 +704,16 @@ begin
   return public._create_refund(p_payment_id, p_amount, p_reason, p_with_credit_note, p_request_key, true, null);
 end $$;
 
-/** Admin: record a refund made by bank transfer, cash or outside the app. */
+/**
+ * Admin: record a refund made by bank transfer, cash or outside the app. p_method ('bank-transfer' or 'cash') is how
+ * the money went back; when omitted it is the payment's own method.
+ */
 create function public.record_manual_refund(
-  p_payment_id uuid, p_amount numeric, p_reason text, p_reference text, p_with_credit_note boolean, p_request_key text
+  p_payment_id uuid, p_amount numeric, p_reason text, p_reference text, p_with_credit_note boolean, p_request_key text,
+  p_method text default null
 ) returns public.refunds language plpgsql security definer set search_path = public as $$
 begin
-  return public._create_refund(p_payment_id, p_amount, p_reason, p_with_credit_note, p_request_key, false, p_reference);
+  return public._create_refund(p_payment_id, p_amount, p_reason, p_with_credit_note, p_request_key, false, p_reference, p_method);
 end $$;
 
 /**
@@ -708,7 +743,7 @@ begin
     perform public.notify_family(rf.family_id,
       'Your refund for invoice ' || inv.number,
       'Your refund of ' || public._tax_aed(rf.amount) || ' for invoice ' || inv.number
-        || ' is on its way to your card. It usually arrives within 5-10 working days.',
+        || ' is on its way to your card. It usually arrives within 5 to 10 working days.',
       'Refund on its way', public._tax_aed(rf.amount) || ' for invoice ' || inv.number,
       '/invoice/' || inv.id, s.email_invoices);
   else
@@ -877,21 +912,21 @@ end $$;
 revoke all on function public._tax_aed(numeric), public._tax_supplier(), public._tax_customer(uuid),
   public._tax_subtotal(public.invoices), public._tax_line_credited(uuid, int),
   public._make_credit_note(public.invoices, text, jsonb, boolean, numeric), public._tax_remaining_lines(public.invoices),
-  public._tax_settle_invoice(uuid, boolean), public._issue_credit_from_gross(public.invoices, numeric, text),
-  public._map_refund_status(text), public._create_refund(uuid, numeric, text, boolean, text, boolean, text),
+  public._tax_settle_invoice(uuid, boolean), public._issue_credit_from_gross(public.invoices, numeric, text, text),
+  public._map_refund_status(text), public._create_refund(uuid, numeric, text, boolean, text, boolean, text, text),
   public.settings_guard_numbers(), public.invoices_guard_delete(), public.credit_notes_guard(),
   public.invoices_snapshot_tax(), public.invoices_guard_issued(), public.invoices_cancel_with_credit_note(),
   public.link_accountant_login()
   from public, anon, authenticated;
-revoke all on function public.issue_credit_note(uuid, text, jsonb, boolean),
+revoke all on function public.issue_credit_note(uuid, text, jsonb, boolean, numeric),
   public.begin_card_refund(uuid, numeric, text, boolean, text),
-  public.record_manual_refund(uuid, numeric, text, text, boolean, text),
+  public.record_manual_refund(uuid, numeric, text, text, boolean, text, text),
   public.invite_accountant(text, text), public.remove_accountant(text),
   public.settle_card_refund(uuid, text, text, text), public.record_external_stripe_refund(text, text, numeric, text)
   from public, anon;
-grant execute on function public.issue_credit_note(uuid, text, jsonb, boolean),
+grant execute on function public.issue_credit_note(uuid, text, jsonb, boolean, numeric),
   public.begin_card_refund(uuid, numeric, text, boolean, text),
-  public.record_manual_refund(uuid, numeric, text, text, boolean, text),
+  public.record_manual_refund(uuid, numeric, text, text, boolean, text, text),
   public.invite_accountant(text, text), public.remove_accountant(text) to authenticated;
 revoke all on function public.settle_card_refund(uuid, text, text, text), public.record_external_stripe_refund(text, text, numeric, text)
   from authenticated;

@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
 import { AmountLine, parseAmount, SwitchRow } from '@/components/tax';
-import { Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Screen, Txt } from '@/components/ui';
+import { Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useCreditNotes, useInvoice, useRefunds } from '@/data/hooks';
@@ -11,7 +11,7 @@ import { formatDate } from '@/domain/dates';
 import { paymentLabel } from '@/domain/payments';
 import { creditRemaining, overpaid, refundableAmount, refundNeedsCreditNote } from '@/domain/tax';
 import type { CreditNote, Invoice, Payment, Refund } from '@/domain/types';
-import { notify } from '@/lib/confirm';
+import { confirm, notify } from '@/lib/confirm';
 import { uuid } from '@/lib/id';
 import { aed } from '@/lib/invoice-pdf';
 
@@ -50,6 +50,7 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
   const [amount, setAmount] = useState(() => (over > 0 ? Math.min(refundable, over).toFixed(2) : ''));
   const [reason, setReason] = useState('');
   const [reference, setReference] = useState('');
+  const [method, setMethod] = useState<'bank-transfer' | 'cash'>(payment.method === 'cash' ? 'cash' : 'bank-transfer');
   const [withCredit, setWithCredit] = useState(over <= 0 && creditLeft > 0);
   // One key per refund attempt, so a double tap or a retry never refunds twice.
   const [requestKey, setRequestKey] = useState(() => uuid());
@@ -69,7 +70,8 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
         paymentId: payment.id,
         amount: value,
         reason: reason.trim(),
-        reference: card ? undefined : reference.trim() || undefined,
+        reference: card || method === 'cash' ? undefined : reference.trim() || undefined,
+        ...(card ? {} : { method }),
         withCreditNote: credit,
         requestKey,
       },
@@ -95,7 +97,22 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
           style={{ flex: 1 }}
           disabled={!ready}
           loading={refund.isPending}
-          onPress={() => void submit().catch(() => undefined)}
+          onPress={() =>
+            confirm(
+              `Refund ${aed(value)}?`,
+              [
+                card
+                  ? `${aed(value)} will be returned to the card used for this payment.`
+                  : `This records a refund of ${aed(value)} made by ${method === 'cash' ? 'cash' : 'bank transfer'}.`,
+                credit
+                  ? `A credit note for ${aed(value)} will be issued against ${invoice.number}.`
+                  : 'No credit note will be issued.',
+                'This cannot be undone.',
+              ].join(' '),
+              () => void submit().catch(() => undefined),
+              'Refund',
+            )
+          }
         />
       }>
       <Card style={{ gap: Spacing.one }}>
@@ -124,7 +141,21 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
         hint={tooMuch ? `Only ${aed(refundable)} of this payment can be refunded.` : `Up to ${aed(refundable)}.`}
       />
       <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: package cancelled at the family's request." hint="Required." />
-      {!card ? <Field label="Bank transfer reference" value={reference} onChangeText={setReference} hint="Optional. Leave blank for cash." /> : null}
+      {!card ? (
+        <Section title="Refunded by">
+          <Segmented
+            value={method}
+            onChange={setMethod}
+            options={[
+              { value: 'bank-transfer', label: 'Bank transfer' },
+              { value: 'cash', label: 'Cash' },
+            ]}
+          />
+          {method === 'bank-transfer' ? (
+            <Field label="Bank transfer reference" value={reference} onChangeText={setReference} hint="Optional." />
+          ) : null}
+        </Section>
+      ) : null}
 
       <SwitchRow
         label="Also issue a credit note"

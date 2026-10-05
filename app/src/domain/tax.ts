@@ -3,6 +3,7 @@
  * Pure functions shared by every data source; the SQL in the tax migration follows the same rules.
  */
 import { formatAED, invoiceTotals } from './billing';
+import { round2 } from './money';
 import type {
   CreditNote,
   CreditNoteLine,
@@ -23,12 +24,7 @@ import type {
 /** A line to credit: net amount before VAT, optionally against an invoice line (same shape as the data source input). */
 type CreditNoteLineInput = { description: string; invoiceLine?: number; net: number };
 
-/** Round to fils (2 dp), half away from zero, without binary floating-point surprises (1.005 -> 1.01). */
-export function round2(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  const r = Math.sign(n) * Math.round(Number((Math.abs(n) * 100).toPrecision(12))) / 100;
-  return r === 0 ? 0 : r;
-}
+export { round2 };
 
 const EPS = 0.005;
 
@@ -83,12 +79,12 @@ export function invoiceSupplier(
 /** The customer as printed: the invoice's snapshot, or for older invoices the live family. */
 export function invoiceCustomer(
   inv: Pick<Invoice, 'customer'>,
-  family?: Pick<Family, 'parentName' | 'billingAddress' | 'trn' | 'email'>,
+  family?: Pick<Family, 'parentName' | 'billingAddress' | 'trn' | 'email'> & Partial<Pick<Family, 'billingName'>>,
 ): TaxParty | undefined {
   if (inv.customer) return inv.customer;
   if (!family) return undefined;
   return {
-    name: family.parentName,
+    name: family.billingName?.trim() || family.parentName,
     address: family.billingAddress || undefined,
     trn: family.trn || undefined,
     email: family.email || undefined,
@@ -370,6 +366,7 @@ export function vatSummary(
   const rows: VatSummaryRow[] = [];
   let standardRatedNet = 0;
   let zeroRatedNet = 0;
+  let outOfScopeNet = 0;
   let outputVat = 0;
   let invoiceCount = 0;
   for (const inv of data.invoices) {
@@ -379,7 +376,9 @@ export function vatSummary(
     const t = invoiceTotals({ items: inv.items, vatRate: inv.vatRate, payments: [] });
     invoiceCount++;
     if (inv.vatRate > 0) standardRatedNet += t.subtotal;
-    else zeroRatedNet += t.subtotal;
+    // A 0% invoice is zero-rated only when issued as a VAT-registered business; before registration it is out of scope.
+    else if (inv.supplier?.trn) zeroRatedNet += t.subtotal;
+    else outOfScopeNet += t.subtotal;
     outputVat += t.vat;
     rows.push({
       kind: 'invoice',
@@ -394,12 +393,14 @@ export function vatSummary(
   }
   let creditsNet = 0;
   let creditsVat = 0;
+  let standardRatedCreditsNet = 0;
   let creditNoteCount = 0;
   for (const n of data.creditNotes) {
     if (!within(n.issueDate, q)) continue;
     creditNoteCount++;
     creditsNet += n.subtotal;
     creditsVat += n.vat;
+    if ((n.vatRate ?? 0) > 0 || n.vat > 0) standardRatedCreditsNet += n.subtotal;
     rows.push({
       kind: 'credit-note',
       date: n.issueDate,
@@ -435,7 +436,9 @@ export function vatSummary(
     quarter: q,
     invoiceCount,
     standardRatedNet: round2(standardRatedNet),
+    standardRatedCreditsNet: round2(standardRatedCreditsNet),
     zeroRatedNet: round2(zeroRatedNet),
+    outOfScopeNet: round2(outOfScopeNet),
     outputVat: round2(outputVat),
     creditNoteCount,
     creditsNet: round2(creditsNet),
@@ -470,7 +473,9 @@ export function vatSummaryCsvRows(summary: VatSummary): (string | number)[][] {
     ...rows,
     [],
     total('Standard-rated supplies', summary.standardRatedNet, ''),
+    total('Less credit notes (net)', round2(-summary.standardRatedCreditsNet), ''),
     total('Zero-rated supplies', summary.zeroRatedNet, ''),
+    total('Outside the scope of VAT', summary.outOfScopeNet, ''),
     total('Output VAT', '', summary.outputVat),
     total('Credit notes VAT', '', round2(-summary.creditsVat)),
     total('Input VAT', '', summary.inputVat),

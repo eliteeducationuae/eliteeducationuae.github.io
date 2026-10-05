@@ -166,11 +166,12 @@ export function createDemoSource(): DataSource {
       write((d, v) => {
         // Card and autopay live in family_billing in production; editing a family's details never changes them.
         const existing = f.id ? d.families.find((x) => x.id === f.id) : undefined;
-        const { autopay: _autopay, savedCard: _card, trn, billingAddress, ...details } = f;
-        // Tax: TRN and billing address (family_billing) change only when given; a blank clears them.
+        const { autopay: _autopay, savedCard: _card, trn, billingAddress, billingName, ...details } = f;
+        // Tax: billing name, TRN and billing address (family_billing) change only when given; a blank clears them.
         const taxDetails = {
           trn: trn === undefined ? existing?.trn : normaliseTrn(trn) || undefined,
           billingAddress: billingAddress === undefined ? existing?.billingAddress : billingAddress.trim() || undefined,
+          billingName: billingName === undefined ? existing?.billingName : billingName.trim() || undefined,
         };
         if (taxDetails.trn && !isValidTrn(taxDetails.trn)) throw new Error('A Tax Registration Number has 15 digits. Please check it, or leave it blank.');
         return cmd.saveFamily(d, v, existing ? { ...details, ...taxDetails, autopay: existing.autopay, savedCard: existing.savedCard } : { ...details, ...taxDetails });

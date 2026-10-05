@@ -8,7 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useCreditNotes, useLookup, useRefunds } from '@/data/hooks';
 import { useMe } from '@/data/session';
-import { formatAED, invoiceTotals } from '@/domain/billing';
+import { formatAED, formatPercent, invoiceTotals } from '@/domain/billing';
 import { formatDate, startOfMonth, toDateKey } from '@/domain/dates';
 import { monthSeries, receivables, type MonthFigures } from '@/domain/finance';
 import { tutorInvoiceTotal } from '@/domain/tutor-pay';
@@ -165,7 +165,7 @@ export default function Money() {
         <Txt variant="title" style={{ color: shown.profit < 0 ? theme.danger : theme.text }}>
           {formatAED(shown.profit)}
         </Txt>
-        <Txt variant="muted">{shown.revenue ? `${Math.round(shown.margin * 100)}% margin` : 'No revenue yet'}{view === 'month' ? ' · month to date' : ''}</Txt>
+        <Txt variant="muted">{shown.revenue ? `${formatPercent(shown.margin)} margin` : 'No revenue yet'}{view === 'month' ? ' · month to date' : ''}</Txt>
         <View style={{ gap: Spacing.one, marginTop: Spacing.two }}>
           <Line label="Lessons delivered" value={shown.revenue} />
           {shown.credits ? <Line label="Credits to families" value={-shown.credits} /> : null}

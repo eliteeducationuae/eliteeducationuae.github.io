@@ -118,6 +118,21 @@ select pg_temp.check((select supplier->>'name' = 'Elite Education FZ LLC' and su
     and customer->>'address' = 'Villa 2, Dubai' from public.invoices where number = 'INV-9001'),
   'changing the settings or the family''s details afterwards does not change an issued invoice');
 update public.settings set legal_name = 'Elite Education FZ LLC', trn = '100123456700003', registered_address = 'Office 1, Dubai, UAE' where id = 1;
+-- A company that pays: its name, not the parent's, is the customer named beside its TRN.
+insert into public.family_billing (family_id, billing_name, trn, billing_address) values
+  ('c0000000-0000-0000-0000-000000000002', '  Other Trading LLC ', '100000000000004', 'PO Box 1, Dubai');
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000010', 'INV-9010', 'c0000000-0000-0000-0000-000000000002', '2026-10-01', '2026-10-08', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":100}]', 0.05);
+select pg_temp.check((select customer = '{"name":"Other Trading LLC","address":"PO Box 1, Dubai","trn":"100000000000004","email":"other@x"}'::jsonb
+    from public.invoices where number = 'INV-9010'),
+  'a company-paid tax invoice names the company (billing name) as the customer with its TRN');
+update public.family_billing set billing_name = '   ' where family_id = 'c0000000-0000-0000-0000-000000000002';
+select pg_temp.check(public._tax_customer('c0000000-0000-0000-0000-000000000002')->>'name' = 'Otto Other'
+    and public._tax_customer('c0000000-0000-0000-0000-000000000001')->>'name' = 'Mona Ahmed',
+  'without a billing name the parent''s name is used');
+select pg_temp.check((select customer->>'name' from public.invoices where number = 'INV-9010') = 'Other Trading LLC',
+  'clearing the billing name afterwards does not change the issued invoice');
 
 -- VAT maths: three lines of 333.33 at 5% -------------------------------------------
 select pg_temp.check((select public.invoice_total(i) = 1049.99 from public.invoices i where number = 'INV-9001'), 'the invoice total is AED 1,049.99');
@@ -226,6 +241,43 @@ select pg_temp.check((select status = 'paid' and public.invoice_balance(i) = 0 f
 select pg_temp.check((select array_agg(number order by created_at, number) from public.credit_notes)
   = array['CN-0001', 'CN-0002', 'CN-0003', 'CN-0004', 'CN-0005', 'CN-0006'], 'credit notes are numbered CN-0001 onwards in order');
 
+-- 'An amount': a credit for a gross amount totals exactly that amount (sending only the net was a fils out).
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000011', 'INV-9011', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-08', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":1000}]', 0.05);
+set role authenticated;
+insert into made select 'g1', (public.issue_credit_note('10000000-0000-0000-0000-000000000011', 'Goodwill', '[]', true, 10.18)).id;
+insert into made select 'g2', (public.issue_credit_note('10000000-0000-0000-0000-000000000011', 'Shorter lesson', null, false, 105.10)).id;
+select pg_temp.check((select subtotal = 9.70 and vat = 0.48 and total = 10.18 and not rebilled
+    and lines = '[{"description":"Credit: Goodwill","invoiceLine":null,"net":9.70,"vat":0.48}]'::jsonb
+    and issue_date = (now() at time zone 'Asia/Dubai')::date
+    from public.credit_notes where id = (select id from made where key = 'g1'))
+  and (select subtotal = 100.10 and vat = 5.00 and total = 105.10 from public.credit_notes where id = (select id from made where key = 'g2')),
+  'credits of AED 10.18 and 105.10 including VAT total exactly that, are never rebilled and are dated in Dubai');
+select pg_temp.raises($$select public.issue_credit_note('10000000-0000-0000-0000-000000000011', 'Too much', '[]', false, 1000)$$,
+  'Only AED 934.72 is left to credit on this invoice.', 'a gross credit cannot exceed what is left');
+
+-- 'Invoice these lessons again' with a partial line credit releases nothing, so the note is not rebilled.
+reset role;
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000012', 'INV-9012', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-08', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450,"chargeId":"c1000000-0000-0000-0000-000000000001"},{"description":"Notes","quantity":1,"unitPrice":50}]', 0.05);
+update public.charges set status = 'invoiced', invoice_id = '10000000-0000-0000-0000-000000000012' where id = 'c1000000-0000-0000-0000-000000000001';
+set role authenticated;
+insert into made select 'p1', (public.issue_credit_note('10000000-0000-0000-0000-000000000012', 'Lesson cut short',
+  '[{"invoiceLine":0,"net":100},{"invoiceLine":1,"net":50}]', true)).id;
+select pg_temp.check((select not rebilled and total = 157.50 from public.credit_notes where id = (select id from made where key = 'p1'))
+  and (select status = 'invoiced' and invoice_id = '10000000-0000-0000-0000-000000000012' from public.charges
+       where id = 'c1000000-0000-0000-0000-000000000001'),
+  'a partial credit of a lesson line with release on releases nothing and is not marked rebilled');
+insert into made select 'p2', (public.issue_credit_note('10000000-0000-0000-0000-000000000012', 'Re-invoice the lesson',
+  '[{"invoiceLine":0,"net":350}]', true)).id;
+select pg_temp.check((select rebilled from public.credit_notes where id = (select id from made where key = 'p2'))
+  and (select status = 'unbilled' and invoice_id is null from public.charges where id = 'c1000000-0000-0000-0000-000000000001')
+  and (select status from public.invoices where number = 'INV-9012') = 'void',
+  'crediting the rest of the line releases its lesson and only then marks the note rebilled');
+reset role;
+
 -- Refunds -----------------------------------------------------------------------
 insert into public.invoices (id, number, family_id, issue_date, due_date, status, items, vat_rate) values
   ('10000000-0000-0000-0000-000000000004', 'INV-9004', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-08', 'sent',
@@ -302,6 +354,13 @@ select pg_temp.raises($$select public.record_manual_refund('20000000-0000-0000-0
 reset role;
 select pg_temp.check((select count(*) from public.notification_outbox where subject = 'Refund for invoice INV-9005') = 1,
   'the family is told about a manual refund once');
+set role authenticated;
+select public.record_manual_refund('20000000-0000-0000-0000-000000000002', 10, 'Paid back in cash', 'ignored', true, 'm3', 'cash');
+select pg_temp.check((select method = 'cash' and amount = 10 and credit_note_id is not null from public.refunds where request_key = 'm3'),
+  'a cash refund of a bank-transfer payment is recorded as cash');
+select pg_temp.raises($$select public.record_manual_refund('20000000-0000-0000-0000-000000000002', 1, 'x', null, true, 'm4', 'card')$$,
+  'Choose bank transfer or cash for a refund recorded by hand.', 'a manual refund is by bank transfer or cash');
+reset role;
 
 -- Refunds made in the Stripe Dashboard
 select public.record_external_stripe_refund('pi_p', 're_ext', 20, 'succeeded');

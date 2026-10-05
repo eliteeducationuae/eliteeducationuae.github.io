@@ -31,6 +31,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
   const [status, setStatus] = useState<FamilyStatus>(existing?.status ?? 'active');
+  const [billingName, setBillingName] = useState(existing?.billingName ?? '');
   const [billingAddress, setBillingAddress] = useState(existing?.billingAddress ?? '');
   const [trn, setTrn] = useState(existing?.trn ?? '');
   const trnInvalid = !!trn.trim() && !isValidTrn(trn);
@@ -57,6 +58,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
                 email: email.trim(),
                 phone: phone.trim() || undefined,
                 status,
+                billingName: optional(billingName, existing?.billingName),
                 billingAddress: optional(billingAddress, existing?.billingAddress),
                 trn: optional(normaliseTrn(trn), existing?.trn),
               },
@@ -86,6 +88,14 @@ function FamilyForm({ existing }: { existing?: Family }) {
       <Section title="Billing details (optional)">
         <Card style={{ gap: Spacing.three }}>
           <Txt variant="muted">Add these when a company pays, so they appear on its tax invoices.</Txt>
+          <Field
+            label="Billed to (company or legal name)"
+            value={billingName}
+            onChangeText={setBillingName}
+            autoCapitalize="words"
+            placeholder={parentName.trim() || undefined}
+            hint="Printed as the customer on tax invoices. Leave blank to use the parent’s name."
+          />
           <Field label="Billing address" value={billingAddress} onChangeText={setBillingAddress} multiline />
           <Field
             label="Customer TRN"

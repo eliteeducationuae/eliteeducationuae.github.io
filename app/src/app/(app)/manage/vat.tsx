@@ -84,7 +84,13 @@ export default function VatReturns() {
         <Rule />
         <View style={{ gap: Spacing.one }}>
           <AmountLine label={`Standard-rated supplies (${plural(summary.invoiceCount, 'invoice')})`} value={aed(summary.standardRatedNet)} />
+          {summary.standardRatedCreditsNet > 0 ? (
+            <AmountLine label="Less credit notes (net)" value={`−${aed(summary.standardRatedCreditsNet)}`} />
+          ) : null}
           <AmountLine label="Zero-rated supplies" value={aed(summary.zeroRatedNet)} />
+          {summary.outOfScopeNet > 0 ? (
+            <AmountLine label="Outside the scope of VAT (issued before registration)" value={aed(summary.outOfScopeNet)} />
+          ) : null}
           <AmountLine label="Output VAT" value={aed(summary.outputVat)} />
           <AmountLine label={`Less credit notes VAT (${plural(summary.creditNoteCount, 'credit note')})`} value={`−${aed(summary.creditsVat)}`} />
           <AmountLine label="Net output VAT" value={aed(summary.netOutputVat)} strong />
