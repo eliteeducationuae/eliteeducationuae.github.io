@@ -71,6 +71,14 @@ interface Links {
   studentIds: string[];
   tutorId: string | null;
   relatedIds: string[];
+  context: Row | null;
+}
+
+/** Drop empty values; null when nothing is left (mirrors jsonb_strip_nulls + nullif in the trigger). */
+function compact(ctx: Row): Row | null {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(ctx)) if (v !== null && v !== undefined && v !== '') out[k] = v;
+  return Object.keys(out).length ? out : null;
 }
 
 /** Which family, students, tutor and other records an event belongs to (mirrors the SQL trigger). */
@@ -78,14 +86,28 @@ function deriveLinks(table: string, key: string, row: Row, lookup: (table: strin
   const familyOf = (studentId: string) => str(lookup('students', studentId)?.family_id);
   const forStudents = (studentIds: string[]) => ({ studentIds: uniq(studentIds), familyIds: uniq(studentIds.map(familyOf)) });
   const id = str(row.id) ?? key;
-  const none: Links = { rowId: id, familyIds: [], studentIds: [], tutorId: null, relatedIds: [] };
+  const none: Links = { rowId: id, familyIds: [], studentIds: [], tutorId: null, relatedIds: [], context: null };
+  // The labels the trigger saves with an event (public.audit_lesson_context and friends).
+  const lessonLabels = (lesson: Row | undefined): Row => {
+    if (!lesson) return {};
+    const service = str(lesson.service_id) ? lookup('services', str(lesson.service_id)!) : undefined;
+    return { lesson_start: lesson.start_at, subject: str(lesson.subject) ?? str(service?.subject) ?? str(service?.name) };
+  };
+  const invoiceNumber = (invoiceId: string | null) => (invoiceId ? str(lookup('invoices', invoiceId)?.number) : null);
   switch (table) {
     case 'lessons':
-      return { ...none, ...forStudents(strs(row.student_ids)), tutorId: str(row.tutor_id) };
+      return { ...none, ...forStudents(strs(row.student_ids)), tutorId: str(row.tutor_id), context: compact(lessonLabels(row)) };
     case 'lesson_notes': {
       const lessonId = str(row.lesson_id) ?? key;
       const lesson = lookup('lessons', lessonId);
-      return { ...none, rowId: lessonId, ...forStudents(strs(lesson?.student_ids)), tutorId: str(lesson?.tutor_id), relatedIds: [lessonId] };
+      return {
+        ...none,
+        rowId: lessonId,
+        ...forStudents(strs(lesson?.student_ids)),
+        tutorId: str(lesson?.tutor_id),
+        relatedIds: [lessonId],
+        context: compact(lessonLabels(lesson)),
+      };
     }
     case 'invoices':
     case 'packages':
@@ -93,7 +115,7 @@ function deriveLinks(table: string, key: string, row: Row, lookup: (table: strin
     case 'payments': {
       const invoiceId = str(row.invoice_id);
       const invoice = invoiceId ? lookup('invoices', invoiceId) : undefined;
-      return { ...none, familyIds: uniq([str(invoice?.family_id)]), relatedIds: uniq([invoiceId]) };
+      return { ...none, familyIds: uniq([str(invoice?.family_id)]), relatedIds: uniq([invoiceId]), context: compact({ invoice_number: invoiceNumber(invoiceId) }) };
     }
     case 'charges': {
       const lessonId = str(row.lesson_id);
@@ -103,6 +125,7 @@ function deriveLinks(table: string, key: string, row: Row, lookup: (table: strin
         studentIds: uniq([str(row.student_id)]),
         tutorId: str(lessonId ? lookup('lessons', lessonId)?.tutor_id : null),
         relatedIds: uniq([lessonId, str(row.invoice_id), str(row.package_id)]),
+        context: compact({ ...lessonLabels(lessonId ? lookup('lessons', lessonId) : undefined), invoice_number: invoiceNumber(str(row.invoice_id)) }),
       };
     }
     case 'tutor_invoices':
@@ -121,9 +144,16 @@ function deriveLinks(table: string, key: string, row: Row, lookup: (table: strin
         ...forStudents(uniq([str(row.student_id)])),
         tutorId: str(row.tutor_id),
         relatedIds: uniq([str(row.cycle_id), str(row.enrolment_id)]),
+        context: compact({ subject: (str(row.enrolment_id) ? str(lookup('enrolments', str(row.enrolment_id)!)?.subject) : null) ?? str(row.subject) }),
       };
     case 'homework':
-      return { ...none, ...forStudents(uniq([str(row.student_id)])), tutorId: str(row.tutor_id), relatedIds: uniq([str(row.lesson_id)]) };
+      return {
+        ...none,
+        ...forStudents(uniq([str(row.student_id)])),
+        tutorId: str(row.tutor_id),
+        relatedIds: uniq([str(row.lesson_id)]),
+        context: compact(lessonLabels(str(row.lesson_id) ? lookup('lessons', str(row.lesson_id)!) : undefined)),
+      };
     case 'opportunities':
       return { ...none, ...forStudents(uniq([str(row.student_id)])), tutorId: str(row.awarded_tutor_id), relatedIds: uniq([str(row.enquiry_id)]) };
     default:
@@ -157,20 +187,24 @@ function makeEvent(
   };
 }
 
-/** Record everything a write changed since `before`, as `viewer`. */
+/**
+ * Record everything a write changed since `before`, as `viewer`. Events from one write are a millisecond apart,
+ * in the order the database writes them (a lesson's status before its notes), as clock_timestamp() keeps them.
+ */
 export function recordAuditChanges(db: DemoDB, before: AuditSnapshot, viewer: Profile, now = new Date()) {
   const current = snapshotAudited(db);
   const lookup = (table: string, key: string) => current.get(table)?.get(key) ?? before.get(table)?.get(key);
   const events: AuditEvent[] = [];
+  const next = () => new Date(now.getTime() + events.length);
   for (const [table, rows] of current) {
     const old = before.get(table) ?? new Map<string, Row>();
     for (const [key, row] of rows) {
-      const e = makeEvent(table, key, old.get(key), row, viewer, now, lookup);
+      const e = makeEvent(table, key, old.get(key), row, viewer, next(), lookup);
       if (e) events.push(e);
     }
     for (const [key, row] of old) {
       if (rows.has(key)) continue;
-      const e = makeEvent(table, key, row, undefined, viewer, now, lookup);
+      const e = makeEvent(table, key, row, undefined, viewer, next(), lookup);
       if (e) events.push(e);
     }
   }
@@ -243,7 +277,9 @@ export function ensureAuditSeed(db: DemoDB, now = new Date()) {
   add('settings', '1', updated({ bank_details: 'Previous account details' }), craig, at(7, 8, 55));
   add('homework', homework?.id, inserted, sarah, at(4, 17, 25));
   add('lessons', omar?.id, (row) => ({ before: earlier(row), after: row }), craig, at(3, 13, 10));
-  add('student_reports', report?.id, updated({ status: 'draft', submitted_at: null }), craig, at(1, 15, 0));
+  // Reports are submitted by the tutor who wrote them.
+  const reportTutor = db.profiles.find((p) => p.role === 'tutor' && p.tutorId === report?.tutorId) ?? sarah;
+  add('student_reports', report?.id, updated({ status: 'draft', submitted_at: null }), reportTutor, at(1, 15, 0));
 
   // Lessons Craig and Sarah taught this month: each one recorded as completed, with its notes, shortly after it ended.
   const monthAgo = addDays(now, -27).toISOString();
@@ -261,7 +297,7 @@ export function ensureAuditSeed(db: DemoDB, now = new Date()) {
     if (when >= now) continue;
     const actor = recorders.get(l.tutorId)!;
     add('lessons', l.id, updated({ status: 'scheduled' }), actor, when);
-    add('lesson_notes', l.id, inserted, actor, when);
+    add('lesson_notes', l.id, inserted, actor, new Date(when.getTime() + 1));
   }
 }
 
@@ -271,6 +307,7 @@ function matches(e: AuditEvent, f: AuditFilter, fromMs: number, toMs: number): b
   if (f.studentId && !e.studentIds.includes(f.studentId)) return false;
   if (f.tutorId && e.tutorId !== f.tutorId) return false;
   if (f.actorId && e.actorId !== f.actorId) return false;
+  if (f.actorRole && (e.actorRole ?? 'system') !== f.actorRole) return false;
   if (f.tables && f.tables.length > 0 && !f.tables.includes(e.table)) return false;
   const t = new Date(e.at).getTime();
   return t >= fromMs && t < toMs;

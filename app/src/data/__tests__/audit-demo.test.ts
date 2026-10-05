@@ -116,6 +116,16 @@ describe('demo audit trail', () => {
       const note = db.audit!.find((x) => x.table === 'lesson_notes')!;
       expect(note).toMatchObject({ action: 'insert', rowId: lesson.id, relatedIds: [lesson.id], tutorId: 't-sarah' });
       expect(describeAuditEvent(note, namesFor(db)).summary).toBe('Sarah wrote the lesson notes.');
+      // One write keeps the database's order: the status first, then the notes a millisecond later.
+      const status = db.audit!.find((x) => x.table === 'lessons' && x.rowId === lesson.id)!;
+      expect(new Date(note.at).getTime()).toBeGreaterThan(new Date(status.at).getTime());
+      expect(listAuditEventsDemo(db, who(db, 'admin'), { entityId: lesson.id, tables: ['lessons', 'lesson_notes'] }).events.map((x) => x.table)).toEqual(['lesson_notes', 'lessons']);
+      // Both say which lesson they are about.
+      const kids = lesson.studentIds.map((id) => db.students.find((x) => x.id === id)!.fullName.split(' ')[0]);
+      const ctx = describeAuditEvent(note, namesFor(db)).context!;
+      expect(ctx.startsWith(kids[0])).toBe(true);
+      expect(ctx.endsWith(formatDay(lesson.start))).toBe(true);
+      expect(describeAuditEvent(status, namesFor(db)).context).toBe(ctx);
     }
   });
 
@@ -235,6 +245,22 @@ describe('demo audit seed and queries', () => {
     expect(new Set(seen.map((e) => e.id)).size).toBe(all.length);
     const exact = listAuditEventsDemo(db, admin, {}, { limit: all.length });
     expect(exact.next).toBeNull();
+  });
+
+  it('filters by role, including the system', () => {
+    const system = listAuditEventsDemo(db, admin, { actorRole: 'system' }, { limit: 200 }).events;
+    expect(system.length).toBeGreaterThan(0);
+    expect(system.every((e) => e.actorId === null)).toBe(true);
+    const tutors = listAuditEventsDemo(db, admin, { actorRole: 'tutor' }, { limit: 200 }).events;
+    expect(tutors.length).toBeGreaterThan(0);
+    expect(tutors.every((e) => e.actorRole === 'tutor')).toBe(true);
+  });
+
+  it('seeds the report submission by its tutor, and payments with their invoice', () => {
+    const submitted = db.audit!.find((e) => e.table === 'student_reports')!;
+    expect(submitted.actorRole).toBe('tutor');
+    const card = db.audit!.find((e) => e.table === 'payments' && e.actorId === null)!;
+    expect(describeAuditEvent(card, namesFor(db)).context).toMatch(/ family · /);
   });
 
   it('lists the people in the trail', () => {

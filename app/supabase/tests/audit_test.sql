@@ -85,6 +85,8 @@ select pg_temp.check((select action = 'insert' and actor_role = 'tutor' and acto
     and tutor_id = 'b0000000-0000-0000-0000-000000000001' and cardinality(family_ids) = 2
     and after->>'summary' = 'Integration by parts'
   from pg_temp.last('lesson_notes')), 'lesson notes are filed under the lesson, by the tutor');
+select pg_temp.check((select context->>'subject' = 'IB 1:1' and (context->>'lesson_start')::timestamptz = '2026-11-03 10:00+04'
+  from pg_temp.last('lesson_notes')), 'lesson notes carry the lesson subject and start as context');
 select pg_temp.check((select after->>'status' = 'completed' and actor_role = 'tutor' from pg_temp.last('lessons')),
   'the status change made inside complete_lesson is attributed to the tutor');
 select pg_temp.check((select count(*) from public.audit_events where before::text like '%Needs confidence%' or after::text like '%Needs confidence%') = 0,
@@ -118,6 +120,24 @@ select pg_temp.check((select before = '{"status":"sent"}' and after = '{"status"
   from pg_temp.last('invoices')), 'the invoice being marked paid is recorded');
 select pg_temp.check((select count(*) from public.audit_events where before::text like '%cs_test_secret%' or after::text like '%cs_test_secret%') = 0,
   'payment provider ids never appear');
+-- A card payment from Stripe: the payment intent is also the visible reference, and must never be stored.
+insert into public.invoices (id, number, family_id, due_date, status) values
+  ('ab000000-0000-0000-0000-000000000001', 'INV-CARD-1', 'c0000000-0000-0000-0000-000000000002', current_date + 7, 'sent');
+update public.invoices set autopay_status = 'pending' where id = 'ab000000-0000-0000-0000-000000000001';
+update public.invoices set autopay_status = 'processing' where id = 'ab000000-0000-0000-0000-000000000001';
+update public.invoices set autopay_error = 'Your card was declined.' where id = 'ab000000-0000-0000-0000-000000000001';
+select pg_temp.check((select count(*) from public.audit_events where table_name = 'invoices'
+    and row_id = 'ab000000-0000-0000-0000-000000000001') = 1, 'automatic-payment bookkeeping creates no invoice event');
+select public.record_stripe_payment('ab000000-0000-0000-0000-000000000001', 300, 'pi_test_123', 'cs_test_456');
+select pg_temp.check((select after->>'reference' = '[redacted]' and after->>'stripe_payment_intent' = '[redacted]'
+    and after->>'method' = 'card' and (after->>'amount')::numeric = 300 and context->>'invoice_number' = 'INV-CARD-1'
+  from pg_temp.last('payments')), 'a card payment is recorded with its reference redacted and its invoice number as context');
+select pg_temp.check((select count(*) from public.audit_events
+    where coalesce(before::text, '') || coalesce(after::text, '') || coalesce(context::text, '') ~ '(pi_test_123|cs_test_456|declined)') = 0,
+  'payment intent ids, session ids and decline messages appear nowhere in the log');
+select pg_temp.check(public.audit_redact('x', '{"reference":"ch_3PabcDEF","note":"in person","status":"in-progress","word":"sub_"}')
+  = '{"reference":"[redacted]","note":"in person","status":"in-progress","word":"sub_"}',
+  'values that look like payment-provider ids are redacted whatever the column; ordinary words are not');
 update public.invoices set overdue_whatsapp_at = now(), autopay_claimed_at = now(), autopay_attempts = 3;
 select pg_temp.check((select before = '{"status":"sent"}' from pg_temp.last('invoices')), 'invoice reminder stamps create no event');
 
@@ -286,7 +306,7 @@ select pg_temp.check((select array_agg(distinct table_name) from public.list_aud
   'filtering by a non-uuid id matches the row id only');
 select pg_temp.check((select count(*) from public.list_audit_events(p_family_id => 'c0000000-0000-0000-0000-000000000002', p_limit => 200))
     = (select count(*) from public.audit_events where family_ids @> '{c0000000-0000-0000-0000-000000000002}')
-  and (select bool_and(table_name in ('families', 'students', 'enrolments', 'lessons', 'lesson_notes', 'opportunities', 'charges'))
+  and (select bool_and(table_name in ('families', 'students', 'enrolments', 'lessons', 'lesson_notes', 'opportunities', 'charges', 'invoices', 'payments'))
        from public.list_audit_events(p_family_id => 'c0000000-0000-0000-0000-000000000002', p_limit => 200)),
   'filtering by family');
 select pg_temp.check((select count(*) from public.list_audit_events(p_student_id => 'd0000000-0000-0000-0000-000000000002', p_limit => 200))
@@ -332,3 +352,71 @@ select pg_temp.check((select family_ids = '{c0000000-0000-0000-0000-000000000002
 delete from public.audit_probe;
 select pg_temp.check((select action = 'delete' and after is null and before->>'family_id' = 'c0000000-0000-0000-0000-000000000002'
     and family_ids = '{c0000000-0000-0000-0000-000000000002}' from pg_temp.last('audit_probe')), 'deletes keep the old row');
+
+-- The System filter and context on lessons -----------------------------------------------
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select pg_temp.check((select bool_and(actor_role = 'system') and count(*) > 0 from public.list_audit_events(p_actor_role => 'system', p_limit => 200)),
+  'filtering by the system');
+select pg_temp.check((select bool_and(actor_role = 'tutor') and count(*) > 0 from public.list_audit_events(p_actor_role => 'tutor', p_limit => 200)),
+  'filtering by role');
+reset role;
+select pg_temp.check((select context->>'subject' = 'IB 1:1' and context ? 'lesson_start'
+  from public.audit_events where table_name = 'lessons' order by at limit 1), 'lesson events carry the subject and start as context');
+
+-- Deleting a person keeps only who it was -------------------------------------------------
+insert into public.families (id, name, parent_name, email, phone) values
+  ('c0000000-0000-0000-0000-000000000009', 'Gone', 'Gwen Gone', 'gwen@x', '+971 50 111 2222');
+delete from public.families where id = 'c0000000-0000-0000-0000-000000000009';
+select pg_temp.check((select action = 'delete' and before = '{"id":"c0000000-0000-0000-0000-000000000009","name":"Gone"}'
+  from pg_temp.last('families')), 'a deleted family keeps only its id and name');
+
+-- Erasure ---------------------------------------------------------------------------------
+select pg_temp.check((select count(*) from public.audit_events where family_ids @> '{c0000000-0000-0000-0000-000000000001}'
+  and (coalesce(before::text, '') || coalesce(after::text, '')) like '%+971500000000%') = 1, 'the family phone is in the log before erasure');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+do $$ begin
+  perform public.audit_erase(array['c0000000-0000-0000-0000-000000000001'::uuid]);
+  raise exception 'admin erased history';
+exception when insufficient_privilege then raise notice 'ok - an admin cannot call audit_erase';
+end $$;
+do $$ begin
+  perform set_config('elite.audit_erasing', 'on', true);
+  update public.audit_events set actor_name = 'Someone else';
+  raise exception 'admin changed history with the erasing flag';
+exception when insufficient_privilege then raise notice 'ok - the erasing flag alone does not unlock the log';
+end $$;
+reset role;
+create temp table before_erase as select count(*) n from public.audit_events;
+set role service_role;
+select pg_temp.check(public.audit_erase(array['c0000000-0000-0000-0000-000000000001'::uuid], array['d0000000-0000-0000-0000-000000000001'::uuid],
+  '{}', array['a0000000-0000-0000-0000-00000000000c'::uuid]) > 0, 'the service role can erase a family');
+reset role;
+select pg_temp.check((select count(*) from public.audit_events where family_ids @> '{c0000000-0000-0000-0000-000000000001}'
+    and (coalesce(before::text, '') || coalesce(after::text, '')) ~ '(\+971500000000|Sara Ahmed|Mona Ahmed|Integration by parts)') = 0,
+  'after erasure the family''s phone, names and lesson notes are gone from the log');
+select pg_temp.check((select before->>'phone' is null and after->>'phone' = '[erased]' from public.audit_events
+    where table_name = 'families' and row_id = 'c0000000-0000-0000-0000-000000000001' and action = 'update'),
+  'the change itself is still recorded');
+select pg_temp.check((select count(*) from public.audit_events) = (select n from before_erase)
+  and (select count(*) from public.audit_events where (after->>'amount')::numeric = 450 and table_name = 'payments') = 1,
+  'erasure removes no events and keeps amounts');
+do $$ begin
+  update public.audit_events set actor_name = 'Someone else';
+  raise exception 'owner changed history after erasure';
+exception when insufficient_privilege then raise notice 'ok - the log is locked again after erasure';
+end $$;
+
+-- Per-subject tables (custom pay and prices, attached by later teams) -------------------------
+insert into public.enrolments (id, student_id, subject, tutor_id) values
+  ('a1000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000002', 'Chemistry', 'b0000000-0000-0000-0000-000000000001');
+create table public.audit_pay_probe (enrolment_id uuid primary key, hourly_pay numeric, updated_at timestamptz default now());
+select public.audit_attach('public.audit_pay_probe');
+insert into public.audit_pay_probe (enrolment_id, hourly_pay) values ('a1000000-0000-0000-0000-000000000001', 200);
+update public.audit_pay_probe set hourly_pay = 220;
+select pg_temp.check((select row_id = 'a1000000-0000-0000-0000-000000000001' and related_ids = '{a1000000-0000-0000-0000-000000000001}'
+    and student_ids = '{d0000000-0000-0000-0000-000000000002}' and family_ids = '{c0000000-0000-0000-0000-000000000002}'
+    and tutor_id = 'b0000000-0000-0000-0000-000000000001' and context->>'subject' = 'Chemistry'
+    and before = '{"hourly_pay":200}' and after = '{"hourly_pay":220}'
+  from pg_temp.last('audit_pay_probe')), 'a per-subject row is filed under its enrolment''s student, family and tutor');

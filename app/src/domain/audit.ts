@@ -31,6 +31,11 @@ export interface AuditEvent {
   /** snake_case database column keys. */
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  /**
+   * Labels saved with the event so it can say which record it is about: `lesson_start`, `subject`,
+   * `invoice_number`. Null for events without any (and for events recorded before context was added).
+   */
+  context?: Record<string, unknown> | null;
 }
 
 export interface AuditFilter {
@@ -40,6 +45,8 @@ export interface AuditFilter {
   studentId?: string;
   tutorId?: string;
   actorId?: string;
+  /** 'admin' | 'tutor' | 'parent' | 'student' | 'system' */
+  actorRole?: string;
   tables?: string[];
   /** ISO, inclusive. */
   from?: string;
@@ -68,14 +75,20 @@ export interface AuditNames {
   student(id: string): string | undefined;
   family(id: string): string | undefined;
   service(id: string): string | undefined;
+  /** How to name whoever made the change; defaults to their first name (see actorLabeller). */
+  actorLabel?(e: AuditEvent): string;
 }
 
 export interface AuditDescription {
   summary: string;
+  /** Which record the event is about, e.g. 'Omar · Chemistry · Thu 8 Oct', when the summary doesn't say. */
+  context?: string;
   changes: string[];
 }
 
 export const REDACTED = '[redacted]';
+/** Personal values blanked by public.audit_erase() after an account is deleted. */
+export const ERASED = '[erased]';
 
 /** The record types the History filter offers, each covering one or more tables. */
 export const AUDIT_TYPE_GROUPS: readonly { key: string; label: string; tables: string[] }[] = [
@@ -97,21 +110,36 @@ export const AUDIT_TYPE_GROUPS: readonly { key: string; label: string; tables: s
  * - `keep`: stored on both sides of every recorded update, changed or not, so the event can be described.
  * - `afterOnly`: stored only on the "after" side, when changed.
  */
-export const AUDIT_RULES: Record<string, { ignore?: string[]; only?: string[]; when?: string[]; keep?: string[]; afterOnly?: string[] }> = {
+export const AUDIT_RULES: Record<
+  string,
+  { ignore?: string[]; only?: string[]; when?: string[]; keep?: string[]; afterOnly?: string[]; deleteKeeps?: string[] }
+> = {
   lessons: { ignore: ['reminded_at', 'whatsapp_reminded_at'] },
-  invoices: { ignore: ['overdue_whatsapp_at', 'autopay_claimed_at', 'autopay_attempts'] },
+  invoices: { ignore: ['overdue_whatsapp_at', 'autopay_claimed_at', 'autopay_attempts', 'autopay_status', 'autopay_error'] },
   homework: { ignore: ['due_whatsapp_at'] },
   settings: { ignore: ['next_invoice_number'] },
   student_reports: { ignore: ['updated_at'], only: ['status', 'submitted_at', 'published_at'], when: ['status'], afterOnly: ['submitted_at', 'published_at'] },
   opportunities: { only: ['title', 'status', 'awarded_tutor_id', 'awarded_at'], when: ['awarded_tutor_id', 'status'], keep: ['title'] },
+  // `deleteKeeps`: a removed person's contact details are not copied into the permanent log.
+  families: { deleteKeeps: ['id', 'name'] },
+  students: { deleteKeeps: ['id', 'full_name', 'family_id'] },
+  tutors: { deleteKeeps: ['id', 'full_name'] },
+  family_contacts: { ignore: ['updated_at'], deleteKeeps: ['id', 'name', 'family_id', 'relationship'] },
+  enrolment_tutor_pay: { ignore: ['updated_at'] },
+  enrolment_family_price: { ignore: ['updated_at'] },
 };
 
 const SENSITIVE = /(bank|iban|swift|account_number|token|secret|password|stripe_)/i;
+/** Payment-provider ids (Stripe payment intents, charges, sessions, customers…), wherever they are stored. */
+const PROVIDER_ID = /^(pi|ch|cs|py|pm|cus|seti|sub|in|acct|re|src|tok|card)_[A-Za-z0-9][A-Za-z0-9_]*$/;
 
-/** Hide the values of sensitive columns (bank details, tokens, Stripe ids). Empty values stay empty. */
+/** Hide sensitive values: by column (bank details, tokens, Stripe columns) or by value (provider ids). Empty values stay empty. */
 export function redactAuditRow(_table: string, row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(row)) out[k] = SENSITIVE.test(k) && v !== null && v !== undefined ? REDACTED : v;
+  for (const [k, v] of Object.entries(row)) {
+    const hidden = v !== null && v !== undefined && (SENSITIVE.test(k) || (typeof v === 'string' && PROVIDER_ID.test(v)));
+    out[k] = hidden ? REDACTED : v;
+  }
   return out;
 }
 
@@ -151,7 +179,8 @@ export function diffAuditRows(
   if (!before || !after) {
     if (rule.when) return null;
     const row = before ?? after!;
-    const kept = redactAuditRow(table, project(row, stored));
+    const keeps = before && rule.deleteKeeps ? new Set(rule.deleteKeeps) : null;
+    const kept = redactAuditRow(table, project(row, (k) => stored(k) && (!keeps || keeps.has(k))));
     return before ? { before: kept, after: null } : { before: null, after: kept };
   }
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -189,6 +218,7 @@ export function auditEventFromRow(r: Record<string, any>): AuditEvent {
     relatedIds: arr(r.related_ids),
     before: obj(r.before),
     after: obj(r.after),
+    context: obj(r.context),
   };
 }
 
@@ -196,10 +226,31 @@ export function auditEventFromRow(r: Record<string, any>): AuditEvent {
 // Describing events in plain English
 // ---------------------------------------------------------------------------
 
-/** First name of whoever made the change, or 'The system' for automatic changes. */
+/** First name of whoever made the change, 'The system' for automatic changes, or 'A former user' once erased. */
 export function auditActorLabel(e: AuditEvent): string {
   const first = e.actorName?.trim().split(/\s+/)[0];
-  return first || 'The system';
+  if (first) return first;
+  return e.actorId ? 'A former user' : 'The system';
+}
+
+/**
+ * Names actors by first name, adding the surname initial when two people in `actors` share a first name
+ * (two tutors called Sarah become 'Sarah K.' and 'Sarah M.').
+ */
+export function actorLabeller(actors: readonly { id: string; name: string }[]): (e: AuditEvent) => string {
+  const parts = (name: string) => name.trim().split(/\s+/).filter(Boolean);
+  const ids = new Map<string, Set<string>>();
+  for (const a of actors) {
+    const first = parts(a.name)[0]?.toLowerCase();
+    if (first) ids.set(first, (ids.get(first) ?? new Set()).add(a.id));
+  }
+  return (e) => {
+    const p = parts(e.actorName ?? '');
+    if (p.length === 0) return auditActorLabel(e);
+    const others = ids.get(p[0].toLowerCase());
+    const shared = !!others && [...others].some((id) => id !== e.actorId);
+    return shared && p.length > 1 ? `${p[0]} ${p[p.length - 1].charAt(0).toUpperCase()}.` : p[0];
+  };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -300,7 +351,7 @@ const LABELS: Record<string, string> = {
 
 const MONEY = new Set(['hourly_pay', 'rate', 'amount', 'price', 'pay_rate', 'unit_price']);
 const PERCENT = new Set(['vat_rate', 'late_cancel_fee', 'no_show_fee']);
-const PEOPLE: Record<string, keyof AuditNames> = {
+const PEOPLE: Record<string, 'tutor' | 'student' | 'family' | 'service'> = {
   tutor_id: 'tutor',
   awarded_tutor_id: 'tutor',
   invited_tutor_ids: 'tutor',
@@ -354,6 +405,7 @@ function changeLine(key: string, before: unknown, after: unknown, names: AuditNa
   const label = labelOf(key);
   const plural = /s$/.test(label) && !/ss$/.test(label);
   if (before === REDACTED || after === REDACTED) return `${label} ${plural ? 'were' : 'was'} changed (hidden for security).`;
+  if (before === ERASED || after === ERASED) return `${label} ${plural ? 'were' : 'was'} changed (erased on request).`;
   const a = formatValue(key, before, names);
   const b = formatValue(key, after, names);
   if (a === undefined || b === undefined || a.length > LONG_TEXT || b.length > LONG_TEXT) {
@@ -369,7 +421,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; omit: string[] } {
-  const who = auditActorLabel(e);
+  const who = names.actorLabel ? names.actorLabel(e) : auditActorLabel(e);
   const b = e.before ?? {};
   const a = e.after ?? {};
   const row = { ...b, ...a };
@@ -408,7 +460,7 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
       if (changed('start_at') && typeof b.start_at === 'string' && typeof a.start_at === 'string') {
         return done(`${who} moved the lesson from ${when(b.start_at)} to ${when(a.start_at)}.`, ['start_at', 'end_at']);
       }
-      if (changed('tutor_id')) return done(`${who} reassigned the lesson from ${tutorName(b.tutor_id)} to ${tutorName(a.tutor_id)}.`);
+      if (changed('tutor_id')) return done(`${who} reassigned the lesson from ${tutorName(b.tutor_id)} to ${tutorName(a.tutor_id)}.`, ['tutor_id']);
       return done(`${who} updated the lesson.`);
     }
     case 'lesson_notes':
@@ -476,7 +528,7 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
       if (e.action === 'insert') return done(subject ? `${who} enrolled ${student} in ${subject}.` : `${who} added a subject for ${student}.`);
       if (e.action === 'delete') return done(`${who} removed ${theirs}.`);
       if (changed('active')) return done(a.active ? `${who} restarted ${theirs}.` : `${who} removed ${theirs}.`, ['active']);
-      if (changed('tutor_id')) return done(`${who} changed the tutor for ${theirs} from ${tutorName(b.tutor_id)} to ${tutorName(a.tutor_id)}.`);
+      if (changed('tutor_id')) return done(`${who} changed the tutor for ${theirs} from ${tutorName(b.tutor_id)} to ${tutorName(a.tutor_id)}.`, ['tutor_id']);
       return done(`${who} updated ${theirs}.`);
     }
     case 'students': {
@@ -548,10 +600,48 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
   }
 }
 
-/** One event as a sentence, plus a line per changed field for updates. Never shows raw ids. */
+/** Tables whose events are about one or more students' lessons or subjects. */
+const STUDENT_CONTEXT = new Set(['lessons', 'lesson_notes', 'homework', 'student_reports', 'charges', 'enrolment_tutor_pay', 'enrolment_family_price']);
+/** Tables whose events are about a family's account. */
+const FAMILY_CONTEXT = new Set(['invoices', 'payments', 'packages', 'family_contacts']);
+
+/**
+ * Which record an event is about, for when its summary doesn't say: the students, subject and lesson day for
+ * lessons, notes, homework, reports and charges ('Omar · Chemistry · Thu 8 Oct'); the family (and invoice
+ * number) for invoices, payments and packages ('Al Mansoori family · INV-1001'). `omitDay` leaves the lesson day
+ * out when the summary already says it.
+ */
+export function describeAuditContext(e: AuditEvent, names: AuditNames, omitDay = false): string | undefined {
+  const c = e.context ?? {};
+  const row = { ...(e.before ?? {}), ...(e.after ?? {}) };
+  const text = (v: unknown) => (typeof v === 'string' && v && v !== ERASED && v !== REDACTED ? v : undefined);
+  const parts: string[] = [];
+  if (STUDENT_CONTEXT.has(e.table)) {
+    const kids = e.studentIds.map((id) => firstName(names.student(id))).filter((n): n is string => !!n);
+    if (kids.length > 3) parts.push(`${kids.slice(0, 3).join(', ')} and ${kids.length - 3} more`);
+    else if (kids.length) parts.push(joinNames(kids));
+  } else if (FAMILY_CONTEXT.has(e.table)) {
+    const fams = e.familyIds.map((id) => names.family(id)).filter((n): n is string => !!n);
+    if (fams.length) parts.push(`${joinNames(fams)} ${fams.length === 1 ? 'family' : 'families'}`);
+  } else {
+    return undefined;
+  }
+  const serviceId = e.table === 'lessons' ? text(row.service_id) : undefined;
+  const subject = text(c.subject) ?? (e.table === 'lessons' ? text(row.subject) ?? (serviceId ? names.service(serviceId) : undefined) : undefined);
+  if (subject) parts.push(subject);
+  const start = text(c.lesson_start) ?? (e.table === 'lessons' ? text(row.start_at) : undefined);
+  if (start && !omitDay && !Number.isNaN(new Date(start).getTime())) parts.push(formatDay(start));
+  const invoice = e.table === 'invoices' ? undefined : text(c.invoice_number);
+  if (invoice) parts.push(invoice);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
+/** One event as a sentence, plus which record it is about and a line per changed field for updates. Never shows raw ids. */
 export function describeAuditEvent(e: AuditEvent, names: AuditNames): AuditDescription {
   const { summary, omit } = describeSummary(e, names);
-  if (e.action !== 'update' || !e.before || !e.after) return { summary, changes: [] };
+  // When the summary already names the lesson's new time ('moved the lesson from … to …'), don't repeat the day.
+  const context = describeAuditContext(e, names, omit.includes('start_at'));
+  if (e.action !== 'update' || !e.before || !e.after) return context ? { summary, context, changes: [] } : { summary, changes: [] };
   const b = e.before;
   const a = e.after;
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
@@ -559,5 +649,5 @@ export function describeAuditEvent(e: AuditEvent, names: AuditNames): AuditDescr
     // Redacted values look the same on both sides, but they are only stored when they changed.
     .filter((k) => !omit.includes(k) && (stable(b[k]) !== stable(a[k]) || b[k] === REDACTED || a[k] === REDACTED))
     .map((k) => changeLine(k, b[k], a[k], names));
-  return { summary, changes };
+  return context ? { summary, context, changes } : { summary, changes };
 }

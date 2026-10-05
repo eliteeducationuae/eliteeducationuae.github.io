@@ -1,8 +1,11 @@
 import {
   AUDIT_RULES,
   AUDIT_TYPE_GROUPS,
+  ERASED,
   REDACTED,
+  actorLabeller,
   auditActorLabel,
+  describeAuditContext,
   auditEventFromRow,
   describeAuditEvent,
   diffAuditRows,
@@ -81,7 +84,7 @@ describe('audit descriptions', () => {
     expect(say({ before: { status: 'scheduled' }, after: { status: 'no-show' } }).summary).toBe('Craig recorded the lesson as a no-show.');
     const reassigned = say({ before: { tutor_id: UUID_SARAH }, after: { tutor_id: UUID_JAMES } });
     expect(reassigned.summary).toBe('Craig reassigned the lesson from Sarah Khan to James Wilson.');
-    expect(reassigned.changes).toEqual(['Tutor: Sarah Khan → James Wilson']);
+    expect(reassigned.changes).toEqual([]);
   });
 
   it('describes lesson notes', () => {
@@ -125,7 +128,7 @@ describe('audit descriptions', () => {
     expect(say({ ...base, before: { active: true }, after: { active: false } }).summary).toBe("Craig removed one of Omar's subjects.");
     const tutor = say({ ...base, before: { tutor_id: UUID_SARAH }, after: { tutor_id: UUID_JAMES } });
     expect(tutor.summary).toBe("Craig changed the tutor for one of Omar's subjects from Sarah Khan to James Wilson.");
-    expect(tutor.changes).toEqual(['Tutor: Sarah Khan → James Wilson']);
+    expect(tutor.changes).toEqual([]);
   });
 
   it('describes people, services and settings with a line per change', () => {
@@ -190,7 +193,8 @@ describe('audit descriptions', () => {
     ];
     const all = JSON.stringify(texts);
     for (const id of [UUID_SARAH, UUID_JAMES, UUID_OMAR, UUID_UNKNOWN]) expect(all).not.toContain(id);
-    expect(texts[0].changes).toContain('Tutor: Sarah Khan → someone');
+    expect(texts[0].summary).toBe('Craig reassigned the lesson from Sarah Khan to someone.');
+    expect(texts[0].changes).toEqual(['Students: Omar Al Mansoori → someone']);
     expect(texts[1].changes).toEqual(['Invoice was changed.', 'Lesson was changed.']);
     expect(texts[3].summary).toBe('Craig scheduled a lesson for a student on Tue 14 Oct at 16:00.');
   });
@@ -220,7 +224,7 @@ describe('audit recording rules', () => {
     expect(diffAuditRows('lesson_notes', { attendance: { a: 'present', b: 'late' } }, { attendance: { b: 'late', a: 'present' } })).toBeNull();
     expect(diffAuditRows('lessons', null, null)).toBeNull();
     expect(diffAuditRows('lessons', null, { id: 'l1', reminded_at: 'x', status: 'scheduled' })).toEqual({ before: null, after: { id: 'l1', status: 'scheduled' } });
-    expect(diffAuditRows('tutors', { id: 't', bank_iban: 'AE07' }, null)).toEqual({ before: { id: 't', bank_iban: REDACTED }, after: null });
+    expect(diffAuditRows('tutor_invoices', { id: 't', bank_iban: 'AE07' }, null)).toEqual({ before: { id: 't', bank_iban: REDACTED }, after: null });
   });
 
   it('records only status changes on reports', () => {
@@ -272,6 +276,7 @@ describe('audit recording rules', () => {
       related_ids: ['i1'],
       before: null,
       after: { amount: 450, method: 'card' },
+      context: { invoice_number: 'INV-1001' },
     });
     expect(e).toEqual({
       id: 'a1',
@@ -289,7 +294,99 @@ describe('audit recording rules', () => {
       relatedIds: ['i1'],
       before: null,
       after: { amount: 450, method: 'card' },
+      context: { invoice_number: 'INV-1001' },
     });
     expect(auditEventFromRow({ id: 'a2', at: 'x', action: 'update', table: 'lessons' }).table).toBe('lessons');
+  });
+});
+
+describe('audit context', () => {
+  const lessonStart = iso(2026, 10, 8, 16);
+  const ctx = (e: Partial<AuditEvent>) => describeAuditContext(ev(e), names);
+
+  it('names the students, subject and lesson day for lesson records', () => {
+    const lesson = { table: 'lessons', studentIds: [UUID_OMAR], context: { lesson_start: lessonStart, subject: 'Chemistry' } };
+    expect(ctx({ ...lesson, before: { status: 'scheduled' }, after: { status: 'completed' } })).toBe('Omar · Chemistry · Thu 8 Oct');
+    expect(say({ ...lesson, before: { status: 'scheduled' }, after: { status: 'completed' } })).toEqual({
+      summary: 'Craig recorded the lesson as completed.',
+      context: 'Omar · Chemistry · Thu 8 Oct',
+      changes: [],
+    });
+    expect(ctx({ ...lesson, table: 'lesson_notes', action: 'insert', studentIds: [UUID_OMAR, UUID_LAYLA] })).toBe('Omar and Layla · Chemistry · Thu 8 Oct');
+    // Without saved context, a lesson falls back to its own row and service.
+    expect(ctx({ table: 'lessons', action: 'insert', studentIds: [UUID_OMAR], after: { start_at: lessonStart, service_id: 'svc-1' } })).toBe(
+      'Omar · IB Diploma 1:1 · Thu 8 Oct',
+    );
+  });
+
+  it('names the student and subject for reports and homework', () => {
+    expect(ctx({ table: 'student_reports', studentIds: [UUID_LAYLA], context: { subject: 'English' } })).toBe('Layla · English');
+    expect(ctx({ table: 'homework', action: 'insert', studentIds: [UUID_OMAR] })).toBe('Omar');
+  });
+
+  it('names the family and invoice for billing records', () => {
+    expect(ctx({ table: 'payments', action: 'insert', familyIds: ['fam-1'], context: { invoice_number: 'INV-1001' } })).toBe(
+      'Al Mansoori family · INV-1001',
+    );
+    expect(ctx({ table: 'invoices', familyIds: ['fam-1'], context: { invoice_number: 'INV-1001' } })).toBe('Al Mansoori family');
+    expect(ctx({ table: 'charges', action: 'insert', studentIds: [UUID_OMAR], context: { invoice_number: 'INV-1002', subject: 'Maths' } })).toBe(
+      'Omar · Maths · INV-1002',
+    );
+  });
+
+  it('adds nothing when the summary already names the record, or nothing is known', () => {
+    expect(ctx({ table: 'students', rowId: UUID_OMAR, studentIds: [UUID_OMAR] })).toBeUndefined();
+    expect(ctx({ table: 'settings' })).toBeUndefined();
+    expect(ctx({ table: 'lessons', studentIds: [UUID_UNKNOWN] })).toBeUndefined();
+    expect(say({ table: 'settings', before: { vat_rate: 0 }, after: { vat_rate: 0.05 } })).not.toHaveProperty('context');
+  });
+});
+
+describe('audit privacy and naming', () => {
+  it('redacts payment-provider ids whatever the column, but not ordinary words', () => {
+    expect(redactAuditRow('payments', { reference: 'pi_test_123', method: 'card', note: 'in person', status: 'in-progress' })).toEqual({
+      reference: REDACTED,
+      method: 'card',
+      note: 'in person',
+      status: 'in-progress',
+    });
+    const diff = diffAuditRows('payments', null, { id: 'p1', amount: 300, reference: 'pi_3PabcDEF', stripe_payment_intent: 'pi_3PabcDEF' });
+    expect(JSON.stringify(diff)).not.toContain('pi_3P');
+    expect(redactAuditRow('payments', { reference: 'TRF-1' })).toEqual({ reference: 'TRF-1' });
+  });
+
+  it('ignores automatic-payment bookkeeping on invoices', () => {
+    expect(diffAuditRows('invoices', { autopay_status: 'pending', autopay_error: null }, { autopay_status: 'failed', autopay_error: 'Card declined' })).toBeNull();
+  });
+
+  it('keeps only who it was when a person is deleted', () => {
+    expect(diffAuditRows('families', { id: 'f1', name: 'Gone', email: 'g@x', phone: '+971' }, null)).toEqual({
+      before: { id: 'f1', name: 'Gone' },
+      after: null,
+    });
+    expect(diffAuditRows('students', { id: 's1', full_name: 'Sam', family_id: 'f1', target_grade: '7' }, null)).toEqual({
+      before: { id: 's1', full_name: 'Sam', family_id: 'f1' },
+      after: null,
+    });
+  });
+
+  it('describes erased values without showing them', () => {
+    expect(say({ table: 'families', before: { phone: null }, after: { phone: ERASED } }).changes).toEqual(['Phone was changed (erased on request).']);
+    expect(auditActorLabel(ev({ actorName: null }))).toBe('A former user');
+  });
+
+  it('adds a surname initial only when two people share a first name', () => {
+    const label = actorLabeller([
+      { id: 'u-1', name: 'Sarah Khan' },
+      { id: 'u-2', name: 'Sarah Miles' },
+      { id: 'u-3', name: "Craig O'Brien" },
+    ]);
+    expect(label(ev({ actorId: 'u-1', actorName: 'Sarah Khan' }))).toBe('Sarah K.');
+    expect(label(ev({ actorId: 'u-2', actorName: 'Sarah Miles' }))).toBe('Sarah M.');
+    expect(label(ev({ actorId: 'u-3', actorName: "Craig O'Brien" }))).toBe('Craig');
+    expect(label(ev(system))).toBe('The system');
+    expect(describeAuditEvent(ev({ actorId: 'u-1', actorName: 'Sarah Khan', table: 'settings' }), { ...names, actorLabel: label }).summary).toBe(
+      'Sarah K. changed the business settings.',
+    );
   });
 });

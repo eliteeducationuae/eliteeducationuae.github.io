@@ -1529,6 +1529,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
           p_before_at: page?.before?.at ?? null,
           p_before_id: page?.before?.id ?? null,
           p_limit: limit,
+          p_actor_role: filter.actorRole ?? null,
         }),
       ) ?? [];
       const events = rows.map(auditEventFromRow);
