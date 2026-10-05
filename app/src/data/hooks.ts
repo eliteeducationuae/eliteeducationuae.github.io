@@ -16,6 +16,8 @@ const invalidateAll = () => queryClient.invalidateQueries();
 export const useSettings = () => useQuery({ queryKey: ['settings'], queryFn: () => source.getSettings() });
 export const useTutors = () => useQuery({ queryKey: ['tutors'], queryFn: () => source.listTutors() });
 export const useFamilies = () => useQuery({ queryKey: ['families'], queryFn: () => source.listFamilies() });
+export const useFamilyContacts = (familyId?: string) =>
+  useQuery({ queryKey: ['familyContacts', familyId], queryFn: () => source.listFamilyContacts(familyId!), enabled: !!familyId });
 export const useStudents = () => useQuery({ queryKey: ['students'], queryFn: () => source.listStudents() });
 export const useServices = () => useQuery({ queryKey: ['services'], queryFn: () => source.listServices() });
 

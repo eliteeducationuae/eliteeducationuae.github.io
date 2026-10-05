@@ -408,6 +408,10 @@ select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-00
   'Please enter a mobile number with its country code, for example +971 50 123 4567, to send WhatsApp messages.',
   'WhatsApp needs a number with its country code');
 select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
+  '{"name":"Wa Short","can_log_in":false,"receives_whatsapp":true,"phone":"+97150123"}')$$,
+  'Please enter a mobile number with its country code, for example +971 50 123 4567, to send WhatsApp messages.',
+  'a shortened UAE number is refused for WhatsApp');
+select pg_temp.raises($$select public.save_family_contact('c0000000-0000-0000-0000-000000000001',
   '{"name":"Copy Cat","email":"RANA@X.AE","can_log_in":false}')$$,
   'Another contact in this family already uses that email address.', 'two contacts in a family cannot share an email');
 reset role;

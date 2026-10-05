@@ -67,7 +67,9 @@ alter table public.notification_outbox
 /** A phone number as WhatsApp needs it (E.164, e.g. +971501234567), with spaces, dashes and brackets removed; else null. */
 create function public.contact_whatsapp_number(p_phone text) returns text
 language sql immutable set search_path = public as $$
-  select n from (select regexp_replace(coalesce(p_phone, ''), '[\s()-]', '', 'g') as n) x where n ~ '^\+[1-9][0-9]{7,14}$'
+  -- A UAE number must be a complete mobile (+971 5X XXX XXXX); a shortened one such as '050 123' is refused.
+  select n from (select regexp_replace(coalesce(p_phone, ''), '[\s()-]', '', 'g') as n) x
+  where n ~ '^\+[1-9][0-9]{7,14}$' and (n !~ '^\+971' or n ~ '^\+9715[0-9]{8}$')
 $$;
 
 /** How a relationship reads in a sentence: 'mother', 'PA', 'family office'. */

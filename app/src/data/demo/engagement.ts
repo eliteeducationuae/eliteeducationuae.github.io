@@ -6,6 +6,7 @@ import { surnameOf } from '@/lib/social-auth';
 import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
+import { syncPrimaryFromFamily } from './contacts';
 import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
@@ -30,11 +31,17 @@ export const eq = {
     if (!me || me.role !== 'parent') return viewer;
     const family = db.families.find((f) => f.id === me.familyId);
     if (family && family.status !== 'prospect') return me;
-    if (family && family.parentName === me.fullName) {
+    const renamesFamily = !!family && family.parentName === me.fullName;
+    if (family && renamesFamily) {
       family.parentName = clean;
       family.name = surnameOf(clean);
     }
     me.fullName = clean;
+    // Their own contact entry carries the same name, and the main contact follows the family record.
+    for (const c of db.familyContacts ?? []) {
+      if (c.familyId === me.familyId && (c.profileId === me.id || c.email?.toLowerCase() === me.email.toLowerCase())) c.name = clean;
+    }
+    if (family && renamesFamily) syncPrimaryFromFamily(db, family);
     return me;
   },
   /** Mirrors public.add_my_child: a parent adds a child with 1 to 10 subjects. */

@@ -31,6 +31,8 @@ import type {
   TutorAbsence,
   Charge,
   Family,
+  FamilyContact,
+  FamilyContactDraft,
   Homework,
   Invoice,
   InvoiceStatus,
@@ -246,6 +248,14 @@ export interface DataSource {
   submitEnquiry(enquiry: NewEnquiry): Promise<void>;
   listEnquiries(): Promise<Enquiry[]>;
   updateEnquiry(id: string, patch: Partial<Omit<Enquiry, 'id' | 'createdAt'>>): Promise<void>;
+
+  // Family contacts
+  /** The family's contacts, main contact first. Admins and the family see everything; a tutor who teaches the family sees names and relationships only; anyone else gets an empty list. */
+  listFamilyContacts(familyId: string): Promise<FamilyContact[]>;
+  /** Admins, or a parent for their own family. Making a contact the main one replaces the previous main contact. */
+  saveFamilyContact(familyId: string, contact: FamilyContactDraft): Promise<FamilyContact>;
+  /** Admins, or a parent for their own family. Never the main contact; a parent cannot remove the last contact who can sign in. */
+  removeFamilyContact(contactId: string): Promise<void>;
 
   // Availability, closures, absences, booking
   listAvailability(): Promise<Availability[]>;
