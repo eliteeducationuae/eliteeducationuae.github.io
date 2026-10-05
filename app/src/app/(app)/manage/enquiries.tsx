@@ -1,9 +1,9 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { ENQUIRY_STATUS } from '@/components/enquiries';
-import { RepeatNote, SpamActions, SpamNote } from '@/components/spam';
+import { RepeatNote, SpamActions, SpamFilterChip, SpamNote } from '@/components/spam';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Segmented, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useEnquiries } from '@/data/hooks';
@@ -16,7 +16,8 @@ type Filter = 'open' | 'enrolled' | 'lost' | 'spam';
 /** The pipeline from first contact to enrolled family. */
 export default function Enquiries() {
   const enquiries = useEnquiries();
-  const [filter, setFilter] = useState<Filter>('open');
+  const params = useLocalSearchParams<{ view?: string }>();
+  const [filter, setFilter] = useState<Filter>(() => (params.view === 'spam' ? 'spam' : 'open'));
   if (enquiries.isLoading) return <Loading />;
   // Possible spam is kept for review but left out of the pipeline and its figures.
   const all = withoutSpam(enquiries.data ?? []);
@@ -45,16 +46,15 @@ export default function Enquiries() {
         <Stat label="Conversion" value={conversion === null ? '–' : `${conversion}%`} hint="enrolled vs lost" tone="success" />
       </StatGrid>
       <Segmented
-        fit
         value={filter}
         onChange={setFilter}
         options={[
           { value: 'open', label: `Open (${open.length})` },
           { value: 'enrolled', label: 'Enrolled' },
           { value: 'lost', label: 'Lost' },
-          { value: 'spam', label: `Possible spam (${spam.length})` },
         ]}
       />
+      <SpamFilterChip count={spam.length} selected={filter === 'spam'} onPress={() => setFilter(filter === 'spam' ? 'open' : 'spam')} />
       {list.length === 0 && filter === 'spam' ? (
         <EmptyState icon="inbox" title="No possible spam" message="Messages that look automated are kept here so that nothing genuine is lost." />
       ) : list.length === 0 ? (

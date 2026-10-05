@@ -1,6 +1,6 @@
 import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
-import { enquiryPayloadProblem, findDuplicateEnquiry, mergeMessage, RateLimitError, rateLimited, SPAM_LIMITS, spamReasons } from '@/domain/spam';
+import { enquiryPayloadProblem, findDuplicateEnquiry, mergeMessage, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, SpamReason, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
@@ -21,8 +21,8 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
   return false;
 }
 
-/** Blank fields a repeat enquiry may fill in on the one it is merged into. */
-const MERGE_FIELDS = ['phone', 'studentName', 'curriculum', 'subject', 'phase', 'yearGroup', 'preferredTimes'] as const;
+/** Blank fields a repeat enquiry may fill in on the one it is merged into. A telephone number is only noted. */
+const MERGE_FIELDS = ['studentName', 'curriculum', 'subject', 'phase', 'yearGroup', 'preferredTimes'] as const;
 
 export const eq = {
   /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
@@ -116,6 +116,7 @@ export const eq = {
       const dup = reasons.length ? undefined : findDuplicateEnquiry(db.enquiries, { ...e, email }, now);
       if (dup) {
         for (const k of MERGE_FIELDS) if (!dup[k]?.trim() && e[k]?.trim()) dup[k] = e[k]!.trim();
+        dup.notes = repeatPhoneNote(dup.notes, dup.phone, e.phone, now);
         dup.message = mergeMessage(dup.message, e.message, now);
         dup.repeatCount = (dup.repeatCount ?? 0) + 1;
         dup.lastSubmittedAt = at;

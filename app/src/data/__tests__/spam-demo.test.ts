@@ -33,7 +33,9 @@ describe('public enquiries (mirrors submit_enquiry spam protection)', () => {
     expect(db.enquiries.length).toBe(before + 1);
     const e = db.enquiries[db.enquiries.length - 1];
     expect(e.repeatCount).toBe(2);
-    expect(e.phone).toBe('+971 50 000 0000');
+    // A repeat's number is noted for the office to confirm, not written into the contact details.
+    expect(e.phone).toBeUndefined();
+    expect(e.notes).toMatch(/^Telephone number given in a repeat submission on \d+ October 2026: \+971 50 000 0000\. /);
     // The earlier message is kept; the different one is added underneath.
     expect(e.message).toBe(mergeMessage(layla.message, `${layla.message} and Physics`, at(10)));
     expect(e.message).toMatch(/^We would like help with IB Maths for our daughter\n\nRe-sent on \d+ October 2026: We would like help with IB Maths for our daughter and Physics$/);

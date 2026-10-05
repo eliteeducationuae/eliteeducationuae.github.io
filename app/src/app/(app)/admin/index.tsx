@@ -6,6 +6,7 @@ import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Secti
 import { Spacing } from '@/constants/theme';
 import { Icon } from '@/components/icon';
 import { RiskRow, useAtRisk } from '@/components/insights';
+import { SpamReviewLine } from '@/components/spam';
 import {
   useAbsences,
   useApplications,
@@ -26,7 +27,7 @@ import { chargeRevenue, displayStatus, formatAED, invoiceTotals, packageRemainin
 import { addDays, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
 import { adminSummary, greetingLine } from '@/domain/greeting';
 import { byStart, lessonsDuringAbsence } from '@/domain/scheduling';
-import { withoutSpam } from '@/domain/spam';
+import { suspectedCount, withoutSpam } from '@/domain/spam';
 import { useTheme } from '@/hooks/use-theme';
 import { plural } from '@/lib/id';
 
@@ -206,6 +207,8 @@ export default function AdminDashboard() {
               Everything is in order. There are no overdue invoices or missing lesson notes.
             </Banner>
           )}
+          {/* Held as possible spam: a quiet pointer, deliberately outside "Needs attention" and its count. */}
+          <SpamReviewLine enquiries={suspectedCount(enquiries.data)} applications={suspectedCount(applications.data)} />
 
           <Section
             title="Today’s lessons"

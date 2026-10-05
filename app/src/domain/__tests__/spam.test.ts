@@ -8,6 +8,7 @@ import {
   isPossibleSpam,
   isRateLimitError,
   mergeMessage,
+  repeatPhoneNote,
   messageSimilarity,
   normaliseMessage,
   PAYLOAD_MESSAGES,
@@ -20,6 +21,7 @@ import {
   spamReasonPhrase,
   spamReasons,
   spamSummary,
+  suspectedCount,
   withoutSpam,
 } from '../spam';
 import type { Enquiry, TutorApplication } from '../types';
@@ -216,6 +218,22 @@ describe('enquiryConversion and possible spam', () => {
   });
 });
 
+describe('repeatPhoneNote', () => {
+  const at = new Date('2026-10-05T22:00:00Z');
+  it('notes a new number for the office to confirm, in UAE time', () => {
+    expect(repeatPhoneNote(undefined, undefined, '+971 50 1', at)).toBe(
+      'Telephone number given in a repeat submission on 6 October 2026: +971 50 1. It has not been added to the contact details; please confirm it before use.',
+    );
+    expect(repeatPhoneNote('Called once', undefined, '+44 7', at)).toMatch(/^Called once\n\nTelephone number given/);
+  });
+  it('adds nothing for a blank number, one already on file or one already noted', () => {
+    expect(repeatPhoneNote('Called once', '+971501', '+971 50 1', at)).toBe('Called once');
+    expect(repeatPhoneNote('Called once', undefined, '  ', at)).toBe('Called once');
+    const once = repeatPhoneNote(undefined, undefined, '+44 7', at);
+    expect(repeatPhoneNote(once, undefined, '+44 7', at)).toBe(once);
+  });
+});
+
 describe('mergeMessage', () => {
   const at = new Date('2026-10-05T22:00:00Z'); // 6 October in the UAE
   it('never overwrites the earlier message', () => {
@@ -239,6 +257,13 @@ describe('isRateLimitError and spamLabel', () => {
     expect(spamLabel({ spamStatus: 'suspected' })).toBe('Possible spam');
     expect(spamLabel({ spamStatus: 'spam' })).toBe('Marked as spam');
     expect(spamLabel({ spamStatus: 'clean' })).toBeUndefined();
-    expect(spamReasonPhrase(['too-fast', 'links'])).toBe('sent very quickly; several links');
+    expect(spamReasonPhrase(['too-fast'])).toBe('it was completed in under three seconds');
+    expect(spamReasonPhrase(['too-fast', 'links'])).toBe('it was completed in under three seconds and it contains several links');
+    expect(spamReasonPhrase(['link-in-name', 'links', 'captcha'])).toBe(
+      'a name contains a web link, it contains several links and the website security check was not completed',
+    );
+    expect(spamReasonPhrase(undefined)).toBe('');
+    expect(suspectedCount([{ spamStatus: 'suspected' }, { spamStatus: 'spam' }, { spamStatus: 'clean' }, {}])).toBe(1);
+    expect(suspectedCount(undefined)).toBe(0);
   });
 });

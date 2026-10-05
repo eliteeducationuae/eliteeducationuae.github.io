@@ -1,5 +1,5 @@
 import { toDateKey } from '@/domain/dates';
-import { applicationPayloadProblem, findDuplicateApplication, RateLimitError, rateLimited, SPAM_LIMITS, spamReasons } from '@/domain/spam';
+import { applicationPayloadProblem, findDuplicateApplication, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
@@ -93,9 +93,11 @@ export const ops = {
     // Only a clean repeat is folded in, and it only fills blanks: anyone who knows the email could send it.
     const dup = reasons.length ? undefined : findDuplicateApplication(db.applications, { email }, now);
     if (dup) {
-      for (const k of ['phone', 'subjects', 'qualifications', 'availability', 'cvPath', 'experience'] as const) {
+      for (const k of ['subjects', 'qualifications', 'availability', 'cvPath', 'experience'] as const) {
         if (!dup[k]?.trim() && a[k]?.trim()) dup[k] = a[k]!.trim();
       }
+      // A repeat's telephone number is noted for the office to confirm, never written into the contact details.
+      dup.notes = repeatPhoneNote(dup.notes, dup.phone, a.phone, now);
       dup.curricula = [...new Set([...dup.curricula, ...a.curricula])];
       dup.phases = [...new Set([...(dup.phases ?? []), ...(a.phases ?? [])])];
       dup.repeatCount = (dup.repeatCount ?? 0) + 1;

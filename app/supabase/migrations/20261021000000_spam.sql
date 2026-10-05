@@ -176,6 +176,24 @@ language sql immutable set search_path = public as $$
 $$;
 revoke execute on function public.merge_message(text, text, timestamptz) from public, anon, authenticated;
 
+/**
+ * Notes kept when a repeat submission gives a telephone number (mirrors repeatPhoneNote in src/domain/spam.ts).
+ * Anyone who knows an email address could send a repeat, so its number is never written into the contact details:
+ * it is recorded in the notes for the office to confirm. A number already on file, or already noted, adds nothing.
+ */
+create or replace function public.repeat_phone_note(p_notes text, p_current text, p_new text, p_at timestamptz) returns text
+language sql immutable set search_path = public as $$
+  select case
+    when nullif(trim(p_new), '') is null or regexp_replace(trim(p_new), '\D', '', 'g') = '' then p_notes
+    when regexp_replace(trim(p_new), '\D', '', 'g') = regexp_replace(coalesce(p_current, ''), '\D', '', 'g') then p_notes
+    when position(': ' || trim(p_new) || '.' in coalesce(p_notes, '')) > 0 then p_notes
+    else coalesce(nullif(trim(p_notes), '') || E'\n\n', '')
+      || 'Telephone number given in a repeat submission on ' || to_char(p_at at time zone 'Asia/Dubai', 'FMDD FMMonth YYYY')
+      || ': ' || trim(p_new) || '. It has not been added to the contact details; please confirm it before use.'
+  end
+$$;
+revoke execute on function public.repeat_phone_note(text, text, text, timestamptz) from public, anon, authenticated;
+
 /** Uses up a security-check pass. True only for an unused pass for this form, less than ten minutes old. */
 create or replace function public.consume_captcha_pass(p_pass uuid, p_form text) returns boolean
 language plpgsql security definer set search_path = public as $$
@@ -412,7 +430,7 @@ begin
       for update;
       if eid is not null then
         update public.enquiries e set
-          phone = coalesce(e.phone, nullif(trim(p_phone), '')),
+          notes = public.repeat_phone_note(e.notes, e.phone, p_phone, now()),
           student_name = coalesce(e.student_name, nullif(trim(p_student_name), '')),
           curriculum = coalesce(e.curriculum, nullif(p_curriculum, '')),
           subject = coalesce(e.subject, subj),
@@ -507,7 +525,7 @@ begin
     for update;
     if aid is not null then
       update public.tutor_applications a set
-        phone = coalesce(a.phone, nullif(trim(p_phone), '')),
+        notes = public.repeat_phone_note(a.notes, a.phone, p_phone, now()),
         subjects = coalesce(a.subjects, nullif(trim(p_subjects), '')),
         qualifications = coalesce(a.qualifications, nullif(trim(p_qualifications), '')),
         availability = coalesce(a.availability, nullif(trim(p_availability), '')),

@@ -96,7 +96,7 @@ function Detail({ a }: { a: TutorApplication }) {
           <Button title="Email" icon="mail" size="sm" variant="secondary" onPress={() => Linking.openURL(`mailto:${a.email}?subject=${encodeURIComponent('Your application to Elite Education')}`)} />
           {phone ? <Button title="WhatsApp" icon="chat" size="sm" variant="secondary" onPress={() => Linking.openURL(`https://wa.me/${phone.replace('+', '')}`)} /> : null}
         </Row>
-        {!isPossibleSpam(a) ? <SpamActions kind="application" id={a.id} status={a.spamStatus} compact /> : null}
+        {!isPossibleSpam(a) && a.status === 'applied' ? <SpamActions kind="application" id={a.id} status={a.spamStatus} compact /> : null}
       </Card>
 
       <Section title="Stage">

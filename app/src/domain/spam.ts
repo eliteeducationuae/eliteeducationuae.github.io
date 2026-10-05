@@ -102,6 +102,20 @@ export function mergeMessage(old: string | undefined, incoming: string | undefin
   return `${old}\n\nRe-sent on ${uaeDate(at)}: ${next}`;
 }
 
+/**
+ * Notes kept when a repeat submission gives a telephone number (mirrors public.repeat_phone_note). Anyone who knows
+ * an email address could send a repeat, so its number is never written into the contact details: it is recorded in
+ * the notes for the office to confirm. A number already on file, or already noted, adds nothing.
+ */
+export function repeatPhoneNote(notes: string | undefined, current: string | undefined, incoming: string | undefined, at: Date): string | undefined {
+  const phone = incoming?.trim();
+  const digits = (x: string | undefined) => (x ?? '').replace(/\D/g, '');
+  if (!phone || !digits(phone) || digits(phone) === digits(current)) return notes;
+  if (notes?.includes(`: ${phone}.`)) return notes;
+  const line = `Telephone number given in a repeat submission on ${uaeDate(at)}: ${phone}. It has not been added to the contact details; please confirm it before use.`;
+  return notes?.trim() ? `${notes}\n\n${line}` : line;
+}
+
 /** Why a submission looks automated, in a fixed order. Empty means it looks genuine. */
 export function spamReasons(input: {
   names: (string | undefined)[];
@@ -127,6 +141,11 @@ export function spamLabel(x: { spamStatus?: SpamStatus }): string | undefined {
   return x.spamStatus === 'spam' ? 'Marked as spam' : x.spamStatus === 'suspected' ? 'Possible spam' : undefined;
 }
 
+/** How many items are held as possible spam and still await review (confirmed spam is not counted). */
+export function suspectedCount(list: { spamStatus?: SpamStatus }[] | undefined): number {
+  return (list ?? []).filter((x) => x.spamStatus === 'suspected').length;
+}
+
 export function withoutSpam<T extends { spamStatus?: SpamStatus }>(list: T[]): T[] {
   return list.filter((x) => !isPossibleSpam(x));
 }
@@ -135,9 +154,19 @@ export function spamSummary(reasons: SpamReason[] | undefined): string {
   return (reasons ?? []).map((r) => SPAM_REASON_LABEL[r]).join(' · ');
 }
 
-/** The reasons as a lower-case phrase for use inside a sentence, e.g. "sent very quickly; several links". */
+/** Each reason as a clause that completes a sentence such as "This enquiry may have been sent automatically: …". */
+export const SPAM_REASON_CLAUSE: Record<SpamReason, string> = {
+  'link-in-name': 'a name contains a web link',
+  links: 'it contains several links',
+  'too-fast': 'it was completed in under three seconds',
+  captcha: 'the website security check was not completed',
+};
+
+/** The reasons as one clause for use inside a sentence, e.g. "it was completed in under three seconds and it contains several links". */
 export function spamReasonPhrase(reasons: SpamReason[] | undefined): string {
-  return (reasons ?? []).map((r) => SPAM_REASON_LABEL[r].toLowerCase()).join('; ');
+  const parts = (reasons ?? []).map((r) => SPAM_REASON_CLAUSE[r]);
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
 const HOUR = 3_600_000;

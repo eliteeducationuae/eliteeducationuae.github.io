@@ -1,13 +1,17 @@
-import { Alert, Platform, View } from 'react-native';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction } from '@/data/hooks';
 import { isRateLimitError, spamReasonPhrase, spamSummary } from '@/domain/spam';
 import type { SpamReason, SpamStatus } from '@/domain/types';
+import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 
-import { Badge, Banner, Button, ErrorNote, Row, Txt } from './ui';
+import { Icon } from './icon';
+import { Badge, Banner, Button, Chip, ErrorNote, Row, Txt } from './ui';
 
 type Kind = 'enquiry' | 'application';
 
@@ -18,19 +22,6 @@ interface SpamItem {
 
 const NOUN: Record<Kind, string> = { enquiry: 'enquiry', application: 'application' };
 const PERSON: Record<Kind, string> = { enquiry: 'family', application: 'applicant' };
-
-/** Asks a question with two answers that both go ahead; on the web, Cancel means the second answer. */
-function askTwoWays(title: string, message: string, onYes: () => void, yesLabel: string, onNo: () => void, noLabel: string) {
-  if (Platform.OS === 'web') {
-    if (globalThis.confirm?.(`${title}\n\n${message}\n\nChoose OK to send it, or Cancel to move it without an email.`)) onYes();
-    else onNo();
-    return;
-  }
-  Alert.alert(title, message, [
-    { text: noLabel, onPress: onNo },
-    { text: yesLabel, onPress: onYes },
-  ]);
-}
 
 /**
  * A form's error. The polite "please wait" limit is not a fault, so it is shown as a calm notice with its
@@ -73,7 +64,7 @@ export function SpamBanner({ kind, id, item }: { kind: Kind; id: string; item: S
   const text =
     item.spamStatus === 'spam'
       ? `This ${NOUN[kind]} has been marked as spam. It is kept here but left out of your pipeline and statistics.`
-      : `This ${NOUN[kind]} may have been sent automatically${why ? ` (${why})` : ''}. The team has not been alerted and no acknowledgement has been sent.`;
+      : `This ${NOUN[kind]} may have been sent automatically${why ? `: ${why}` : ''}. The team has not been alerted and no acknowledgement has been sent.`;
   return (
     <View style={{ gap: Spacing.two }}>
       <Banner tone="warning" icon="alert">
@@ -84,9 +75,14 @@ export function SpamBanner({ kind, id, item }: { kind: Kind; id: string; item: S
   );
 }
 
-/** "Not spam" and "Mark as spam" buttons. Marking as spam asks first. */
+/**
+ * "Not spam" and "Mark as spam" buttons. Marking as spam asks first. "Not spam" opens an inline choice with three
+ * plain answers (send the acknowledgement, move without an email, or cancel), which reads the same on every platform.
+ */
 export function SpamActions({ kind, id, status, compact }: { kind: Kind; id: string; status?: SpamStatus; compact?: boolean }) {
+  const theme = useTheme();
   const set = useAction(source.setSpamStatus);
+  const [choosing, setChoosing] = useState(false);
   const possible = status === 'suspected' || status === 'spam';
   const markSpam = () =>
     confirm(
@@ -95,25 +91,77 @@ export function SpamActions({ kind, id, status, compact }: { kind: Kind; id: str
       () => set.mutate([kind, id, true]),
       'Mark as spam',
     );
-  // The thank-you email was held back when this was flagged, so offer to send it now.
-  const notSpam = () =>
-    askTwoWays(
-      'Send the usual acknowledgement?',
-      `This ${NOUN[kind]} will move into your pipeline. Would you also like to send the ${PERSON[kind]} the usual thank-you email, which was held back when it was flagged?`,
-      () => set.mutate([kind, id, false, true]),
-      'Send acknowledgement',
-      () => set.mutate([kind, id, false, false]),
-      'Not now',
-    );
+  const release = (sendAck: boolean) => {
+    setChoosing(false);
+    set.mutate([kind, id, false, sendAck]);
+  };
   return (
     <View style={{ gap: Spacing.one }}>
-      <Row gap={Spacing.two} wrap>
-        {possible ? <Button title="Not spam" icon="check" size="sm" variant="secondary" loading={set.isPending} onPress={notSpam} /> : null}
-        {status !== 'spam' ? (
-          <Button title="Mark as spam" size="sm" variant={compact ? 'ghost' : 'outline'} loading={set.isPending && !possible} onPress={markSpam} />
-        ) : null}
-      </Row>
+      {choosing ? (
+        // The thank-you email was held back when this was flagged, so offer to send it now.
+        <View style={[styles.choice, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+          <Txt variant="h3">Move to your pipeline?</Txt>
+          <Txt variant="muted">
+            {`This ${NOUN[kind]} will move into your pipeline. Would you also like to send the ${PERSON[kind]} the usual thank-you email, which was held back when it was flagged?`}
+          </Txt>
+          <Row gap={Spacing.two} wrap>
+            <Button title="Send acknowledgement" icon="mail" size="sm" variant="primary" onPress={() => release(true)} />
+            <Button title="Move without email" size="sm" variant="secondary" onPress={() => release(false)} />
+            <Button title="Cancel" size="sm" variant="ghost" onPress={() => setChoosing(false)} />
+          </Row>
+        </View>
+      ) : (
+        <Row gap={Spacing.two} wrap>
+          {possible ? <Button title="Not spam" icon="check" size="sm" variant="secondary" loading={set.isPending} onPress={() => setChoosing(true)} /> : null}
+          {status !== 'spam' ? (
+            <Button title="Mark as spam" size="sm" variant={compact ? 'ghost' : 'outline'} loading={set.isPending && !possible} onPress={markSpam} />
+          ) : null}
+        </Row>
+      )}
       <ErrorNote error={set.error} />
     </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  reviewLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one, paddingHorizontal: Spacing.one },
+  choice: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.md, padding: Spacing.three, gap: Spacing.two },
+});
+
+/**
+ * A quiet toggle under a list's tabs that switches to the items held as possible spam and back. Kept apart from the
+ * pipeline tabs so those stay equal in width and never truncate on a narrow phone.
+ */
+export function SpamFilterChip({ count, selected, onPress }: { count: number; selected: boolean; onPress: () => void }) {
+  if (!count && !selected) return null;
+  return (
+    <Row gap={Spacing.two} style={{ alignItems: 'center' }}>
+      <Chip label={`Possible spam (${count})`} selected={selected} onPress={onPress} />
+    </Row>
+  );
+}
+
+/**
+ * A quiet line on the admin home when items are held as possible spam, so a genuine family caught by the checks is
+ * not missed. It is deliberately not part of "Needs attention" or its count.
+ */
+export function SpamReviewLine({ enquiries, applications }: { enquiries: number; applications: number }) {
+  const theme = useTheme();
+  const total = enquiries + applications;
+  if (!total) return null;
+  const parts = [
+    enquiries ? `${enquiries} ${enquiries === 1 ? 'enquiry' : 'enquiries'}` : '',
+    applications ? `${applications} ${applications === 1 ? 'application' : 'applications'}` : '',
+  ].filter(Boolean);
+  const label = `${parts.join(' and ')} held as possible spam to review`;
+  const open = () => router.push({ pathname: enquiries ? '/manage/enquiries' : '/manage/applications', params: { view: 'spam' } });
+  return (
+    <Pressable onPress={open} accessibilityRole="link" accessibilityLabel={label} style={({ pressed }) => [styles.reviewLine, pressed && { opacity: 0.7 }]}>
+      <Icon name="inbox" size={16} color={theme.textMuted} />
+      <Txt variant="small" style={{ flex: 1 }}>
+        {label.charAt(0).toUpperCase() + label.slice(1)}
+      </Txt>
+      <Icon name="chevron" size={14} color={theme.textMuted} />
+    </Pressable>
   );
 }

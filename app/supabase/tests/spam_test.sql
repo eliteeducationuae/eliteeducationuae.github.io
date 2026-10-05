@@ -71,6 +71,13 @@ select pg_temp.check(public.merge_message('Hello', null, now()) = 'Hello' and pu
   and public.merge_message('Hello there, friend', 'hello there friend!', now()) = 'Hello there, friend'
   and public.merge_message('We need help with maths and physics', 'help with maths', now()) = 'We need help with maths and physics',
   'a repeat message that adds nothing leaves the original untouched');
+select pg_temp.check(public.repeat_phone_note(null, null, '+971 50 1', '2026-10-05 22:00:00+00')
+  = 'Telephone number given in a repeat submission on 6 October 2026: +971 50 1. It has not been added to the contact details; please confirm it before use.'
+  and public.repeat_phone_note('Called once', '+971501', '+971 50 1', now()) = 'Called once'
+  and public.repeat_phone_note('Called once', null, '  ', now()) = 'Called once'
+  and public.repeat_phone_note('Called once', null, '+44 7', '2026-10-05 08:00:00+00')
+    = E'Called once\n\nTelephone number given in a repeat submission on 5 October 2026: +44 7. It has not been added to the contact details; please confirm it before use.',
+  'a repeat''s telephone number is noted once, in UAE time, unless it is already on file');
 select pg_temp.check(public.merge_message('Help with maths', 'Help with maths please, urgently', '2026-10-05 22:00:00+00')
   = E'Help with maths\n\nRe-sent on 6 October 2026: Help with maths please, urgently', 'a different repeat is added as a dated paragraph in UAE time');
 select pg_temp.check((select length(salt) >= 64 from public.spam_salt), 'a random fingerprint salt is created');
@@ -149,6 +156,21 @@ select pg_temp.check((select id from ids where k = 'm3') <> (select id from ids 
   and (select message not like '%http%' and spam_status = 'clean' from public.enquiries where id = (select id from ids where k = 'm1')),
   'a link-laden repeat is kept separately for review and the clean enquiry is untouched');
 delete from public.enquiries where email = 'merge@x';
+-- A repeat's telephone number is noted for the office to confirm, never written into the contact details.
+set role anon;
+insert into ids select 'p1', pg_temp.enquire('phone@x', 'Help with IGCSE chemistry for my daughter please');
+insert into ids select 'p2', public.submit_enquiry('Amira Haddad', 'phone@x', '+971 50 999 0000', 'Layla', 'IB', 'Year 9',
+  'Help with IGCSE chemistry for my daughter please', 'Weekday evenings', 'website', p_elapsed_ms => 8000);
+reset role;
+select pg_temp.check((select id from ids where k = 'p2') = (select id from ids where k = 'p1')
+  and (select phone is null and notes = 'Telephone number given in a repeat submission on '
+    || to_char(now() at time zone 'Asia/Dubai', 'FMDD FMMonth YYYY')
+    || ': +971 50 999 0000. It has not been added to the contact details; please confirm it before use.'
+  from public.enquiries where id = (select id from ids where k = 'p1')),
+  'a repeat cannot plant a telephone number on an enquiry; it is noted for the office to confirm');
+delete from public.enquiries where email = 'phone@x';
+delete from public.submission_log where email = 'phone@x';
+delete from public.notification_outbox where email = 'phone@x' or subject like '%phone@x%' or body like '%phone@x%';
 delete from public.submission_log where email = 'merge@x';
 delete from public.notification_outbox where email = 'merge@x' or subject like '%merge@x%' or body like '%merge@x%';
 

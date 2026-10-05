@@ -1,9 +1,9 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { APPLICATION_STATUS } from '@/components/hiring';
-import { RepeatNote, SpamActions, SpamNote } from '@/components/spam';
+import { RepeatNote, SpamActions, SpamFilterChip, SpamNote } from '@/components/spam';
 import { Badge, Card, EmptyState, Loading, Row, Screen, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useApplications } from '@/data/hooks';
@@ -13,7 +13,8 @@ import { isPossibleSpam, withoutSpam } from '@/domain/spam';
 /** People who applied to teach with Elite Education. */
 export default function Applications() {
   const applications = useApplications();
-  const [filter, setFilter] = useState<'open' | 'done' | 'spam'>('open');
+  const params = useLocalSearchParams<{ view?: string }>();
+  const [filter, setFilter] = useState<'open' | 'done' | 'spam'>(() => (params.view === 'spam' ? 'spam' : 'open'));
   if (applications.isLoading) return <Loading />;
   // Possible spam is kept for review but left out of the hiring lists.
   const all = withoutSpam(applications.data ?? []);
@@ -26,15 +27,14 @@ export default function Applications() {
     <Screen onRefresh={() => applications.refetch()} refreshing={applications.isRefetching}>
       <Txt variant="muted">Applications from the “Teach with us” form on the website and in the app.</Txt>
       <Segmented
-        fit
         value={filter}
         onChange={setFilter}
         options={[
           { value: 'open', label: `In progress (${open.length})` },
           { value: 'done', label: 'Hired & closed' },
-          { value: 'spam', label: `Possible spam (${spam.length})` },
         ]}
       />
+      <SpamFilterChip count={spam.length} selected={filter === 'spam'} onPress={() => setFilter(filter === 'spam' ? 'open' : 'spam')} />
       {list.length === 0 && filter === 'spam' ? (
         <EmptyState icon="school" title="No possible spam" message="Applications that look automated are kept here so that nothing genuine is lost." />
       ) : list.length === 0 ? (

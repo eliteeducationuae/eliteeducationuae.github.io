@@ -4,7 +4,7 @@ import { AccountScreen } from '@/components/account';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
 import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount } from '@/data/hooks';
-import { withoutSpam } from '@/domain/spam';
+import { suspectedCount, withoutSpam } from '@/domain/spam';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function AdminMore() {
@@ -13,16 +13,19 @@ export default function AdminMore() {
   const enquiries = useEnquiries();
   const requests = useRequests();
   const newEnquiries = withoutSpam(enquiries.data ?? []).filter((e) => e.status === 'new').length;
+  // Held as possible spam: mentioned quietly, never counted in a badge.
+  const heldEnquiries = suspectedCount(enquiries.data);
   const pending = (requests.data ?? []).filter((r) => r.status === 'pending').length;
   const engage = [
     { title: 'Messages', subtitle: unread ? `${unread} unread` : 'Conversations with families', icon: 'chat', href: '/messages', badge: unread },
-    { title: 'Enquiries', subtitle: 'New leads through to enrolment', icon: 'inbox', href: '/manage/enquiries', badge: newEnquiries },
+    { title: 'Enquiries', subtitle: heldEnquiries ? `New leads through to enrolment · ${heldEnquiries} possible spam to review` : 'New leads through to enrolment', icon: 'inbox', href: '/manage/enquiries', badge: newEnquiries },
     { title: 'Lesson requests', subtitle: 'Extra lessons and changes from families', icon: 'calendar', href: '/manage/requests', badge: pending },
     { title: 'Announcements', subtitle: 'Send news to families and tutors', icon: 'megaphone', href: '/announcements', badge: 0 },
   ] as const;
   const opportunities = useOpportunities();
   const bids = useBids();
   const applications = useApplications();
+  const heldApplications = suspectedCount(applications.data);
   const tutorInvoices = useTutorInvoices();
   const reportCycles = useReportCycles();
   const reports = useStudentReports();
@@ -33,7 +36,7 @@ export default function AdminMore() {
     { title: 'Roles for tutors', subtitle: 'Post new students; tutors put themselves forward', icon: 'school', href: '/manage/opportunities', badge: openBids },
     { title: 'Tutor invoices', subtitle: 'Approve monthly invoices and pay tutors', icon: 'doc', href: '/manage/tutor-invoices', badge: (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted').length },
     { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
-    { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: withoutSpam(applications.data ?? []).filter((a) => a.status === 'applied').length },
+    { title: 'Hiring', subtitle: heldApplications ? `Applications to teach with you · ${heldApplications} possible spam to review` : 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: withoutSpam(applications.data ?? []).filter((a) => a.status === 'applied').length },
     { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },
   ] as const;
   const business = [

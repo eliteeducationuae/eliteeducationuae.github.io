@@ -84,7 +84,7 @@ function Detail({ e }: { e: Enquiry }) {
             <Button title="Email" icon="mail" size="sm" variant="secondary" onPress={() => Linking.openURL(`mailto:${e.email}?subject=${encodeURIComponent('Your enquiry with Elite Education')}`)} />
           ) : null}
         </Row>
-        {!isPossibleSpam(e) ? <SpamActions kind="enquiry" id={e.id} status={e.spamStatus} compact /> : null}
+        {!isPossibleSpam(e) && e.status === 'new' ? <SpamActions kind="enquiry" id={e.id} status={e.spamStatus} compact /> : null}
       </Card>
 
       <Section title="Stage">
