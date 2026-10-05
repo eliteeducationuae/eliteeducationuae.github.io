@@ -1,7 +1,7 @@
 /**
  * Admissions advisory: school, boarding and university admissions cases run by an adviser for a family.
  * Pure helpers shared by the demo data source, the UI and (in spirit) the SQL rules in
- * supabase/migrations/20261018000000_admissions.sql.
+ * supabase/migrations/20261106000000_admissions.sql.
  */
 import { letterSalutation, letterSignOff, typographic } from '../../supabase/functions/_shared/admissions-letter';
 import { daysUntil, toDateKey } from './dates';

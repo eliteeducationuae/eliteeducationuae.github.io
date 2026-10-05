@@ -1,6 +1,6 @@
 /**
  * Admissions advisory: map Supabase rows (snake_case, nulls) to app types and back.
- * Columns follow supabase/migrations/20261018000000_admissions.sql.
+ * Columns follow supabase/migrations/20261106000000_admissions.sql.
  */
 import type {
   AdmissionsCase,

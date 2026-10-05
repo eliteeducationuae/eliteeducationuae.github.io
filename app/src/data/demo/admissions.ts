@@ -32,7 +32,7 @@ import type { Invoice, InvoiceItem, Profile } from '@/domain/types';
 
 import { AccessError, newId, requireAdmin, visibleStudentIds, type DemoDB } from './db';
 
-// Admissions advisory in the demo. Mirrors the rules in the 20261018000000_admissions migration
+// Admissions advisory in the demo. Mirrors the rules in the 20261106000000_admissions migration
 // (admissions_access, save_admissions_case, set_admissions_task_done, add_admissions_document,
 // set_advisory_update_status, bill_admissions_fee and the timeline triggers).
 

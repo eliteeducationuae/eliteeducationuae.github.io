@@ -277,7 +277,7 @@ Guidance for families applying to schools, boarding schools and UK or US univers
 
 **Setup**
 
-1. Run `supabase/migrations/20261018000000_admissions.sql`. It creates the tables and the private `admissions` storage bucket with its access rules.
+1. Run `supabase/migrations/20261106000000_admissions.sql`. It creates the tables and the private `admissions` storage bucket with its access rules.
 2. Redeploy the functions that changed: `npx supabase functions deploy ai-assist send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`.
 3. Nothing else to schedule: reminders run with the existing hourly `send-reminders` schedule.
 
