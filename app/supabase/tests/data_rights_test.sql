@@ -163,9 +163,12 @@ insert into public.lessons (id, tutor_id, student_ids, service_id, start_at, end
 insert into public.lesson_notes (lesson_id, summary, attendance) values
   ('f0000000-0000-0000-0000-000000000005', 'Group work on titrations.',
    '{"d0000000-0000-0000-0000-000000000001":"present","d0000000-0000-0000-0000-000000000003":"late"}');
-insert into public.opportunities (id, title, description, student_id, location, pay_rate) values
-  ('60000000-0000-0000-0000-000000000001', 'IB Maths AA SL', 'Sami needs help before his mocks.', 'd0000000-0000-0000-0000-000000000001',
-   'Emirates Hills', 200);
+insert into public.opportunities (id, title, subject, description, student_id, location, pay_rate) values
+  ('60000000-0000-0000-0000-000000000001', 'IB Maths AA SL for Sami', 'Maths', 'Sami needs help before his mocks.', 'd0000000-0000-0000-0000-000000000001',
+   'Emirates Hills', 200),
+  ('60000000-0000-0000-0000-000000000002', 'GCSE Physics', 'Physics', null, null, null, 180);
+insert into public.opportunity_bids (opportunity_id, tutor_id, pitch, availability) values
+  ('60000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001', 'I taught Physics for ten years.', 'Weekday evenings');
 
 create temp table totals as
   select (select count(*) from public.invoices) as invoices, (select sum(public.invoice_total(i)) from public.invoices i) as invoiced,
@@ -218,6 +221,8 @@ select pg_temp.check((select summary = 'Ollie only note.' from public.lesson_not
 select pg_temp.check((select status = 'closed' and student_id is null and description is null and location is null
                         from public.opportunities where id = '60000000-0000-0000-0000-000000000001'),
   'an opportunity written about the child is closed and its details cleared');
+select pg_temp.check((select title = 'Maths opportunity (closed)' from public.opportunities where id = '60000000-0000-0000-0000-000000000001'),
+  'the opportunity title, which may name the child, is replaced');
 select pg_temp.check(not exists (select 1 from public.student_notes where student_id = 'd0000000-0000-0000-0000-000000000001')
   and not exists (select 1 from public.homework where student_id = 'd0000000-0000-0000-0000-000000000001')
   and not exists (select 1 from public.homework_submissions where student_id = 'd0000000-0000-0000-0000-000000000001')
@@ -308,6 +313,9 @@ select pg_temp.check((select (s->>'upcomingLessonsNeedingTutor')::int = 1 and s-
   'upcoming lessons are counted for reassignment');
 select pg_temp.check((select status = 'scheduled' from public.lessons where id = 'f0000000-0000-0000-0000-000000000004'),
   'the tutor''s upcoming lessons are not cancelled');
+select pg_temp.check((select status = 'withdrawn' and pitch = 'Withdrawn: account closed' and availability is null
+                        from public.opportunity_bids where tutor_id = 'b0000000-0000-0000-0000-000000000001'),
+  'a closed tutor''s pending bid is withdrawn and their pitch removed');
 select pg_temp.check((select label = 'Tutor (closed)' and reason = 'Moving abroad' and status = 'completed'
                         from public.deletion_requests where id = (select id from ids where k = 'tutor')), 'the tutor request is completed');
 

@@ -677,8 +677,10 @@ begin
        set attendance = attendance - array(select x::text from unnest(sids) x)
      where lesson_id in (select id from public.lessons where student_ids && sids)
        and attendance ?| array(select x::text from unnest(sids) x);
+    -- Titles often name the child ("Maths tutor for Yasmin"), so they are replaced with a neutral one.
     update public.opportunities
        set student_id = null, description = null, location = null,
+           title = coalesce(nullif(subject, ''), 'Tuition') || ' opportunity (closed)',
            status = case when status = 'open' then 'closed' else status end
      where student_id = any (sids);
   end if;
@@ -750,6 +752,11 @@ begin
   delete from public.tutor_absences where tutor_id = p_tutor_id;
   delete from public.tutor_payment_details where tutor_id = p_tutor_id;
   delete from public.busy_blocks where tutor_id = p_tutor_id;
+  -- Bids keep only their outcome: pending ones are withdrawn so they cannot be awarded, and the tutor's own words go.
+  update public.opportunity_bids
+     set status = case when status = 'pending' then 'withdrawn' else status end,
+         pitch = 'Withdrawn: account closed', availability = null
+   where tutor_id = p_tutor_id;
   delete from public.lesson_calendar_events
    where profile_id in (select id from public.profiles where tutor_id = p_tutor_id and role = 'tutor');
   delete from public.calendar_connections

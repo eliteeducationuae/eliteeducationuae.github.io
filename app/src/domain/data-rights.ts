@@ -51,7 +51,7 @@ export function deletionConsequences(role: Role): DeletionConsequences {
           "Messages you sent stay in your family's conversation without your name",
           "Your lessons, notes and reports, which stay with your parent's account",
         ],
-        note: "The family's records stay with your parent's account. Your parent can ask us to remove them.",
+        note: 'Your parent can ask us to remove these records at any time.',
       };
     case 'admin':
       return {

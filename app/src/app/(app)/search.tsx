@@ -8,6 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
+import { CLOSED_LABEL, closedLast, isClosed } from '@/domain/closed-accounts';
 import { studentSubjects } from '@/domain/enrolments';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -44,13 +45,13 @@ export default function Search() {
       {
         title: 'Students',
         icon: 'people',
-        hits: (students.data ?? [])
+        hits: closedLast(students.data, true)
           .map((s) => ({ s, subjects: studentSubjects(enrolments.data ?? [], s.id) }))
-          .filter(({ s, subjects }) => matches(q, s.fullName, s.school, s.curriculum, s.yearGroup, s.phase, subjects))
+          .filter(({ s, subjects }) => (isClosed(s) ? matches(q, s.fullName) : matches(q, s.fullName, s.school, s.curriculum, s.yearGroup, s.phase, subjects)))
           .map(({ s, subjects }) => ({
             key: s.id,
             title: s.fullName,
-            subtitle: [subjects, s.yearGroup, s.school].filter(Boolean).join(' · '),
+            subtitle: isClosed(s) ? CLOSED_LABEL : [subjects, s.yearGroup, s.school].filter(Boolean).join(' · '),
             href: { pathname: '/students/[id]', params: { id: s.id } },
           })),
       },
@@ -60,16 +61,17 @@ export default function Search() {
         {
           title: 'Families',
           icon: 'person',
-          hits: (families.data ?? [])
-            .filter((f) => matches(q, f.name, f.parentName, f.email, f.phone))
-            .map((f) => ({ key: f.id, title: `${f.name} family`, subtitle: `${f.parentName} · ${f.email}`, href: { pathname: '/manage/family-edit', params: { id: f.id } } })),
+          // Closed accounts are matched by name only (never by their placeholder email) and say so.
+          hits: closedLast(families.data, true)
+            .filter((f) => (isClosed(f) ? matches(q, f.name) : matches(q, f.name, f.parentName, f.email, f.phone)))
+            .map((f) => ({ key: f.id, title: `${f.name} family`, subtitle: isClosed(f) ? CLOSED_LABEL : `${f.parentName} · ${f.email}`, href: { pathname: '/manage/family-edit', params: { id: f.id } } })),
         },
         {
           title: 'Tutors',
           icon: 'school',
-          hits: (tutors.data ?? [])
-            .filter((t) => matches(q, t.fullName, t.email, ...t.subjects, ...(t.curricula ?? []), ...(t.phases ?? [])))
-            .map((t) => ({ key: t.id, title: t.fullName, subtitle: t.subjects.join(', '), href: { pathname: '/manage/tutor-edit', params: { id: t.id } } })),
+          hits: closedLast(tutors.data, true)
+            .filter((t) => (isClosed(t) ? matches(q, t.fullName) : matches(q, t.fullName, t.email, ...t.subjects, ...(t.curricula ?? []), ...(t.phases ?? []))))
+            .map((t) => ({ key: t.id, title: t.fullName, subtitle: isClosed(t) ? CLOSED_LABEL : t.subjects.join(', '), href: { pathname: '/manage/tutor-edit', params: { id: t.id } } })),
         },
         {
           title: 'Invoices',

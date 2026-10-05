@@ -346,6 +346,8 @@ function anonymiseFamily(db: DemoDB, familyId: string, now: Date): DeletionSumma
     delete o.studentId;
     delete o.description;
     delete o.location;
+    // Titles often name the child, so they are replaced with a neutral one.
+    o.title = `${o.subject || 'Tuition'} opportunity (closed)`;
     if (o.status === 'open') o.status = 'closed';
   }
   db.messages = db.messages.filter((m) => m.familyId !== familyId);
@@ -378,6 +380,13 @@ function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary
   db.availability = db.availability.filter((a) => a.tutorId !== tutorId);
   db.paymentDetails = db.paymentDetails.filter((p) => p.tutorId !== tutorId);
   db.busyBlocks = (db.busyBlocks ?? []).filter((b) => b.tutorId !== tutorId);
+  // Bids keep only their outcome: pending ones are withdrawn so they cannot be awarded, and the tutor's own words go.
+  for (const b of db.bids) {
+    if (b.tutorId !== tutorId) continue;
+    if (b.status === 'pending') b.status = 'withdrawn';
+    b.pitch = 'Withdrawn: account closed';
+    delete b.availability;
+  }
   const profileIds = new Set(db.profiles.filter((p) => p.tutorId === tutorId && p.role === 'tutor').map((p) => p.id));
   db.calendarConnections = (db.calendarConnections ?? []).filter((c) => !profileIds.has(c.profileId));
   db.profiles = db.profiles.filter((p) => !profileIds.has(p.id));

@@ -8,8 +8,12 @@ describe('deletionConsequences', () => {
     expect(c.removed.join(' ')).toMatch(/children's logins and any other parent login/);
     expect(c.kept.join(' ')).toMatch(/Lesson dates and invoices, without contact details/);
     expect(c.kept.join(' ')).toMatch(/UAE law/);
-    // The note adds something new rather than repeating a kept item.
+  });
+
+  it.each(['parent', 'tutor', 'student', 'admin'] as const)('gives %s a note that adds something new', (role) => {
+    const c = deletionConsequences(role);
     for (const item of c.kept) expect(c.note).not.toContain(item);
+    expect(c.kept.join(' ')).not.toContain(c.note);
   });
 
   it('tells tutors their bank details go and upcoming lessons are reassigned', () => {
@@ -21,7 +25,8 @@ describe('deletionConsequences', () => {
 
   it('tells students the family records stay with the parent', () => {
     const c = deletionConsequences('student');
-    expect(c.note).toMatch(/parent's account/);
+    expect(c.kept.join(' ')).toMatch(/parent's account/);
+    expect(c.note).toMatch(/Your parent can ask us to remove/);
     expect(c.removed).toEqual(['Your login']);
     expect(c.kept.join(' ')).toMatch(/without your name/);
   });
