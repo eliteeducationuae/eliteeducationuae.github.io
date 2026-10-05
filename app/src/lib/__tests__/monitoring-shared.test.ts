@@ -132,8 +132,12 @@ describe('backups', () => {
 
   it('never backs up secrets', () => {
     const tables = BACKUP_TABLES.map((t) => t.table);
-    for (const secret of ['calendar_connections', 'calendar_oauth_states', 'tutor_payment_details', 'autopay_requests']) {
+    for (const secret of ['calendar_connections', 'calendar_oauth_states', 'tutor_payment_details', 'autopay_requests', 'view_as_sessions', 'submission_log']) {
       expect(tables).not.toContain(secret);
+    }
+    // Round 5 records are in the nightly copy.
+    for (const t of ['family_contacts', 'credit_notes', 'refunds', 'admissions_cases', 'tutor_documents', 'handovers', 'audit_events']) {
+      expect(tables).toContain(t);
     }
     const profiles = BACKUP_TABLES.find((t) => t.table === 'profiles')!;
     expect(profiles.columns).not.toMatch(/push_token|ics_token|whatsapp/);

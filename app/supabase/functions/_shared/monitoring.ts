@@ -233,6 +233,28 @@ export const BACKUP_TABLES: readonly { table: string; columns: string; orderBy: 
   { table: 'opportunity_bids', columns: '*', orderBy: 'id' },
   { table: 'tutor_applications', columns: '*', orderBy: 'id' },
   { table: 'deletion_requests', columns: '*', orderBy: 'id' },
+  // Round 5. Never the View as sessions (they name auth sessions) or the spam submission log (short-lived rate limiting).
+  { table: 'view_as_audit', columns: '*', orderBy: 'id' },
+  { table: 'enrolment_tutor_pay', columns: '*', orderBy: 'enrolment_id' },
+  { table: 'enrolment_family_price', columns: '*', orderBy: 'enrolment_id' },
+  { table: 'family_contacts', columns: '*', orderBy: 'id' },
+  { table: 'audit_events', columns: '*', orderBy: 'id' },
+  { table: 'credit_notes', columns: '*', orderBy: 'id' },
+  { table: 'refunds', columns: '*', orderBy: 'id' },
+  { table: 'accountant_invites', columns: '*', orderBy: 'email' },
+  { table: 'admissions_cases', columns: '*', orderBy: 'id' },
+  { table: 'admissions_targets', columns: '*', orderBy: 'id' },
+  { table: 'admissions_dates', columns: '*', orderBy: 'id' },
+  { table: 'admissions_tasks', columns: '*', orderBy: 'id' },
+  { table: 'admissions_documents', columns: '*', orderBy: 'id' },
+  { table: 'admissions_updates', columns: '*', orderBy: 'id' },
+  { table: 'admissions_events', columns: '*', orderBy: 'id' },
+  { table: 'tutor_documents', columns: '*', orderBy: 'id' },
+  { table: 'tutor_vetting_overrides', columns: '*', orderBy: 'id' },
+  { table: 'handbook_versions', columns: '*', orderBy: 'id' },
+  { table: 'handbook_acknowledgements', columns: '*', orderBy: 'tutor_id' },
+  { table: 'lesson_plans', columns: '*', orderBy: 'lesson_id' },
+  { table: 'handovers', columns: '*', orderBy: 'id' },
 ];
 
 // ---------------------------------------------------------------------------
