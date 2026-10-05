@@ -337,6 +337,17 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
 
   // Spam review
   setSpamStatus: 'write',
+
+  // Session plans and handover packs
+  getLessonPlan: 'read',
+  listLessonPlans: 'read',
+  saveLessonPlan: 'write',
+  deleteLessonPlan: 'write',
+  listHandovers: 'read',
+  getHandoverSources: 'read',
+  saveHandoverNote: 'write',
+  // Opening a pack while viewing must not mark it as read for the tutor.
+  markHandoverViewed: 'silent',
 };
 
 const refuse = async (): Promise<never> => {

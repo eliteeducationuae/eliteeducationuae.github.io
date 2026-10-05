@@ -102,6 +102,9 @@ export default function SignedInLayout() {
       <Stack.Screen name="manage/system-health" options={{ title: 'System health' }} />
       <Stack.Screen name="manage/deletion-requests" options={{ title: 'Deletion requests' }} />
       <Stack.Screen name="demo-error" options={{ title: 'Elite Education' }} />
+      <Stack.Screen name="plan/[id]" options={{ title: 'Lesson plan', presentation: 'modal' }} />
+      <Stack.Screen name="handover/index" options={{ title: 'Handover packs' }} />
+      <Stack.Screen name="handover/[id]" options={{ title: 'Handover pack' }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

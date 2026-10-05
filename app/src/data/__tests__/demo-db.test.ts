@@ -52,7 +52,8 @@ describe('visibility (mirrors row-level security)', () => {
   it('tutors see their own lessons and students but no billing', () => {
     const tutor = viewer(db, 'tutor');
     expect(q.lessons(db, tutor, YEAR.from, YEAR.to).every((l) => l.tutorId === 't-sarah')).toBe(true);
-    expect(q.students(db, tutor).map((s) => s.id).sort()).toEqual(['s-karim', 's-layla', 's-yasmin']);
+    // Sarah covers one of Charlotte's lessons in the seed, so Charlotte is hers to see too.
+    expect(q.students(db, tutor).map((s) => s.id).sort()).toEqual(['s-charlotte', 's-karim', 's-layla', 's-yasmin']);
     expect(q.invoices(db, tutor)).toEqual([]);
   });
 

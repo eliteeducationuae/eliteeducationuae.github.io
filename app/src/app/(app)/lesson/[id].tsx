@@ -5,8 +5,10 @@ import { Switch, View } from 'react-native';
 
 import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
+import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
+import { LessonPlanSection } from '@/components/plans';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -130,6 +132,9 @@ export default function LessonDetail() {
       ) : null}
 
       {isStaff && scheduled ? <LessonVettingNote tutorId={l.tutorId} /> : null}
+      <LessonPlanSection lesson={l} />
+      <HandoverLink lessonId={l.id} />
+
       {isStaff && scheduled ? (
         <Button
           title={started ? 'Record the lesson: notes, attendance and homework' : 'Record the lesson early'}

@@ -61,7 +61,8 @@ describe('enrolment visibility (mirrors the enrolments policies)', () => {
   it('shows parents their own children and tutors the students they teach', () => {
     const db = createSeed(NOW);
     expect(new Set(enr.enrolments(db, who(db, 'parent')).map((e) => e.studentId))).toEqual(new Set(['s-omar', 's-layla']));
-    expect(new Set(enr.enrolments(db, who(db, 'tutor')).map((e) => e.studentId))).toEqual(new Set(['s-layla', 's-yasmin', 's-karim']));
+    // Includes Charlotte, whose lesson Sarah covers in the seed.
+    expect(new Set(enr.enrolments(db, who(db, 'tutor')).map((e) => e.studentId))).toEqual(new Set(['s-layla', 's-yasmin', 's-karim', 's-charlotte']));
     expect(enr.enrolments(db, who(db, 'student')).every((e) => e.studentId === 's-omar')).toBe(true);
     expect(enr.enrolments(db, who(db, 'admin'), 's-noor').map((e) => e.subject)).toEqual(['English', 'Maths']);
   });

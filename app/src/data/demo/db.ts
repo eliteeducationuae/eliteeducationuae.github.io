@@ -58,6 +58,8 @@ import type {
   AppErrorRow,
   DeletionRequest,
   FunctionErrorRow,
+  Handover,
+  LessonPlan,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -140,6 +142,9 @@ export interface DemoDB {
   deletionRequests?: DeletionRequest[];
   /** Public form submissions for rate limiting (mirrors public.submission_log). Optional: read with `??= []`. */
   formSubmissions?: { kind: 'enquiry' | 'application'; email?: string; at: string }[];
+  // Session plans and handover packs. Optional because databases saved before them lack the fields: read with `?? []`.
+  lessonPlans?: LessonPlan[];
+  handovers?: Handover[];
 }
 
 /** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */

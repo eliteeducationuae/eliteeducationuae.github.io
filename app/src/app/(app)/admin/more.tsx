@@ -62,6 +62,7 @@ export default function AdminMore() {
     { title: 'Tutor pay', subtitle: 'Hours taught and pay owed by month', icon: 'money', href: '/manage/payroll' },
     { title: 'Business settings', subtitle: 'Cancellation policy, VAT, invoicing', icon: 'settings', href: '/manage/settings' },
     { title: 'Accountant access', subtitle: 'Invite your accountant to view the accounts, read only', icon: 'person', href: '/manage/accountants' },
+    { title: 'Handover packs', subtitle: 'Packs prepared when a lesson is covered or a student changes tutor', icon: 'book', href: '/handover' },
   ] as const;
   // Launch readiness
   const health = useSystemHealth();
