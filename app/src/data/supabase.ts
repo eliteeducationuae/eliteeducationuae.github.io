@@ -17,6 +17,7 @@ import {
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import { connectResultNotice } from '@/domain/calendar-connection';
+import { CONTACT_ERRORS, normaliseContactDraft } from '@/domain/contacts';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Enrolment,
@@ -60,7 +61,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
-import { addChildSubjects, enrolmentRatesFromRow, setEnrolmentRatesArgs } from './rpc-mapping';
+import { addChildSubjects, enrolmentRatesFromRow, familyContactPayload, setEnrolmentRatesArgs, toFamilyContact } from './rpc-mapping';
 import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 import { readOnlySource, VIEW_ENDED_MESSAGE, VIEW_ONLY_MESSAGE, ViewOnlyError, type ViewTarget } from './view-as';
 
@@ -1160,6 +1161,23 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
           p_phase: e.phase ?? null,
         }),
       );
+    },
+    // Family contacts
+    async listFamilyContacts(familyId) {
+      return (check<Row[] | null>(await client.rpc('list_family_contacts', { p_family_id: familyId })) ?? []).map(toFamilyContact);
+    },
+    async saveFamilyContact(familyId, contact) {
+      const draft = normaliseContactDraft(contact);
+      const id = check<string | null>(await client.rpc('save_family_contact', { p_family_id: familyId, p_contact: familyContactPayload(draft) }));
+      // Null: a parent asked for sign-in on an address that signs in elsewhere. Nothing was saved and the office was told.
+      if (!id) throw new Error(CONTACT_ERRORS.loginReferred);
+      const contacts = (check<Row[] | null>(await client.rpc('list_family_contacts', { p_family_id: familyId })) ?? []).map(toFamilyContact);
+      const saved = contacts.find((c) => c.id === id);
+      if (!saved) throw new Error('The contact was saved but could not be loaded. Please refresh.');
+      return saved;
+    },
+    async removeFamilyContact(contactId) {
+      check(await client.rpc('remove_family_contact', { p_contact_id: contactId }));
     },
     async listEnquiries() {
       return check(await client.from('enquiries').select('*').order('created_at', { ascending: false })).map(toEnquiry);

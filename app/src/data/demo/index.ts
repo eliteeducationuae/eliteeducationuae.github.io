@@ -1,12 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { Profile } from '@/domain/types';
+import type { Family, Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
 import { readOnlySource, type ViewTarget } from '../view-as';
 import { cw } from './classwork';
 import { cal } from './calendar';
+import { listFamilyContacts, removeFamilyContact, saveFamilyContact, syncPrimaryFromFamily } from './contacts';
 import { cmd, DEMO_DB_VERSION, enr, newId, q, requireAdmin, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
@@ -181,7 +182,7 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       const e = email.trim().toLowerCase();
       if (d.profiles.some((p) => p.email.toLowerCase() === e)) throw new Error('An account with that email already exists — sign in instead.');
       const familyId = newId('fam');
-      d.families.push({
+      const family: Family = {
         id: familyId,
         name: surnameOf(details.fullName),
         parentName: details.fullName.trim(),
@@ -189,7 +190,9 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
         phone: details.phone,
         status: 'prospect',
         createdAt: new Date().toISOString(),
-      });
+      };
+      d.families.push(family);
+      syncPrimaryFromFamily(d, family);
       const profile = { id: newId('u'), role: 'parent' as const, fullName: details.fullName.trim(), email: e, familyId };
       d.profiles.push(profile);
       viewer = profile;
@@ -281,6 +284,9 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       eq.submitEnquiry(d, viewer, e);
       await save();
     },
+    listFamilyContacts: (familyId) => read((d, v) => listFamilyContacts(d, v, familyId)),
+    saveFamilyContact: (familyId, contact) => write((d, v) => saveFamilyContact(d, v, familyId, contact)),
+    removeFamilyContact: (id) => write((d, v) => removeFamilyContact(d, v, id)),
     listEnquiries: () => read((d, v) => eq.enquiries(d, v)),
     updateEnquiry: (id, patch) => write((d, v) => eq.updateEnquiry(d, v, id, patch)),
     listAvailability: () => read((d) => d.availability),

@@ -14,7 +14,7 @@ import {
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
-import { Badge, Button, Card, ErrorNote, Field, Row, Txt } from './ui';
+import { Badge, Button, Card, ErrorNote, Field, Row, Txt, useSwitchColors } from './ui';
 
 const INVALID_NUMBER = 'Please enter your WhatsApp number with its country code, for example +971 50 123 4567.';
 
@@ -35,6 +35,7 @@ export function WhatsAppCard() {
   const setWhatsApp = useSession((s) => s.setWhatsApp);
   const savedOn = me.whatsappOptIn ?? false;
   const [optIn, setOptIn] = useState(() => savedOn);
+  const switchColors = useSwitchColors(optIn);
   const [number, setNumber] = useState(() => initialNumber(me.whatsappNumber, me.phone));
   // What the number field held after the last save, so an untouched form is not offered for saving.
   const [baseline, setBaseline] = useState(() => initialNumber(me.whatsappNumber, me.phone));
@@ -86,13 +87,8 @@ export function WhatsAppCard() {
             setOptIn(v);
             setInvalid(false);
           }}
-          // The track shows the state: gold (the accent) when on, muted when off. When on, the thumb is noir in both
-          // themes so it stands out on the gold track (an ivory thumb on dark mode's light gold was too faint); when
-          // off it is the text colour, standing out from the card.
-          trackColor={{ true: theme.accent, false: theme.textMuted }}
-          thumbColor={optIn ? theme.onGold : theme.text}
-          // react-native-web paints the "on" thumb teal unless told otherwise.
-          {...({ activeThumbColor: theme.onGold } as object)}
+          // The track shows the state: gold when on, muted when off (see useSwitchColors).
+          {...switchColors}
           accessibilityLabel="WhatsApp reminders"
         />
       </Row>

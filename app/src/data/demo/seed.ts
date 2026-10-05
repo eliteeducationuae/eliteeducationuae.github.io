@@ -2,8 +2,9 @@ import { SYLLABUSES } from '@/data/curriculum';
 import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
+import { contactsFromFamily } from '@/domain/contacts';
 import { buildTopicLookup } from '@/domain/topics';
-import type { Enrolment, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
+import type { Enrolment, FamilyContact, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
 import { seedClasswork } from './classwork';
 import { sampleBusyBlocks } from './calendar';
@@ -240,6 +241,8 @@ export function createSeed(now: Date = new Date()): DemoDB {
     { id: 'u-tutor', role: 'tutor', fullName: 'Sarah Khan', email: 'sarah@eliteeducation.me', tutorId: 't-sarah' },
     { id: 'u-parent', role: 'parent', fullName: 'Fatima Al Mansoori', email: 'fatima@example.com', familyId: 'f-mansoori' },
     { id: 'u-student', role: 'student', fullName: 'Omar Al Mansoori', email: 'omar@example.com', studentId: 's-omar' },
+    // Listed after the demo buttons' accounts so their order, and the sample parent for Apple and Google, stay the same.
+    { id: 'u-parent2', role: 'parent', fullName: 'Khalid Al Mansoori', email: 'khalid@example.com', familyId: 'f-mansoori' },
   ];
   db.profiles = profiles;
 
@@ -450,6 +453,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedClasswork(db, now);
   seedCalendar(db, now);
   seedPayments(db);
+  seedContacts(db, now);
   return db;
 }
 
@@ -474,6 +478,35 @@ function seedCalendar(db: DemoDB, now: Date) {
   for (const l of db.lessons) {
     if (l.seriesId === 'series-arjun' && l.status === 'scheduled' && new Date(l.start) > now) l.meetingUrl = undefined;
   }
+}
+
+/** The Al Mansoori family has three contacts: both parents sign in, and their personal assistant receives the invoices. */
+function seedContacts(db: DemoDB, now: Date) {
+  const at = (days: number) => addDays(now, -days).toISOString();
+  const contact = (c: Omit<FamilyContact, 'familyId' | 'preferredChannel' | 'receivesWhatsApp' | 'emergencyContact'> & Partial<FamilyContact>): FamilyContact => ({
+    familyId: 'f-mansoori',
+    preferredChannel: 'email',
+    receivesWhatsApp: false,
+    emergencyContact: false,
+    ...c,
+  });
+  db.familyContacts = [
+    contact({
+      id: 'fc-fatima', name: 'Fatima Al Mansoori', relationship: 'mother', email: 'fatima@example.com', phone: '+971 50 000 0001',
+      canLogIn: true, receivesInvoices: true, receivesReports: true, receivesLessonNotes: true, isPrimary: true, hasLogin: true, profileId: 'u-parent', createdAt: at(120),
+    }),
+    contact({
+      id: 'fc-khalid', name: 'Khalid Al Mansoori', relationship: 'father', email: 'khalid@example.com', phone: '+971 50 000 0011',
+      canLogIn: true, receivesInvoices: false, receivesReports: true, receivesLessonNotes: true, emergencyContact: true, isPrimary: false, hasLogin: true, profileId: 'u-parent2', createdAt: at(119),
+    }),
+    contact({
+      id: 'fc-grace', name: 'Grace Fernandes', relationship: 'pa', email: 'grace@example.com', phone: '+971 50 000 0012',
+      canLogIn: false, receivesInvoices: true, receivesReports: false, receivesLessonNotes: false, isPrimary: false, hasLogin: false, createdAt: at(90),
+    }),
+    ...db.families
+      .filter((f) => f.id !== 'f-mansoori')
+      .flatMap((f) => contactsFromFamily(f).map((c) => ({ ...c, hasLogin: false, createdAt: c.createdAt ?? at(120) }))),
+  ];
 }
 
 /** Card payments: Fatima has a card on file (autopay off), and parents can top up from a few lesson packages. */
@@ -625,6 +658,7 @@ function seedEngagement(db: DemoDB, now: Date) {
   const msgs: [number, string, string, Message['senderRole'], string][] = [
     [50, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Dear Craig, Omar has his mock examinations in three weeks. Could we focus on calculus until then?'],
     [49, 'u-admin', "Craig O'Brien", 'admin', 'Certainly. I will plan the next few sessions around differentiation and integration, with timed past-paper questions.'],
+    [26, 'u-parent2', 'Khalid Al Mansoori', 'parent', 'Thank you. I shall collect Omar after Thursday’s lesson.'],
     [2, 'u-parent', 'Fatima Al Mansoori', 'parent', 'Thank you. I have also requested an additional lesson, should there be availability.'],
   ];
   for (const [h, senderId, senderName, senderRole, body] of msgs) {

@@ -24,6 +24,7 @@ import type {
   Message,
   TutorAbsence,
   Family,
+  FamilyContact,
   Homework,
   HomeworkSubmission,
   Invoice,
@@ -45,6 +46,8 @@ import type {
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
+
+import { syncPrimaryFromFamily } from './contacts';
 
 /** The whole demo database — a plain object so it can be persisted as JSON and tested directly. */
 export interface DemoDB {
@@ -91,6 +94,8 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  /** Family contacts. Optional because databases saved before it lack the field: read with allContacts in ./contacts, which backfills each family's main contact. */
+  familyContacts?: FamilyContact[];
 }
 
 export interface OutboxMessage {
@@ -243,7 +248,9 @@ export const cmd = {
   },
   saveFamily(db: DemoDB, viewer: Profile, family: Omit<Family, 'id'> & { id?: string }) {
     requireAdmin(viewer);
-    return upsert(db.families, family, 'fam');
+    const saved = upsert(db.families, family, 'fam');
+    syncPrimaryFromFamily(db, saved);
+    return saved;
   },
   saveStudent(db: DemoDB, viewer: Profile, student: Omit<Student, 'id'> & { id?: string }) {
     requireAdmin(viewer);

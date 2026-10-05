@@ -30,6 +30,10 @@ export interface Profile {
 
 export type FamilyStatus = 'prospect' | 'active' | 'archived';
 
+/**
+ * A family. `parentName`, `email` and `phone` mirror the family's main contact
+ * (see FamilyContact.isPrimary); the full list lives in the family's contacts.
+ */
 export interface Family {
   id: string;
   name: string;
@@ -44,6 +48,40 @@ export interface Family {
   /** The card kept on file for this family. Only present for admins and the family itself. */
   savedCard?: SavedCard;
 }
+
+export type ContactRelationship = 'mother' | 'father' | 'parent' | 'guardian' | 'pa' | 'family_office' | 'driver' | 'other';
+export type ContactChannel = 'email' | 'phone' | 'whatsapp';
+
+/**
+ * One person the family wants us to keep in touch with: parents, guardians, a personal
+ * assistant, a family office or a driver. Exactly one contact per family is the main one.
+ *
+ * Tutors who teach the family receive only id, familyId, name, relationship and isPrimary:
+ * email and phone are undefined and every flag is false.
+ */
+export interface FamilyContact {
+  id: string;
+  familyId: string;
+  name: string;
+  relationship: ContactRelationship;
+  email?: string;
+  phone?: string;
+  preferredChannel: ContactChannel;
+  canLogIn: boolean;
+  receivesInvoices: boolean;
+  receivesReports: boolean;
+  receivesLessonNotes: boolean;
+  receivesWhatsApp: boolean;
+  emergencyContact: boolean;
+  isPrimary: boolean;
+  /** True once this contact has signed in. */
+  hasLogin: boolean;
+  /** The linked login, for matching message senders. Absent for tutors. */
+  profileId?: string;
+  createdAt?: string;
+}
+
+export type FamilyContactDraft = Omit<FamilyContact, 'id' | 'familyId' | 'hasLogin' | 'profileId' | 'createdAt'> & { id?: string };
 
 export interface Student {
   id: string;

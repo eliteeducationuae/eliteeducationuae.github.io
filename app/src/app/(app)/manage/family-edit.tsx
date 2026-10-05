@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
+import { FamilyContactsSection } from '@/components/family-contacts';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
@@ -31,7 +32,8 @@ function FamilyForm({ existing }: { existing?: Family }) {
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
   const [status, setStatus] = useState<FamilyStatus>(existing?.status ?? 'active');
-  const valid = name.trim() && parentName.trim() && /\S+@\S+/.test(email);
+  // An existing family's contacts are edited in the Contacts section; the form keeps its main contact as it is.
+  const valid = existing ? !!name.trim() : !!(name.trim() && parentName.trim() && /\S+@\S+/.test(email));
   const kids = existing ? (students.data ?? []).filter((s) => s.familyId === existing.id) : [];
 
   return (
@@ -45,7 +47,10 @@ function FamilyForm({ existing }: { existing?: Family }) {
           loading={save.isPending}
           onPress={async () => {
             const saved = await save.mutateAsync([
-              { id: existing?.id, name: name.trim(), parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined, status },
+              existing
+                ? // The main contact's details are kept as they are now, so a change made in Contacts meanwhile is not undone.
+                  { id: existing.id, name: name.trim(), parentName: existing.parentName, email: existing.email, phone: existing.phone, status }
+                : { name: name.trim(), parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined, status },
             ]);
             if (existing) router.back();
             else router.replace({ pathname: '/students/edit', params: { familyId: saved.id } });
@@ -54,10 +59,20 @@ function FamilyForm({ existing }: { existing?: Family }) {
       }>
       <Stack.Screen options={{ title: existing ? `${existing.name} family` : 'New family' }} />
       <Field label="Family name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="e.g. Al Mansoori" />
-      <Field label="Parent / guardian" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
-      <Field label="Email (for invoices and reports)" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-      <Field label="Phone / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <LoginHint email={email} who="parent" name={parentName} />
+      {existing ? null : (
+        <>
+          <Field label="Main contact name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
+          <Field
+            label="Main contact email (invoices, reports and sign-in)"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <Field label="Main contact phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <LoginHint email={email} who="parent" name={parentName} />
+        </>
+      )}
       <Section title="Status">
         <Segmented
           value={status}
@@ -72,6 +87,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
       <ErrorNote error={save.error} />
       {existing ? (
         <>
+          <FamilyContactsSection familyId={existing.id} editable intro="Contact changes are saved as soon as you make them." />
           <Section
             title="Students"
             action={<Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/students/edit', params: { familyId: existing.id } })} />}>

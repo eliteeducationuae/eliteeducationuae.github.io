@@ -261,6 +261,11 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
 
   // Per-student rates
   setEnrolmentRates: 'write',
+
+  // Family contacts
+  listFamilyContacts: 'read',
+  saveFamilyContact: 'write',
+  removeFamilyContact: 'write',
 };
 
 const refuse = async (): Promise<never> => {

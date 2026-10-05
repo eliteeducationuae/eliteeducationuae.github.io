@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
 import { isViewOnlyError, VIEW_ONLY_MESSAGE } from '@/data/view-as';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { politeError } from '@/lib/polite-error';
 
@@ -525,17 +526,23 @@ export function Field({
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const { onFocus, onBlur } = input;
+  // A read-only field looks it: a muted surface and text, no gold focus ring, and it is announced as unavailable.
+  const readOnly = input.editable === false;
   return (
-    <Pressable onPress={() => ref.current?.focus()} style={{ gap: Spacing.one }} accessible={false}>
+    <Pressable onPress={readOnly ? undefined : () => ref.current?.focus()} style={{ gap: Spacing.one }} accessible={false}>
       <Txt variant="label">{label}</Txt>
       <TextInput
         ref={ref}
         accessibilityLabel={label}
+        accessibilityState={readOnly ? { disabled: true } : undefined}
+        {...(readOnly ? ({ 'aria-readonly': true, tabIndex: -1 } as object) : null)}
         placeholderTextColor={theme.textMuted}
         style={[
           styles.input,
           font('sans'),
-          { backgroundColor: theme.surface, borderColor: focused ? theme.gold : theme.border, color: theme.text },
+          readOnly
+            ? { backgroundColor: theme.surfaceAlt, borderColor: theme.border, color: theme.textMuted }
+            : { backgroundColor: theme.surface, borderColor: focused ? theme.gold : theme.border, color: theme.text },
           input.multiline && { minHeight: 96, textAlignVertical: 'top' },
           style,
         ]}
@@ -552,6 +559,22 @@ export function Field({
       {hint ? <Txt variant="small">{hint}</Txt> : null}
     </Pressable>
   );
+}
+
+/**
+ * Colours for a Switch, so every switch reads the same. On: a gold track with a noir thumb in light mode, and in dark
+ * mode the brand gold track with an ivory thumb, which stands out from both the track and the dark card.
+ */
+export function useSwitchColors(on: boolean) {
+  const theme = useTheme();
+  const dark = useColorScheme() === 'dark';
+  const onThumb = dark ? theme.text : theme.onGold;
+  return {
+    trackColor: { true: dark ? theme.gold : theme.accent, false: theme.textMuted },
+    thumbColor: on ? onThumb : theme.text,
+    // react-native-web paints the "on" thumb teal unless told otherwise.
+    ...({ activeThumbColor: onThumb } as object),
+  };
 }
 
 export function Avatar({ name, color, size = 40 }: { name: string; color?: string; size?: number }) {

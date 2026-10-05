@@ -213,3 +213,42 @@ export function readTwilioResult(status: number, text: string): TwilioResult {
   const detail = [code !== undefined && code !== null ? `code ${String(code)}` : '', message].filter(Boolean).join(': ');
   return { ok: false, retry, error: `Twilio ${status}${detail ? ` ${detail}` : ''}` };
 }
+
+/**
+ * A contact's phone number as WhatsApp needs it (E.164, e.g. +971501234567), with spaces, dashes and brackets removed,
+ * or null. Mirrors public.contact_whatsapp_number: a UAE number must be a complete mobile (+971 5X XXX XXXX).
+ */
+export function contactWhatsAppNumber(phone: string | null | undefined): string | null {
+  const n = (phone ?? '').replace(/[\s()-]/g, '');
+  if (!/^\+[1-9][0-9]{7,14}$/.test(n)) return null;
+  if (n.startsWith('+971') && !/^\+9715[0-9]{8}$/.test(n)) return null;
+  return n;
+}
+
+/** The parts of a notification_outbox row (with its profile and family contact) that decide where a WhatsApp goes. */
+export interface WhatsAppRecipientRow {
+  profile_id: string | null;
+  contact_id?: string | null;
+  whatsapp_to: string | null;
+  profiles?: { whatsapp_opt_in?: boolean | null; whatsapp_number?: string | null } | null;
+  family_contacts?: { receives_whatsapp?: boolean | null; phone?: string | null } | null;
+}
+
+/**
+ * The number to send a queued WhatsApp to, or null to skip it. A login's message goes to the number they opted in
+ * with, and only while they are still opted in. A family contact without a login (no profile, contact_id set) is sent
+ * to the contact's current mobile number (as contactWhatsAppNumber reads it), and only while the contact still agrees
+ * to WhatsApp messages: consent withdrawn, or a number corrected or removed, after the message was queued is honoured
+ * at send time. Anything else is skipped.
+ */
+export function whatsappRecipient(row: WhatsAppRecipientRow): string | null {
+  if (row.profile_id) {
+    const number = row.profiles?.whatsapp_number;
+    return row.profiles?.whatsapp_opt_in === true && number ? number : null;
+  }
+  if (row.contact_id) {
+    if (row.family_contacts?.receives_whatsapp !== true || !row.whatsapp_to) return null;
+    return contactWhatsAppNumber(row.family_contacts.phone);
+  }
+  return null;
+}
