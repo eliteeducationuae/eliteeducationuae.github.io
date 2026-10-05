@@ -103,7 +103,7 @@ export const AUDIT_TYPE_GROUPS: readonly { key: string; label: string; tables: s
 ];
 
 /**
- * Per-table recording rules, mirroring the SQL in 20261016000000_audit.sql:
+ * Per-table recording rules, mirroring the SQL in 20261104000000_audit.sql:
  * - `ignore`: housekeeping columns that never make or appear in an event.
  * - `only`: the only columns stored.
  * - `when`: only updates that change one of these columns are events (and no inserts or deletes are recorded).

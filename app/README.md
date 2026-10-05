@@ -273,7 +273,7 @@ Complete these once, in this order. The function names come from the round 4 pla
 
 ## Audit log
 
-Every change to the records that matter is written to a permanent audit log (`public.audit_events`, created by `20261016000000_audit.sql`). Each entry records when the change was made, who made it (their name and role at the time, or *System* for automated jobs and payment webhooks), what was added, changed or removed, and the family, student, tutor and related records it belongs to. For an update, only the fields that changed are stored, with their previous and new values.
+Every change to the records that matter is written to a permanent audit log (`public.audit_events`, created by `20261104000000_audit.sql`). Each entry records when the change was made, who made it (their name and role at the time, or *System* for automated jobs and payment webhooks), what was added, changed or removed, and the family, student, tutor and related records it belongs to. For an update, only the fields that changed are stored, with their previous and new values.
 
 **What is recorded.** Lessons, lesson notes, charges, invoices, payments, packages, tutor invoices, enrolments, students, families, tutors, settings, services and homework, together with status changes to student reports and the award of tutoring opportunities. Custom per-subject tutor pay and family prices, and family contacts, are recorded too once those tables exist. Routine housekeeping, such as reminder timestamps, invoice numbering and the progress of automatic card payments, is not recorded; the payment itself and the invoice being marked paid are.
 
