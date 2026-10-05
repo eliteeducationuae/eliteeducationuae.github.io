@@ -287,7 +287,7 @@ npm run test:db    # schema, row-level security and billing functions against a 
 
 ## Family contacts
 
-Each family can have several contacts (migration `20261015000000_contacts.sql`, table `family_contacts`): a mother, a father, a guardian, a PA, the family office or a driver. Families manage their own contacts in the app, and the office manages them from the family's page. Every change goes through `save_family_contact` and `remove_family_contact`; when a parent makes a change, the office is told.
+Each family can have several contacts (migration `20261103000000_contacts.sql`, table `family_contacts`): a mother, a father, a guardian, a PA, the family office or a driver. Families manage their own contacts in the app, and the office manages them from the family's page. Every change goes through `save_family_contact` and `remove_family_contact`; when a parent makes a change, the office is told.
 
 **What each setting controls**
 
