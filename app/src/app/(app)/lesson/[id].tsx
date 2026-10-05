@@ -5,6 +5,7 @@ import { Switch, View } from 'react-native';
 
 import { Icon } from '@/components/icon';
 import { LessonStatusBadge } from '@/components/lessons';
+import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -123,6 +124,7 @@ export default function LessonDetail() {
         </Section>
       ) : null}
 
+      {isStaff && scheduled ? <LessonVettingNote tutorId={l.tutorId} /> : null}
       {isStaff && scheduled ? (
         <Button
           title={started ? 'Record the lesson: notes, attendance and homework' : 'Record the lesson early'}
@@ -215,6 +217,7 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   const sameDay = useLessons(day, addDays(day, 1));
   const busyBlocks = useBusyBlocks(day, addDays(day, 1));
   const reassign = useAction(source.reassignLesson);
+  const vetting = useComplianceMap();
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
   const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
@@ -228,7 +231,10 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
           <Row gap={Spacing.two} style={{ flex: 1 }}>
             <Avatar name={o.tutor.fullName} color={o.tutor.color} size={32} />
             <View style={{ flex: 1 }}>
-              <Txt>{o.tutor.fullName}</Txt>
+              <Row gap={Spacing.two} wrap>
+                <Txt>{o.tutor.fullName}</Txt>
+                {notCleared(vetting.get(o.tutor.id)) ? <VettingBadge status={vetting.get(o.tutor.id)!.vettingStatus} /> : null}
+              </Row>
               <Txt variant="small">{o.available ? 'Free and within their availability' : 'Free, but outside their usual hours'}</Txt>
             </View>
           </Row>

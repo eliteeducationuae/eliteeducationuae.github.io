@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
 import { LoginHint } from '@/components/login-hint';
+import { TutorChecksSummary } from '@/components/vetting';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
 import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -76,6 +77,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
           onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}
         />
       ) : null}
+      {existing ? <TutorChecksSummary tutorId={existing.id} /> : null}
       <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
       <Section title="Teaches">
         <View style={{ gap: Spacing.three }}>

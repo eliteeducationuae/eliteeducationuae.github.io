@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import { subjectLine } from '@/components/catalogue-choice';
 import { BID_STATUS, fitNote, opportunityTone, tutorFits } from '@/components/opportunities';
+import { useComplianceMap, VettingBadge } from '@/components/vetting';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -19,6 +20,7 @@ export default function OpportunityDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const opportunities = useOpportunities();
   const bids = useBids();
+  const vetting = useComplianceMap();
   const tutors = useTutors();
   const availability = useAvailability();
   const lessons = useLessons(weekStart, addDays(weekStart, 14));
@@ -106,6 +108,7 @@ export default function OpportunityDetail() {
                       <Txt variant="h3">{t.fullName}</Txt>
                       <Badge label={bs.label} tone={bs.tone} />
                     </Row>
+                    {vetting.get(t.id) ? <VettingBadge status={vetting.get(t.id)!.vettingStatus} /> : null}
                     <Txt variant="small">
                       {[`${st.hours}h/week booked`, st.offered ? `${st.offered}h/week offered` : 'no availability set'].join(' · ')}
                       {st.note ? ' · ' : ''}

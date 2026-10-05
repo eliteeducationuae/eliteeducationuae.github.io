@@ -6,6 +6,7 @@ import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Secti
 import { Spacing } from '@/constants/theme';
 import { Icon } from '@/components/icon';
 import { RiskRow, useAtRisk } from '@/components/insights';
+import { TutorChecksRow, useTutorChecksCount } from '@/components/vetting';
 import {
   useAbsences,
   useApplications,
@@ -49,6 +50,7 @@ export default function AdminDashboard() {
   const reports = useStudentReports();
   const applications = useApplications();
   const atRisk = useAtRisk();
+  const tutorChecks = useTutorChecksCount();
 
   const today = (lessons.data ?? []).filter((l) => isSameDay(new Date(l.start), now)).sort(byStart);
   const activeToday = today.filter((l) => l.status !== 'cancelled' && l.status !== 'late-cancel');
@@ -74,7 +76,7 @@ export default function AdminDashboard() {
   const invoicesToApprove = (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted');
   const reportsToReview = (reports.data ?? []).filter((r) => r.status === 'submitted');
   const newApplications = (applications.data ?? []).filter((a) => a.status === 'applied');
-  const attention = rolesWithBids.length + invoicesToApprove.length + reportsToReview.length + newApplications.length + atRisk.list.length + needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
+  const attention = tutorChecks + rolesWithBids.length + invoicesToApprove.length + reportsToReview.length + newApplications.length + atRisk.list.length + needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
 
   const loading = lessons.isLoading || charges.isLoading || invoices.isLoading || !lookup.ready;
 
@@ -108,6 +110,7 @@ export default function AdminDashboard() {
 
           {attention ? (
             <Section title="Needs attention">
+              <TutorChecksRow />
               {pending.length ? (
                 <ListItem
                   title={`${plural(pending.length, 'lesson request')} to approve`}

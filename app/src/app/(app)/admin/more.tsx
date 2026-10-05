@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { AccountScreen } from '@/components/account';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
+import { useTutorChecksCount } from '@/components/vetting';
 import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount } from '@/data/hooks';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -25,6 +26,7 @@ export default function AdminMore() {
   const tutorInvoices = useTutorInvoices();
   const reportCycles = useReportCycles();
   const reports = useStudentReports();
+  const tutorChecks = useTutorChecksCount();
   const openCycleIds = new Set((reportCycles.data ?? []).filter((c) => c.status === 'open').map((c) => c.id));
   const toReview = (reports.data ?? []).filter((r) => r.status === 'submitted' && openCycleIds.has(r.cycleId)).length;
   const openBids = (bids.data ?? []).filter((b) => b.status === 'pending' && opportunities.data?.find((o) => o.id === b.opportunityId)?.status === 'open').length;
@@ -33,6 +35,8 @@ export default function AdminMore() {
     { title: 'Tutor invoices', subtitle: 'Approve monthly invoices and pay tutors', icon: 'doc', href: '/manage/tutor-invoices', badge: (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted').length },
     { title: 'Student reports', subtitle: 'Report rounds, tutor progress and review', icon: 'book', href: '/manage/reports', badge: toReview },
     { title: 'Hiring', subtitle: 'Applications to teach with you', icon: 'person', href: '/manage/applications', badge: (applications.data ?? []).filter((a) => a.status === 'applied').length },
+    { title: 'Tutor checks', subtitle: 'Police clearance, onboarding and overrides', icon: 'check', href: '/manage/vetting', badge: tutorChecks },
+    { title: 'Tutor handbook', subtitle: 'Policies tutors acknowledge', icon: 'book', href: '/handbook', badge: 0 },
     { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },
   ] as const;
   const business = [

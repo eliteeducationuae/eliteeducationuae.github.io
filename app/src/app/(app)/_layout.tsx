@@ -67,6 +67,11 @@ export default function SignedInLayout() {
       <Stack.Screen name="messages/index" options={{ title: 'Messages' }} />
       <Stack.Screen name="messages/[familyId]" options={{ title: 'Messages' }} />
       <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
+      <Stack.Screen name="checks" options={{ title: 'My checks' }} />
+      <Stack.Screen name="handbook" options={{ title: 'Tutor handbook' }} />
+      <Stack.Screen name="handbook-edit" options={{ title: 'Edit handbook', presentation: 'modal' }} />
+      <Stack.Screen name="manage/vetting/index" options={{ title: 'Tutor checks' }} />
+      <Stack.Screen name="manage/vetting/[tutorId]" options={{ title: 'Tutor checks' }} />
     </Stack>
   );
 }
