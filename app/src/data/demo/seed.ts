@@ -2,12 +2,14 @@ import { SYLLABUSES } from '@/data/curriculum';
 import { formatInvoiceNumber, itemsFromCharges, newInvoiceDraft } from '@/domain/billing';
 import { addDays, addMinutes, startOfWeek, toDateKey } from '@/domain/dates';
 import { enrolmentFor, activeEnrolments } from '@/domain/enrolments';
+import { findClashes } from '@/domain/scheduling';
 import { buildTopicLookup } from '@/domain/topics';
 import type { Enrolment, Invoice, Lesson, Message, Profile, Settings, Topic, TopicList, TopicRating } from '@/domain/types';
 
 import { seedClasswork } from './classwork';
 import { sampleBusyBlocks } from './calendar';
 import { applyCharges, DEMO_DB_VERSION, type DemoDB } from './db';
+import { ho } from './handover';
 import { ops } from './operations';
 
 const SUMMARIES = [
@@ -440,6 +442,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
   seedClasswork(db, now);
   seedCalendar(db, now);
   seedPayments(db);
+  seedPlansAndHandovers(db, now);
   return db;
 }
 
@@ -626,4 +629,136 @@ function seedEngagement(db: DemoDB, now: Date) {
     id: 'ann-1', createdAt: iso(hoursAgo(26)), authorName: "Craig O'Brien", audience: 'everyone',
     title: 'Mock examination season', body: 'Mock examinations begin shortly at most schools. Please ask your tutor for a personalised revision plan; additional sessions may be requested in the app.',
   });
+}
+
+// Session plans and handover packs
+/** Wording used by the seeded handover, kept here so tests can check it. */
+export const SEED_HANDOVER_NOTE =
+  'Charlotte responds well to short retrieval quizzes at the start of each lesson. We are mid-way through probability; please set the remaining exercise on tree diagrams.';
+export const SEED_PRIVATE_NOTE = 'Charlotte is anxious about her mock examinations; please be encouraging.';
+export const SEED_PLAN_OBJECTIVES = 'Revise integration by parts and attempt two past-paper questions.';
+
+/**
+ * James covers Charlotte's lessons while at a conference: Sarah takes the one that falls in his absence and has a
+ * handover pack waiting. Omar's next Maths lesson has a plan shared with his family, and Sarah has a lesson in the
+ * next two days still to plan.
+ */
+function seedPlansAndHandovers(db: DemoDB, now: Date) {
+  const lookup = buildTopicLookup(SYLLABUSES, db.topicLists, db.topics);
+  const isCharlotteMaths = (l: Lesson) => l.studentIds.includes('s-charlotte') && l.subject === 'Maths' && l.tutorId === 't-james';
+  const clashes = (l: Pick<Lesson, 'start' | 'end' | 'studentIds'>, tutorId: string, ignoreLessonId?: string) =>
+    findClashes({ start: new Date(l.start), end: new Date(l.end), tutorId, studentIds: l.studentIds, ignoreLessonId }, db.lessons).length > 0;
+  /** Moves a lesson to another hour on the same day when it would clash for the tutor. */
+  const fitFor = (lesson: Lesson, tutorId: string, hours: number[]) => {
+    if (!clashes(lesson, tutorId, lesson.id)) return true;
+    const length = new Date(lesson.end).getTime() - new Date(lesson.start).getTime();
+    for (const hour of hours) {
+      const start = new Date(lesson.start);
+      start.setHours(hour, 0, 0, 0);
+      const moved = { ...lesson, start: start.toISOString(), end: new Date(start.getTime() + length).toISOString() };
+      if (start > now && !clashes(moved, tutorId, lesson.id)) {
+        Object.assign(lesson, { start: moved.start, end: moved.end });
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // (a) James's most recent recorded lesson with Charlotte carries a private note for him alone.
+  const recorded = db.lessons
+    .filter((l) => isCharlotteMaths(l) && l.status === 'completed' && db.notes.some((n) => n.lessonId === l.id))
+    .sort((a, b) => b.start.localeCompare(a.start));
+  const latestNote = recorded[0] && db.notes.find((n) => n.lessonId === recorded[0].id);
+  if (latestNote) latestNote.privateNote = SEED_PRIVATE_NOTE;
+  const lastTaught = recorded[0];
+  if (lastTaught && !db.homework.some((h) => h.studentId === 's-charlotte' && !h.done)) {
+    db.homework.push({
+      id: 'hw-charlotte-probability', studentId: 's-charlotte', lessonId: lastTaught.id, tutorId: 't-james',
+      title: 'Probability: tree diagrams exercise', dueDate: toDateKey(addDays(now, 3)), done: false,
+    });
+  }
+
+  // (b) The lesson in James's absence goes to Sarah, with a handover.
+  const absence = db.absences.find((a) => a.id === 'abs-1');
+  const covered = absence
+    ? db.lessons.find((l) => {
+        const day = toDateKey(new Date(l.start));
+        return isCharlotteMaths(l) && l.status === 'scheduled' && day >= absence.startDate && day <= absence.endDate;
+      })
+    : undefined;
+  if (covered && fitFor(covered, 't-sarah', [17, 18, 15, 14])) {
+    covered.tutorId = 't-sarah';
+    const enrolment = enrolmentFor(db.enrolments, 's-charlotte', 'Maths');
+    ho.createHandover(
+      db,
+      {
+        id: 'ho-charlotte',
+        reason: 'cover',
+        studentId: 's-charlotte',
+        subject: 'Maths',
+        enrolmentId: enrolment?.id,
+        lessonId: covered.id,
+        fromTutorId: 't-james',
+        toTutorId: 't-sarah',
+        note: SEED_HANDOVER_NOTE,
+      },
+      addDays(now, -1),
+    );
+  }
+
+  // (c) Omar's next Maths lesson has a plan shared with the family.
+  const omarNext = db.lessons
+    .filter((l) => l.studentIds.includes('s-omar') && l.subject === 'Maths' && l.status === 'scheduled' && new Date(l.start) > now)
+    .sort((a, b) => a.start.localeCompare(b.start))[0];
+  const omarMaths = enrolmentFor(db.enrolments, 's-omar', 'Maths');
+  if (omarNext && omarMaths) {
+    const topics = lookup.treeFor(omarMaths).units.flatMap((u) => u.topics);
+    const integration = topics.filter((t) => /integration/i.test(t.name));
+    const topicIds = (integration.some((t) => /parts/i.test(t.name))
+      ? [integration.find((t) => /parts/i.test(t.name))!, ...integration.filter((t) => !/parts/i.test(t.name))]
+      : integration.length ? integration : topics
+    )
+      .slice(0, 2)
+      .map((t) => t.id);
+    (db.lessonPlans ??= []).push({
+      lessonId: omarNext.id,
+      tutorId: omarNext.tutorId,
+      objectives: SEED_PLAN_OBJECTIVES,
+      topicIds,
+      resourceIds: (db.resources ?? []).some((r) => r.id === 'res-1') ? ['res-1'] : [],
+      homework: [{ title: 'Two past-paper questions on integration by parts', details: 'Show every step of your working.' }],
+      sharedWithFamily: true,
+      createdAt: addDays(now, -1).toISOString(),
+      updatedAt: addDays(now, -1).toISOString(),
+    });
+  }
+
+  // (d) Sarah has a lesson in the next 48 hours with no plan, so the reminder appears on her dashboard.
+  const soon = addMinutes(now, 48 * 60);
+  const planned = new Set((db.lessonPlans ?? []).map((p) => p.lessonId));
+  const sarahSoon = db.lessons.some(
+    (l) => l.tutorId === 't-sarah' && l.status === 'scheduled' && new Date(l.start) >= now && new Date(l.start) < soon && !planned.has(l.id),
+  );
+  if (!sarahSoon) {
+    for (const hour of [17, 18, 16, 15]) {
+      const start = addDays(now, 1);
+      start.setHours(hour, 0, 0, 0);
+      const lesson: Lesson = {
+        id: 'les-layla-chem-plan',
+        tutorId: 't-sarah',
+        studentIds: ['s-layla'],
+        serviceId: 'svc-igcse',
+        subject: 'Chemistry',
+        start: start.toISOString(),
+        end: addMinutes(start, 60).toISOString(),
+        location: 'in-person',
+        address: 'Elite Education Centre, Al Barsha',
+        status: 'scheduled',
+      };
+      if (start >= soon || clashes(lesson, 't-sarah')) continue;
+      db.lessons.push(lesson);
+      db.lessons.sort((a, b) => a.start.localeCompare(b.start));
+      break;
+    }
+  }
 }

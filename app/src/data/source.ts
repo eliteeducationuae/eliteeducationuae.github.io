@@ -1,4 +1,5 @@
 import type { EnrolmentDraft } from '@/domain/enrolments';
+import type { HandoverSources } from '@/domain/handover';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
@@ -49,6 +50,8 @@ import type {
   TopicRating,
   AutopayStatus,
   PackageOffer,
+  Handover,
+  LessonPlan,
 } from '@/domain/types';
 
 export interface CompleteLessonInput {
@@ -114,6 +117,9 @@ export type SocialProvider = 'apple' | 'google';
 export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { status: 'redirecting' } | { status: 'cancelled' };
 
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
+
+/** Session plans: what the tutor sends when saving a plan (the server sets the tutor and times). */
+export type LessonPlanInput = Omit<LessonPlan, 'tutorId' | 'createdAt' | 'updatedAt'>;
 
 /** WhatsApp reminder preferences: whether to send them, and the E.164 number (kept when opting out). */
 export interface WhatsAppPrefs {
@@ -343,6 +349,22 @@ export interface DataSource {
   openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+
+  // Session plans and handover packs
+  getLessonPlan(lessonId: string): Promise<LessonPlan | null>;
+  /** Plans of lessons starting in [from, to) that the caller can see. */
+  listLessonPlans(range: { from: string; to: string }): Promise<LessonPlan[]>;
+  /** The lesson's tutor or an admin; scheduled lessons only. */
+  saveLessonPlan(input: LessonPlanInput): Promise<LessonPlan>;
+  deleteLessonPlan(lessonId: string): Promise<void>;
+  /** Admins: all. Tutors: those where they are the incoming or outgoing tutor. Newest first. */
+  listHandovers(filter?: { studentId?: string; lessonId?: string }): Promise<Handover[]>;
+  /** Raw material for a pack. Incoming tutor and admins only; throws otherwise. */
+  getHandoverSources(id: string): Promise<HandoverSources>;
+  /** The outgoing tutor or an admin. */
+  saveHandoverNote(id: string, note: string): Promise<void>;
+  /** The incoming tutor opened the pack. No-op for anyone else. */
+  markHandoverViewed(id: string): Promise<void>;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */

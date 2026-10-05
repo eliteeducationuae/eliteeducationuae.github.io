@@ -8,6 +8,7 @@ import { cw } from './classwork';
 import { cal } from './calendar';
 import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
 import { eq } from './engagement';
+import { ho } from './handover';
 import { ops } from './operations';
 import { pay } from './payments';
 import { createSeed } from './seed';
@@ -168,7 +169,15 @@ export function createDemoSource(): DataSource {
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
 
     listEnrolments: (filter) => read((d, v) => enr.enrolments(d, v, filter?.studentId)),
-    saveEnrolment: (e) => write((d, v) => enr.saveEnrolment(d, v, e)),
+    saveEnrolment: (e) =>
+      write((d, v) => {
+        // Session plans and handover packs: a new tutor for the subject gets a handover. Copied, as saving edits in place.
+        const found = e.id ? d.enrolments.find((x) => x.id === e.id) : undefined;
+        const before = found ? { ...found } : undefined;
+        const saved = enr.saveEnrolment(d, v, e);
+        ho.afterEnrolmentSaved(d, before, saved);
+        return saved;
+      }),
     listTopicLists: () => read((d) => enr.topicLists(d)),
     listTopics: (filter) => read((d) => enr.topics(d, filter?.listId)),
     addTopic: (input) => write((d, v) => enr.addTopic(d, v, input)),
@@ -230,7 +239,14 @@ export function createDemoSource(): DataSource {
     requestLesson: (input) => write((d, v) => eq.requestLesson(d, v, input)),
     decideRequest: (id, approve, response) => write((d, v) => eq.decideRequest(d, v, id, approve, response)),
     withdrawRequest: (id) => write((d, v) => eq.withdrawRequest(d, v, id)),
-    reassignLesson: (lessonId, tutorId) => write((d, v) => eq.reassignLesson(d, v, lessonId, tutorId)),
+    reassignLesson: (lessonId, tutorId) =>
+      write((d, v) => {
+        // Session plans and handover packs: the new tutor gets a cover handover.
+        const oldTutorId = d.lessons.find((l) => l.id === lessonId)?.tutorId;
+        eq.reassignLesson(d, v, lessonId, tutorId);
+        const lesson = d.lessons.find((l) => l.id === lessonId);
+        if (lesson) ho.afterLessonReassigned(d, lesson, oldTutorId);
+      }),
     listThreads: () => read((d, v) => eq.threads(d, v)),
     listMessages: (familyId) => read((d, v) => eq.messages(d, v, familyId)),
     sendMessage: (familyId, body) => write((d, v) => eq.sendMessage(d, v, familyId, body)),
@@ -253,7 +269,13 @@ export function createDemoSource(): DataSource {
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),
     placeBid: (id, pitch, availability) => write((d, v) => ops.placeBid(d, v, id, pitch, availability)),
     withdrawBid: (id) => write((d, v) => ops.withdrawBid(d, v, id)),
-    awardOpportunity: (bidId) => write((d, v) => ops.awardOpportunity(d, v, bidId)),
+    awardOpportunity: (bidId) =>
+      write((d, v) => {
+        ops.awardOpportunity(d, v, bidId);
+        // Session plans and handover packs: the winning tutor gets a handover when the role is for a known student.
+        const opportunityId = d.bids.find((b) => b.id === bidId)?.opportunityId;
+        if (opportunityId) ho.afterAward(d, opportunityId);
+      }),
     async submitTutorApplication(a) {
       const d = await load();
       ops.submitApplication(d, a);
@@ -302,5 +324,15 @@ export function createDemoSource(): DataSource {
     setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
     buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
     chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
+
+    // Session plans and handover packs
+    getLessonPlan: (lessonId) => read((d, v) => ho.plan(d, v, lessonId)),
+    listLessonPlans: (range) => read((d, v) => ho.plans(d, v, range)),
+    saveLessonPlan: (input) => write((d, v) => ho.savePlan(d, v, input)),
+    deleteLessonPlan: (lessonId) => write((d, v) => ho.deletePlan(d, v, lessonId)),
+    listHandovers: (filter) => read((d, v) => ho.handovers(d, v, filter)),
+    getHandoverSources: (id) => read((d, v) => ho.sources(d, v, id)),
+    saveHandoverNote: (id, note) => write((d, v) => ho.saveNote(d, v, id, note)),
+    markHandoverViewed: (id) => write((d, v) => ho.markViewed(d, v, id)),
   };
 }

@@ -632,3 +632,50 @@ export interface PackageOffer {
   active: boolean;
   sort: number;
 }
+
+// ---------------------------------------------------------------------------
+// Session plans and handover packs
+// ---------------------------------------------------------------------------
+
+/** Homework the tutor intends to set; no studentId = every student in the lesson. */
+export interface PlannedHomework {
+  studentId?: string;
+  title: string;
+  details?: string;
+}
+
+/** A tutor's plan for an upcoming lesson. One per lesson. */
+export interface LessonPlan {
+  lessonId: string;
+  /** The lesson's tutor when the plan was saved. */
+  tutorId?: string;
+  objectives: string;
+  topicIds: string[];
+  resourceIds: string[];
+  homework: PlannedHomework[];
+  /** Parents and the student can read the plan when true. */
+  sharedWithFamily: boolean;
+  createdAt?: string;
+  updatedAt: string;
+}
+
+/** Why a tutor received a handover pack: covering one lesson, taking over a subject, or winning a new student. */
+export type HandoverReason = 'cover' | 'reassigned' | 'awarded';
+
+/** A student passing from one tutor to another, with the outgoing tutor's note. */
+export interface Handover {
+  id: string;
+  createdAt: string;
+  reason: HandoverReason;
+  studentId: string;
+  subject?: string;
+  enrolmentId?: string;
+  lessonId?: string;
+  opportunityId?: string;
+  fromTutorId?: string;
+  toTutorId: string;
+  /** The outgoing tutor's handover note. */
+  note?: string;
+  noteUpdatedAt?: string;
+  viewedAt?: string;
+}

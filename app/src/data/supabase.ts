@@ -17,6 +17,7 @@ import {
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import { connectResultNotice } from '@/domain/calendar-connection';
+import { normalisePlan, validatePlan } from '@/domain/plans';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   Enrolment,
@@ -60,6 +61,7 @@ import type {
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
+import { handoverSourcesFromRpc, saveLessonPlanArgs, toHandover, toLessonPlan } from './handover-mapping';
 import { addChildSubjects } from './rpc-mapping';
 import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
 
@@ -1510,6 +1512,52 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       );
       const first = data?.results?.[0];
       return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
+    },
+
+    // Session plans and handover packs
+    async getLessonPlan(lessonId) {
+      const row = check(await client.from('lesson_plans').select('*').eq('lesson_id', lessonId).maybeSingle());
+      return row ? toLessonPlan(row) : null;
+    },
+    async listLessonPlans({ from, to }) {
+      const rows = check<Row[] | null>(
+        await client.from('lesson_plans').select('*, lessons!inner(start_at)').gte('lessons.start_at', from).lt('lessons.start_at', to),
+      );
+      return (rows ?? []).map(toLessonPlan);
+    },
+    async saveLessonPlan(input) {
+      const clean = normalisePlan(input);
+      const problem = validatePlan(clean);
+      if (problem) throw new Error(problem);
+      return toLessonPlan(firstRow(check(await client.rpc('save_lesson_plan', saveLessonPlanArgs(clean)))));
+    },
+    async deleteLessonPlan(lessonId) {
+      check(await client.rpc('delete_lesson_plan', { p_lesson_id: lessonId }));
+    },
+    async listHandovers(filter = {}) {
+      let query = client.from('handovers').select('*');
+      if (filter.studentId) query = query.eq('student_id', filter.studentId);
+      if (filter.lessonId) query = query.eq('lesson_id', filter.lessonId);
+      return check<Row[]>(await query.order('created_at', { ascending: false })).map(toHandover);
+    },
+    async getHandoverSources(id) {
+      const data = check(await client.rpc('handover_pack', { p_id: id }));
+      return handoverSourcesFromRpc(data, {
+        student: toStudent,
+        enrolment: toEnrolment,
+        lesson: toLesson,
+        note: toNote,
+        homework: toHomework,
+        rating: toRating,
+        resource: toResource,
+        report: toReport,
+      });
+    },
+    async saveHandoverNote(id, note) {
+      check(await client.rpc('save_handover_note', { p_id: id, p_note: note }));
+    },
+    async markHandoverViewed(id) {
+      check(await client.rpc('mark_handover_viewed', { p_id: id }));
     },
   };
 }

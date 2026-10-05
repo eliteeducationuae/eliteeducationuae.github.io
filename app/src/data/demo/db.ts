@@ -42,6 +42,8 @@ import type {
   TopicList,
   TopicRating,
   PackageOffer,
+  Handover,
+  LessonPlan,
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
@@ -91,6 +93,9 @@ export interface DemoDB {
   calendarConnections?: CalendarConnection[];
   /** Card payments: lesson packages parents can buy. Optional because databases saved before it lack the field. */
   packageOffers?: PackageOffer[];
+  // Session plans and handover packs. Optional because databases saved before them lack the fields: read with `?? []`.
+  lessonPlans?: LessonPlan[];
+  handovers?: Handover[];
 }
 
 export interface OutboxMessage {

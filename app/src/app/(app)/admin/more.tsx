@@ -46,6 +46,7 @@ export default function AdminMore() {
     { title: 'Holidays & term breaks', subtitle: 'Dates with no lessons', icon: 'sun', href: '/manage/closures' },
     { title: 'Tutor pay', subtitle: 'Hours taught and pay owed by month', icon: 'money', href: '/manage/payroll' },
     { title: 'Business settings', subtitle: 'Cancellation policy, VAT, invoicing', icon: 'settings', href: '/manage/settings' },
+    { title: 'Handover packs', subtitle: 'Packs prepared when a lesson is covered or a student changes tutor', icon: 'book', href: '/handover' },
   ] as const;
   return (
     <AccountScreen>

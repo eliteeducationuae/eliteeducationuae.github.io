@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
+import { assembleHandoverPack, type HandoverPack } from '@/domain/handover';
 import { buildTopicLookup, type TopicLookup } from '@/domain/topics';
 import type { Family, Service, Student, Tutor } from '@/domain/types';
 
@@ -200,3 +201,35 @@ export function useCalendarConnection() {
 // Card payments: saved cards, autopay and top-ups
 
 export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });
+
+// Session plans and handover packs
+
+export const useLessonPlan = (lessonId: string | undefined) =>
+  useQuery({ queryKey: ['lesson-plan', lessonId], queryFn: () => source.getLessonPlan(lessonId!), enabled: !!lessonId });
+
+export const useLessonPlans = (from: Date, to: Date) =>
+  useQuery({
+    queryKey: ['lesson-plans', from.toISOString(), to.toISOString()],
+    queryFn: () => source.listLessonPlans({ from: from.toISOString(), to: to.toISOString() }),
+  });
+
+export const useHandovers = (filter: { studentId?: string; lessonId?: string } = {}) =>
+  useQuery({ queryKey: ['handovers', filter], queryFn: () => source.listHandovers(filter) });
+
+/** Fetches the sources and assembles the pack with the topic lookup. */
+export function useHandoverPack(id: string | undefined): { pack: HandoverPack | undefined; isLoading: boolean; error: unknown; refetch: () => void } {
+  const sources = useQuery({ queryKey: ['handover-pack', id], queryFn: () => source.getHandoverSources(id!), enabled: !!id });
+  const topics = useTopicLookup();
+  const [now] = useState(() => new Date());
+  const pack = useMemo(
+    () => (sources.data && topics.ready ? assembleHandoverPack(sources.data, topics, now) : undefined),
+    [sources.data, topics, now],
+  );
+  const { refetch } = sources;
+  return {
+    pack,
+    isLoading: sources.isLoading || (!!sources.data && !topics.ready),
+    error: sources.error,
+    refetch: () => void refetch(),
+  };
+}

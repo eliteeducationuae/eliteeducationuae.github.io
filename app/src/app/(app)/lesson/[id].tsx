@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { Switch, View } from 'react-native';
 
 import { Icon } from '@/components/icon';
+import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
+import { LessonPlanSection } from '@/components/plans';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -122,6 +124,9 @@ export default function LessonDetail() {
           {isStaff && note.summary && source.aiAssist ? <ParentUpdate lessonId={l.id} familyIds={[...new Set(l.studentIds.map((sid) => lookup.student(sid)?.familyId).filter((f): f is string => !!f))]} /> : null}
         </Section>
       ) : null}
+
+      <LessonPlanSection lesson={l} />
+      <HandoverLink lessonId={l.id} />
 
       {isStaff && scheduled ? (
         <Button
