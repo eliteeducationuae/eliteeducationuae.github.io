@@ -451,7 +451,7 @@ select pg_temp.check((select count(*) from public.notification_outbox where subj
   and profile_id = 'a0000000-0000-0000-0000-00000000000c' and body = 'October advisory update is ready to read in the Elite Education app.'
   and url = '/admissions/' || (select id from ids where k = 'case') || '?tab=updates') = 1,
   'publishing tells the family, without the text of the update');
-select pg_temp.check((select count(*) from public.admissions_events where kind = 'update' and title = 'Advisory update: October advisory update'
+select pg_temp.check((select count(*) from public.admissions_events where kind = 'update' and title = 'Advisory update sent: October 2026'
   and family_visible) = 1, 'a published update appears on the timeline');
 
 -- Milestones and hidden timeline entries

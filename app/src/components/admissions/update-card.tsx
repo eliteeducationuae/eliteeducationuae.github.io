@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { typographic, UPDATE_KIND_LABELS, UPDATE_STATUS_LABELS, type AdvisoryUpdate } from '@/domain/admissions';
+import { previewText, UPDATE_KIND_LABELS, UPDATE_STATUS_LABELS, type AdvisoryUpdate } from '@/domain/admissions';
 import { formatDate } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -13,12 +13,8 @@ export function updateDate(u: AdvisoryUpdate): string {
   return u.publishedAt ?? u.approvedAt ?? u.submittedAt ?? u.createdAt;
 }
 
-/** The opening lines of an update, without the salutation ('Dear …,'). */
-export function previewText(body: string): string {
-  const paragraphs = typographic(body).split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  if (paragraphs.length > 1 && /^Dear\b.*,$/.test(paragraphs[0])) paragraphs.shift();
-  return paragraphs.join('\n\n');
-}
+// The card's opening lines (previewText) are built in the domain so they can be unit-tested.
+export { previewText };
 
 /**
  * An advisory update as a letter-like card: kind and period in capitals, the title in Georgia,
@@ -54,8 +50,8 @@ export function UpdateCard({
         </View>
         {showStatus ? <Badge label={UPDATE_STATUS_LABELS[update.status]} tone={updateStatusTone(update.status)} /> : null}
       </Row>
-      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
-      <Txt variant="muted" numberOfLines={3}>
+      <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
+      <Txt variant="muted" numberOfLines={5}>
         {previewText(update.body)}
       </Txt>
       <Txt variant="small">

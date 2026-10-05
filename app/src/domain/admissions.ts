@@ -596,6 +596,27 @@ export function advisoryPeriodLabel(now: Date): string {
   return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
 }
 
+/**
+ * The timeline entry when an update is sent: 'Advisory update sent: October 2026' for a monthly update, otherwise
+ * 'Advisory update sent: <title>'. Mirrors set_advisory_update_status after the round 5 merge.
+ */
+export function advisoryUpdateSentTitle(u: Pick<AdvisoryUpdate, 'kind' | 'period' | 'title'>): string {
+  const period = u.period?.trim();
+  return `Advisory update sent: ${u.kind === 'monthly' && period ? period : u.title.trim()}`;
+}
+
+/** A monthly update already sent for the same month, so the office can be warned before sending a second one. */
+export function sentForSameMonth(
+  updates: readonly AdvisoryUpdate[],
+  current: Pick<AdvisoryUpdate, 'kind' | 'period'> & { id?: string },
+): AdvisoryUpdate | undefined {
+  const period = current.period?.trim().toLowerCase();
+  if (current.kind !== 'monthly' || !period) return undefined;
+  return updates.find(
+    (u) => u.id !== current.id && u.kind === 'monthly' && u.status === 'published' && u.period?.trim().toLowerCase() === period,
+  );
+}
+
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** A `YYYY-MM-DD` key written out in full, e.g. 'Saturday 17 October 2026'. */
@@ -920,4 +941,26 @@ export function validateAdvisoryUpdateInput(input: AdvisoryUpdateInput): string 
   const err = required(input.title, 'a title');
   if (err) return err;
   return longText(input.period, 'the period', 60) ?? longText(input.body, 'the update', 12000);
+}
+
+/**
+ * The opening of an update for its card, without the salutation ('Dear …,'): whole sentences up to about `limit`
+ * characters, ending with a single ellipsis when the letter continues ('… is under way…', never 'under way....').
+ */
+export function previewText(body: string, limit = 200): string {
+  const paragraphs = typographic(body).split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length > 1 && /^Dear\b.*,$/.test(paragraphs[0])) paragraphs.shift();
+  const text = paragraphs.join(' ').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  const sentences = text.match(/[^.!?]+[.!?]+[’”'")]*(\s+|$)|[^.!?]+$/g) ?? [text];
+  let out = '';
+  for (const sentence of sentences) {
+    if (out && (out + sentence).trim().length > limit) break;
+    out += sentence;
+    if (out.length > limit) break;
+  }
+  out = out.trim();
+  // A first sentence longer than the limit is cut at a word instead.
+  if (out.length > limit) out = out.slice(0, limit).replace(/\s+\S*$/, '');
+  return `${out.replace(/[\s.,;:!?…]+$/, '')}…`;
 }

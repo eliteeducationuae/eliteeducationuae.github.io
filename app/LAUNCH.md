@@ -50,10 +50,10 @@ Run these from the `app/` folder on any computer with Node 22. No Mac is require
 
 Complete these on the production project before the first TestFlight build reaches tutors. Each item is described in full in `README.md`.
 
-- [ ] **3.1 Migrations.** Every file in `supabase/migrations` is applied (`npx supabase db push`). In the app, *Admin → More → System health → Database version* shows the newest migration.
+- [ ] **3.1 Migrations.** Every file in `supabase/migrations` is applied, in filename order, ending with `20261111000000_round5_merge.sql` (README, *Round 5 setup checklist*; use the SQL editor, or `npx supabase db push` only after repairing the migration history). In the app, *Admin → More → System health → Database version* shows `20261111000000` and lists every migration.
 - [ ] **3.2 Sign in with Apple** is configured in Supabase → Authentication → Providers (Services ID, key, team id and bundle id `me.eliteeducation.app`). **Sign in with Google** is configured with the iOS, Android and web client ids. Test both on a real device. Apple requires Sign in with Apple because Google sign-in is offered; it is already built in.
-- [ ] **3.3 Secrets set** (`npx supabase secrets list` shows names only): `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (live webhook), `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `HEALTH_ALERT_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, the calendar sync secret, the Twilio WhatsApp secrets and, if used, `ANTHROPIC_API_KEY`.
-- [ ] **3.4 Functions deployed:** `npx supabase functions deploy` (all functions, including `delete-account`, `health-check` and `backup-export`).
+- [ ] **3.3 Secrets set** (`npx supabase secrets list` shows names only): `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (live webhook), `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `HEALTH_ALERT_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, the calendar sync secret, the Twilio WhatsApp secrets, `CRON_SECRET` (and the same value in Vault for the scheduled calls) and, if used, `ANTHROPIC_API_KEY` and `TURNSTILE_SECRET_KEY`.
+- [ ] **3.4 Functions deployed:** `npx supabase functions deploy` (all functions, including `view-as`, `refund-payment`, `invite-accountant`, `delete-account`, `health-check` and `backup-export`; `ics` and, if Turnstile is used, `verify-captcha` with `--no-verify-jwt`).
 - [ ] **3.5 Schedules running** (Supabase → *Integrations → Cron*, or the SQL in `README.md`):
   - [ ] `send-notifications` every minute
   - [ ] `send-reminders` hourly

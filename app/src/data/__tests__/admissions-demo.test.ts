@@ -152,7 +152,7 @@ describe('advisory updates', () => {
     expect(adm.updates(db, parent, { caseId: UCAS }).some((u) => u.id === draft.id)).toBe(false);
     adm.setUpdateStatus(db, admin, draft.id, 'published', NOW);
     expect(adm.updates(db, parent, { caseId: UCAS }).find((u) => u.id === draft.id)).toMatchObject({ status: 'published' });
-    expect(adm.events(db, parent, { caseId: UCAS }).some((e) => e.title === 'Advisory update: Interview preparation')).toBe(true);
+    expect(adm.events(db, parent, { caseId: UCAS }).some((e) => e.title === 'Advisory update sent: Interview preparation')).toBe(true);
     expect(() => adm.setUpdateStatus(db, admin, draft.id, 'draft', NOW)).toThrow('cannot be withdrawn');
     expect(() => adm.saveUpdate(db, admin, { id: draft.id, caseId: UCAS, kind: 'ad-hoc', title: 'x', body: 'y' })).toThrow('cannot be changed');
   });

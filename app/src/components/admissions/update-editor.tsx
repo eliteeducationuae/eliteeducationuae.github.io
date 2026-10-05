@@ -11,6 +11,7 @@ import {
   useAdmissionsKeyDates,
   useAdmissionsTargets,
   useAdmissionsTasks,
+  useAdvisoryUpdates,
   useLookup,
   useSettings,
 } from '@/data/hooks';
@@ -19,6 +20,7 @@ import {
   advisoryPeriodLabel,
   canManageCase,
   CASE_KIND_LABELS,
+  sentForSameMonth,
   templateAdvisoryUpdate,
   typographic,
   UPDATE_KIND_LABELS,
@@ -153,6 +155,7 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
   const save = useAction(source.saveAdvisoryUpdate);
   const setStatus = useAction(source.setAdvisoryUpdateStatus);
   const remove = useAction(source.deleteAdvisoryUpdate);
+  const caseUpdates = useAdvisoryUpdates(c.id);
   const [now] = useState(() => new Date());
   const [kind, setKind] = useState<AdvisoryUpdateKind>(update?.kind ?? 'monthly');
   const [period, setPeriod] = useState(update?.period ?? advisoryPeriodLabel(now));
@@ -213,8 +216,20 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
       if (!update) router.replace({ pathname: '/admissions/update', params: { id: saved.id } });
     });
 
-  const publish = () =>
+  const publish = () => {
+    // A second monthly letter for the same month reads like a duplicate to the family, so the office is asked first.
+    const earlier = sentForSameMonth(caseUpdates.data ?? [], { id: update?.id, kind, period });
+    if (earlier) {
+      confirm(
+        `An update for ${period.trim()} has already been sent`,
+        `The family received “${earlier.title}” on ${formatDate(earlier.publishedAt ?? earlier.createdAt)}. Send this one as well? If it adds to that letter, you may prefer to choose Update instead of Monthly update.`,
+        () => moveTo('published'),
+        'Send anyway',
+      );
+      return;
+    }
     confirm('Send this update to the family?', 'The family will be notified, and the update can no longer be changed.', () => moveTo('published'), 'Send');
+  };
 
   async function draft() {
     setDrafting(true);

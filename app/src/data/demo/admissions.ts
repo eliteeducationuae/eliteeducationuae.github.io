@@ -1,4 +1,5 @@
 import {
+  advisoryUpdateSentTitle,
   ADMISSIONS_ITEM_KEY,
   DOC_CATEGORY_LABELS,
   caseAccess,
@@ -512,7 +513,7 @@ export const adm = {
     if (status === 'approved') update.approvedAt = at;
     if (status === 'published') {
       update.publishedAt = at;
-      logEvent(db, c.id, 'update', `Advisory update: ${update.title}`, now);
+      logEvent(db, c.id, 'update', advisoryUpdateSentTitle(update), now);
     }
     touch(c, now);
   },
@@ -832,7 +833,7 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
     ev('aev-omar-4', ucas, -34, 'target', 'University College London added to the shortlist'),
     ev('aev-omar-5', ucas, -34, 'target', 'University of Warwick added to the shortlist'),
     ev('aev-omar-6', ucas, -34, 'target', 'University of Edinburgh added to the shortlist'),
-    ev('aev-omar-7', ucas, -30, 'update', `Advisory update: ${lastMonth} advisory update`),
+    ev('aev-omar-7', ucas, -30, 'update', `Advisory update sent: ${lastMonth}`),
     ev('aev-omar-8', ucas, -20, 'target', 'Application under way for University College London'),
     ev('aev-omar-9', ucas, -12, 'document', 'Document added: Draft reference notes.pdf', false),
     ev('aev-omar-10', ucas, -10, 'task', 'Completed: Share predicted grades from school'),
@@ -844,7 +845,7 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
     ev('aev-layla-6', boarding, -40, 'target', 'Application submitted to Wycombe Abbey'),
     ev('aev-layla-7', boarding, -20, 'target', "Interview invitation from Cheltenham Ladies' College"),
     ev('aev-layla-8', boarding, -5, 'target', 'Offer received from Brighton College'),
-    ev('aev-layla-9', boarding, -5, 'update', 'Advisory update: Offer from Brighton College'),
+    ev('aev-layla-9', boarding, -5, 'update', 'Advisory update sent: Offer from Brighton College'),
   ];
 
   return { cases, targets, dates, tasks, documents, updates, events };

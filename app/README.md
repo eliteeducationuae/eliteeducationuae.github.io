@@ -361,6 +361,25 @@ Complete these once, in this order. Each feature's section above carries the det
 10. **WhatsApp opt-outs.** A family who replies STOP on WhatsApp is not yet switched off automatically. Until an inbound handler is added, the office should switch WhatsApp off for them by asking them to do so under *Account*, or by clearing `whatsapp_opt_in` for that profile in the table editor.
 11. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, a WhatsApp opt-in on your own number, and tapping a push notification (it should open the screen it refers to). Also print an invoice PDF on iPhone: iOS has neither Calibri nor Carlito, so the PDF body text may fall back to Helvetica; confirm that this is acceptable.
 
+## Round 5 setup checklist
+
+Round 5 adds View as, per-student rates, family contacts, the audit log, UAE tax documents and accountant access, admissions advisory, tutor vetting, launch readiness, spam protection, and session plans with handover packs. Complete these once, in this order, after the *Round 4 setup checklist*. Each feature's section below carries the detail.
+
+1. **Database.** In the Supabase SQL editor, run the round 5 migrations one file at a time in filename order: `20261101000000_viewas.sql`, `20261102000000_rates.sql`, `20261103000000_contacts.sql`, `20261104000000_audit.sql`, `20261105000000_tax.sql`, `20261106000000_admissions.sql`, `20261107000000_vetting.sql`, `20261108000000_launch.sql`, `20261109000000_spam.sql`, `20261110000000_handover.sql` and finally `20261111000000_round5_merge.sql`. The last one joins the features together: it restores the round 4 follow-up's notification links and readable charge dates where round 5 files had redefined those functions, keeps the office's enquiry notes away from families, stops a family contact's address becoming an accountant login, extends account deletion and *Download my data* to every round 5 record, lets View as read the round 5 screens, audits credit notes, refunds, accountant access, admissions cases and tutor documents, and records every migration in the ledger. As with round 4, do not use `npx supabase db push` unless the migration history has first been repaired (see step 1 of the *Round 4 setup checklist*).
+2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261111000000 round5_merge`, and the ledger should list 25 migrations.
+3. **View as.** In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard` (see *View as* below).
+4. **Deploy the Edge Functions.** Run `npx supabase functions deploy view-as refund-payment invite-accountant delete-account health-check backup-export ai-assist billing-portal charge-invoice create-checkout google-connect stripe-webhook send-notifications send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`. Every function a signed-in person can call to change something now refuses a View as session, and the scheduled ones report to *System health*.
+5. **Secrets.** Set `HEALTH_ALERT_EMAIL` (System health alerts), and make sure `APP_URL`, `RESEND_API_KEY` and `EMAIL_FROM` are set (the accountant's invitation and the health alerts use them). `ANTHROPIC_API_KEY` is optional: without it the admissions *AI draft* button uses the built-in template letter.
+6. **Stripe.** Add `refund.created`, `refund.updated`, `refund.failed` and `charge.refund.updated` to the webhook's events (see *UAE tax invoices* below).
+7. **Schedules.** Add `health-check` every 15 minutes and `backup-export` nightly (see *Launch functions: deploy and schedule*). `send-reminders` now also queues admissions reminders and police clearance alerts, so it needs no new schedule.
+8. **Tax details.** Enter the legal name, TRN, registered address and VAT quarter under *More → Business settings*, then invite the accountant from *More → Accountant access*.
+9. **Tutor checks.** Ask tutors to upload their police clearance under *Me → My checks*, verify them under *Manage → Tutor checks*, and only then switch enforcement on.
+10. **Spam protection.** In Supabase, review *Authentication → Rate Limits*, keep **Confirm email** on and leave Auth CAPTCHA off (see *Spam and abuse protection* above). Turnstile on the website is optional: add the site key to `index.html`, set `TURNSTILE_SECRET_KEY`, run `npx supabase functions deploy verify-captcha --no-verify-jwt`, then switch on *Security check on website forms* in Settings.
+11. **Point-in-time recovery** on the Pro plan, and the store submission steps in `LAUNCH.md`.
+12. **Check on a real device.** View a test parent as an administrator and try to send a message (it should be refused); set a custom rate and record a lesson; add a second family contact; issue a credit note; publish an admissions update; upload a police clearance as a tutor; reassign a lesson and open the handover pack; and finally close a test family's account and confirm its invoices remain under *Admin → Billing*.
+
+**Decisions for Craig.** A parent who closes their own account closes the whole family, including every other contact's login (the launch design). A second parent who only wants to stop signing in should instead be removed from the family's contacts by the office. Admissions letters greet a family by first name when no title is recorded; a preferred-salutation field on the contact would let each family choose.
+
 ## View as (read only)
 
 The office can see the app exactly as a particular parent, student or tutor sees it, in order to answer a question or check what a family has been sent. A view is strictly read only: nothing can be added, changed, sent, paid for or deleted while it is open, and the app shows *Viewing only — changes are disabled.* if anything is attempted. Only admins can start a view, and an admin cannot view another admin.
@@ -382,7 +401,7 @@ The office can see the app exactly as a particular parent, student or tutor sees
 
 1. Run `npx supabase db push` (or run `20261101000000_viewas.sql` in the SQL editor). The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
 2. Run `npx supabase functions deploy view-as`. It keeps the default JWT check, so no `config.toml` change is needed.
-3. Redeploy the functions that now refuse view sessions: `npx supabase functions deploy ai-assist billing-portal charge-invoice create-checkout google-connect`.
+3. Redeploy the functions that now refuse view sessions: `npx supabase functions deploy ai-assist billing-portal charge-invoice create-checkout google-connect delete-account refund-payment invite-accountant`. The read-only RPCs a viewed person needs are listed in `public.view_as_read_rpcs()`; any other RPC, and every write to a table, is refused while viewing.
 
 **Checking that it works.**
 
@@ -511,10 +530,10 @@ Both run automatically in GitHub Actions on every push and pull request (see *Co
 ## Database migrations
 
 - **Never edit a migration that has been applied** anywhere (production, or a teammate's database). Fix forward with a new migration.
-- Name each new file `<next timestamp>_<name>.sql` in `supabase/migrations`, with a timestamp later than every existing file (for example `20261021000000_waiting_list.sql`). Files run in name order.
+- Name each new file `<next timestamp>_<name>.sql` in `supabase/migrations`, with a timestamp later than every existing file (for example `20261112000000_waiting_list.sql`). Files run in name order.
 - **End every new migration** with a line that records it, so the app can show which version is live:
   ```sql
-  select public.record_migration('20261021000000', 'waiting_list');
+  select public.record_migration('20261112000000', 'waiting_list');
   ```
 - Add a matching SQL test, `supabase/tests/<name>_test.sql`, and add `<name>` to the list of tests in `supabase/tests/run.sh`. CI then checks it on every push.
 - Apply to production with `npx supabase db push` (it applies only the migrations that are new), or paste the file into the SQL editor.
@@ -584,6 +603,8 @@ Families, students and tutors can download their data and close their account th
   - *Student login:* closed with their family, as above. The office can also close a single child from the family.
   - *Tutor:* name, contact details, availability, time off, bank details and calendar links are removed. **Lessons and tutor invoices are kept** for pay and tax records. Upcoming lessons are not cancelled; they are counted so the office can give them to another tutor.
   - *Administrator:* the only administrator cannot be removed until another is appointed.
+  - *Accountant:* their login and invitation are removed; the books they read are untouched.
+  - *Round 5 records* (`20261111000000_round5_merge.sql`): closing a family also removes its other contacts (the main contact keeps only the anonymised details), its billing name, address and TRN (tax invoices and credit notes keep their own copy), admissions cases with their letters and stored documents, handover packs and lesson plans about the children, and its entries in the spam log. Closing a tutor removes their vetting documents and stored certificates. In every case the audit log keeps that each change happened but blanks names, contact details and free text (`audit_erase`). **Credit notes and refunds are kept** with the invoices and payments.
 - **Office side:** *Admin → More → Deletion requests* records requests received by email or phone, carries them out with the same function, shows failures to retry, and keeps a record of each completed deletion without personal details.
 - **Retention:** retained invoices and payment records are kept for the period UAE tax law requires (the privacy policy currently says five years). **For legal and accountant review:** confirm the retention period, whether the bill-to surname must stay on tax invoices, and the wording in the app and the privacy policy.
 
@@ -634,6 +655,10 @@ Check the jobs with `select jobname, schedule, active from cron.job;` and their 
 - Microsoft Outlook calendar sync, alongside the Google Calendar sync
 - Online booking of trial lessons from eliteeducation.me
 - Bank-feed import for expenses
+
+## Session plans and handover packs
+
+Tutors can write a plan for each upcoming lesson (objectives, topics, resources and homework they intend to set) and choose whether the family sees it. When a lesson moves to another tutor (cover), a subject is given to a new tutor, or a role for a known student is awarded, the app creates a handover (migration `20261110000000_handover.sql`): the new tutor is sent a pack with the student's goals, recent lesson notes, open homework, focus topics, plans and resources, and the previous tutor is asked to write a short handover note. Moving a covered lesson back to the regular tutor withdraws an unread cover pack. Packs and notifications never include bank details. Administrators see every pack under *More → Handover packs*; tutors see the packs they send or receive. Nothing needs configuring.
 
 ## Family contacts
 
