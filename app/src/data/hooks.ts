@@ -200,3 +200,16 @@ export function useCalendarConnection() {
 // Card payments: saved cards, autopay and top-ups
 
 export const usePackageOffers = () => useQuery({ queryKey: ['package-offers'], queryFn: () => source.listPackageOffers() });
+
+// Tax: credit notes, refunds and accountant access
+
+export const useCreditNotes = (filter?: { familyId?: string; invoiceId?: string }) =>
+  useQuery({ queryKey: ['credit-notes', filter], queryFn: () => source.listCreditNotes(filter) });
+
+export const useCreditNote = (id: string | undefined) =>
+  useQuery({ queryKey: ['credit-note', id], queryFn: () => source.getCreditNote(id!), enabled: !!id });
+
+export const useRefunds = (filter?: { familyId?: string; invoiceId?: string }) =>
+  useQuery({ queryKey: ['refunds', filter], queryFn: () => source.listRefunds(filter) });
+
+export const useAccountants = () => useQuery({ queryKey: ['accountants'], queryFn: () => source.listAccountants() });

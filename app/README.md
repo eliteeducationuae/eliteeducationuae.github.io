@@ -271,6 +271,24 @@ Complete these once, in this order. The function names come from the round 4 pla
 6. **Deploy and schedule.** Run `npx supabase functions deploy google-connect calendar-sync create-checkout stripe-webhook charge-invoice billing-portal send-notifications send-reminders`. Schedule `calendar-sync` every 5 minutes, `charge-invoice` every 15 minutes, `send-notifications` every minute and `send-reminders` hourly.
 7. **Check on a real device.** Light and dark mode, Sign in with Apple and Google, and a WhatsApp opt-in on your own number.
 
+## Round 5: UAE tax invoices, credit notes, refunds and accountant access
+
+Every invoice the app issues is a UAE tax invoice. It carries the business's legal name, Tax Registration Number (TRN) and registered address, the customer's details (with their TRN where they are registered for VAT) and the date of supply. These details are copied onto the invoice when it is issued, so a later change to the settings or to a family's details never alters an invoice that has already been sent. Complete these steps once, in this order.
+
+1. **Database.** Run `supabase/migrations/20261017000000_tax.sql` in the Supabase SQL editor, or run `npx supabase db push`. Invoices issued before this migration take the business and family details as they stand when it runs.
+2. **Business settings.** In *More → Business settings*, enter the legal name, the 15-digit TRN and the registered address exactly as they appear on the Federal Tax Authority (FTA) certificate, and choose the VAT quarter start month shown on that certificate (January, February or March). Set VAT to 5%.
+3. **Families.** Where a family pays through a company, or is otherwise registered for VAT, add the company's TRN and billing address to the family's billing details. Tutors never see these details.
+4. **Edge Functions.** Run `npx supabase functions deploy refund-payment invite-accountant`, and deploy `stripe-webhook`, `create-checkout` and `charge-invoice` again, as they now allow for credit notes and refunds. Both new functions are for signed-in admins, so they keep the default JWT check.
+5. **Stripe.** Add `refund.created`, `refund.updated`, `refund.failed` and `charge.refund.updated` to the webhook's events. A refund made in the Stripe Dashboard is recorded in the app automatically, and the office is asked whether a credit note is needed.
+6. **APP_URL.** If it is not set already, run `npx supabase secrets set APP_URL=https://<your app address>`. The accountant's invitation links back to the app's sign-in screen.
+7. **Accountant.** Invite your accountant from *More → Accountant access*. They receive an email invitation; once they accept it, they can sign in. If they are asked for a password they do not have, they should use *Forgot password* on the sign-in screen. The accountant can read invoices, payments, credit notes, refunds, lesson packages, expenses (with receipts), tutor invoices and families. They cannot change anything, and they never see pupils, lessons, notes, homework or messages.
+
+**How corrections work now.** An issued invoice cannot be edited, returned to draft or deleted, and invoice and credit note numbers run in sequence without gaps. To correct an invoice, issue a credit note against it: choose the lines and amounts to credit and give a reason. Choose to release the lessons when they should be invoiced again (for example, when the wrong rate was charged); leave this off for a goodwill reduction. Cancelling a sent or paid invoice issues a closing credit note for whatever has not already been credited and, as before, releases its lessons to be invoiced again. A cancelled invoice cannot be reopened.
+
+**Refunds.** A card payment taken through Stripe is refunded from the invoice in the app; a bank transfer or cash refund is recorded there once it has been made. When a family has paid an invoice in full, a refund needs a credit note for the same amount, unless it only returns an overpayment. Each refund request is sent once, even if the button is pressed twice or the connection drops. Notifications about refunds never include bank details.
+
+**Record keeping.** Tax invoices and credit notes must be kept for at least five years. The database refuses to delete an invoice or a credit note. Any account deletion or data export work must keep a family's invoices, credit notes, payments and refunds, and must never delete them with the account.
+
 ## Checks
 
 ```bash

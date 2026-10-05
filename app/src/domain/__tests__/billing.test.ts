@@ -98,7 +98,7 @@ describe('invoices', () => {
   };
 
   it('totals with VAT and payments', () => {
-    expect(invoiceTotals(invoice)).toEqual({ subtotal: 999.99, vat: 50, total: 1049.99, paid: 500, balance: 549.99 });
+    expect(invoiceTotals(invoice)).toEqual({ subtotal: 999.99, vat: 50, total: 1049.99, paid: 500, credited: 0, refunded: 0, balance: 549.99 });
   });
 
   it('derives part-paid, overdue and paid', () => {

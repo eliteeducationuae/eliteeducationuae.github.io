@@ -3,9 +3,10 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { InvoiceCard } from '@/components/billing';
+import { CreditNoteCard } from '@/components/tax';
 import { Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Section, Segmented, Stat, StatGrid, Txt } from '@/components/ui';
 import { source } from '@/data';
-import { useAction, useCharges, useInvoices, useLookup } from '@/data/hooks';
+import { useAction, useCharges, useCreditNotes, useInvoices, useLookup } from '@/data/hooks';
 import { displayStatus, formatAED, invoiceTotals } from '@/domain/billing';
 import { notify } from '@/lib/confirm';
 import { plural } from '@/lib/id';
@@ -14,6 +15,7 @@ export default function AdminBilling() {
   const lookup = useLookup();
   const charges = useCharges();
   const invoices = useInvoices();
+  const creditNotes = useCreditNotes();
   const invoice = useAction(source.invoiceUnbilled);
   const [filter, setFilter] = useState<'open' | 'paid' | 'all'>('open');
   const [busyFamily, setBusyFamily] = useState<string | null>(null);
@@ -105,6 +107,17 @@ export default function AdminBilling() {
           shown.map((i) => <InvoiceCard key={i.id} invoice={i} familyName={lookup.family(i.familyId)?.name} />)
         )}
       </Section>
+
+      {creditNotes.data?.length ? (
+        <Section title="Recent credit notes">
+          {[...creditNotes.data]
+            .sort((a, b) => b.issueDate.localeCompare(a.issueDate) || b.number.localeCompare(a.number))
+            .slice(0, 5)
+            .map((n) => (
+              <CreditNoteCard key={n.id} note={n} familyName={lookup.family(n.familyId)?.name} />
+            ))}
+        </Section>
+      ) : null}
     </Screen>
   );
 }

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { isValidTrn, normaliseTrn } from '@/domain/tax';
 import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
@@ -11,6 +12,7 @@ import { eq } from './engagement';
 import { ops } from './operations';
 import { pay } from './payments';
 import { createSeed } from './seed';
+import { tax } from './tax';
 import { setWhatsAppPrefs } from './whatsapp';
 
 const DB_KEY = 'elite.demo.db';
@@ -61,6 +63,8 @@ export function createDemoSource(): DataSource {
 
   const write = async <T>(fn: (db: DemoDB, viewer: Profile) => T): Promise<T> => {
     const d = await load();
+    // Tax: accountants have read-only access.
+    tax.requireWriter(me());
     const result = fn(d, me());
     await save();
     return structuredClone(result);
@@ -140,7 +144,8 @@ export function createDemoSource(): DataSource {
       await save();
     },
 
-    getSettings: () => read((d) => d.settings),
+    // Tax: demo databases saved before the tax settings existed get their defaults.
+    getSettings: () => read((d) => ({ ...d.settings, vatQuarterStartMonth: d.settings.vatQuarterStartMonth ?? 1, nextCreditNoteNumber: d.settings.nextCreditNoteNumber ?? 1 })),
     listTutors: () => read((d) => d.tutors),
     listFamilies: () => read((d, v) => pay.stripBilling(q.families(d, v), v)),
     listStudents: () => read((d, v) => q.students(d, v)),
@@ -161,8 +166,14 @@ export function createDemoSource(): DataSource {
       write((d, v) => {
         // Card and autopay live in family_billing in production; editing a family's details never changes them.
         const existing = f.id ? d.families.find((x) => x.id === f.id) : undefined;
-        const { autopay: _autopay, savedCard: _card, ...details } = f;
-        return cmd.saveFamily(d, v, existing ? { ...details, autopay: existing.autopay, savedCard: existing.savedCard } : details);
+        const { autopay: _autopay, savedCard: _card, trn, billingAddress, ...details } = f;
+        // Tax: TRN and billing address (family_billing) change only when given; a blank clears them.
+        const taxDetails = {
+          trn: trn === undefined ? existing?.trn : normaliseTrn(trn) || undefined,
+          billingAddress: billingAddress === undefined ? existing?.billingAddress : billingAddress.trim() || undefined,
+        };
+        if (taxDetails.trn && !isValidTrn(taxDetails.trn)) throw new Error('A Tax Registration Number has 15 digits. Please check it, or leave it blank.');
+        return cmd.saveFamily(d, v, existing ? { ...details, ...taxDetails, autopay: existing.autopay, savedCard: existing.savedCard } : { ...details, ...taxDetails });
       }),
     saveStudent: (s) => write((d, v) => cmd.saveStudent(d, v, s)),
     saveService: (s) => write((d, v) => cmd.saveService(d, v, s)),
@@ -282,7 +293,8 @@ export function createDemoSource(): DataSource {
       // No real card processing in the demo: simulate a successful Stripe payment.
       write((d, v) => {
         const invoice = q.invoices(d, v).find((i) => i.id === invoiceId);
-        if (!invoice) throw new Error('Invoice not found');
+        // Only the family (or an admin) pays; accountants and others can read invoices but never pay them.
+        if (!invoice || !(v.role === 'admin' || (v.role === 'parent' && v.familyId === invoice.familyId))) throw new Error('Invoice not found');
         return pay.payInvoiceByCard(d, invoice);
       }),
 
@@ -302,5 +314,15 @@ export function createDemoSource(): DataSource {
     setAutopay: (familyId, enabled) => write((d, v) => pay.setAutopay(d, v, familyId, enabled)),
     buyPackageOffer: (offerId) => write((d, v) => pay.buyOffer(d, v, offerId)),
     chargeSavedCard: (invoiceId) => write((d, v) => pay.chargeSavedCard(d, v, invoiceId)),
+
+    // Tax: credit notes, refunds and accountant access
+    listCreditNotes: (filter) => read((d, v) => tax.creditNotes(d, v, filter)),
+    getCreditNote: (id) => read((d, v) => tax.creditNote(d, v, id)),
+    issueCreditNote: (input) => write((d, v) => tax.issueCreditNote(d, v, input)),
+    listRefunds: (filter) => read((d, v) => tax.refunds(d, v, filter)),
+    refundPayment: (input) => write((d, v) => tax.refundPayment(d, v, input)),
+    listAccountants: () => read((d, v) => tax.accountants(d, v)),
+    inviteAccountant: (email, fullName) => write((d, v) => tax.inviteAccountant(d, v, email, fullName)),
+    removeAccountant: (email) => write((d, v) => tax.removeAccountant(d, v, email)),
   };
 }

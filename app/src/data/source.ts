@@ -49,6 +49,9 @@ import type {
   TopicRating,
   AutopayStatus,
   PackageOffer,
+  AccountantInvite,
+  CreditNote,
+  Refund,
 } from '@/domain/types';
 
 export interface CompleteLessonInput {
@@ -343,6 +346,54 @@ export interface DataSource {
   openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+
+  // Tax: credit notes, refunds and accountant access
+  /** Admins and accountants see every credit note; parents their family's; others none. */
+  listCreditNotes(filter?: { familyId?: string; invoiceId?: string }): Promise<CreditNote[]>;
+  getCreditNote(id: string): Promise<CreditNote | null>;
+  /** Admin: credit all or part of a sent or paid invoice. A full credit voids the invoice. */
+  issueCreditNote(input: CreditNoteInput): Promise<CreditNote>;
+  /** Admins and accountants see every refund; parents their family's; others none. */
+  listRefunds(filter?: { familyId?: string; invoiceId?: string }): Promise<Refund[]>;
+  /** Admin: return money against a payment. Card payments go back through Stripe; others are recorded. */
+  refundPayment(input: RefundInput): Promise<Refund>;
+  /** Admin: accountants invited to read the books. */
+  listAccountants(): Promise<AccountantInvite[]>;
+  /** Admin: invite an accountant. 'linked' when an accountant login with that email already exists. */
+  inviteAccountant(email: string, fullName?: string): Promise<'invited' | 'linked'>;
+  /** Admin: remove an accountant's invite and access. */
+  removeAccountant(email: string): Promise<void>;
+}
+
+// Tax: credit notes, refunds and accountant access
+
+export interface CreditNoteLineInput {
+  description: string;
+  /** 0-based index of the invoice line being credited. */
+  invoiceLine?: number;
+  /** Net amount (before VAT) to credit. */
+  net: number;
+}
+
+export interface CreditNoteInput {
+  invoiceId: string;
+  reason: string;
+  lines: CreditNoteLineInput[];
+  /** Put the credited lessons back to unbilled so they can be invoiced again. */
+  releaseCharges?: boolean;
+}
+
+export interface RefundInput {
+  paymentId: string;
+  /** Gross amount to return, AED. */
+  amount: number;
+  reason: string;
+  /** Bank or cash reference for manual refunds. */
+  reference?: string;
+  /** Issue a credit note for the refunded amount at the same time. */
+  withCreditNote: boolean;
+  /** Unique per attempt so a retried request never refunds twice. */
+  requestKey: string;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */

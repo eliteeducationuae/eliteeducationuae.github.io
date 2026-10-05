@@ -122,7 +122,8 @@ describe('commands', () => {
     const db = createSeed(NOW);
     const admin = viewer(db, 'admin');
     const invoice = cmd.sellPackage(db, admin, { familyId: 'f-hughes', name: 'IB 5 pack', serviceId: 'svc-ib', lessonsTotal: 5, price: 2000 }, NOW);
-    expect(invoiceTotals(invoice).total).toBe(2000);
+    // The seeded business is VAT registered: 5% on top of the package price.
+    expect(invoiceTotals(invoice)).toMatchObject({ subtotal: 2000, vat: 100, total: 2100 });
     const lesson = db.lessons.find((l) => l.status === 'scheduled' && l.studentIds.includes('s-charlotte'))!;
     cmd.completeLesson(db, admin, { lessonId: lesson.id, status: 'completed', attendance: {}, summary: 's', topicIds: [], ratings: [], homework: [] });
     const pkg = db.packages.find((p) => p.name === 'IB 5 pack')!;

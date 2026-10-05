@@ -56,7 +56,13 @@ import type {
   Tutor,
   TopicRating,
   PackageOffer,
+  AccountantInvite,
+  CreditNote,
+  CreditNoteRef,
+  Refund,
+  TaxParty,
 } from '@/domain/types';
+import { normaliseTrn } from '@/domain/tax';
 
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
@@ -110,6 +116,13 @@ const toSettings = (r: Row): Settings => ({
   emailInvoices: r.email_invoices ?? true,
   emailMessages: r.email_messages ?? true,
   bookingNoticeHours: r.booking_notice_hours ?? 24,
+  // Tax
+  legalName: r.legal_name ?? undefined,
+  trn: r.trn ?? undefined,
+  registeredAddress: r.registered_address ?? undefined,
+  invoiceFooter: r.invoice_footer ?? undefined,
+  vatQuarterStartMonth: [1, 2, 3].includes(Number(r.vat_quarter_start_month)) ? (Number(r.vat_quarter_start_month) as 1 | 2 | 3) : 1,
+  nextCreditNoteNumber: r.next_credit_note_number ?? 1,
 });
 
 const fromSettings = (s: Partial<Settings>): Row =>
@@ -127,7 +140,18 @@ const fromSettings = (s: Partial<Settings>): Row =>
     email_invoices: s.emailInvoices,
     email_messages: s.emailMessages,
     booking_notice_hours: s.bookingNoticeHours,
+    // Tax (the invoice and credit note counters are never set from the app). A blank clears a field.
+    legal_name: blankToNull(s.legalName),
+    trn: s.trn === undefined ? undefined : normaliseTrn(s.trn) || null,
+    registered_address: blankToNull(s.registeredAddress),
+    invoice_footer: blankToNull(s.invoiceFooter),
+    vat_quarter_start_month: s.vatQuarterStartMonth,
   });
+
+/** undefined stays undefined (not sent); a blank string becomes null (cleared). */
+function blankToNull(v: string | undefined): string | null | undefined {
+  return v === undefined ? undefined : v.trim() || null;
+}
 
 const toTutor = (r: Row): Tutor => ({
   id: r.id,
@@ -157,12 +181,15 @@ const toFamily = (r: Row): Family => ({
  * The embedded family_billing row (one-to-one, so PostgREST may give an object, a one-element array or null).
  * RLS only returns it to admins and the family itself; everyone else gets no card or autopay fields at all.
  */
-function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard'> {
+function toBilling(embedded: unknown): Pick<Family, 'autopay' | 'savedCard' | 'trn' | 'billingAddress'> {
   const b = (Array.isArray(embedded) ? embedded[0] : embedded) as Row | null | undefined;
   if (!b) return {};
   return {
     autopay: b.autopay ?? false,
     savedCard: b.card_last4 ? { brand: b.card_brand ?? 'Card', last4: b.card_last4, expires: b.card_expires ?? undefined } : undefined,
+    // Tax
+    trn: b.trn ?? undefined,
+    billingAddress: b.billing_address ?? undefined,
   };
 }
 
@@ -476,8 +503,82 @@ const toInvoice = (r: Row): Invoice => ({
     method: p.method,
     paidAt: p.paid_at,
     reference: p.reference ?? undefined,
+    viaStripe: !!p.stripe_payment_intent,
   })),
+  // Tax
+  supplyDate: r.supply_date ?? undefined,
+  supplier: toTaxParty(r.supplier),
+  customer: toTaxParty(r.customer),
+  ...(Array.isArray(r.credit_notes) ? { creditNotes: r.credit_notes.map(toCreditNoteRef) } : {}),
+  ...(Array.isArray(r.refunds) ? { refunds: r.refunds.map(toRefund) } : {}),
 });
+
+// Tax: credit notes, refunds and accountant access
+
+/** Invoices with their payments, credit notes (summaries) and refunds. The foreign keys are named, so embedding is unambiguous. */
+const INVOICE_SELECT =
+  '*, payments(*), credit_notes!credit_notes_invoice_id_fkey(id, number, issue_date, subtotal, vat, total, rebilled), refunds!refunds_invoice_id_fkey(*)';
+
+function toTaxParty(v: unknown): TaxParty | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const r = v as Row;
+  if (!r.name) return undefined;
+  return strip({ name: String(r.name), address: r.address || undefined, trn: r.trn || undefined, email: r.email || undefined }) as TaxParty;
+}
+
+const toCreditNoteRef = (r: Row): CreditNoteRef => ({
+  id: r.id,
+  number: r.number,
+  issueDate: r.issue_date,
+  subtotal: Number(r.subtotal),
+  vat: Number(r.vat),
+  total: Number(r.total),
+  rebilled: !!r.rebilled,
+});
+
+const toCreditNote = (r: Row): CreditNote => ({
+  ...toCreditNoteRef(r),
+  invoiceId: r.invoice_id,
+  invoiceNumber: (Array.isArray(r.invoices) ? r.invoices[0]?.number : r.invoices?.number) ?? '',
+  familyId: r.family_id,
+  reason: r.reason,
+  vatRate: Number(r.vat_rate),
+  lines: (Array.isArray(r.lines) ? r.lines : []).map((l: Row) => ({
+    description: l.description ?? '',
+    ...(typeof l.invoiceLine === 'number' ? { invoiceLine: l.invoiceLine } : {}),
+    net: Number(l.net),
+    vat: Number(l.vat),
+  })),
+  supplier: toTaxParty(r.supplier),
+  customer: toTaxParty(r.customer),
+  createdAt: r.created_at,
+});
+
+const toRefund = (r: Row): Refund => ({
+  id: r.id,
+  invoiceId: r.invoice_id,
+  familyId: r.family_id,
+  paymentId: r.payment_id,
+  amount: Number(r.amount),
+  method: r.method,
+  status: r.status,
+  reason: r.reason,
+  reference: r.reference ?? undefined,
+  creditNoteId: r.credit_note_id ?? undefined,
+  failureReason: r.failure_reason ?? undefined,
+  createdAt: r.created_at,
+  settledAt: r.settled_at ?? undefined,
+});
+
+const toAccountantInvite = (r: Row): AccountantInvite => ({
+  email: r.email,
+  fullName: r.full_name ?? undefined,
+  invitedAt: r.invited_at,
+  acceptedAt: r.accepted_at ?? undefined,
+});
+
+/** The credit notes select: the invoice number comes from the parent invoice. */
+const CREDIT_NOTE_SELECT = '*, invoices!credit_notes_invoice_id_fkey(number)';
 
 /** Rows per request when reading topics; at or below the server's response cap. */
 const TOPIC_PAGE = 1000;
@@ -783,12 +884,12 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       return check(await query.order('date')).map(toCharge);
     },
     async listInvoices(filter = {}) {
-      let query = client.from('invoices').select('*, payments(*)');
+      let query = client.from('invoices').select(INVOICE_SELECT);
       if (filter.familyId) query = query.eq('family_id', filter.familyId);
       return check(await query.order('issue_date', { ascending: false })).map(toInvoice);
     },
     async getInvoice(id) {
-      const row = check(await client.from('invoices').select('*, payments(*)').eq('id', id).maybeSingle());
+      const row = check(await client.from('invoices').select(INVOICE_SELECT).eq('id', id).maybeSingle());
       return row ? toInvoice(row) : null;
     },
 
@@ -808,7 +909,18 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async saveFamily(f) {
       const row = strip({ id: f.id, name: f.name, parent_name: f.parentName, email: f.email, phone: f.phone, status: f.status });
-      return toFamily(check(await client.from('families').upsert(row).select('*, family_billing(*)').single()));
+      const saved = check(await client.from('families').upsert(row).select('*, family_billing(*)').single());
+      // Tax: TRN and billing address live in family_billing (admins only); only written when given, a blank clears them.
+      if (f.trn !== undefined || f.billingAddress !== undefined) {
+        const billing = strip({
+          family_id: saved.id,
+          trn: f.trn === undefined ? undefined : normaliseTrn(f.trn) || null,
+          billing_address: blankToNull(f.billingAddress),
+        });
+        check(await client.from('family_billing').upsert(billing, { onConflict: 'family_id' }));
+        return toFamily(check(await client.from('families').select('*, family_billing(*)').eq('id', saved.id).single()));
+      }
+      return toFamily(saved);
     },
     async saveStudent(s) {
       const row = strip({
@@ -1510,6 +1622,86 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       );
       const first = data?.results?.[0];
       return first ? { status: first.status, ...(first.error ? { error: first.error } : {}) } : { status: 'skipped' };
+    },
+
+    // Tax: credit notes, refunds and accountant access
+    async listCreditNotes(filter = {}) {
+      let query = client.from('credit_notes').select(CREDIT_NOTE_SELECT);
+      if (filter.familyId) query = query.eq('family_id', filter.familyId);
+      if (filter.invoiceId) query = query.eq('invoice_id', filter.invoiceId);
+      return check(await query.order('issue_date', { ascending: false }).order('number', { ascending: false })).map(toCreditNote);
+    },
+    async getCreditNote(id) {
+      const row = check(await client.from('credit_notes').select(CREDIT_NOTE_SELECT).eq('id', id).maybeSingle());
+      return row ? toCreditNote(row) : null;
+    },
+    async issueCreditNote(input) {
+      const created = check<Row>(
+        await client.rpc('issue_credit_note', {
+          p_invoice_id: input.invoiceId,
+          p_reason: input.reason,
+          p_lines: input.lines.map((l) => ({ description: l.description, invoiceLine: l.invoiceLine ?? null, net: l.net })),
+          p_release_charges: !!input.releaseCharges,
+        }),
+      );
+      const row = check(await client.from('credit_notes').select(CREDIT_NOTE_SELECT).eq('id', created.id).maybeSingle());
+      return toCreditNote(row ?? created);
+    },
+    async listRefunds(filter = {}) {
+      let query = client.from('refunds').select('*');
+      if (filter.familyId) query = query.eq('family_id', filter.familyId);
+      if (filter.invoiceId) query = query.eq('invoice_id', filter.invoiceId);
+      return check(await query.order('created_at', { ascending: false })).map(toRefund);
+    },
+    async refundPayment(input) {
+      const payment = check<Row | null>(
+        await client.from('payments').select('id, method, stripe_payment_intent').eq('id', input.paymentId).maybeSingle(),
+      );
+      if (!payment) throw new Error('Payment not found.');
+      let refundId: string;
+      if (payment.stripe_payment_intent) {
+        // Taken through Stripe: refund-payment records the refund (begin_card_refund) and sends it to Stripe. While Stripe
+        // is still working the refund stays pending (any message explains why); the webhook settles it.
+        const data = await invokeResult<{ refundId: string; status: Refund['status']; message?: string }>(
+          await client.functions.invoke('refund-payment', {
+            body: {
+              paymentId: input.paymentId,
+              amount: input.amount,
+              reason: input.reason,
+              withCreditNote: input.withCreditNote,
+              requestKey: input.requestKey,
+            },
+          }),
+        );
+        refundId = data.refundId;
+      } else {
+        const created = check<Row>(
+          await client.rpc('record_manual_refund', {
+            p_payment_id: input.paymentId,
+            p_amount: input.amount,
+            p_reason: input.reason,
+            p_reference: input.reference ?? null,
+            p_with_credit_note: input.withCreditNote,
+            p_request_key: input.requestKey,
+          }),
+        );
+        refundId = created.id;
+      }
+      const row = check<Row | null>(await client.from('refunds').select('*').eq('id', refundId).maybeSingle());
+      if (!row) throw new Error('The refund was recorded but could not be loaded. Please refresh.');
+      return toRefund(row);
+    },
+    async listAccountants() {
+      return check(await client.from('accountant_invites').select('*').order('invited_at', { ascending: false })).map(toAccountantInvite);
+    },
+    async inviteAccountant(email, fullName) {
+      const data = await invokeResult<{ status: 'invited' | 'linked' }>(
+        await client.functions.invoke('invite-accountant', { body: { email, fullName } }),
+      );
+      return data?.status === 'linked' ? 'linked' : 'invited';
+    },
+    async removeAccountant(email) {
+      check(await client.rpc('remove_accountant', { p_email: email }));
     },
   };
 }

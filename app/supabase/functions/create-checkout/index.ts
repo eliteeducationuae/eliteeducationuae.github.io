@@ -11,6 +11,9 @@ import { ensureCustomer, stripe } from '../_shared/stripe-api.ts';
 
 const CHARGING = 'Your saved card is being charged for this invoice. Please wait a moment and refresh.';
 
+/** Credit notes and refunds, embedded so the balance matches invoice_balance in the database. */
+const ADJUSTMENTS = 'credit_notes!credit_notes_invoice_id_fkey(total), refunds!refunds_invoice_id_fkey(amount, status)';
+
 const OFFER_GONE = 'This lesson package is no longer available.';
 
 /** The app's address, e.g. https://eliteeducationuae.github.io/app. Never guessed: Stripe must return parents to the app. */
@@ -22,13 +25,14 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
   const { data: inv, error } = await supabase
     .from('invoices')
-    .select('id, number, status, items, vat_rate, family_id, autopay_status, payments(amount)')
+    .select(`id, number, status, items, vat_rate, family_id, autopay_status, payments(amount), ${ADJUSTMENTS}`)
     .eq('id', invoiceId)
     .single();
   if (error || !inv) return json({ error: 'Invoice not found' }, 404);
   if (inv.status !== 'sent') return json({ error: 'This invoice is not payable' }, 400);
 
-  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? []);
+  // Credit notes reduce what is owed and refunds add back to it, so a credited invoice is never overcharged.
+  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? [], { credits: inv.credit_notes, refunds: inv.refunds });
   if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
 
   const admin = adminClient();

@@ -46,16 +46,30 @@ function toFils(aed: number): number {
   return Math.round(aed * 100 + 1e-6);
 }
 
-/** What is still owed on an invoice, in fils: subtotal plus VAT (rounded to 2dp, as invoice_total does) less payments. */
+/** Credit notes and refunds on an invoice (credit_notes(total) and refunds(amount, status) from the database). */
+export type InvoiceAdjustments = {
+  credits?: { total: number | string }[] | null;
+  refunds?: { amount: number | string; status?: string | null }[] | null;
+};
+
+/**
+ * What is still owed on an invoice, in fils: subtotal plus VAT (rounded to 2dp, as invoice_total does) less payments,
+ * less credit notes, plus refunds that have not failed (as invoice_balance does in the database).
+ */
 export function invoiceBalanceFils(
   items: { quantity: number; unitPrice: number }[],
   vatRate: number | string,
   payments: { amount: number | string }[],
+  adjustments?: InvoiceAdjustments,
 ): number {
   const subtotal = (items ?? []).reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);
   const totalFils = toFils(subtotal * (1 + Number(vatRate || 0)));
   const paidFils = (payments ?? []).reduce((s, p) => s + toFils(Number(p.amount)), 0);
-  return totalFils - paidFils;
+  const creditedFils = (adjustments?.credits ?? []).reduce((s, c) => s + toFils(Number(c.total)), 0);
+  const refundedFils = (adjustments?.refunds ?? [])
+    .filter((r) => r.status !== 'failed')
+    .reduce((s, r) => s + toFils(Number(r.amount)), 0);
+  return totalFils - paidFils - creditedFils + refundedFils;
 }
 
 /** The card charge for a lesson bundle, in fils (price plus VAT). */
@@ -272,6 +286,60 @@ export function classifyAutopayResponse(res: { ok: boolean; status: number; body
   return { outcome: 'unknown' };
 }
 
+// ---------------------------------------------------------------------------
+// Refunds
+// ---------------------------------------------------------------------------
+
+export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+
+/** One key per refund row: a retried request for the same refund never refunds twice. */
+export function refundIdempotencyKey(refundId: string): string {
+  return `refund-${refundId}`;
+}
+
+/** POST /v1/refunds for part or all of a card payment. Built only from the stored refund, so a retry is identical. */
+export function refundForm(o: { paymentIntent: string; amountFils: number; refundId: string; invoiceId: string }): URLSearchParams {
+  return new URLSearchParams({
+    payment_intent: o.paymentIntent,
+    amount: String(o.amountFils),
+    reason: 'requested_by_customer',
+    'metadata[refund_id]': o.refundId,
+    'metadata[invoice_id]': o.invoiceId,
+  });
+}
+
+/** AED to fils for a refund (349.99 gives 34999). */
+export function refundAmountFils(aed: number | string): number {
+  return toFils(Number(aed));
+}
+
+/** Stripe's refund status as the app records it. Anything not yet final (pending, requires_action) is pending. */
+export function mapRefundStatus(stripeStatus: unknown): RefundStatus {
+  if (stripeStatus === 'succeeded') return 'succeeded';
+  if (stripeStatus === 'failed' || stripeStatus === 'canceled') return 'failed';
+  return 'pending';
+}
+
+/** A short British English sentence for a refund's failure_reason. Never includes Stripe ids or card numbers. */
+export function describeRefundFailure(reason: unknown): string {
+  switch (reason) {
+    case 'lost_or_stolen_card':
+      return 'The card has been reported lost or stolen.';
+    case 'expired_or_canceled_card':
+      return 'The card has expired or been cancelled.';
+    case 'insufficient_funds':
+      return 'The Stripe balance was too low to make the refund.';
+    case 'declined':
+      return 'The card issuer declined the refund.';
+    case 'merchant_request':
+      return 'The refund was cancelled.';
+    case 'charge_for_pending_refund_disputed':
+      return 'The payment is disputed, so it cannot be refunded.';
+    default:
+      return 'Stripe could not complete the refund.';
+  }
+}
+
 export function customerForm(o: { familyId: string; email?: string | null; name?: string | null }): URLSearchParams {
   const form = new URLSearchParams({ 'metadata[family_id]': o.familyId });
   if (o.email) form.set('email', o.email);
@@ -361,6 +429,18 @@ export type ClassifiedEvent =
     }
   | { kind: 'payment-failed'; invoiceId: string; message: string; autopay: boolean; attempt?: number }
   | { kind: 'card-changed'; customerId: string }
+  | {
+      kind: 'refund-updated';
+      /** The app's refund (metadata.refund_id); absent for a refund made in the Stripe Dashboard. */
+      refundId?: string;
+      stripeRefundId: string;
+      paymentIntent?: string;
+      /** AED. */
+      amount: number;
+      status: RefundStatus;
+      /** A friendly sentence when the refund failed. */
+      failureReason?: string;
+    }
   | { kind: 'ignore' };
 
 const IGNORE: ClassifiedEvent = { kind: 'ignore' };
@@ -402,6 +482,29 @@ function wholeNumber(v: unknown): number | undefined {
   return typeof v === 'string' && Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** A Stripe Refund object as a 'refund-updated' event; malformed objects are ignored. */
+function refundEvent(o: Obj): ClassifiedEvent {
+  const stripeRefundId = str(o.id);
+  const amountMinor = o.amount;
+  if (!stripeRefundId || (o.object !== undefined && o.object !== 'refund')) return IGNORE;
+  if (typeof amountMinor !== 'number' || !Number.isInteger(amountMinor) || amountMinor <= 0) return IGNORE;
+  const md = isObj(o.metadata) ? o.metadata : {};
+  const status = mapRefundStatus(o.status);
+  const refundId = str(md.refund_id);
+  const paymentIntent = ref(o.payment_intent);
+  return {
+    kind: 'refund-updated',
+    stripeRefundId,
+    amount: amountMinor / 100,
+    status,
+    ...(refundId ? { refundId } : {}),
+    ...(paymentIntent ? { paymentIntent } : {}),
+    ...(status === 'failed'
+      ? { failureReason: o.status === 'canceled' && !o.failure_reason ? describeRefundFailure('merchant_request') : describeRefundFailure(o.failure_reason) }
+      : {}),
+  };
+}
+
 /** Turns a verified Stripe webhook event into the one thing the app needs to do about it. */
 export function classifyEvent(event: unknown): ClassifiedEvent {
   if (!isObj(event) || !isObj(event.data) || !isObj(event.data.object)) return IGNORE;
@@ -438,6 +541,11 @@ export function classifyEvent(event: unknown): ClassifiedEvent {
       const customerId = str(o.id);
       return customerId ? { kind: 'card-changed', customerId } : IGNORE;
     }
+    case 'refund.created':
+    case 'refund.updated':
+    case 'refund.failed':
+    case 'charge.refund.updated':
+      return refundEvent(o);
     default:
       return IGNORE;
   }

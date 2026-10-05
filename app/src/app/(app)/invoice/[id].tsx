@@ -1,5 +1,5 @@
 import * as WebBrowser from 'expo-web-browser';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -12,26 +12,28 @@ import {
   autopayMayHaveCharged,
   ChargeSavedCardButton,
 } from '@/components/payments';
+import { AmountLine, balanceLine, CreditNoteCard, invoiceLineViews, LineTaxTable, RefundRow, Rule, TaxPartyBlock, vatPercent } from '@/components/tax';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useInvoice, useLookup, useSettings } from '@/data/hooks';
+import { useAction, useCreditNotes, useInvoice, useLookup, useRefunds, useSettings } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { displayStatus, formatAED, invoiceTotals } from '@/domain/billing';
 import { formatDate } from '@/domain/dates';
 import { autopayHoldsInvoice, paymentLabel } from '@/domain/payments';
+import { creditRemaining, invoiceCustomer, invoiceDocumentTitle, invoiceSupplier, refundableAmount } from '@/domain/tax';
 import type { PaymentMethod } from '@/domain/types';
-import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
-import { shareInvoice } from '@/lib/invoice-pdf';
+import { aed, shareInvoice } from '@/lib/invoice-pdf';
 
 export default function InvoicePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const theme = useTheme();
   const me = useMe();
   const lookup = useLookup();
   const invoice = useInvoice(id);
   const settings = useSettings();
+  const creditNotes = useCreditNotes({ invoiceId: id });
+  const refundList = useRefunds({ invoiceId: id });
   const pay = useAction(source.startCardPayment);
   const setStatus = useAction(source.setInvoiceStatus);
   const [recording, setRecording] = useState(false);
@@ -40,15 +42,25 @@ export default function InvoicePage() {
   const inv = invoice.data;
   if (!inv) return <Screen><EmptyState title="Invoice not found" /></Screen>;
 
+  const isAdmin = me.role === 'admin';
   const family = lookup.family(inv.familyId);
   const totals = invoiceTotals(inv);
   const status = displayStatus(inv);
   const s = INVOICE_STATUS[status];
-  const payable = (inv.status === 'sent') && totals.balance > 0;
-  // Admin: recording or voiding now could leave the family charged twice, so they are asked to check Stripe first.
+  const title = invoiceDocumentTitle(inv, settings.data);
+  const supplier = invoiceSupplier(inv, settings.data);
+  const customer = invoiceCustomer(inv, family);
+  const notes = creditNotes.data ?? [];
+  const refunds = refundList.data ?? inv.refunds ?? [];
+  const issued = inv.status === 'sent' || inv.status === 'paid';
+  const canCredit = issued && creditRemaining(inv, notes).gross > 0;
+  const payable = inv.status === 'sent' && totals.balance > 0;
+  // Admin: recording or cancelling now could leave the family charged twice, so they are asked to check Stripe first.
   const mayHaveCharged = autopayMayHaveCharged(inv);
   // While autopay is about to charge (or is charging) the saved card, other ways to pay are not offered.
   const autopayHolds = payable && autopayHoldsInvoice(inv);
+  const balance = balanceLine(totals.balance);
+  const showSettlement = totals.credited > 0 || totals.paid > 0 || totals.refunded > 0;
 
   async function payByCard() {
     const result = await pay.mutateAsync([inv!.id]);
@@ -60,87 +72,125 @@ export default function InvoicePage() {
     }
   }
 
+  function cancelInvoice() {
+    const paidNote = totals.paid > 0 ? ' Payments already received will then show as credit to be refunded.' : '';
+    confirm(
+      'Cancel this invoice?',
+      'This issues a credit note for the full remaining amount. Any lessons on it can then be invoiced again.' +
+        paidNote +
+        (mayHaveCharged ? ` ${AUTOPAY_MAY_HAVE_CHARGED}` : ''),
+      () => setStatus.mutate([inv!.id, 'void']),
+      'Cancel invoice',
+    );
+  }
+
   return (
     <Screen
+      onRefresh={() => {
+        invoice.refetch();
+        creditNotes.refetch();
+        refundList.refetch();
+      }}
+      refreshing={invoice.isRefetching}
       footer={
         payable && me.role === 'parent' && !autopayHolds ? (
           <Button title={`Pay ${formatAED(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
         ) : undefined
       }>
-      <Stack.Screen options={{ title: inv.number }} />
+      <Stack.Screen options={{ title }} />
       <Card style={{ gap: Spacing.three }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="h2">{formatAED(totals.total)}</Txt>
-            <Txt variant="muted">{family?.parentName ?? family?.name}</Txt>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt variant="label">{title}</Txt>
+            <Txt variant="h2">{inv.number}</Txt>
+            <Txt variant="muted">{family?.name ?? customer?.name}</Txt>
           </View>
           <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
+            <Txt variant="h3">{aed(totals.total)}</Txt>
             <Badge label={s.label} tone={s.tone} />
             <AutopayBadge invoice={inv} />
           </View>
         </Row>
-        <Row gap={Spacing.four}>
-          <View>
-            <Txt variant="label">Issued</Txt>
-            <Txt>{formatDate(inv.issueDate)}</Txt>
-          </View>
-          <View>
-            <Txt variant="label">Due</Txt>
-            <Txt color={status === 'overdue' ? 'danger' : undefined}>{formatDate(inv.dueDate)}</Txt>
-          </View>
-          {totals.paid > 0 ? (
-            <View>
-              <Txt variant="label">Balance</Txt>
-              <Txt>{formatAED(totals.balance)}</Txt>
-            </View>
-          ) : null}
+        <Row gap={Spacing.four} wrap style={{ alignItems: 'flex-start' }}>
+          <KeyDate label="Date of issue" value={formatDate(inv.issueDate)} />
+          <KeyDate label="Date of supply" value={formatDate(inv.supplyDate ?? inv.issueDate)} />
+          <KeyDate label="Due" value={formatDate(inv.dueDate)} danger={status === 'overdue'} />
         </Row>
       </Card>
 
-      <Section title="Items">
-        <Card style={{ gap: Spacing.two }}>
-          {inv.items.map((item, i) => (
-            <Row key={i} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
-              <Txt style={{ flex: 1 }}>
-                {item.quantity > 1 ? `${item.quantity} × ` : ''}
-                {item.description}
-              </Txt>
-              <Txt style={{ fontVariant: ['tabular-nums'] }}>{formatAED(item.quantity * item.unitPrice)}</Txt>
-            </Row>
-          ))}
-          <View style={{ height: 1, backgroundColor: theme.border }} />
-          {inv.vatRate > 0 ? (
+      <Card style={{ gap: Spacing.three }}>
+        <Row gap={Spacing.four} wrap style={{ alignItems: 'flex-start' }}>
+          <TaxPartyBlock label="Supplier" party={supplier} />
+          <TaxPartyBlock label="Customer" party={customer} />
+        </Row>
+      </Card>
+
+      <Section title="Lines">
+        <Card style={{ gap: Spacing.three }}>
+          <LineTaxTable lines={invoiceLineViews(inv)} />
+          <View style={{ gap: Spacing.one }}>
+            <AmountLine label="Total excluding VAT" value={aed(totals.subtotal)} />
+            <AmountLine label={`VAT at ${vatPercent(inv.vatRate)}`} value={aed(totals.vat)} />
+            <AmountLine label="Total including VAT" value={aed(totals.total)} strong />
+          </View>
+          {showSettlement ? (
             <>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Txt variant="muted">Subtotal</Txt>
-                <Txt variant="muted">{formatAED(totals.subtotal)}</Txt>
-              </Row>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Txt variant="muted">VAT {Math.round(inv.vatRate * 100)}%</Txt>
-                <Txt variant="muted">{formatAED(totals.vat)}</Txt>
-              </Row>
+              <Rule />
+              <View style={{ gap: Spacing.one }}>
+                {totals.credited > 0 ? <AmountLine label="Credited" value={`−${aed(totals.credited)}`} /> : null}
+                <AmountLine label="Paid" value={`−${aed(totals.paid)}`} />
+                {totals.refunded > 0 ? <AmountLine label="Refunded" value={aed(totals.refunded)} /> : null}
+                <AmountLine label={balance.label} value={balance.value} strong tone={totals.balance < 0 ? 'warning' : undefined} />
+              </View>
             </>
           ) : null}
-          <Row style={{ justifyContent: 'space-between' }}>
-            <Txt variant="h3">Total</Txt>
-            <Txt variant="h3">{formatAED(totals.total)}</Txt>
-          </Row>
         </Card>
       </Section>
 
       {inv.payments.length ? (
         <Section title="Payments">
-          {inv.payments.map((p) => (
-            <Card key={p.id}>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Txt>
-                  {formatDate(p.paidAt)} · {paymentLabel(p)}
-                </Txt>
-                <Txt variant="h3" color="success">
-                  {formatAED(p.amount)}
-                </Txt>
-              </Row>
-            </Card>
+          {inv.payments.map((p) => {
+            const refundable = refundableAmount(p, refunds);
+            const refundedHere = Math.max(0, p.amount - refundable);
+            return (
+              <Card key={p.id} style={{ gap: Spacing.two }}>
+                <Row style={{ justifyContent: 'space-between' }} gap={Spacing.three}>
+                  <Txt style={{ flex: 1 }}>
+                    {formatDate(p.paidAt)} · {paymentLabel(p)}
+                  </Txt>
+                  <Txt variant="h3" color="success">
+                    {aed(p.amount)}
+                  </Txt>
+                </Row>
+                {refundedHere > 0 ? <Txt variant="small">{aed(refundedHere)} of this payment has been refunded or is being refunded.</Txt> : null}
+                {isAdmin && inv.status !== 'draft' && refundable > 0 ? (
+                  <Button
+                    title="Refund"
+                    icon="repeat"
+                    size="sm"
+                    variant="outline"
+                    style={{ alignSelf: 'flex-start' }}
+                    onPress={() => router.push({ pathname: '/refund', params: { paymentId: p.id, invoiceId: inv.id } })}
+                  />
+                ) : null}
+              </Card>
+            );
+          })}
+        </Section>
+      ) : null}
+
+      {notes.length ? (
+        <Section title="Credit notes">
+          {notes.map((n) => (
+            <CreditNoteCard key={n.id} note={n} />
+          ))}
+        </Section>
+      ) : null}
+
+      {refunds.length ? (
+        <Section title="Refunds">
+          {refunds.map((r) => (
+            <RefundRow key={r.id} refund={r} />
           ))}
         </Section>
       ) : null}
@@ -163,21 +213,24 @@ export default function InvoicePage() {
           }
         />
       ) : null}
-      {me.role === 'admin' ? <AutopayFailureNote invoice={inv} /> : null}
-      {payable && !autopayHolds && settings.data?.bankDetails ? (
+      {isAdmin ? <AutopayFailureNote invoice={inv} /> : null}
+      {payable && !autopayHolds && settings.data?.bankDetails && me.role !== 'accountant' ? (
         <Banner icon="money">Prefer bank transfer? {settings.data.bankDetails}. Please quote {inv.number}.</Banner>
+      ) : null}
+      {totals.balance < 0 && me.role === 'parent' ? (
+        <Banner icon="money">You have paid {aed(-totals.balance)} more than this invoice now asks for. We will refund it to you.</Banner>
       ) : null}
       <ErrorNote error={pay.error ?? setStatus.error} />
 
       <Button
-        title="Share invoice (PDF)"
+        title="Download PDF"
         icon="share"
         variant="secondary"
         // An invoice autopay is paying carries no bank transfer details, in the app or on its PDF.
         onPress={() => shareInvoice(inv, family, autopayHolds && settings.data ? { ...settings.data, bankDetails: undefined } : settings.data)}
       />
 
-      {me.role === 'admin' ? (
+      {isAdmin ? (
         <>
           <ChargeSavedCardButton invoice={inv} family={family} balance={totals.balance} />
           {payable ? (
@@ -194,23 +247,40 @@ export default function InvoicePage() {
             )
           ) : null}
           {inv.status === 'draft' ? <Button title="Send to family" onPress={() => setStatus.mutate([inv.id, 'sent'])} /> : null}
-          {inv.status !== 'void' && totals.paid === 0 ? (
+          {canCredit ? (
             <Button
-              title="Void invoice"
+              title="Issue credit note"
+              icon="doc"
+              variant="outline"
+              onPress={() => router.push({ pathname: '/credit-note/new', params: { invoiceId: inv.id } })}
+            />
+          ) : null}
+          {inv.status === 'draft' ? (
+            <Button
+              title="Void draft"
               variant="danger"
               onPress={() =>
                 confirm(
-                  'Void this invoice?',
-                  'Its lessons will return to “Ready to invoice” so that they can be billed again.' +
-                    (mayHaveCharged ? ` ${AUTOPAY_MAY_HAVE_CHARGED}` : ''),
+                  'Void this draft?',
+                  'Its lessons will return to “Ready to invoice” so that they can be billed again.' + (mayHaveCharged ? ` ${AUTOPAY_MAY_HAVE_CHARGED}` : ''),
                   () => setStatus.mutate([inv.id, 'void']),
                 )
               }
             />
           ) : null}
+          {canCredit ? <Button title="Cancel invoice" variant="danger" loading={setStatus.isPending} onPress={cancelInvoice} /> : null}
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function KeyDate({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+  return (
+    <View>
+      <Txt variant="label">{label}</Txt>
+      <Txt color={danger ? 'danger' : undefined}>{value}</Txt>
+    </View>
   );
 }
 

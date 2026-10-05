@@ -1,6 +1,7 @@
 // Records card payments and keeps saved cards in step with Stripe. Point a Stripe webhook here for:
 //   checkout.session.completed, payment_intent.succeeded, payment_intent.payment_failed,
-//   payment_method.attached, payment_method.detached, customer.updated
+//   payment_method.attached, payment_method.detached, customer.updated,
+//   refund.created, refund.updated, refund.failed, charge.refund.updated
 // Deploy with --no-verify-jwt (Stripe cannot send a Supabase login; the signature check below protects it).
 // Secrets: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY.
 // Every handler is safe to repeat: Stripe retries on any non-2xx response and may send events more than once.
@@ -74,6 +75,27 @@ Deno.serve(async (req) => {
       case 'card-changed':
         await refreshCard(db, event.customerId);
         break;
+      case 'refund-updated': {
+        // A refund started in the app carries its refund id; one made in the Stripe Dashboard is recorded against the
+        // payment and the office is asked whether a credit note is needed. Both are safe to repeat.
+        const { error } = event.refundId
+          ? await db.rpc('settle_card_refund', {
+              p_refund_id: event.refundId,
+              p_stripe_refund_id: event.stripeRefundId,
+              p_status: event.status,
+              p_failure: event.failureReason ?? null,
+            })
+          : event.paymentIntent
+            ? await db.rpc('record_external_stripe_refund', {
+                p_payment_intent: event.paymentIntent,
+                p_stripe_refund_id: event.stripeRefundId,
+                p_amount: event.amount,
+                p_status: event.status,
+              })
+            : { error: null };
+        if (error) return new Response(error.message, { status: 500 });
+        break;
+      }
     }
   } catch (e) {
     return new Response(e instanceof Error ? e.message : String(e), { status: 500 });

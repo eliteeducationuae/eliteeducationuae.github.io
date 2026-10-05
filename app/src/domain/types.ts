@@ -3,7 +3,7 @@
  * Kept free of React / Supabase so it can be unit tested and shared by every data source.
  */
 
-export type Role = 'admin' | 'tutor' | 'parent' | 'student';
+export type Role = 'admin' | 'tutor' | 'parent' | 'student' | 'accountant';
 
 /** Free text. The legacy values 'IB', 'IGCSE' and 'A-Level' remain valid. */
 export type Curriculum = string;
@@ -43,6 +43,10 @@ export interface Family {
   autopay?: boolean;
   /** The card kept on file for this family. Only present for admins and the family itself. */
   savedCard?: SavedCard;
+  /** UAE Tax Registration Number of a company payer. Only present for admins and the family itself. */
+  trn?: string;
+  /** Address shown on tax invoices. Only present for admins and the family itself. */
+  billingAddress?: string;
 }
 
 export interface Student {
@@ -290,6 +294,8 @@ export interface Payment {
   method: PaymentMethod;
   paidAt: string;
   reference?: string;
+  /** True when taken through Stripe and refundable by card. */
+  viaStripe?: boolean;
 }
 
 export interface Invoice {
@@ -307,6 +313,16 @@ export interface Invoice {
   autopayStatus?: AutopayStatus;
   /** Why the last automatic charge failed, in words the family can act on. */
   autopayError?: string;
+  /** Date of supply (the lessons or package), when different from the issue date. */
+  supplyDate?: string;
+  /** Supplier details frozen when the invoice was issued. */
+  supplier?: TaxParty;
+  /** Customer details frozen when the invoice was issued. */
+  customer?: TaxParty;
+  /** Credit notes issued against this invoice. */
+  creditNotes?: CreditNoteRef[];
+  /** Money returned to the family against this invoice. */
+  refunds?: Refund[];
 }
 
 export interface Settings {
@@ -332,6 +348,16 @@ export interface Settings {
   emailMessages: boolean;
   /** Parents can only request lessons at least this many hours ahead. */
   bookingNoticeHours: number;
+  /** Registered legal name shown on tax invoices (falls back to businessName). */
+  legalName?: string;
+  /** UAE Tax Registration Number (15 digits). Invoices become tax invoices once set. */
+  trn?: string;
+  registeredAddress?: string;
+  /** Extra line printed at the foot of invoices and credit notes. */
+  invoiceFooter?: string;
+  /** First month of the VAT quarter cycle the FTA assigned (1 = Jan/Apr/Jul/Oct). */
+  vatQuarterStartMonth: VatQuarterStartMonth;
+  nextCreditNoteNumber: number;
 }
 
 /** A weekly block when a tutor can teach. `weekday` 0 = Monday. Times are `HH:MM`. */
@@ -631,4 +657,114 @@ export interface PackageOffer {
   /** Shown to parents. */
   active: boolean;
   sort: number;
+}
+
+// ---------------------------------------------------------------------------
+// Tax: credit notes, refunds and accountant access
+// ---------------------------------------------------------------------------
+
+/** A supplier or customer as printed on a tax document. */
+export interface TaxParty {
+  name: string;
+  address?: string;
+  trn?: string;
+  email?: string;
+}
+
+/** 1 = quarters start Jan/Apr/Jul/Oct, 2 = Feb/May/Aug/Nov, 3 = Mar/Jun/Sep/Dec. */
+export type VatQuarterStartMonth = 1 | 2 | 3;
+
+/** The summary of a credit note carried on its invoice. */
+export interface CreditNoteRef {
+  id: string;
+  number: string;
+  issueDate: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  /** True for the closing note of a cancelled invoice whose lessons are invoiced again. */
+  rebilled: boolean;
+}
+
+export interface CreditNoteLine {
+  description: string;
+  /** 0-based index of the invoice line credited, when it credits one. */
+  invoiceLine?: number;
+  net: number;
+  vat: number;
+}
+
+export interface CreditNote extends CreditNoteRef {
+  invoiceId: string;
+  invoiceNumber: string;
+  familyId: string;
+  reason: string;
+  vatRate: number;
+  lines: CreditNoteLine[];
+  supplier?: TaxParty;
+  customer?: TaxParty;
+  createdAt: string;
+}
+
+export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+
+export interface Refund {
+  id: string;
+  invoiceId: string;
+  familyId: string;
+  paymentId: string;
+  amount: number;
+  method: PaymentMethod;
+  status: RefundStatus;
+  reason: string;
+  reference?: string;
+  creditNoteId?: string;
+  failureReason?: string;
+  createdAt: string;
+  settledAt?: string;
+}
+
+/** An accountant invited to read the books. */
+export interface AccountantInvite {
+  email: string;
+  fullName?: string;
+  invitedAt: string;
+  acceptedAt?: string;
+}
+
+/** A VAT return period. Dates are YYYY-MM-DD, inclusive. */
+export interface VatQuarter {
+  start: string;
+  end: string;
+  /** e.g. 'Jan – Mar 2026' or 'Dec 2025 – Feb 2026'. */
+  label: string;
+}
+
+export interface VatSummaryRow {
+  kind: 'invoice' | 'credit-note' | 'expense';
+  date: string;
+  reference: string;
+  party?: string;
+  net: number;
+  vatRate?: number;
+  vat: number;
+  gross: number;
+}
+
+export interface VatSummary {
+  quarter: VatQuarter;
+  invoiceCount: number;
+  standardRatedNet: number;
+  zeroRatedNet: number;
+  outputVat: number;
+  creditNoteCount: number;
+  creditsNet: number;
+  creditsVat: number;
+  netOutputVat: number;
+  expenseCount: number;
+  expensesGross: number;
+  inputVat: number;
+  /** Negative when VAT is reclaimable. */
+  netVatPayable: number;
+  rows: VatSummaryRow[];
 }

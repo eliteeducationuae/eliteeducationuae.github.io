@@ -2,7 +2,18 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { useCharges, useExpenses, useInvoices, useLessons, usePackages, useSettings, useTutorInvoices, useTutors } from '@/data/hooks';
+import {
+  useCharges,
+  useCreditNotes,
+  useExpenses,
+  useInvoices,
+  useLessons,
+  usePackages,
+  useRefunds,
+  useSettings,
+  useTutorInvoices,
+  useTutors,
+} from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 import { addDays, startOfMonth } from '@/domain/dates';
 import type { FinanceData } from '@/domain/finance';
@@ -23,8 +34,11 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
   const tutorInvoices = useTutorInvoices();
   const expenses = useExpenses();
   const settings = useSettings();
+  const creditNotes = useCreditNotes();
+  const refunds = useRefunds();
   const data = useMemo(() => {
     if (!charges.data || !packages.data || !invoices.data || !lessons.data || !tutors.data || !tutorInvoices.data || !expenses.data || !settings.data) return null;
+    if (!creditNotes.data || !refunds.data) return null;
     return {
       charges: charges.data,
       packages: packages.data,
@@ -34,8 +48,10 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
       tutorInvoices: tutorInvoices.data,
       expenses: expenses.data,
       settings: settings.data,
+      creditNotes: creditNotes.data,
+      refunds: refunds.data,
     };
-  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data]);
+  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data, creditNotes.data, refunds.data]);
   return {
     data,
     refetch: () => {
@@ -43,6 +59,8 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
       invoices.refetch();
       expenses.refetch();
       tutorInvoices.refetch();
+      creditNotes.refetch();
+      refunds.refetch();
     },
     refreshing: charges.isRefetching || expenses.isRefetching,
   };
