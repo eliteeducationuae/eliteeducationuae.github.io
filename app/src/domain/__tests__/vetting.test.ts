@@ -223,6 +223,8 @@ describe('validateDocumentDates', () => {
     expect(v('police_clearance', undefined, '2026-10-04')).toBeNull();
     expect(v('qualification')).toBeNull();
     expect(v('passport_id', '2020-05-01')).toBeNull();
+    // Only an expired police clearance is refused, as on the server.
+    expect(v('passport_id', '2020-05-01', '2025-05-01')).toBeNull();
   });
 });
 

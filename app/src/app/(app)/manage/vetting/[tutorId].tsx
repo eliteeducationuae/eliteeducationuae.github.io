@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Avatar, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { Avatar, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, SectionLabel, Txt } from '@/components/ui';
 import { DateKeyField, DocumentRow, DocumentUploadCard, OnboardingChecklist, OverrideForm, useToday, VettingBadge } from '@/components/vetting';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -114,7 +114,7 @@ export default function TutorChecksDetail() {
         ) : null}
         {(overrides.data ?? []).length ? (
           <View style={{ gap: Spacing.two }}>
-            <Txt variant="label">Override history</Txt>
+            <SectionLabel>Override history</SectionLabel>
             {(overrides.data ?? []).map((o) => (
               <Card key={o.id} style={{ gap: 2 }}>
                 <Txt>{o.reason}</Txt>

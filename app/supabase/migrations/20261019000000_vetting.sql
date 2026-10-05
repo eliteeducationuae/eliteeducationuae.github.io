@@ -139,7 +139,7 @@ create function public.vetting_doc_label(p_doc_type text, p_sentence boolean def
 language sql immutable security definer set search_path = public as $$
   select case p_doc_type
     when 'police_clearance' then case when p_sentence then 'police clearance certificate' else 'Police clearance' end
-    when 'passport_id' then case when p_sentence then 'passport or identity document' else 'Passport or ID' end
+    when 'passport_id' then case when p_sentence then 'passport or Emirates ID' else 'Passport or Emirates ID' end
     when 'qualification' then case when p_sentence then 'qualification certificate' else 'Qualification' end
     else case when p_sentence then 'document' else 'Document' end
   end

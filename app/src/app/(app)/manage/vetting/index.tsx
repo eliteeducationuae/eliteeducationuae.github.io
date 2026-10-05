@@ -6,7 +6,7 @@ import { useToday, VettingBadge } from '@/components/vetting';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useTutorCompliance, useTutorDocuments, useTutors, useVettingEnforced } from '@/data/hooks';
-import { documentTypeLabel, formatLongDate, onboardingChecklist, onboardingProgress, vettingSummary } from '@/domain/vetting';
+import { canAssignTutor, documentTypeLabel, formatLongDate, onboardingChecklist, onboardingProgress, vettingSummary } from '@/domain/vetting';
 import { useMe } from '@/data/session';
 import { confirm } from '@/lib/confirm';
 
@@ -31,6 +31,12 @@ export default function TutorChecks() {
   const byTutor = new Map((compliance.data ?? []).map((c) => [c.tutorId, c]));
   const name = (id: string) => tutors.data?.find((t) => t.id === id)?.fullName ?? 'A tutor';
   const pending = (docs.data ?? []).filter((d) => d.status === 'pending');
+  // Who would be blocked from new work straight away if enforcement were turned on.
+  const wouldBlock = (compliance.data ?? []).filter((c) => !canAssignTutor({ ...c, enforced: true }, today).allowed).map((c) => name(c.tutorId));
+  const impact =
+    wouldBlock.length === 0
+      ? 'Every tutor is cleared or has an override, so no one will be blocked straight away.'
+      : `${wouldBlock.length === 1 ? '1 tutor' : `${wouldBlock.length} tutors`} (${wouldBlock.join(', ')}) will not be able to be assigned new work until verified.`;
   const open = (tutorId: string) => router.push({ pathname: '/manage/vetting/[tutorId]', params: { tutorId } });
 
   return (
@@ -72,7 +78,7 @@ export default function TutorChecks() {
               onPress={() =>
                 confirm(
                   'Require police clearance?',
-                  'Tutors without a verified certificate will not be able to be assigned new lessons, students or roles. Existing lessons are unaffected.',
+                  `Tutors without a verified certificate will not be able to be assigned new lessons, students or roles. Existing lessons are unaffected. ${impact}`,
                   () => setEnforced.mutate([true]),
                   'Require',
                 )

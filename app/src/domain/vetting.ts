@@ -223,7 +223,8 @@ export function validateDocumentDates(
   const todayKey = toDateKey(today);
   if (issue && issue > todayKey) return 'The issue date cannot be in the future';
   if (issue && expiry && expiry < issue) return 'The expiry date cannot be before the issue date';
-  if (expiry && expiry < todayKey) return 'This certificate has already expired';
+  // As on the server, only an expired police clearance is refused; other documents keep their history.
+  if (input.type === 'police_clearance' && expiry && expiry < todayKey) return 'This certificate has already expired';
   return null;
 }
 

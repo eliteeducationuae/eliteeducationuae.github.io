@@ -70,8 +70,8 @@ export default function Handbook() {
 
       <Card style={{ gap: Spacing.three }}>
         <Row style={{ justifyContent: 'space-between' }} wrap>
-          <Txt variant="small">
-            Version {shown.version} · published {formatLongDate(shown.publishedAt)}
+          <Txt variant="small" style={{ flexShrink: 1 }}>
+            {shown.title} · Version {shown.version} · published {formatLongDate(shown.publishedAt)}
             {shown.publishedByName ? ` by ${shown.publishedByName}` : ''}
           </Txt>
           {shown.version !== latest.version ? <Badge label="Previous version" tone="neutral" /> : <Badge label="Current" tone="gold" />}

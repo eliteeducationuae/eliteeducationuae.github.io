@@ -286,9 +286,9 @@ Every tutor must hold a police clearance certificate, verified by Elite Educatio
 - given new students (enrolments); or
 - awarded roles for which they have expressed interest.
 
-Their existing lessons are not blocked: they can still be rescheduled, completed or cancelled, and the app shows a warning. Where there is good reason (for example, a renewal has been applied for and the receipt has been seen), an administrator can record an override for up to 90 days. Every override requires a reason of at least ten characters, records who granted it and when it ends, and is reported to the other administrators. Overrides can be revoked at any time.
+Their existing lessons are not blocked: they can still be rescheduled, completed or cancelled, and the app shows a warning. Where there is good reason (for example, a renewal has been applied for and the receipt has been seen), an administrator can record an override for up to 90 days. Every override requires a reason of at least ten characters, records who granted it and when it ends, and is reported to all administrators. Overrides can be revoked at any time.
 
-**Tutor handbook.** Edit the handbook in *Manage → Tutor handbook*. Each time you publish, a new version is created and every tutor is asked to read and acknowledge it; *Manage → Tutor checks* shows who has acknowledged the current version. The migration installs version 1, the default Elite Education Tutor Handbook.
+**Tutor handbook.** Edit the handbook in *Manage → Tutor handbook*. Each time you publish, a new version is created and every tutor is asked to read and acknowledge it; the *Tutor handbook* screen lists each tutor's acknowledged version, and *Manage → Tutor checks* shows it per tutor. The migration installs version 1, the default Elite Education Tutor Handbook.
 
 **Onboarding checklist.** Marking a tutor application as *Hired*, with the tutor's record linked, starts their onboarding. The checklist shows, for every tutor, their police clearance status, documents awaiting review, bank details, availability, calendar connection, WhatsApp opt-in and handbook acknowledgement.
 

@@ -100,7 +100,18 @@ const CHECKLIST_LINKS: Record<ChecklistKey, Href> = {
   handbook: '/handbook',
 };
 
-export function OnboardingChecklist({ compliance, today, links }: { compliance: TutorCompliance; today: Date; links?: boolean }) {
+export function OnboardingChecklist({
+  compliance,
+  today,
+  links,
+  unlinked = [],
+}: {
+  compliance: TutorCompliance;
+  today: Date;
+  links?: boolean;
+  /** Steps not to link, e.g. those whose card is already on the current page. */
+  unlinked?: ChecklistKey[];
+}) {
   const theme = useTheme();
   const items = onboardingChecklist(compliance, today);
   const progress = onboardingProgress(items);
@@ -123,11 +134,11 @@ export function OnboardingChecklist({ compliance, today, links }: { compliance: 
               </Row>
               {item.detail ? <Txt variant="small">{item.detail}</Txt> : null}
             </View>
-            {links && !item.done ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
+            {links && !item.done && !unlinked.includes(item.key) ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
           </Row>
         );
         const spoken = `${item.label}${item.optional ? ', optional' : ''}, ${item.done ? 'complete' : 'to do'}`;
-        if (!links || item.done) {
+        if (!links || item.done || unlinked.includes(item.key)) {
           return (
             <View key={item.key} accessible accessibilityRole="checkbox" accessibilityState={{ checked: item.done }} accessibilityLabel={spoken}>
               {body}
@@ -138,7 +149,6 @@ export function OnboardingChecklist({ compliance, today, links }: { compliance: 
           <Pressable
             key={item.key}
             accessibilityRole="link"
-            accessibilityState={{ checked: item.done }}
             accessibilityLabel={spoken}
             accessibilityHint="Opens the page to complete this step"
             onPress={() => router.navigate(CHECKLIST_LINKS[item.key])}
@@ -172,7 +182,8 @@ export function OnboardingCard({ compliance }: { compliance?: TutorCompliance })
       ) : (
         <Txt variant="muted">Please complete these steps so that we can assign you lessons and pay you promptly.</Txt>
       )}
-      <OnboardingChecklist compliance={c} today={today} links />
+      {/* The Google Calendar and WhatsApp cards are further down this page, so those steps are not links here. */}
+      <OnboardingChecklist compliance={c} today={today} links unlinked={['calendar', 'whatsapp']} />
       <Button title="My checks and documents" variant="outline" size="sm" icon="doc" onPress={() => router.push('/checks')} />
     </Card>
   );
@@ -420,6 +431,8 @@ export function DocumentRow({ doc, today, canRemove, children }: { doc: TutorDoc
 /** Upload a vetting document for a tutor (the tutor themselves, or an admin on their behalf). */
 export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onBehalf?: boolean }) {
   const today = useToday();
+  const tutors = useTutors();
+  const tutorFirstName = tutors.data?.find((t) => t.id === tutorId)?.fullName.split(' ')[0];
   const submit = useAction(source.submitTutorDocument);
   const [type, setType] = useState<TutorDocumentType>('police_clearance');
   const [title, setTitle] = useState('');
@@ -523,7 +536,11 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
       </Row>
       {error ? <Banner tone="danger" icon="alert">{error}</Banner> : null}
       <Button title="Submit for review" variant="gold" loading={uploading} onPress={send} />
-      <Txt variant="small">Your documents are private. Only you and the Elite Education office can see them.</Txt>
+      <Txt variant="small">
+        {onBehalf
+          ? `Documents are private. Only ${tutorFirstName ?? 'the tutor'} and the Elite Education office can see them.`
+          : 'Your documents are private. Only you and the Elite Education office can see them.'}
+      </Txt>
     </Card>
   );
 }
@@ -546,6 +563,7 @@ export function tutorChipLabel(name: string, c: TutorCompliance | undefined): st
 
 /** On a scheduled lesson (admin and the lesson's tutor): the lesson stands, but new work waits for clearance. */
 export function LessonVettingNote({ tutorId }: { tutorId: string }) {
+  const me = useMe();
   const today = useToday();
   const { compliance: c } = useComplianceFor(tutorId);
   if (!c || !notCleared(c)) return null;
@@ -555,8 +573,24 @@ export function LessonVettingNote({ tutorId }: { tutorId: string }) {
     : verdict.overridden && c.override
       ? `This lesson can go ahead. Override in place until ${formatLongDate(c.override.until)}.`
       : 'This lesson can go ahead, but no new lessons can be assigned until it is verified.';
+  const tone = c.enforced && !verdict.overridden ? 'warning' : 'info';
+  if (me.tutorId === tutorId) {
+    // The lesson's own tutor reads about themselves in the second person, with a way to put it right.
+    const action =
+      c.vettingStatus === 'pending'
+        ? 'We are reviewing your certificate and will let you know once it has been verified.'
+        : 'Please upload your certificate under My checks so that we can continue to assign you lessons.';
+    return (
+      <View style={{ gap: Spacing.two }}>
+        <Banner tone={tone} icon="alert">
+          Your police clearance is {VETTING_PHRASE[c.vettingStatus]}. This lesson will go ahead as planned. {action}
+        </Banner>
+        <Button title="My checks" variant="outline" size="sm" icon="doc" onPress={() => router.push('/checks')} />
+      </View>
+    );
+  }
   return (
-    <Banner tone={c.enforced && !verdict.overridden ? 'warning' : 'info'} icon="alert">
+    <Banner tone={tone} icon="alert">
       This tutor’s police clearance is {VETTING_PHRASE[c.vettingStatus]}. {rest}
     </Banner>
   );

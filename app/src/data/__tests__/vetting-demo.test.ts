@@ -211,7 +211,7 @@ describe('tutor notifications in the demo (mirrors notify_tutor)', () => {
     const other = vet.submitDocument(db, sarah, { tutorId: 't-sarah', type: 'passport_id', filePath: 'tutors/t-sarah/id.pdf', fileName: 'id.pdf' }, NOW);
     vet.reviewDocument(db, admin, other.id, { approve: false, note: 'The photo is too blurred to read.' }, NOW);
     const rejected = db.outbox.filter((o) => o.audience === 'tutor' && o.tutorId === 't-sarah').at(-1)!;
-    expect(rejected.subject).toBe('Please upload a new passport or identity document');
+    expect(rejected.subject).toBe('Please upload a new passport or Emirates ID');
     expect(rejected.body).toContain('The photo is too blurred to read.');
     expect(db.outbox.some((o) => o.body.includes('tutors/') || o.subject.includes('tutors/'))).toBe(false);
   });

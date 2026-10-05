@@ -12,7 +12,8 @@ import { formatLongDate, vettingSummary } from '@/domain/vetting';
 export default function MyChecks() {
   const me = useMe();
   const params = useLocalSearchParams<{ tutorId?: string }>();
-  const tutorId = me.role === 'admin' ? (params.tutorId ?? undefined) : me.tutorId;
+  // An admin who also tutors (Craig) sees their own checks when no tutor is named, e.g. from a notification link.
+  const tutorId = me.role === 'admin' ? (params.tutorId ?? me.tutorId ?? undefined) : me.tutorId;
   const today = useToday();
   const tutors = useTutors();
   const { compliance: c, isLoading } = useComplianceFor(tutorId);
@@ -26,7 +27,7 @@ export default function MyChecks() {
     );
   }
   if (isLoading || docs.isLoading) return <Loading />;
-  const own = me.role === 'tutor';
+  const own = !!me.tutorId && tutorId === me.tutorId;
   const name = tutors.data?.find((t) => t.id === tutorId)?.fullName;
   const renewBy = c?.clearanceExpiry ? formatLongDate(c.clearanceExpiry) : undefined;
 

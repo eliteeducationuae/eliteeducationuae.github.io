@@ -26,7 +26,7 @@ const tutorName = (db: DemoDB, tutorId: string) => db.tutors.find((t) => t.id ==
 /** Names for documents in sentences, as in the database's vetting_doc_label. */
 const SENTENCE_LABELS: Record<TutorDocument['type'], string> = {
   police_clearance: 'police clearance certificate',
-  passport_id: 'passport or identity document',
+  passport_id: 'passport or Emirates ID',
   qualification: 'qualification certificate',
   other: 'document',
 };
