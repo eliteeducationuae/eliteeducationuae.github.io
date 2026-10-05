@@ -99,7 +99,11 @@ export function SpamActions({ kind, id, status, compact }: { kind: Kind; id: str
     <View style={{ gap: Spacing.one }}>
       {choosing ? (
         // The thank-you email was held back when this was flagged, so offer to send it now.
-        <View style={[styles.choice, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+        // It also claims taps on its own padding and text, so a tap inside it never reaches a list card's onPress.
+        <View
+          onStartShouldSetResponder={() => true}
+          {...({ onClick: stop } as object)}
+          style={[styles.choice, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
           <Txt variant="h3">Move to your pipeline?</Txt>
           <Txt variant="muted">
             {`This ${NOUN[kind]} will move into your pipeline. Would you also like to send the ${PERSON[kind]} the usual thank-you email, which was held back when it was flagged?`}
@@ -123,8 +127,11 @@ export function SpamActions({ kind, id, status, compact }: { kind: Kind; id: str
   );
 }
 
+/** Stops a tap inside the choice panel bubbling to a pressable parent (needed on web, harmless on native). */
+const stop = (e: { stopPropagation?: () => void }) => e.stopPropagation?.();
+
 const styles = StyleSheet.create({
-  reviewLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one, paddingHorizontal: Spacing.one },
+  reviewLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, minHeight: 44, paddingVertical: Spacing.one, paddingHorizontal: Spacing.one },
   choice: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.md, padding: Spacing.three, gap: Spacing.two },
 });
 
@@ -146,20 +153,27 @@ export function SpamFilterChip({ count, selected, onPress }: { count: number; se
  * not missed. It is deliberately not part of "Needs attention" or its count.
  */
 export function SpamReviewLine({ enquiries, applications }: { enquiries: number; applications: number }) {
-  const theme = useTheme();
-  const total = enquiries + applications;
-  if (!total) return null;
-  const parts = [
-    enquiries ? `${enquiries} ${enquiries === 1 ? 'enquiry' : 'enquiries'}` : '',
-    applications ? `${applications} ${applications === 1 ? 'application' : 'applications'}` : '',
-  ].filter(Boolean);
-  const label = `${parts.join(' and ')} held as possible spam to review`;
-  const open = () => router.push({ pathname: enquiries ? '/manage/enquiries' : '/manage/applications', params: { view: 'spam' } });
+  if (!enquiries && !applications) return null;
   return (
-    <Pressable onPress={open} accessibilityRole="link" accessibilityLabel={label} style={({ pressed }) => [styles.reviewLine, pressed && { opacity: 0.7 }]}>
+    <View>
+      {enquiries ? <ReviewLink count={enquiries} one="enquiry" many="enquiries" pathname="/manage/enquiries" /> : null}
+      {applications ? <ReviewLink count={applications} one="application" many="applications" pathname="/manage/applications" /> : null}
+    </View>
+  );
+}
+
+function ReviewLink({ count, one, many, pathname }: { count: number; one: string; many: string; pathname: '/manage/enquiries' | '/manage/applications' }) {
+  const theme = useTheme();
+  const label = `${count} ${count === 1 ? one : many} held as possible spam to review`;
+  return (
+    <Pressable
+      onPress={() => router.push({ pathname, params: { view: 'spam' } })}
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.reviewLine, pressed && { opacity: 0.7 }]}>
       <Icon name="inbox" size={16} color={theme.textMuted} />
       <Txt variant="small" style={{ flex: 1 }}>
-        {label.charAt(0).toUpperCase() + label.slice(1)}
+        {label}
       </Txt>
       <Icon name="chevron" size={14} color={theme.textMuted} />
     </Pressable>

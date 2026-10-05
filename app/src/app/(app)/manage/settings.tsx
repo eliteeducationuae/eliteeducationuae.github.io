@@ -112,7 +112,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
             <Switch value={captcha} onValueChange={setCaptcha} accessibilityLabel="Security check on website forms" />
           </Row>
           <Txt variant="small">
-            Uses Cloudflare Turnstile. Add the keys described in the README first. When on, anything sent without the check by someone who is not signed in is kept and marked as possible spam, including the app’s own public forms, which do not show the check.
+            Uses Cloudflare Turnstile, which needs to be set up on the website first (see the setup guide). When on, anything sent without the check by someone who is not signed in is kept and marked as possible spam, including the app’s own public forms, which do not show the check.
           </Txt>
         </Card>
       </Section>
