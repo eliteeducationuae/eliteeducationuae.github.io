@@ -3,6 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
 import { StudentOverview } from '@/components/student-overview';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
+import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { useLookup, useStudents } from '@/data/hooks';
 import { useMe } from '@/data/session';
@@ -59,6 +60,7 @@ export default function StudentPage() {
           />
         </Row>
       ) : null}
+      <ViewAsActions studentId={student.id} />
     </Screen>
   );
 }

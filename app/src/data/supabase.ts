@@ -62,6 +62,7 @@ import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { addChildSubjects } from './rpc-mapping';
 import { PartialSaveError, type AutopayChargeResult, type DataSource, type HomeworkInput, type SocialProvider, type SocialSignInResult } from './source';
+import { readOnlySource, VIEW_ENDED_MESSAGE, VIEW_ONLY_MESSAGE, ViewOnlyError, type ViewTarget } from './view-as';
 
 /**
  * The page address when the web app first loaded, captured before the Supabase client reads (and tidies)
@@ -74,9 +75,16 @@ const PENDING_PROVIDER_KEY = 'elite.auth.pendingProvider';
 
 type Row = Record<string, any>;
 
+/** The error to throw for a server message; "View as" refusals become the shared view-only and view-ended errors. */
+function serverError(message: string): Error {
+  if (message.includes(VIEW_ONLY_MESSAGE)) return new ViewOnlyError();
+  if (message.includes(VIEW_ENDED_MESSAGE)) return new Error(VIEW_ENDED_MESSAGE);
+  return new Error(message);
+}
+
 /** Unwrap a Supabase response, throwing its error. Rows are mapped by hand, so the result is loosely typed. */
 function check<T = any>(result: { data: unknown; error: { message: string } | null }): T {
-  if (result.error) throw new Error(result.error.message);
+  if (result.error) throw serverError(result.error.message);
   return result.data as T;
 }
 
@@ -530,18 +538,49 @@ async function invokeResult<T>(result: { data: unknown; error: unknown }): Promi
   } catch {
     // Not JSON (e.g. the function could not be reached); keep the client's message.
   }
-  throw new Error(message);
+  throw serverError(message);
 }
 
-export function createSupabaseSource(url: string, anonKey: string): DataSource {
-  const client: SupabaseClient = createClient(url, anonKey, {
-    auth: {
-      storage: AsyncStorage,
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: Platform.OS === 'web',
+/** Session storage for a "View as" client: memory only, so the admin's stored session is never touched. */
+function memoryStorage() {
+  const items = new Map<string, string>();
+  return {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      items.set(key, value);
     },
-  });
+    removeItem: (key: string) => {
+      items.delete(key);
+    },
+  };
+}
+
+const toViewTarget = (r: Row): ViewTarget => ({
+  profileId: r.id,
+  role: r.role,
+  fullName: r.full_name,
+  email: r.email,
+  familyId: r.family_id ?? undefined,
+  studentId: r.student_id ?? undefined,
+  tutorId: r.tutor_id ?? undefined,
+});
+
+/**
+ * The Supabase data source. Pass `options.client` to run over an existing client, e.g. the separate client of an
+ * admin's "View as" session: that source never reads a sign-in redirect and never signs its client out.
+ */
+export function createSupabaseSource(url: string, anonKey: string, options?: { client?: SupabaseClient }): DataSource {
+  const injected = !!options?.client;
+  const client: SupabaseClient =
+    options?.client ??
+    createClient(url, anonKey, {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: Platform.OS === 'web',
+      },
+    });
 
   async function loadProfile(): Promise<Profile | null> {
     const { data } = await client.auth.getUser();
@@ -551,7 +590,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
   }
 
   /** On the web, the error from an Apple or Google redirect is reported once, then forgotten. */
-  let callbackChecked = Platform.OS !== 'web';
+  let callbackChecked = injected || Platform.OS !== 'web';
 
   async function takeCallbackNotice(): Promise<string | null> {
     if (callbackChecked) return null;
@@ -656,6 +695,7 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
       if (error || !data.user) return null;
       const row = check(await client.from('profiles').select('*').eq('id', data.user.id).maybeSingle());
       if (row) return toProfile(row);
+      if (injected) return null;
       // A login without a profile (e.g. an Apple or Google login that could not be linked): sign it out and say why.
       await client.auth.signOut();
       throw new AuthNotice(NOT_LINKED);
@@ -728,6 +768,42 @@ export function createSupabaseSource(url: string, anonKey: string): DataSource {
     },
     async savePushToken(token) {
       check(await client.rpc('set_push_token', { p_token: token }));
+    },
+    async listViewTargets() {
+      // Admin RLS on profiles returns every row; everyone else only sees their own (and gets no admins here).
+      const rows = check<Row[]>(
+        await client
+          .from('profiles')
+          .select('id, role, full_name, email, family_id, student_id, tutor_id')
+          .in('role', ['parent', 'student', 'tutor'])
+          .order('full_name'),
+      );
+      return rows.map(toViewTarget);
+    },
+    async startViewAs(profileId) {
+      const started = await invokeResult<{ viewId: string; accessToken: string; refreshToken: string; expiresAt: string }>(
+        await client.functions.invoke('view-as', { body: { profileId } }),
+      );
+      const { viewId, expiresAt } = started;
+      // A separate client with its own in-memory session: the admin's stored session is left exactly as it is.
+      const viewClient = createClient(url, anonKey, {
+        auth: { storage: memoryStorage(), storageKey: 'elite.viewas', persistSession: false, autoRefreshToken: true, detectSessionInUrl: false },
+      });
+      const end = async () => {
+        await client.rpc('end_view_as', { p_view_id: viewId }).then(undefined, () => undefined);
+        await viewClient.auth.signOut({ scope: 'local' }).then(undefined, () => undefined);
+        await Promise.resolve(viewClient.auth.stopAutoRefresh?.()).catch(() => undefined);
+      };
+      try {
+        check(await viewClient.auth.setSession({ access_token: started.accessToken, refresh_token: started.refreshToken }));
+        const inner = createSupabaseSource(url, anonKey, { client: viewClient });
+        const profile = await inner.restoreSession();
+        if (!profile || profile.id !== profileId) throw new Error('We could not open this view. Please try again.');
+        return { viewId, profile, expiresAt, source: readOnlySource(inner), end };
+      } catch (err) {
+        await end();
+        throw err;
+      }
     },
 
     async getSettings() {

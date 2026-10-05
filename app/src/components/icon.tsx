@@ -48,6 +48,8 @@ const ICONS = {
   camera: { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' },
   link: { ios: 'link', android: 'link', web: 'link' },
   folder: { ios: 'folder.fill', android: 'folder', web: 'folder' },
+  eye: { ios: 'eye', android: 'visibility', web: 'visibility' },
+  info: { ios: 'info.circle', android: 'info', web: 'info' },
 } satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

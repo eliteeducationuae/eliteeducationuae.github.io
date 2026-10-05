@@ -25,6 +25,7 @@ export default function RootLayout() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const palette = Colors[scheme];
   const status = useSession((s) => s.status);
+  const viewing = useSession((s) => !!s.viewing);
   const restore = useSession((s) => s.restore);
   const [fontsLoaded, fontError] = useFonts(BRAND_FONTS);
   const fontsReady = fontsLoaded || !!fontError;
@@ -38,8 +39,8 @@ export default function RootLayout() {
   }, [fontsReady, status]);
 
   useEffect(() => {
-    if (status === 'signed-in') registerForPushNotifications();
-  }, [status]);
+    if (status === 'signed-in' && !viewing) registerForPushNotifications();
+  }, [status, viewing]);
   useNotificationTaps(status === 'signed-in' && fontsReady);
 
   if (!fontsReady) return null;

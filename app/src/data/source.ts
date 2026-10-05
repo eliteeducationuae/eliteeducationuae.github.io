@@ -51,6 +51,8 @@ import type {
   PackageOffer,
 } from '@/domain/types';
 
+import type { ViewAsSession, ViewTarget } from './view-as';
+
 export interface CompleteLessonInput {
   lessonId: string;
   status: Extract<LessonStatus, 'completed' | 'no-show'>;
@@ -169,6 +171,13 @@ export interface DataSource {
   loginEmails?(): Promise<string[]>;
   /** Store this device's push token for lesson reminders (production only). */
   savePushToken?(token: string): Promise<void>;
+  /** Admin only: everyone who is not an admin and has a login (parents, students and tutors), for "View as". */
+  listViewTargets?(): Promise<ViewTarget[]>;
+  /**
+   * Admin only: start a read-only view of the app as this person. The returned source is scoped to them and
+   * refuses every change; call end() to finish. The admin's own sign-in is left untouched.
+   */
+  startViewAs?(profileId: string): Promise<ViewAsSession>;
 
   // Reads
   getSettings(): Promise<Settings>;

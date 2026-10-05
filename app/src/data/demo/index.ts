@@ -4,9 +4,10 @@ import type { Profile } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import type { DataSource } from '../source';
+import { readOnlySource, type ViewTarget } from '../view-as';
 import { cw } from './classwork';
 import { cal } from './calendar';
-import { cmd, DEMO_DB_VERSION, enr, newId, q, type DemoDB } from './db';
+import { cmd, DEMO_DB_VERSION, enr, newId, q, requireAdmin, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
 import { pay } from './payments';
@@ -19,15 +20,34 @@ const SESSION_KEY = 'elite.demo.session';
 /** Picked files by stored path, so an upload can be viewed again in this session. */
 const demoFiles = new Map<string, string>();
 
+/** How long a demo "View as" lasts, matching production. */
+const VIEW_MINUTES = 60;
+
+/**
+ * Who a demo source acts as. The signed-in source remembers its viewer in device storage; a "View as" source is
+ * fixed to the viewed person and never touches the stored sign-in.
+ */
+interface DemoSession {
+  viewer: Profile | null;
+  persist: boolean;
+}
+
+/** The database a "View as" source shares with the signed-in source, so both see the same records. */
+interface DemoStore {
+  load(): Promise<DemoDB>;
+  save(): Promise<void>;
+}
+
 /**
  * Offline demo backend: a seeded in-memory database persisted to device storage.
  * Lets anyone try every role without a server, and is used for UI testing.
  */
-export function createDemoSource(): DataSource {
+export function createDemoSource(session: DemoSession = { viewer: null, persist: true }, shared?: DemoStore): DataSource {
   let db: DemoDB | null = null;
-  let viewer: Profile | null = null;
+  let viewer: Profile | null = session.viewer;
 
   async function load(): Promise<DemoDB> {
+    if (shared) return shared.load();
     if (db) return db;
     try {
       const raw = await AsyncStorage.getItem(DB_KEY);
@@ -40,6 +60,7 @@ export function createDemoSource(): DataSource {
   }
 
   async function save() {
+    if (shared) return shared.save();
     if (!db) return;
     try {
       await AsyncStorage.setItem(DB_KEY, JSON.stringify(db));
@@ -71,6 +92,12 @@ export function createDemoSource(): DataSource {
 
     async restoreSession() {
       const d = await load();
+      if (!session.persist) {
+        // A "View as" source: the viewed person, as the database has them now. It never reads the stored sign-in.
+        const id = viewer?.id;
+        viewer = d.profiles.find((p) => p.id === id) ?? null;
+        return viewer;
+      }
       try {
         const id = await AsyncStorage.getItem(SESSION_KEY);
         viewer = d.profiles.find((p) => p.id === id) ?? null;
@@ -111,6 +138,44 @@ export function createDemoSource(): DataSource {
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
     },
     loginEmails: () => read((d) => d.profiles.map((p) => p.email.toLowerCase())),
+    listViewTargets: () =>
+      read((d, v) => {
+        requireAdmin(v);
+        return d.profiles
+          .filter((p) => p.role !== 'admin')
+          .map(
+            (p): ViewTarget => ({
+              profileId: p.id,
+              role: p.role as ViewTarget['role'],
+              fullName: p.fullName,
+              email: p.email,
+              familyId: p.familyId,
+              studentId: p.studentId,
+              tutorId: p.tutorId,
+            }),
+          )
+          .sort((a, b) => a.fullName.localeCompare(b.fullName));
+      }),
+    async startViewAs(profileId) {
+      const d = await load();
+      const admin = me();
+      requireAdmin(admin);
+      const target = d.profiles.find((p) => p.id === profileId);
+      if (!target) throw new Error('That account could not be found.');
+      if (target.role === 'admin') throw new Error('You cannot view as another admin.');
+      if (target.id === admin.id) throw new Error('You cannot view as yourself.');
+      // The view shares this source's in-memory database and never writes the stored sign-in.
+      const view = createDemoSource({ viewer: target, persist: false }, { load, save });
+      const profile = await view.restoreSession();
+      if (!profile) throw new Error('That account could not be found.');
+      return {
+        viewId: newId('view'),
+        profile: structuredClone(profile),
+        expiresAt: new Date(Date.now() + VIEW_MINUTES * 60_000).toISOString(),
+        source: readOnlySource(view),
+        end: async () => undefined,
+      };
+    },
     async signUp(email, _password, details) {
       const d = await load();
       const e = email.trim().toLowerCase();

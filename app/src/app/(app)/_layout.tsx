@@ -2,6 +2,7 @@ import { Redirect, Stack } from 'expo-router';
 
 import { stackOptions } from '@/components/stack-options';
 import { Loading } from '@/components/ui';
+import { ViewAsFrame, viewAsScreenLayout } from '@/components/view-as';
 import { useSession } from '@/data/session';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -14,8 +15,8 @@ export default function SignedInLayout() {
   const status = useSession((s) => s.status);
   if (status === 'loading') return <Loading />;
   if (status === 'signed-out') return <Redirect href="/sign-in" />;
-  return (
-    <Stack screenOptions={stackOptions(palette)}>
+  const stack = (
+    <Stack screenOptions={stackOptions(palette)} screenLayout={viewAsScreenLayout}>
       <Stack.Screen name="admin" options={{ headerShown: false }} />
       <Stack.Screen name="tutor" options={{ headerShown: false }} />
       <Stack.Screen name="parent" options={{ headerShown: false }} />
@@ -69,4 +70,6 @@ export default function SignedInLayout() {
       <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
     </Stack>
   );
+  // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.
+  return <ViewAsFrame>{stack}</ViewAsFrame>;
 }
