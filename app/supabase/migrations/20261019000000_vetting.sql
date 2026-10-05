@@ -628,7 +628,8 @@ Welcome to Elite Education. This handbook sets out the standards we expect of ev
 **Excellence. Discretion. Results.**$handbook$, null, 'Elite Education');
 
 -- ---------------------------------------------------------------------------
--- File storage: private 'vetting' bucket, objects at tutors/<tutor_id>/<file>.
+-- File storage: private 'vetting' bucket, objects at tutors/<tutor_id>/<file>. Tutors may remove only
+-- their own files that are not behind a verified or rejected document; admins may remove any.
 -- Skipped where the storage schema doesn't exist (local tests).
 -- ---------------------------------------------------------------------------
 
@@ -646,6 +647,7 @@ begin
       using (bucket_id = 'vetting' and (storage.foldername(name))[1] = 'tutors'
              and ((storage.foldername(name))[2] = public.my_tutor_id()::text or public.is_admin()))$p$;
     execute $p$create policy "vetting delete" on storage.objects for delete to authenticated
-      using (bucket_id = 'vetting' and (public.is_admin() or owner_id = auth.uid()::text))$p$;
+      using (bucket_id = 'vetting' and (public.is_admin() or (owner_id = auth.uid()::text
+             and not exists (select 1 from public.tutor_documents d where d.file_path = name and d.status <> 'pending'))))$p$;
   end if;
 end $$;
