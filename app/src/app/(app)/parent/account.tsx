@@ -1,4 +1,5 @@
 import { AccountScreen } from '@/components/account';
+import { AdmissionsAccountLink } from '@/components/admissions/entry-links';
 import { FamilyContactsSection } from '@/components/family-contacts';
 import { useMe } from '@/data/session';
 
@@ -6,6 +7,7 @@ export default function ParentAccount() {
   const me = useMe();
   return (
     <AccountScreen>
+      <AdmissionsAccountLink />
       {me.familyId ? (
         <FamilyContactsSection
           familyId={me.familyId}

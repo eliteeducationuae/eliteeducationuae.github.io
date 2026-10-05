@@ -7,6 +7,8 @@ import { surnameOf } from '@/lib/social-auth';
 import type { DataSource } from '../source';
 import { readOnlySource, type ViewTarget } from '../view-as';
 import { auditedWrite, ensureAuditSeed, listAuditActorsDemo, listAuditEventsDemo } from './audit';
+// Admissions advisory
+import { adm } from './admissions';
 import { cw } from './classwork';
 import { cal } from './calendar';
 import { listFamilyContacts, removeFamilyContact, saveFamilyContact, syncPrimaryFromFamily } from './contacts';
@@ -406,5 +408,36 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     listAccountants: () => read((d, v) => tax.accountants(d, v)),
     inviteAccountant: (email, fullName) => write((d, v) => tax.inviteAccountant(d, v, email, fullName)),
     removeAccountant: (email) => write((d, v) => tax.removeAccountant(d, v, email)),
+    // Admissions advisory
+    listAdmissionsCases: (filter) => read((d, v) => adm.cases(d, v, filter)),
+    getAdmissionsCase: (id) => read((d, v) => adm.getCase(d, v, id)),
+    saveAdmissionsCase: (input) => write((d, v) => adm.saveCase(d, v, input)),
+    listAdmissionsTargets: (filter) => read((d, v) => adm.targets(d, v, filter)),
+    saveAdmissionsTarget: (input) => write((d, v) => adm.saveTarget(d, v, input)),
+    deleteAdmissionsTarget: (id) => write((d, v) => adm.deleteTarget(d, v, id)),
+    listAdmissionsKeyDates: (filter) => read((d, v) => adm.dates(d, v, filter)),
+    saveAdmissionsKeyDate: (input) => write((d, v) => adm.saveKeyDate(d, v, input)),
+    deleteAdmissionsKeyDate: (id) => write((d, v) => adm.deleteKeyDate(d, v, id)),
+    listAdmissionsTasks: (filter) => read((d, v) => adm.tasks(d, v, filter)),
+    saveAdmissionsTask: (input) => write((d, v) => adm.saveTask(d, v, input)),
+    setAdmissionsTaskDone: (id, done) => write((d, v) => adm.setTaskDone(d, v, id, done)),
+    deleteAdmissionsTask: (id) => write((d, v) => adm.deleteTask(d, v, id)),
+    listAdmissionsDocuments: (filter) => read((d, v) => adm.documents(d, v, filter)),
+    addAdmissionsDocument: (input) => write((d, v) => adm.addDocument(d, v, input)),
+    async deleteAdmissionsDocument(id) {
+      const path = await write((d, v) => adm.deleteDocument(d, v, id));
+      if (path) demoFiles.delete(path);
+    },
+    listAdvisoryUpdates: (filter) => read((d, v) => adm.updates(d, v, filter)),
+    saveAdvisoryUpdate: (input) => write((d, v) => adm.saveUpdate(d, v, input)),
+    setAdvisoryUpdateStatus: (id, status) => write((d, v) => adm.setUpdateStatus(d, v, id, status)),
+    deleteAdvisoryUpdate: (id) => write((d, v) => adm.deleteUpdate(d, v, id)),
+    listAdmissionsEvents: (filter) => read((d, v) => adm.events(d, v, filter)),
+    addAdmissionsMilestone: (caseId, title, detail) => write((d, v) => adm.addMilestone(d, v, caseId, title, detail)),
+    billAdmissionsFee: (input) =>
+      write((d, v) => {
+        const invoice = adm.billFee(d, v, input);
+        return pay.autopayIfDue(d, invoice) ?? invoice;
+      }),
   };
 }

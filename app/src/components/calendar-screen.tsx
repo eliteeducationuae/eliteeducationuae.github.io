@@ -11,6 +11,7 @@ import type { BusyBlock, Lesson } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 
+import { DayWithKeyDates, hasKeyDatesOn, useWeekKeyDates } from './admissions/calendar-lines';
 import { Icon } from './icon';
 import { DayTimeline, LessonCard, WeekStrip } from './lessons';
 import { Banner, Button, Chip, EmptyState, ErrorNote, Loading, Row, Screen, Segmented, Txt } from './ui';
@@ -43,6 +44,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
   const closures = useClosures();
   // Google Calendar: busy times only warn here; they never stop the office moving a lesson.
   const busyBlocks = useBusyBlocks(weekStart, addDays(weekStart, 7));
+  // Admissions advisory: deadlines, tests and interviews for the cases this person may see.
+  const keyDates = useWeekKeyDates(weekStart);
   const move = useAction(source.rescheduleLesson);
   const closed = (closures.data ?? []).find((c) => isClosed(selected, [c]));
 
@@ -155,8 +158,8 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
       ) : view === 'day' ? (
         <View style={{ gap: Spacing.two }}>
           <Txt variant="label">{formatDay(selected)}</Txt>
-          {inTimeOrder(dayLessons, dayBusy).map(renderEntry)}
-          {dayLessons.length ? null : (
+          <DayWithKeyDates day={selected} dates={keyDates} entries={inTimeOrder(dayLessons, dayBusy)} renderEntry={renderEntry} />
+          {dayLessons.length || hasKeyDatesOn(keyDates, selected) ? null : (
             <EmptyState icon="calendar" title="No lessons scheduled on this day" message="Lessons will appear here as soon as they are booked." />
           )}
         </View>
@@ -165,15 +168,15 @@ export function CalendarScreen({ canSchedule, perspective }: { canSchedule: bool
           {Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map((d) => {
             const items = all.filter((l) => isSameDay(new Date(l.start), d));
             const busy = weekBusy.filter((b) => isSameDay(new Date(b.start), d));
-            if (!items.length && !busy.length) return null;
+            if (!items.length && !busy.length && !hasKeyDatesOn(keyDates, d)) return null;
             return (
               <View key={d.toDateString()} style={{ gap: Spacing.two }}>
                 <Txt variant="label">{formatDay(d)}</Txt>
-                {inTimeOrder(items, busy).map(renderEntry)}
+                <DayWithKeyDates day={d} dates={keyDates} entries={inTimeOrder(items, busy)} renderEntry={renderEntry} />
               </View>
             );
           })}
-          {all.length === 0 ? <EmptyState icon="calendar" title="No lessons scheduled this week" message="Lessons will appear here as soon as they are booked." /> : null}
+          {all.length === 0 && keyDates.length === 0 ? <EmptyState icon="calendar" title="No lessons scheduled this week" message="Lessons will appear here as soon as they are booked." /> : null}
         </View>
       )}
     </Screen>

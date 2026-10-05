@@ -1,4 +1,23 @@
 import type { AuditActor, AuditCursor, AuditFilter, AuditPage } from '@/domain/audit';
+// Admissions advisory
+import type {
+  AdmissionsCase,
+  AdmissionsCaseInput,
+  AdmissionsDocument,
+  AdmissionsDocumentInput,
+  AdmissionsEvent,
+  AdmissionsFeeInput,
+  AdmissionsKeyDate,
+  AdmissionsKeyDateInput,
+  AdmissionsTarget,
+  AdmissionsTargetInput,
+  AdmissionsTask,
+  AdmissionsTaskInput,
+  AdvisoryUpdate,
+  AdvisoryUpdateInput,
+  AdvisoryUpdateKind,
+  AdvisoryUpdateStatus,
+} from '@/domain/admissions';
 import type { EnrolmentDraft } from '@/domain/enrolments';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -72,7 +91,12 @@ export interface CompleteLessonInput {
 }
 
 /** Private storage buckets files can be uploaded to. */
-export type StorageBucket = 'applications' | 'receipts' | 'classwork';
+export type StorageBucket =
+  | 'applications'
+  | 'receipts'
+  | 'classwork'
+  // Admissions advisory
+  | 'admissions';
 
 /** New homework (no id) or an edit to existing homework. */
 export interface HomeworkInput {
@@ -393,6 +417,42 @@ export interface DataSource {
   inviteAccountant(email: string, fullName?: string): Promise<'invited' | 'linked'>;
   /** Admin: remove an accountant's invite and access. */
   removeAccountant(email: string): Promise<void>;
+
+  // Admissions advisory
+  // Admin sees every case; an adviser tutor only their own cases; parents and students their family's.
+  // Families see documents only when shared with them (or their own uploads), updates only once sent,
+  // and timeline events only when family-visible.
+  listAdmissionsCases(filter?: { studentId?: string }): Promise<AdmissionsCase[]>;
+  getAdmissionsCase(id: string): Promise<AdmissionsCase | null>;
+  /** Admin creates and changes anything; the adviser may change the summary and status only. */
+  saveAdmissionsCase(input: AdmissionsCaseInput): Promise<AdmissionsCase>;
+  listAdmissionsTargets(filter?: { caseId?: string }): Promise<AdmissionsTarget[]>;
+  saveAdmissionsTarget(input: AdmissionsTargetInput): Promise<AdmissionsTarget>;
+  deleteAdmissionsTarget(id: string): Promise<void>;
+  /** `from`/`to` are YYYY-MM-DD, inclusive on the due date. */
+  listAdmissionsKeyDates(filter?: { caseId?: string; from?: string; to?: string }): Promise<AdmissionsKeyDate[]>;
+  saveAdmissionsKeyDate(input: AdmissionsKeyDateInput): Promise<AdmissionsKeyDate>;
+  deleteAdmissionsKeyDate(id: string): Promise<void>;
+  listAdmissionsTasks(filter?: { caseId?: string }): Promise<AdmissionsTask[]>;
+  saveAdmissionsTask(input: AdmissionsTaskInput): Promise<AdmissionsTask>;
+  /** Families may tick off only tasks owned by the family. */
+  setAdmissionsTaskDone(id: string, done: boolean): Promise<void>;
+  deleteAdmissionsTask(id: string): Promise<void>;
+  listAdmissionsDocuments(filter?: { caseId?: string }): Promise<AdmissionsDocument[]>;
+  /** Record an uploaded file (bucket 'admissions'). Family uploads are always shared with the family. */
+  addAdmissionsDocument(input: AdmissionsDocumentInput): Promise<AdmissionsDocument>;
+  /** Also removes the stored file. Families may delete only their own uploads. */
+  deleteAdmissionsDocument(id: string): Promise<void>;
+  listAdvisoryUpdates(filter?: { caseId?: string }): Promise<AdvisoryUpdate[]>;
+  saveAdvisoryUpdate(input: AdvisoryUpdateInput): Promise<AdvisoryUpdate>;
+  /** Advisers move draft and submitted only; the admin approves and publishes (a published update is final). */
+  setAdvisoryUpdateStatus(id: string, status: AdvisoryUpdateStatus): Promise<void>;
+  deleteAdvisoryUpdate(id: string): Promise<void>;
+  /** Newest first. */
+  listAdmissionsEvents(filter?: { caseId?: string }): Promise<AdmissionsEvent[]>;
+  addAdmissionsMilestone(caseId: string, title: string, detail?: string): Promise<void>;
+  /** Admin: raise a sent invoice for advisory fees, linked to the case. */
+  billAdmissionsFee(input: AdmissionsFeeInput): Promise<Invoice>;
 }
 
 // Tax: credit notes, refunds and accountant access
@@ -494,12 +554,25 @@ export interface ReportFields {
 export type AiRequest =
   | { task: 'report-draft'; reportId: string; facts: unknown }
   | { task: 'parent-update'; lessonId: string }
-  | { task: 'insights'; figures: unknown };
+  | { task: 'insights'; figures: unknown }
+  // Admissions advisory
+  | {
+      task: 'admissions-update';
+      caseId: string;
+      kind: AdvisoryUpdateKind;
+      period?: string;
+      notes?: string;
+      /** The names the app shows, used only when the server cannot read them itself. */
+      addressee?: string;
+      adviser?: string;
+    };
 
 export type AiResult =
   | { task: 'report-draft'; strengths: string; nextSteps: string; comment: string }
   | { task: 'parent-update'; message: string }
-  | { task: 'insights'; summary: string };
+  | { task: 'insights'; summary: string }
+  // Admissions advisory
+  | { task: 'admissions-update'; title: string; body: string };
 
 export interface SignUpDetails {
   fullName: string;

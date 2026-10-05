@@ -52,6 +52,8 @@ import type {
 } from '@/domain/types';
 
 import type { CompleteLessonInput, NewLesson } from '../source';
+// Admissions advisory
+import type { AdmissionsStore } from './admissions';
 
 import { syncPrimaryFromFamily } from './contacts';
 
@@ -108,6 +110,8 @@ export interface DemoDB {
   creditNotes?: CreditNote[];
   refunds?: DemoRefund[];
   accountantInvites?: AccountantInvite[];
+  // Admissions advisory. Optional and seeded lazily (see demo/admissions.ts) so saved databases need no migration.
+  admissions?: AdmissionsStore;
 }
 
 /** A refund as stored: the request key makes a retried refund return the first one (never shown to screens). */

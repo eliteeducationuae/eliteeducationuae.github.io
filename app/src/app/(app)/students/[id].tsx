@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
 import { HistorySection } from '@/components/history';
+import { StudentAdmissionsLinks } from '@/components/admissions/entry-links';
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
 import { FamilyContactsReadOnly } from '@/components/family-contacts';
 import { StudentOverview } from '@/components/student-overview';
@@ -72,6 +73,7 @@ export default function StudentPage() {
       ) : null}
       <ViewAsActions studentId={student.id} />
       <HistorySection filter={{ studentId: student.id }} />
+      <StudentAdmissionsLinks studentId={student.id} />
     </Screen>
   );
 }

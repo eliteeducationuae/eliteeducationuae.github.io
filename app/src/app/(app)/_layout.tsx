@@ -80,6 +80,15 @@ export default function SignedInLayout() {
       <Stack.Screen name="refund" options={{ title: 'Refund a payment', presentation: 'modal' }} />
       <Stack.Screen name="manage/vat" options={{ title: 'VAT returns' }} />
       <Stack.Screen name="manage/accountants" options={{ title: 'Accountant access' }} />
+      {/* Admissions advisory */}
+      <Stack.Screen name="admissions/index" options={{ title: 'Admissions advisory' }} />
+      <Stack.Screen name="admissions/[id]" options={{ title: 'Admissions' }} />
+      <Stack.Screen name="admissions/edit" options={{ title: 'Admissions case', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/target" options={{ title: 'Shortlist', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/date" options={{ title: 'Key date', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/task" options={{ title: 'Task', presentation: 'modal' }} />
+      <Stack.Screen name="admissions/update" options={{ title: 'Advisory update' }} />
+      <Stack.Screen name="admissions/bill" options={{ title: 'Bill advisory fee', presentation: 'modal' }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

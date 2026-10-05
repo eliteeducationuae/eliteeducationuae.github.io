@@ -410,6 +410,22 @@ Every invoice the app issues is a UAE tax invoice. It carries the business's leg
 
 **Record keeping.** Tax invoices and credit notes must be kept for at least five years. The database refuses to delete an invoice or a credit note. Any account deletion or data export work must keep a family's invoices, credit notes, payments and refunds, and must never delete them with the account.
 
+## Admissions advisory
+
+Guidance for families applying to schools, boarding schools and UK or US universities. The office opens a case for a student and can name a tutor as its adviser; a tutor who teaches the student but does not advise sees nothing of the case. Each case holds a shortlist of schools or universities, key dates and deadlines (which can be linked to a preparation course or lesson), tasks for the family or the adviser, private documents, advisory updates and a timeline the family can follow. Advisers write monthly or ad hoc updates (with optional AI drafting), submit them for review, and the office approves and publishes them to the family. Admissions fees are invoiced to the family from the case and follow the usual invoice notices and autopay.
+
+**Setup**
+
+1. Run `supabase/migrations/20261106000000_admissions.sql`. It creates the tables and the private `admissions` storage bucket with its access rules.
+2. Redeploy the functions that changed: `npx supabase functions deploy ai-assist send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`.
+3. Nothing else to schedule: reminders run with the existing hourly `send-reminders` schedule.
+
+**Good to know**
+
+- Key-date reminders go 14, 7, 1 and 0 days before, and task reminders 3 days before and on the day, to the family and to the adviser (or the office when no adviser is named), between 08:00 and 21:00 UAE time. They are sent by push and email; there is no WhatsApp template for admissions yet.
+- Documents are private to the family, the adviser and admins. The adviser can keep a document from the family; anything the family uploads is always visible to them. Notifications never include the file itself, the text of an advisory update or bank details.
+- Open key dates appear in each person's calendar feed (`ics`): parents for their children, students for themselves, advisers for their cases and admins for every case.
+
 ## Checks
 
 ```bash

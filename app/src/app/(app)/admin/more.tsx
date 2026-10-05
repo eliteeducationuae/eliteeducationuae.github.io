@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
 import { AccountScreen } from '@/components/account';
+import { useAdvisoryUpdatesToApprove } from '@/components/admissions/entry-links';
 import { Icon } from '@/components/icon';
 import { Badge, ListItem, Section } from '@/components/ui';
 import { useApplications, useBids, useEnquiries, useOpportunities, useReportCycles, useRequests, useStudentReports, useTutorInvoices, useUnreadCount } from '@/data/hooks';
@@ -13,11 +14,13 @@ export default function AdminMore() {
   const requests = useRequests();
   const newEnquiries = (enquiries.data ?? []).filter((e) => e.status === 'new').length;
   const pending = (requests.data ?? []).filter((r) => r.status === 'pending').length;
+  const updatesToApprove = useAdvisoryUpdatesToApprove();
   const engage = [
     { title: 'Messages', subtitle: unread ? `${unread} unread` : 'Conversations with families', icon: 'chat', href: '/messages', badge: unread },
     { title: 'Enquiries', subtitle: 'New leads through to enrolment', icon: 'inbox', href: '/manage/enquiries', badge: newEnquiries },
     { title: 'Lesson requests', subtitle: 'Extra lessons and changes from families', icon: 'calendar', href: '/manage/requests', badge: pending },
     { title: 'Announcements', subtitle: 'Send news to families and tutors', icon: 'megaphone', href: '/announcements', badge: 0 },
+    { title: 'Admissions advisory', subtitle: 'School and university applications for families', icon: 'school', href: '/admissions', badge: updatesToApprove },
   ] as const;
   const opportunities = useOpportunities();
   const bids = useBids();

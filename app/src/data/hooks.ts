@@ -240,3 +240,27 @@ export const useRefunds = (filter?: { familyId?: string; invoiceId?: string }) =
   useQuery({ queryKey: ['refunds', filter], queryFn: () => source.listRefunds(filter) });
 
 export const useAccountants = () => useQuery({ queryKey: ['accountants'], queryFn: () => source.listAccountants() });
+// Admissions advisory
+export const useAdmissionsCases = (studentId?: string) =>
+  useQuery({ queryKey: ['admissions-cases', studentId], queryFn: () => source.listAdmissionsCases({ studentId }) });
+
+export const useAdmissionsCase = (id: string | undefined) =>
+  useQuery({ queryKey: ['admissions-case', id], queryFn: () => source.getAdmissionsCase(id!), enabled: !!id });
+
+export const useAdmissionsTargets = (caseId?: string) =>
+  useQuery({ queryKey: ['admissions-targets', caseId], queryFn: () => source.listAdmissionsTargets({ caseId }) });
+
+export const useAdmissionsKeyDates = (filter: { caseId?: string; from?: string; to?: string } = {}) =>
+  useQuery({ queryKey: ['admissions-dates', filter], queryFn: () => source.listAdmissionsKeyDates(filter) });
+
+export const useAdmissionsTasks = (caseId?: string) =>
+  useQuery({ queryKey: ['admissions-tasks', caseId], queryFn: () => source.listAdmissionsTasks({ caseId }) });
+
+export const useAdmissionsDocuments = (caseId?: string) =>
+  useQuery({ queryKey: ['admissions-documents', caseId], queryFn: () => source.listAdmissionsDocuments({ caseId }) });
+
+export const useAdvisoryUpdates = (caseId?: string) =>
+  useQuery({ queryKey: ['admissions-updates', caseId], queryFn: () => source.listAdvisoryUpdates({ caseId }) });
+
+export const useAdmissionsEvents = (caseId?: string) =>
+  useQuery({ queryKey: ['admissions-events', caseId], queryFn: () => source.listAdmissionsEvents({ caseId }) });

@@ -280,6 +280,31 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   listAccountants: 'read',
   inviteAccountant: 'write',
   removeAccountant: 'write',
+
+  // Admissions advisory
+  listAdmissionsCases: 'read',
+  getAdmissionsCase: 'read',
+  saveAdmissionsCase: 'write',
+  listAdmissionsTargets: 'read',
+  saveAdmissionsTarget: 'write',
+  deleteAdmissionsTarget: 'write',
+  listAdmissionsKeyDates: 'read',
+  saveAdmissionsKeyDate: 'write',
+  deleteAdmissionsKeyDate: 'write',
+  listAdmissionsTasks: 'read',
+  saveAdmissionsTask: 'write',
+  setAdmissionsTaskDone: 'write',
+  deleteAdmissionsTask: 'write',
+  listAdmissionsDocuments: 'read',
+  addAdmissionsDocument: 'write',
+  deleteAdmissionsDocument: 'write',
+  listAdvisoryUpdates: 'read',
+  saveAdvisoryUpdate: 'write',
+  setAdvisoryUpdateStatus: 'write',
+  deleteAdvisoryUpdate: 'write',
+  listAdmissionsEvents: 'read',
+  addAdmissionsMilestone: 'write',
+  billAdmissionsFee: 'write',
 };
 
 const refuse = async (): Promise<never> => {
