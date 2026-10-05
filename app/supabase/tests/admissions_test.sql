@@ -146,6 +146,19 @@ exception when raise_exception then
   raise notice 'ok - a key date cannot link to a lesson without the student';
 end $$;
 reset role;
+update public.lessons set subject = 'Physics' where id = 'f0000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$ begin
+  insert into public.admissions_dates (case_id, kind, title, due_on, enrolment_id, lesson_id)
+  values ((select id from ids where k = 'case'), 'test', 'Mismatched lesson', current_date,
+    '70000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001');
+  raise exception 'lesson in another subject accepted';
+exception when raise_exception then
+  if sqlerrm not like 'Please choose a lesson in the selected subject%' then raise; end if;
+  raise notice 'ok - a preparation lesson must be in the chosen subject';
+end $$;
+reset role;
+update public.lessons set subject = null where id = 'f0000000-0000-0000-0000-000000000001';
 select pg_temp.check((select string_agg(title, ' | ' order by title) from public.admissions_events
   where case_id = (select id from ids where k = 'case') and kind = 'target')
   = 'Application submitted to University of Oxford | UCL added to the shortlist | University of Oxford added to the shortlist',
@@ -223,6 +236,15 @@ select pg_temp.check((select count(*) from public.admissions_events where kind =
 set role authenticated;
 
 -- Documents ----------------------------------------------------------------------------
+-- A stand-in for Supabase Storage's objects table, so the "family lists only their own uploads" rule is exercised.
+reset role;
+create schema storage;
+create table storage.objects (bucket_id text, name text, owner_id text);
+insert into storage.objects values
+  ('admissions', 'cases/' || (select id from ids where k = 'case') || '/report.pdf', 'a0000000-0000-0000-0000-00000000000c'),
+  ('admissions', 'cases/' || (select id from ids where k = 'case') || '/ref.pdf', 'a0000000-0000-0000-0000-0000000000b2'),
+  ('admissions', 'cases/' || (select id from ids where k = 'case') || '/staff-only.pdf', 'a0000000-0000-0000-0000-0000000000b2');
+set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
 insert into ids select 'pdoc', (public.add_admissions_document((select id from ids where k = 'case'), null, 'transcript', 'Year 12 report',
   'cases/' || (select id from ids where k = 'case') || '/report.pdf', 'application/pdf', false)).id;
@@ -285,6 +307,25 @@ select pg_temp.check(public.admissions_can_read('cases/' || (select id from ids 
   and not public.admissions_can_read('cases/' || (select id from ids where k = 'case') || '/unlisted.pdf')
   and not public.admissions_can_read('cases/x/../' || (select id from ids where k = 'case') || '/report.pdf'),
   'the family opens only files listed as documents they may see');
+do $$ begin
+  perform public.add_admissions_document((select id from ids where k = 'case'), null, 'other', 'x',
+    'cases/' || (select id from ids where k = 'case') || '/ref.pdf', null, true);
+  raise exception 'confidential path re-listed';
+exception when raise_exception then
+  if sqlerrm not like 'The file could not be accepted%' then raise; end if;
+  raise notice 'ok - a parent cannot list the file of a confidential document again';
+end $$;
+do $$ begin
+  perform public.add_admissions_document((select id from ids where k = 'case'), null, 'other', 'x',
+    'cases/' || (select id from ids where k = 'case') || '/staff-only.pdf', null, true);
+  raise exception 'someone else''s upload listed';
+exception when raise_exception then
+  if sqlerrm not like 'The file could not be accepted%' then raise; end if;
+  raise notice 'ok - a parent can list only a file they uploaded themselves';
+end $$;
+select pg_temp.check(not public.admissions_can_read('cases/' || (select id from ids where k = 'case') || '/ref.pdf')
+  and not public.admissions_can_read('cases/' || (select id from ids where k = 'case') || '/staff-only.pdf')
+  and (select count(*) from public.admissions_documents) = 2, 'the confidential file stays closed to the family');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
 select pg_temp.check(public.admissions_can_read('cases/' || (select id from ids where k = 'case') || '/ref.pdf')
   and public.admissions_can_read('cases/' || (select id from ids where k = 'case') || '/unlisted.pdf')
@@ -487,6 +528,27 @@ select pg_temp.check((select reminders_sent from public.admissions_dates where i
   and (select count(*) from public.notification_outbox where subject = 'Tomorrow: Oxford interview') = 1
   and (select count(*) from public.notification_outbox where subject = 'Today: UCAT' and profile_id = 'a0000000-0000-0000-0000-00000000000c') = 1,
   'tomorrow and today reminders');
+
+-- A rescheduled date is reminded again from the next threshold.
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+update public.admissions_dates set due_on = due_on + 20 where id = '50000000-0000-0000-0000-000000000007';
+reset role;
+select pg_temp.check((select reminders_sent from public.admissions_dates where id = '50000000-0000-0000-0000-000000000007') = '{}',
+  'moving a key date clears its reminders');
+delete from public.notification_outbox;
+set role service_role;
+select pg_temp.check(public.queue_admissions_reminders((select now + interval '13 days' from clock)) = 1, 'the moved interview is reminded again');
+reset role;
+select pg_temp.check((select reminders_sent from public.admissions_dates where id = '50000000-0000-0000-0000-000000000007') = '{14}'
+  and (select count(*) from public.notification_outbox where subject = 'Interview in 14 days: Oxford interview') = 1,
+  'the 14-day reminder goes out for the new date');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+update public.admissions_dates set title = 'Oxford interview' where id = '50000000-0000-0000-0000-000000000007';
+reset role;
+select pg_temp.check((select reminders_sent from public.admissions_dates where id = '50000000-0000-0000-0000-000000000007') = '{14}',
+  'editing a key date without moving it keeps its reminders');
 
 select pg_temp.check(not exists (select 1 from public.notification_outbox where body like '%AE9903312345%' or body like '%IBAN%'),
   'bank details never appear in admissions notifications');

@@ -65,11 +65,11 @@ describe('advisoryUpdateHTML', () => {
   });
 
   it('lists upcoming key dates with the institution', () => {
-    expect(html).toContain('Upcoming key dates');
+    expect(html).toContain('Key dates at a glance');
     expect(html).toContain('16 Oct 2026');
     expect(html).toContain('Deadline: Personal statement first draft');
     expect(html).toContain('2 Nov 2026 at 10:00');
-    expect(html).toContain('Interview: Interview &lt;online&gt;');
+    expect(html).toContain('<td>Interview &lt;online&gt;</td>');
     expect(html).toContain('University College London');
   });
 

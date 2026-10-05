@@ -17,6 +17,7 @@ import {
 } from '@/domain/admissions';
 
 import { Banner, Button, Card, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '../ui';
+import { Notice } from './notice';
 import { OFFICE_ADVISER, suggestCaseTitle } from './format';
 
 const KINDS = Object.keys(CASE_KIND_LABELS) as AdmissionsCaseKind[];
@@ -56,7 +57,7 @@ export function CaseForm({
   if (existing && !canManageCase(me, existing)) {
     return (
       <Screen>
-        <Banner icon="alert">Only the adviser or the office can change this case.</Banner>
+        <Notice icon="alert">Only the adviser or the office can change this case.</Notice>
       </Screen>
     );
   }
@@ -157,7 +158,7 @@ export function CaseForm({
           </Section>
         </>
       ) : (
-        <Banner icon="sparkle">As the adviser you may update the summary and status. Please ask the office to change anything else.</Banner>
+        <Notice icon="sparkle">As the adviser you may update the summary and status. Please ask the office to change anything else.</Notice>
       )}
 
       <Section title="Status">

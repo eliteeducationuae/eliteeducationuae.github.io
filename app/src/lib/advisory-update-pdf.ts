@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 import {
   CASE_KIND_LABELS,
-  KEY_DATE_KIND_LABELS,
+  keyDateHeading,
   type AdmissionsCase,
   type AdmissionsKeyDate,
   type AdmissionsTarget,
@@ -46,7 +46,7 @@ export function advisoryUpdateHTML(
   const subtitle = [
     CASE_KIND_LABELS[caseRow.kind],
     update.period,
-    adviserName ? `Adviser: ${adviserName}` : '',
+    adviserName ? (adviserName === 'Elite Education' ? 'Led by the Elite Education office' : `Adviser: ${adviserName}`) : '',
     sent ? formatDate(sent) : '',
   ]
     .filter(Boolean)
@@ -55,11 +55,11 @@ export function advisoryUpdateHTML(
     .map((d) => {
       const target = d.targetId ? targets.find((t) => t.id === d.targetId) : undefined;
       const when = `${dateKeyLabel(d.dueOn)}${d.time ? ` at ${d.time}` : ''}`;
-      return `<tr><td>${esc(when)}</td><td>${esc(`${KEY_DATE_KIND_LABELS[d.kind]}: ${d.title}`)}</td><td>${esc(target?.institution ?? '')}</td></tr>`;
+      return `<tr><td>${esc(when)}</td><td>${esc(keyDateHeading(d))}</td><td>${esc(target?.institution ?? '')}</td></tr>`;
     })
     .join('');
   const table = rows
-    ? `<h2>Upcoming key dates</h2><table><thead><tr><th>Date</th><th>What</th><th>Institution</th></tr></thead><tbody>${rows}</tbody></table>`
+    ? `<h2>Key dates at a glance</h2><table><thead><tr><th>Date</th><th>Key date</th><th>Institution</th></tr></thead><tbody>${rows}</tbody></table>`
     : '';
   const body = `${pdfHeader({ meta: 'Admissions advisory', title: `${student.fullName} · ${update.title}`, subtitle })}
   <p class="label">${esc(caseRow.title)}</p>

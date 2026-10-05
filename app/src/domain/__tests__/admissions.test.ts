@@ -12,6 +12,7 @@ import {
   openTasks,
   overdueKeyDates,
   reminderDue,
+  remindersAfterSave,
   remindersCovered,
   targetStatusEventTitle,
   targetSummary,
@@ -20,6 +21,8 @@ import {
   TARGET_STATUS_LABELS,
   TARGET_STATUS_ORDER,
   templateAdvisoryUpdate,
+  withKeyDatesInTimeOrder,
+  keyDateHeading,
   upcomingKeyDates,
   urgencyTone,
   validateCaseInput,
@@ -94,6 +97,13 @@ describe('reminders', () => {
     expect(reminderDue(0, [3], TASK_REMINDER_DAYS)).toBe(0);
     expect(remindersCovered(2, TASK_REMINDER_DAYS)).toEqual([3]);
     expect(remindersCovered(0, TASK_REMINDER_DAYS)).toEqual([3, 0]);
+  });
+  it('starts reminders afresh when a date is moved', () => {
+    expect(remindersAfterSave([14, 7], '2026-10-12', '2026-11-02')).toEqual([]);
+    expect(reminderDue(14, remindersAfterSave([14, 7], '2026-10-12', '2026-11-02'))).toBe(14);
+    expect(remindersAfterSave([14, 7], '2026-10-12', '2026-10-12')).toEqual([14, 7]);
+    expect(remindersAfterSave([3, 0], '2026-10-12', null)).toEqual([]);
+    expect(remindersAfterSave([], undefined, null)).toEqual([]);
   });
 });
 
@@ -260,14 +270,28 @@ describe('advisory updates', () => {
   it('labels the period', () => {
     expect(advisoryPeriodLabel(NOW)).toBe('October 2026');
   });
-  it('builds a factual template from the case records only', () => {
+  it('writes the template as a formal letter built from the case records only', () => {
     const { title, body } = templateAdvisoryUpdate({
       studentName: 'Omar',
       kind: 'monthly',
-      targets: [target('t1', 'University of Oxford', 'researching'), target('t2', 'University College London', 'applying')],
-      dates: [date('d1', '2026-10-16', { title: 'Personal statement first draft' }), date('d2', '2026-10-01', { title: 'Missed' })],
+      caseKind: 'uk-university',
+      addressee: 'Mona Ahmed',
+      adviser: 'Sarah Khan',
+      targets: [
+        target('t1', 'University of Oxford', 'researching'),
+        target('t2', 'University College London', 'applying'),
+        target('t3', 'London School of Economics', 'researching'),
+        target('t4', 'University of Warwick', 'researching'),
+        target('t5', 'Imperial College London', 'offer'),
+      ],
+      dates: [
+        date('d1', '2026-10-17', { title: 'Personal statement first draft' }),
+        date('d3', '2026-10-24', { kind: 'open-day', title: 'Oxford open day', time: '10:30' }),
+        date('d2', '2026-10-01', { title: 'Missed' }),
+      ],
       tasks: [
         task('Send the latest school report', { dueOn: '2026-10-09' }),
+        task('Confirm summer school preferences'),
         task('Adviser only', { owner: 'adviser' }),
         task('Already done', { doneAt: '2026-10-01T00:00:00Z' }),
       ],
@@ -275,15 +299,37 @@ describe('advisory updates', () => {
       now: NOW,
     });
     expect(title).toBe('October 2026 advisory update');
-    expect(body).toContain('University of Oxford');
-    expect(body).toContain('University College London');
-    expect(body).toContain('Personal statement first draft');
-    expect(body).toContain('Send the latest school report');
-    expect(body).not.toContain('Adviser only');
-    expect(body).not.toContain('Already done');
-    expect(body).not.toContain('Missed');
-    expect(body).not.toMatch(/Cambridge|LSE|Warwick/);
-    expect(body.split('\n\n')).toHaveLength(4);
+    expect(body.split('\n\n')).toEqual([
+      'Dear Mona Ahmed,',
+      "We are pleased to share our advisory update on Omar's admissions for October 2026.",
+      "Omar's shortlist currently comprises five universities. We are preparing Omar's application to University College London, " +
+        'and continue to research the University of Oxford, the London School of Economics and the University of Warwick. ' +
+        'We are delighted to report that Omar has received an offer from Imperial College London.',
+      'Looking ahead, there are two key dates to note. The personal statement first draft is due on Saturday 17 October 2026. ' +
+        'The Oxford open day takes place on Saturday 24 October 2026 at 10:30 (UAE time).',
+      'In the meantime, we should be grateful if you could send the latest school report by Friday 9 October 2026 and confirm summer school preferences.',
+      'Please do not hesitate to contact us should you have any questions.',
+      'With kind regards,\nSarah Khan\nAdmissions Adviser, Elite Education',
+    ]);
+    expect(body).not.toMatch(/Adviser only|Already done|Missed|\(researching\)|Oct 2026|;/);
+  });
+  it('names a single key date in one sentence and keeps proper names capitalised', () => {
+    const { body } = templateAdvisoryUpdate({
+      studentName: 'Layla',
+      kind: 'ad-hoc',
+      caseKind: 'school-entry',
+      targets: [target('t1', 'Repton School Dubai', 'interview')],
+      dates: [date('d1', '2026-10-12', { kind: 'interview', title: 'Sixth Form panel interview', targetId: 't1', time: '10:30' })],
+      tasks: [],
+      events: [],
+      now: NOW,
+    });
+    expect(body).toContain('Dear Parents,');
+    expect(body).toContain("Layla's shortlist currently comprises one school. Layla has been invited to interview at Repton School Dubai.");
+    expect(body).toContain(
+      'Looking ahead, the Sixth Form panel interview with Repton School Dubai is scheduled for Monday 12 October 2026 at 10:30 (UAE time).',
+    );
+    expect(body).toContain('With kind regards,\nThe Admissions Team\nElite Education');
   });
   it('titles ad-hoc updates simply and copes with an empty case', () => {
     const out = templateAdvisoryUpdate({ studentName: 'Layla', kind: 'ad-hoc', targets: [], dates: [], tasks: [], events: [], now: NOW });
@@ -316,5 +362,25 @@ describe('validators', () => {
     expect(validateCaseInput({ studentId: 's1', kind: 'boarding', title: 'Boarding', status: 'active' })).toBeNull();
     expect(validateCaseInput({ studentId: '', kind: 'boarding', title: 'Boarding', status: 'active' })).toMatch(/student/);
     expect(validateCaseInput({ studentId: 's1', kind: 'boarding', title: ' ', status: 'active' })).toMatch(/title/);
+  });
+});
+
+describe('calendar lines', () => {
+  it('weaves timed key dates in among lessons and closes the day with untimed ones', () => {
+    const at = (h: number, m = 0) => new Date(2026, 9, 12, h, m).toISOString();
+    const entries = [{ start: at(9), id: 'l1' }, { start: at(17, 30), id: 'l2' }];
+    const out = withKeyDatesInTimeOrder(entries, [
+      date('untimed', '2026-10-12'),
+      date('evening', '2026-10-12', { time: '18:00' }),
+      date('interview', '2026-10-12', { time: '10:30' }),
+    ]);
+    expect(out.map((x) => (x.kind === 'entry' ? x.entry.id : x.date.id))).toEqual(['l1', 'interview', 'l2', 'evening', 'untimed']);
+  });
+  it('heads a key date without repeating its kind', () => {
+    expect(keyDateHeading({ kind: 'deadline', title: 'Common App Early Decision deadline' })).toBe('Common App Early Decision deadline');
+    expect(keyDateHeading({ kind: 'deadline', title: 'Personal statement first draft' })).toBe('Deadline: Personal statement first draft');
+    expect(keyDateHeading({ kind: 'interview', title: 'Sixth Form panel interview' })).toBe('Sixth Form panel interview');
+    expect(keyDateHeading({ kind: 'open-day', title: 'Oxford open day' })).toBe('Oxford open day');
+    expect(keyDateHeading({ kind: 'test', title: 'UCAT' })).toBe('Entrance test: UCAT');
   });
 });

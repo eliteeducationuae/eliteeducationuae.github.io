@@ -126,6 +126,17 @@ describe('admissions family actions', () => {
     expect(adm.events(db, sarah, { caseId: UCAS })[0]).toMatchObject({ title: 'Document added: Reference v2.pdf', familyVisible: false });
     expect(adm.events(db, who(db, 'u-parent'), { caseId: UCAS }).some((e) => e.title.includes('Reference v2'))).toBe(false);
   });
+
+  it('refuses a second document for a file already listed, so a confidential file stays confidential', () => {
+    const db = fresh();
+    const parent = who(db, 'u-parent');
+    const ref = adm.documents(db, who(db, 'u-tutor'), { caseId: UCAS }).find((d) => d.id === 'adc-reference')!;
+    expect(ref.familyVisible).toBe(false);
+    expect(() => adm.addDocument(db, parent, { caseId: UCAS, category: 'other', name: 'x', path: ref.path, familyVisible: true })).toThrow(
+      'could not be accepted',
+    );
+    expect(adm.documents(db, parent, { caseId: UCAS }).some((d) => d.path === ref.path)).toBe(false);
+  });
 });
 
 describe('advisory updates', () => {

@@ -36,7 +36,8 @@ import { shareAdvisoryUpdate } from '@/lib/advisory-update-pdf';
 import { confirm } from '@/lib/confirm';
 
 import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '../ui';
-import { adviserName, updateStatusTone } from './format';
+import { Notice } from './notice';
+import { adviserName, OFFICE_ADVISER, updateStatusTone } from './format';
 
 /**
  * Write, review and send an advisory update, or read one that has been sent.
@@ -83,6 +84,7 @@ function useCaseFacts(c: AdmissionsCase) {
     events: events.data ?? [],
     studentName: lookup.student(c.studentId)?.fullName ?? 'Student',
     adviser: adviserName(c, lookup),
+    addressee: lookup.family(c.familyId)?.parentName,
     businessName: settings.data?.businessName ?? 'Elite Education',
   };
 }
@@ -116,7 +118,11 @@ function Reader({ c, update, manager }: { c: AdmissionsCase; update: AdvisoryUpd
           </Txt>
           <View style={[styles.rule, { backgroundColor: theme.gold }]} />
           <Txt variant="small">
-            {[update.publishedAt ? `Sent ${formatDate(update.publishedAt)}` : '', update.authorName ?? `Your adviser, ${facts.adviser}`]
+            {[
+              update.publishedAt ? `Sent ${formatDate(update.publishedAt)}` : '',
+              // The family hears from their adviser (or the office), whoever drafted the update.
+              manager && update.authorName ? `Written by ${update.authorName}` : facts.adviser === OFFICE_ADVISER ? 'Elite Education' : `From ${facts.adviser}, your adviser`,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </Txt>
@@ -130,7 +136,7 @@ function Reader({ c, update, manager }: { c: AdmissionsCase; update: AdvisoryUpd
           Elite Education | eliteeducation.me
         </Txt>
       </Card>
-      {manager ? <Banner icon="check">This update has been sent to the family and can no longer be changed.</Banner> : null}
+      {manager ? <Notice icon="check">This update has been sent to the family and can no longer be changed.</Notice> : null}
     </Screen>
   );
 }
@@ -227,6 +233,9 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
               tasks: facts.tasks,
               events: facts.events,
               now,
+              caseKind: c.kind,
+              addressee: facts.addressee,
+              adviser: facts.adviser,
             });
       setTitle(d.title);
       setBody(d.body);
@@ -310,11 +319,11 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
       </Card>
 
       {status === 'submitted' && isAdmin ? (
-        <Banner icon="sparkle">Please read the update through. Approve it, then send it to the family when you are ready.</Banner>
+        <Notice icon="sparkle">Please read the update through. Approve it, then send it to the family when you are ready.</Notice>
       ) : status === 'submitted' ? (
-        <Banner icon="clock">Submitted for approval. The office will review it before it is sent to the family.</Banner>
+        <Notice icon="clock">Submitted for approval. The office will review it before it is sent to the family.</Notice>
       ) : status === 'approved' && !isAdmin ? (
-        <Banner icon="check">Approved by the office. It will be sent to the family shortly.</Banner>
+        <Notice icon="check">Approved by the office. It will be sent to the family shortly.</Notice>
       ) : null}
 
       {editable ? (
@@ -340,9 +349,9 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
               />
               <Button title={drafting ? 'Drafting…' : 'Draft for me'} icon="sparkle" variant="gold" loading={drafting} disabled={facts.loading} onPress={runDraft} />
               {draftSource === 'ai' ? (
-                <Banner icon="sparkle">Drafted with AI — please review before sending.</Banner>
+                <Notice icon="sparkle">Drafted with AI — please review before sending.</Notice>
               ) : draftSource === 'template' ? (
-                <Banner icon="sparkle">Drafted from a template using the case’s shortlist, key dates and tasks. Please read it through and make it your own.</Banner>
+                <Notice icon="sparkle">Drafted from a template using the case’s shortlist, key dates and tasks. Please read it through and make it your own.</Notice>
               ) : (
                 <Txt variant="muted">We will prepare a draft from the shortlist, key dates and tasks on this case, and your notes.</Txt>
               )}

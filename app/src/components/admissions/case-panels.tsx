@@ -34,7 +34,7 @@ import { InvoiceCard } from '../billing';
 import { Icon } from '../icon';
 import { Badge, Button, Card, EmptyState, ErrorNote, Field, Row, Section, Txt } from '../ui';
 import { DocumentList, DocumentUploader } from './document-list';
-import { formatDateKey, targetStatusTone, type CaseTab } from './format';
+import { formatDateKey, OFFICE_ADVISER, targetStatusTone, type CaseTab } from './format';
 import { KeyDateRow } from './key-date-row';
 import { TaskRow } from './task-row';
 import { CaseTimeline } from './timeline';
@@ -193,7 +193,7 @@ export function OverviewPanel(d: CaseData) {
 
       {latest ? (
         <Section title="Latest update">
-          <UpdateCard update={latest} highlight onRead={() => openUpdate(latest)} onDownload={() => download(latest)} />
+          <UpdateCard update={latest} author={updateAuthor(d, latest)} highlight onRead={() => openUpdate(latest)} onDownload={() => download(latest)} />
         </Section>
       ) : null}
 
@@ -448,6 +448,12 @@ export function DocumentsPanel(d: CaseData) {
 // Updates
 // ---------------------------------------------------------------------------------------------
 
+/** Staff see who wrote an update; the family hears from their adviser, or from the office. */
+function updateAuthor(d: CaseData, u: AdvisoryUpdate): string | undefined {
+  if (d.manager) return u.authorName;
+  return d.adviser === OFFICE_ADVISER ? 'Elite Education' : d.adviser;
+}
+
 export function UpdatesPanel(d: CaseData) {
   const { c, updates, manager } = d;
   const download = useDownload(d);
@@ -470,6 +476,7 @@ export function UpdatesPanel(d: CaseData) {
           <UpdateCard
             key={u.id}
             update={u}
+            author={updateAuthor(d, u)}
             showStatus={manager}
             onRead={() => openUpdate(u)}
             onDownload={u.status === 'published' || manager ? () => download(u) : undefined}

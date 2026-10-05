@@ -276,6 +276,11 @@ export const adm = {
     if (input.lessonId && !db.lessons.some((l) => l.id === input.lessonId && l.studentIds.includes(c.studentId))) {
       throw new Error('That lesson is not one of this student’s lessons.');
     }
+    const lesson = input.lessonId ? db.lessons.find((l) => l.id === input.lessonId) : undefined;
+    const course = input.enrolmentId ? db.enrolments.find((e) => e.id === input.enrolmentId) : undefined;
+    if (lesson?.subject && course && lesson.subject.trim().toLowerCase() !== course.subject.trim().toLowerCase()) {
+      throw new Error('Please choose a lesson in the selected subject.');
+    }
     const next: AdmissionsKeyDate = {
       id: existing?.id ?? newId('adt'),
       caseId: c.id,
@@ -403,6 +408,10 @@ export const adm = {
     if (!(input.category in DOC_CATEGORY_LABELS)) throw new Error('Please choose a category.');
     const folder = `cases/${c.id}/`;
     if (!input.path || !input.path.startsWith(folder) || input.path.length <= folder.length || input.path.includes('..') || input.path.length > 500) {
+      throw new Error('The file could not be accepted. Please try uploading it again.');
+    }
+    // One document per stored file, so a document's visibility can never be widened by listing its file again.
+    if (store(db).documents.some((x) => x.path === input.path)) {
       throw new Error('The file could not be accepted. Please try uploading it again.');
     }
     const doc: AdmissionsDocument = {

@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
+import type { ReactNode } from 'react';
 import { Pressable } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { useAdmissionsCases, useAdmissionsKeyDates, useLookup } from '@/data/hooks';
-import { KEY_DATE_KIND_LABELS, type AdmissionsKeyDate } from '@/domain/admissions';
+import { keyDateHeading, withKeyDatesInTimeOrder, type AdmissionsKeyDate } from '@/domain/admissions';
 import { addDays, toDateKey } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -23,37 +24,50 @@ export function hasKeyDatesOn(dates: AdmissionsKeyDate[], day: Date): boolean {
 }
 
 /**
- * Quiet lines for the admissions key dates on one day, beneath the lessons:
- * "<Kind>: <title> · <student>". Tapping one opens the case's key dates.
+ * One day's calendar entries with its admissions key dates woven in: a timed key date sits where it falls among the
+ * lessons, untimed ones close the day. Each key date is a quiet line, "<time> · <Kind>: <title> · <student>";
+ * tapping one opens the case's key dates.
  */
-export function AdmissionsDayLines({ day, dates }: { day: Date; dates: AdmissionsKeyDate[] }) {
+export function DayWithKeyDates<E extends { start: string }>({
+  day,
+  dates,
+  entries,
+  renderEntry,
+}: {
+  day: Date;
+  dates: AdmissionsKeyDate[];
+  entries: E[];
+  renderEntry: (e: E) => ReactNode;
+}) {
+  const key = toDateKey(day);
+  const today = dates.filter((d) => d.dueOn === key);
+  return (
+    <>
+      {withKeyDatesInTimeOrder(entries, today).map((x) =>
+        x.kind === 'entry' ? renderEntry(x.entry) : <KeyDateLine key={`adm-${x.date.id}`} d={x.date} />,
+      )}
+    </>
+  );
+}
+
+function KeyDateLine({ d }: { d: AdmissionsKeyDate }) {
   const theme = useTheme();
   const lookup = useLookup();
   const cases = useAdmissionsCases();
-  const key = toDateKey(day);
-  const today = dates.filter((d) => d.dueOn === key);
-  if (!today.length) return null;
+  const c = cases.data?.find((x) => x.id === d.caseId);
+  const who = c ? firstName(lookup.student(c.studentId)?.fullName) : '';
+  const label = `${keyDateHeading(d)}${who ? ` · ${who}` : ''}`;
   return (
-    <>
-      {today.map((d) => {
-        const c = cases.data?.find((x) => x.id === d.caseId);
-        const who = c ? firstName(lookup.student(c.studentId)?.fullName) : '';
-        const label = `${KEY_DATE_KIND_LABELS[d.kind]}: ${d.title}${who ? ` · ${who}` : ''}`;
-        return (
-          <Pressable
-            key={d.id}
-            onPress={() => router.push({ pathname: '/admissions/[id]', params: { id: d.caseId, tab: 'dates' } })}
-            accessibilityRole="link"
-            accessibilityLabel={`Admissions: ${label}`}
-            style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: Spacing.one }, pressed && { opacity: 0.7 }]}>
-            <Icon name="school" size={14} color={theme.accent} />
-            <Txt variant="small" style={[{ flex: 1 }, d.done && { textDecorationLine: 'line-through' }]} numberOfLines={2}>
-              {d.time ? `${d.time} · ` : ''}
-              {label}
-            </Txt>
-          </Pressable>
-        );
-      })}
-    </>
+    <Pressable
+      onPress={() => router.push({ pathname: '/admissions/[id]', params: { id: d.caseId, tab: 'dates' } })}
+      accessibilityRole="link"
+      accessibilityLabel={`Admissions: ${d.time ? `${d.time}, ` : ''}${label}`}
+      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: Spacing.one }, pressed && { opacity: 0.7 }]}>
+      <Icon name="school" size={14} color={theme.accent} />
+      <Txt variant="small" style={[{ flex: 1 }, d.done && { textDecorationLine: 'line-through' }]} numberOfLines={2}>
+        {d.time ? `${d.time} · ` : ''}
+        {label}
+      </Txt>
+    </Pressable>
   );
 }

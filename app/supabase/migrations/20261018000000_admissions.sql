@@ -257,6 +257,12 @@ begin
        and not exists (select 1 from public.lessons where id = new.lesson_id and student = any (student_ids)) then
       raise exception 'Please choose a lesson that includes this student.';
     end if;
+    if new.lesson_id is not null and new.enrolment_id is not null and exists (
+         select 1 from public.lessons l, public.enrolments e
+         where l.id = new.lesson_id and e.id = new.enrolment_id and l.subject is not null
+           and lower(trim(l.subject)) <> lower(trim(e.subject))) then
+      raise exception 'Please choose a lesson in the selected subject.';
+    end if;
   end if;
   return new;
 end $$;
@@ -269,13 +275,17 @@ create trigger admissions_documents_check_links before insert or update on publi
 
 /**
  * Reminder bookkeeping belongs to queue_admissions_reminders. Deliberately not security definer, so current_user is
- * the caller: rows written straight from the app (role authenticated) keep their reminders_sent.
+ * the caller: rows written straight from the app (role authenticated) keep their reminders_sent. A date that moves
+ * starts afresh, so a rescheduled interview or deadline is reminded again from the next threshold.
  */
 create function public.admissions_keep_reminders() returns trigger
 language plpgsql set search_path = public as $$
 begin
   if current_user = 'authenticated' then
     new.reminders_sent := case when tg_op = 'UPDATE' then old.reminders_sent else '{}' end;
+  end if;
+  if tg_op = 'UPDATE' and new.due_on is distinct from old.due_on and new.reminders_sent = old.reminders_sent then
+    new.reminders_sent := '{}';
   end if;
   return new;
 end $$;
@@ -515,6 +525,18 @@ begin
   end if;
 end $$;
 
+/** True when the caller uploaded the stored file p_name to the admissions bucket (dynamic SQL: storage may be absent). */
+create function public.admissions_owns_object(p_name text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare found boolean;
+begin
+  if to_regclass('storage.objects') is null then return false; end if;
+  execute 'select exists (select 1 from storage.objects where bucket_id = ''admissions'' and name = $1 and owner_id = $2)'
+    into found using p_name, auth.uid()::text;
+  return coalesce(found, false);
+end $$;
+revoke all on function public.admissions_owns_object(text) from public, anon, authenticated;
+
 /**
  * Record a file already uploaded to the admissions bucket at cases/<case id>/…. Anyone with access to the case may add
  * one; files the family adds are always visible to the family. Nobody is sent the file itself.
@@ -538,6 +560,16 @@ begin
     raise exception 'The file could not be accepted. Please try uploading it again.';
   end if;
   if length(coalesce(p_mime_type, '')) > 200 then raise exception 'The file type could not be recognised.'; end if;
+  -- One document per stored file, so a document's visibility can never be widened by listing its file again.
+  if exists (select 1 from public.admissions_documents where path = p_path) then
+    raise exception 'The file could not be accepted. Please try uploading it again.';
+  end if;
+  -- The family may only list a file they uploaded themselves.
+  if access = 'family' and to_regclass('storage.objects') is not null then
+    if not public.admissions_owns_object(p_path) then
+      raise exception 'The file could not be accepted. Please try uploading it again.';
+    end if;
+  end if;
 
   visible := case when access = 'family' then true else coalesce(p_family_visible, true) end;
   select * into me from public.profiles where id = auth.uid();

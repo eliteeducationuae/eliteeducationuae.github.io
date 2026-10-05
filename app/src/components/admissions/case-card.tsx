@@ -21,7 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { Icon } from '../icon';
 import { Badge, Card, Row, Txt } from '../ui';
-import { caseStatusTone } from './format';
+import { adviserLine, caseStatusTone } from './format';
 
 /** One admissions case in a list: who, what, how far along, and what comes next. */
 export function CaseCard({
@@ -64,7 +64,7 @@ export function CaseCard({
       <Row gap={Spacing.two}>
         <Icon name="person" size={15} color={theme.textMuted} />
         <Txt variant="muted" style={{ flex: 1 }}>
-          Adviser: {adviser}
+          {adviserLine(adviser)}
         </Txt>
       </Row>
       <Row gap={Spacing.two}>

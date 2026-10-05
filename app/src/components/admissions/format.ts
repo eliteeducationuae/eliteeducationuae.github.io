@@ -52,6 +52,11 @@ export function adviserName(c: Pick<AdmissionsCase, 'adviserTutorId'>, lookup: P
   return (c.adviserTutorId && lookup.tutor(c.adviserTutorId)?.fullName) || OFFICE_ADVISER;
 }
 
+/** 'Adviser: Sarah Khan', or 'Led by the Elite Education office' when no tutor is assigned. */
+export function adviserLine(name: string): string {
+  return name === OFFICE_ADVISER ? 'Led by the Elite Education office' : `Adviser: ${name}`;
+}
+
 /** Muted badge tones, in keeping with the brand: never bright, never saturated. */
 export function caseStatusTone(status: AdmissionsCaseStatus): Tone {
   switch (status) {

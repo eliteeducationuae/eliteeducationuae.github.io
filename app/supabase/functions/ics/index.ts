@@ -3,6 +3,7 @@
 // Deploy with --no-verify-jwt. Each event is titled with the lesson's subject (lessons.subject), e.g. 'Chemistry: Zara'.
 // Open admissions key dates appear too, as all-day events (or 30-minute events when a UAE time is set):
 // parents see their children's cases, students their own, tutors the cases they advise and admins every case.
+// Each is titled with the student's first name, e.g. 'Admissions · Omar: Oxford interview (University of Oxford)'.
 import { adminClient } from '../_shared/supabase.ts';
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -62,12 +63,25 @@ Deno.serve(async (req) => {
   }
 
   // Admissions key dates (not done) on active or paused cases, in the same window.
-  const { data: keyDates } = await db
+  // Filtered to the viewer's cases in the query itself, so only their own key dates are ever loaded.
+  let dateQuery = db
     .from('admissions_dates')
-    .select('id, title, due_on, time_of_day, admissions_targets(institution), admissions_cases(student_id, family_id, adviser_tutor_id, status)')
+    .select('id, title, due_on, time_of_day, admissions_targets(institution), admissions_cases!inner(student_id, family_id, adviser_tutor_id, status)')
     .eq('done', false)
+    .in('admissions_cases.status', ['active', 'on-hold'])
     .gte('due_on', from.slice(0, 10))
     .lte('due_on', to.slice(0, 10));
+  const scope: Record<string, [string, unknown]> = {
+    tutor: ['admissions_cases.adviser_tutor_id', me.tutor_id],
+    parent: ['admissions_cases.family_id', me.family_id],
+    student: ['admissions_cases.student_id', me.student_id],
+  };
+  if (me.role !== 'admin') {
+    const [column, value] = scope[me.role] ?? ['admissions_cases.family_id', null];
+    // A profile without a link sees no key dates: match an id that cannot exist.
+    dateQuery = dateQuery.eq(column, value ?? '00000000-0000-0000-0000-000000000000');
+  }
+  const { data: keyDates } = await dateQuery;
   for (const d of (keyDates ?? []) as unknown as AdmissionsDate[]) {
     const c = d.admissions_cases;
     if (!c || (c.status !== 'active' && c.status !== 'on-hold')) continue;
@@ -86,7 +100,11 @@ Deno.serve(async (req) => {
     } else {
       lines.push(`DTSTART;VALUE=DATE:${day(d.due_on)}`, `DTEND;VALUE=DATE:${nextDay(d.due_on)}`);
     }
-    lines.push(`SUMMARY:${esc(`Admissions: ${d.title}${institution ? ` (${institution})` : ''}`)}`, 'END:VEVENT');
+    const student = name(students, c.student_id).split(' ')[0];
+    lines.push(
+      `SUMMARY:${esc(`Admissions${student ? ` · ${student}` : ''}: ${d.title}${institution ? ` (${institution})` : ''}`)}`,
+      'END:VEVENT',
+    );
   }
   lines.push('END:VCALENDAR');
   return new Response(lines.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8' } });

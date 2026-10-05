@@ -116,7 +116,7 @@ export function DocumentUploader({ caseId, isManager }: { caseId: string; isMana
 
   function choose(c: AdmissionsDocCategory) {
     setCategory(c);
-    // References are usually confidential: suggest keeping them from the family.
+    // References are confidential by default: they are shared with the family only when the adviser chooses to.
     if (isManager) setFamilyVisible(c !== 'reference');
   }
 
@@ -161,9 +161,13 @@ export function DocumentUploader({ caseId, isManager }: { caseId: string; isMana
           <View style={{ flex: 1, gap: 2 }}>
             <Txt style={font('sans', 'bold')}>Visible to the family</Txt>
             <Txt variant="small">
-              {familyVisible
-                ? 'The family will be able to open this document.'
-                : 'Kept between the adviser and the office, for example a confidential reference.'}
+              {category === 'reference'
+                ? familyVisible
+                  ? 'The family will be able to open this reference.'
+                  : 'References are kept from the family unless you choose to share them.'
+                : familyVisible
+                  ? 'The family will be able to open this document.'
+                  : 'Kept between the adviser and the office.'}
             </Txt>
           </View>
           <Switch

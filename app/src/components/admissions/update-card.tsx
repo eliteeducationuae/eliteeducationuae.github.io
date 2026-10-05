@@ -13,6 +13,13 @@ export function updateDate(u: AdvisoryUpdate): string {
   return u.publishedAt ?? u.approvedAt ?? u.submittedAt ?? u.createdAt;
 }
 
+/** The opening lines of an update, without the salutation ('Dear …,'). */
+export function previewText(body: string): string {
+  const paragraphs = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length > 1 && /^Dear\b.*,$/.test(paragraphs[0])) paragraphs.shift();
+  return paragraphs.join('\n\n');
+}
+
 /**
  * An advisory update as a letter-like card: kind and period in capitals, the title in Georgia,
  * the opening lines, and Read / Download PDF actions.
@@ -23,8 +30,11 @@ export function UpdateCard({
   onDownload,
   showStatus,
   highlight,
+  author,
 }: {
   update: AdvisoryUpdate;
+  /** Who the update is from, as shown to this reader. */
+  author?: string;
   onRead: () => void;
   onDownload?: () => void;
   showStatus?: boolean;
@@ -46,11 +56,11 @@ export function UpdateCard({
       </Row>
       <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
       <Txt variant="muted" numberOfLines={3}>
-        {update.body}
+        {previewText(update.body)}
       </Txt>
       <Txt variant="small">
         {update.status === 'published' ? `Sent ${formatDate(updateDate(update))}` : `Last changed ${formatDate(updateDate(update))}`}
-        {update.authorName ? ` · ${update.authorName}` : ''}
+        {author ? ` · ${author}` : ''}
       </Txt>
       <Row gap={Spacing.two} wrap>
         <Button title="Read" size="sm" variant="secondary" icon="doc" onPress={onRead} />

@@ -30,11 +30,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 
 import { Banner, Button, Card, Chip, ErrorNote, Field, Row, Screen, Section, Segmented, Txt } from '../ui';
+import { Notice } from './notice';
 
 const KEY_DATE_KINDS = Object.keys(KEY_DATE_KIND_LABELS) as KeyDateKind[];
 // Lessons that can be linked as preparation: from today to six months ahead.
-const LESSONS_FROM = startOfDay(new Date());
-const LESSONS_TO = addDays(LESSONS_FROM, 183);
 
 /** The shared shell: refuses politely when the viewer cannot manage the case, and pins Save at the bottom. */
 function FormShell({
@@ -60,7 +59,7 @@ function FormShell({
   if (!canManageCase(me, c)) {
     return (
       <Screen>
-        <Banner icon="alert">Only the adviser or the office can change this case.</Banner>
+        <Notice icon="alert">Only the adviser or the office can change this case.</Notice>
       </Screen>
     );
   }
@@ -197,7 +196,11 @@ export function KeyDateForm({
   const save = useAction(source.saveAdmissionsKeyDate);
   const remove = useAction(source.deleteAdmissionsKeyDate);
   const enrolments = useEnrolments(c.studentId);
-  const lessons = useLessons(LESSONS_FROM, LESSONS_TO);
+  const [lessonWindow] = useState(() => {
+    const from = startOfDay(new Date());
+    return { from, to: addDays(from, 183) };
+  });
+  const lessons = useLessons(lessonWindow.from, lessonWindow.to);
   const [kind, setKind] = useState<KeyDateKind>(existing?.kind ?? 'deadline');
   const [title, setTitle] = useState(existing?.title ?? '');
   const [dueOn, setDueOn] = useState(existing?.dueOn ?? '');
@@ -210,11 +213,26 @@ export function KeyDateForm({
   const [validation, setValidation] = useState<string | null>(null);
   const [openedAt] = useState(() => new Date().toISOString());
   const prep = kind === 'test' || kind === 'interview';
-  // Upcoming lessons only: a lesson that has already started cannot be set aside for preparation.
+  const course = (enrolments.data ?? []).find((e) => e.id === enrolmentId);
+  const sameSubject = (subject?: string) => !course || !subject || subject.trim().toLowerCase() === course.subject.trim().toLowerCase();
+  // Upcoming lessons before the key date, in the chosen subject: a lesson that has already started cannot be set aside.
   const studentLessons = (lessons.data ?? [])
-    .filter((l) => l.status === 'scheduled' && l.studentIds.includes(c.studentId) && (l.start >= openedAt || l.id === lessonId))
+    .filter(
+      (l) =>
+        l.id === lessonId ||
+        (l.status === 'scheduled' &&
+          l.studentIds.includes(c.studentId) &&
+          l.start >= openedAt &&
+          (!/^\d{4}-\d{2}-\d{2}$/.test(dueOn.trim()) || l.start.slice(0, 10) <= dueOn.trim()) &&
+          sameSubject(l.subject)),
+    )
     .sort((a, b) => (a.start < b.start ? -1 : 1))
     .slice(0, 12);
+
+  function chooseCourse(id: string | null) {
+    if (id !== enrolmentId) setLessonId(null);
+    setEnrolmentId(id);
+  }
 
   async function submit() {
     const input: AdmissionsKeyDateInput = {
@@ -279,9 +297,9 @@ export function KeyDateForm({
           <Txt variant="muted">Link the subject and lesson in which the student will prepare. Both are optional.</Txt>
           {(enrolments.data ?? []).length ? (
             <Row gap={Spacing.one} wrap>
-              <Chip label="No subject" selected={!enrolmentId} onPress={() => setEnrolmentId(null)} />
+              <Chip label="No subject" selected={!enrolmentId} onPress={() => chooseCourse(null)} />
               {(enrolments.data ?? []).filter((e) => e.active).map((e) => (
-                <Chip key={e.id} label={enrolmentTitle(e)} selected={enrolmentId === e.id} onPress={() => setEnrolmentId(e.id)} />
+                <Chip key={e.id} label={enrolmentTitle(e)} selected={enrolmentId === e.id} onPress={() => chooseCourse(e.id)} />
               ))}
             </Row>
           ) : null}

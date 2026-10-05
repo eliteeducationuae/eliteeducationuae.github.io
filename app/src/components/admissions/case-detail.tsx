@@ -35,7 +35,7 @@ import {
   type CaseData,
 } from './case-panels';
 import { CaseTabs } from './case-tabs';
-import { adviserName, caseStatusTone, firstName, type CaseTab } from './format';
+import { adviserLine, adviserName, caseStatusTone, firstName, type CaseTab } from './format';
 
 /** The whole case page: a noir header, then seven tabs. `initialTab` comes from `?tab=` in deep links. */
 export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab }) {
@@ -124,7 +124,7 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
         </Txt>
         <View style={[styles.rule, { backgroundColor: theme.gold }]} />
         <Txt variant="muted">
-          {[c.entryYear ? `Entry ${c.entryYear}` : '', `Adviser: ${data.adviser}`].filter(Boolean).join(' · ')}
+          {[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}
         </Txt>
         {c.summary ? <Txt>{c.summary}</Txt> : null}
         {manager ? (

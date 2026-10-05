@@ -3,7 +3,7 @@
  * Pure helpers shared by the demo data source, the UI and (in spirit) the SQL rules in
  * supabase/migrations/20261018000000_admissions.sql.
  */
-import { daysUntil, formatDate, toDateKey } from './dates';
+import { daysUntil, toDateKey } from './dates';
 import type { Invoice, Profile } from './types';
 
 export type AdmissionsCaseKind = 'school-entry' | 'boarding' | 'uk-university' | 'us-university' | 'other';
@@ -307,6 +307,56 @@ export function remindersCovered(daysLeft: number, thresholds: readonly number[]
   return thresholds.filter((t) => t >= daysLeft);
 }
 
+/**
+ * A day's calendar entries (lessons, busy times: anything with an ISO `start`) and its key dates as one list.
+ * Timed key dates sit where they fall in the day (UAE time, read as the device's local time); untimed ones close the day.
+ */
+export function withKeyDatesInTimeOrder<E extends { start: string }>(
+  entries: E[],
+  dates: AdmissionsKeyDate[],
+): ({ kind: 'entry'; entry: E } | { kind: 'date'; date: AdmissionsKeyDate })[] {
+  const minutes = (iso: string) => {
+    const d = new Date(iso);
+    return d.getHours() * 60 + d.getMinutes();
+  };
+  const timed = dates.filter((d) => d.time).sort((a, b) => a.time!.localeCompare(b.time!));
+  const out: ({ kind: 'entry'; entry: E } | { kind: 'date'; date: AdmissionsKeyDate })[] = [];
+  let i = 0;
+  for (const entry of entries) {
+    while (i < timed.length && timeMinutes(timed[i].time!) <= minutes(entry.start)) out.push({ kind: 'date', date: timed[i++] });
+    out.push({ kind: 'entry', entry });
+  }
+  while (i < timed.length) out.push({ kind: 'date', date: timed[i++] });
+  for (const date of dates.filter((d) => !d.time)) out.push({ kind: 'date', date });
+  return out;
+}
+
+function timeMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** A key date's heading: '<Kind>: <title>', unless the title already says what it is ('Common App deadline'). */
+export function keyDateHeading(d: Pick<AdmissionsKeyDate, 'kind' | 'title'>): string {
+  const words: Record<KeyDateKind, RegExp | null> = {
+    deadline: /\bdeadline\b/i,
+    test: /\b(test|exam|examination|assessment)\b/i,
+    interview: /\binterview\b/i,
+    'open-day': /\bopen (day|morning|evening)\b/i,
+    decision: /\bdecisions?\b/i,
+    other: null,
+  };
+  return words[d.kind]?.test(d.title) ? d.title : `${KEY_DATE_KIND_LABELS[d.kind]}: ${d.title}`;
+}
+
+/**
+ * Reminders already sent once a key date or task is saved (mirrors admissions_keep_reminders): a date that moves
+ * starts afresh, so a rescheduled interview or deadline is reminded again from the next threshold.
+ */
+export function remindersAfterSave(sent: readonly number[], previousDueOn: string | null | undefined, dueOn: string | null | undefined): number[] {
+  return (previousDueOn ?? null) === (dueOn ?? null) ? [...sent] : [];
+}
+
 // ---------------------------------------------------------------------------------------------
 // Key dates and tasks
 // ---------------------------------------------------------------------------------------------
@@ -520,15 +570,46 @@ export function advisoryPeriodLabel(now: Date): string {
   return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
 }
 
-function dateKeyLabel(key: string): string {
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** A `YYYY-MM-DD` key written out in full, e.g. 'Saturday 17 October 2026'. */
+export function longDateLabel(key: string): string {
   const [y, m, d] = key.split('-').map(Number);
-  return formatDate(new Date(y, m - 1, d));
+  const date = new Date(y, m - 1, d);
+  return `${WEEKDAY_NAMES[date.getDay()]} ${d} ${MONTH_NAMES[m - 1]} ${y}`;
+}
+
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
+/** Small numbers in words, as in formal correspondence ('five'); larger ones as numerals. */
+export function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
 }
 
 function listJoin(items: string[]): string {
   if (items.length <= 1) return items.join('');
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
+
+/** 'University of Oxford' reads as 'the University of Oxford' mid-sentence. */
+function institutionName(name: string): string {
+  const n = name.trim();
+  return /^(university|institute|london school|royal college|college|school) of /i.test(n) ? `the ${n}` : n;
+}
+
+/** A title placed mid-sentence: 'Send the latest school report' becomes 'send the latest school report'. */
+function midSentence(title: string, keep: readonly string[] = []): string {
+  const t = title.trim().replace(/[.;:]+$/, '');
+  const [first = '', second = ''] = t.split(/\s+/);
+  // Proper names stay as written: the student, institutions and capitalised phrases such as 'Sixth Form'.
+  if (!/^[A-Z][a-z]+$/.test(first) || keep.includes(first) || /^[A-Z]/.test(second)) return t;
+  return first.toLowerCase() + t.slice(first.length);
+}
+
+function stripStop(text: string): string {
+  return text.trim().replace(/[.;:]+$/, '');
+}
+
 
 export interface AdvisoryTemplateInput {
   studentName: string;
@@ -539,56 +620,125 @@ export interface AdvisoryTemplateInput {
   tasks: AdmissionsTask[];
   events: AdmissionsEvent[];
   now: Date;
+  /** The kind of case, so the shortlist reads as 'universities' or 'schools'. */
+  caseKind?: AdmissionsCaseKind;
+  /** Who the letter is addressed to, e.g. the parent's name. */
+  addressee?: string;
+  /** The adviser who signs the update; the office signs when there is none. */
+  adviser?: string;
+}
+
+/** One sentence per stage of the shortlist, in the order an application progresses. */
+function shortlistSentences(student: string, targets: AdmissionsTarget[]): string[] {
+  const names = (status: TargetStatus) => targets.filter((t) => t.status === status).map((t) => institutionName(t.institution));
+  const count = (status: TargetStatus) => targets.filter((t) => t.status === status).length;
+  const out: string[] = [];
+  const researching = names('researching');
+  const applying = names('applying');
+  if (applying.length) {
+    const apps = count('applying') === 1 ? 'application' : 'applications';
+    out.push(
+      `We are preparing ${student}'s ${apps} to ${listJoin(applying)}` +
+        (researching.length ? `, and continue to research ${listJoin(researching)}.` : '.'),
+    );
+  } else if (researching.length) {
+    out.push(`We continue to research ${listJoin(researching)} on ${student}'s behalf.`);
+  }
+  if (names('submitted').length) {
+    const apps = count('submitted') === 1 ? 'application' : 'applications';
+    out.push(`${student}'s ${apps} to ${listJoin(names('submitted'))} ${count('submitted') === 1 ? 'has' : 'have'} been submitted.`);
+  }
+  if (names('interview').length) out.push(`${student} has been invited to interview at ${listJoin(names('interview'))}.`);
+  if (names('offer').length) {
+    out.push(`We are delighted to report that ${student} has received ${count('offer') === 1 ? 'an offer' : 'offers'} from ${listJoin(names('offer'))}.`);
+  }
+  if (names('accepted').length) out.push(`${student} has accepted a place at ${listJoin(names('accepted'))}.`);
+  if (names('declined').length) out.push(`${student} has declined the offer from ${listJoin(names('declined'))}.`);
+  if (names('rejected').length) {
+    out.push(`We were sorry to learn that ${listJoin(names('rejected'))} did not offer ${student} a place.`);
+  }
+  return out;
+}
+
+/** A key date as a sentence, e.g. 'The Oxford open day takes place on Saturday 17 October 2026.' */
+function keyDateSentence(d: AdmissionsKeyDate, target: AdmissionsTarget | undefined, keep: readonly string[]): string {
+  const raw = stripStop(d.title);
+  const title = /^(the|a|an|your|our)\s/i.test(raw) ? raw : `the ${midSentence(raw, keep)}`;
+  const subject = title.charAt(0).toUpperCase() + title.slice(1);
+  const when = `${longDateLabel(d.dueOn)}${d.time ? ` at ${d.time} (UAE time)` : ''}`;
+  const last = target?.institution.trim().split(/\s+/).pop()?.toLowerCase() ?? '';
+  const at = target && !raw.toLowerCase().includes(last) ? ` with ${institutionName(target.institution)}` : '';
+  switch (d.kind) {
+    case 'deadline':
+      return /deadline/i.test(raw) ? `${subject}${at} falls on ${when}.` : `${subject}${at} is due on ${when}.`;
+    case 'interview':
+      return `${subject}${at} is scheduled for ${when}.`;
+    case 'decision':
+      return `${subject}${at} is expected on ${when}.`;
+    default:
+      return `${subject}${at} takes place on ${when}.`;
+  }
 }
 
 /**
- * A formal, factual update built only from the case's own records. Used when AI drafting is unavailable.
+ * A formal letter to the family, built only from the case's own records. Used when AI drafting is unavailable.
+ * Written as prose: a salutation, the shortlist, the dates ahead, what the family might attend to, and a sign-off.
  */
 export function templateAdvisoryUpdate(input: AdvisoryTemplateInput): { title: string; body: string } {
-  const { studentName, kind, targets, dates, tasks, now } = input;
+  const { studentName: student, kind, targets, dates, tasks, now } = input;
   const period = input.period?.trim() || advisoryPeriodLabel(now);
   const title = kind === 'monthly' ? `${period} advisory update` : 'Advisory update';
   const paragraphs: string[] = [];
 
+  paragraphs.push(`Dear ${input.addressee?.trim() || 'Parents'},`);
+  paragraphs.push(
+    kind === 'monthly'
+      ? `We are pleased to share our advisory update on ${student}'s admissions for ${period}.`
+      : `We are writing with an update on ${student}'s admissions plan.`,
+  );
+
   // Shortlist and status.
   if (targets.length === 0) {
-    paragraphs.push(
-      `We are continuing to refine ${studentName}'s shortlist and will share our recommendations as soon as it is settled.`,
-    );
+    paragraphs.push(`We are continuing to refine ${student}'s shortlist and will share our recommendations as soon as it is settled.`);
   } else {
-    const groups = TARGET_STATUS_ORDER.map((status) => {
-      const names = targets.filter((t) => t.status === status).map((t) => t.institution);
-      return names.length ? `${listJoin(names)} (${TARGET_STATUS_LABELS[status].toLowerCase()})` : null;
-    }).filter((g): g is string => !!g);
+    const n = targets.length;
     paragraphs.push(
-      `${studentName}'s shortlist currently includes ${plural(targets.length, 'institution', 'institutions')}: ${groups.join('; ')}.`,
+      [`${student}'s shortlist currently comprises ${numberWord(n)} ${institutionNoun(input.caseKind ?? 'other')[n === 1 ? 0 : 1]}.`, ...shortlistSentences(student, targets)].join(' '),
     );
   }
 
-  // Upcoming deadlines (next three).
+  // Words that stay capitalised mid-sentence: the student and the institutions.
+  const keep = [student, ...targets.flatMap((t) => t.institution.trim().split(/\s+/))];
+
+  // The dates ahead (next three).
   const upcoming = upcomingKeyDates(dates, now, 90).slice(0, 3);
   if (upcoming.length === 0) {
     paragraphs.push('There are no key dates in the coming weeks.');
   } else {
-    const lines = upcoming.map((d) => {
-      const target = d.targetId ? targets.find((t) => t.id === d.targetId) : undefined;
-      const where = target ? ` (${target.institution})` : '';
-      const time = d.time ? ` at ${d.time}` : '';
-      return `${KEY_DATE_KIND_LABELS[d.kind]}: ${d.title}${where} on ${dateKeyLabel(d.dueOn)}${time}`;
-    });
-    paragraphs.push(`The next key dates are as follows. ${lines.join('. ')}.`);
+    const lines = upcoming.map((d) => keyDateSentence(d, d.targetId ? targets.find((t) => t.id === d.targetId) : undefined, keep));
+    paragraphs.push(
+      lines.length === 1
+        ? `Looking ahead, ${lines[0].charAt(0).toLowerCase()}${lines[0].slice(1)}`
+        : `Looking ahead, there are ${numberWord(lines.length)} key dates to note. ${lines.join(' ')}`,
+    );
   }
 
-  // What the family should do.
+  // What the family might attend to.
   const familyTasks = openTasks(tasks, 'family');
   if (familyTasks.length === 0) {
     paragraphs.push('There is nothing outstanding for the family at present.');
   } else {
-    const lines = familyTasks.map((t) => (t.dueOn ? `${t.title} (by ${dateKeyLabel(t.dueOn)})` : t.title));
-    paragraphs.push(`We would be grateful if you could attend to the following: ${lines.join('; ')}.`);
+    const items = familyTasks.map((t) => `${midSentence(t.title, keep)}${t.dueOn ? ` by ${longDateLabel(t.dueOn)}` : ''}`);
+    paragraphs.push(`In the meantime, we should be grateful if you could ${listJoin(items)}.`);
   }
 
   paragraphs.push('Please do not hesitate to contact us should you have any questions.');
+  const adviser = input.adviser?.trim();
+  paragraphs.push(
+    adviser && adviser !== 'Elite Education'
+      ? `With kind regards,\n${adviser}\nAdmissions Adviser, Elite Education`
+      : 'With kind regards,\nThe Admissions Team\nElite Education',
+  );
   return { title, body: paragraphs.join('\n\n') };
 }
 

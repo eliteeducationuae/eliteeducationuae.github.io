@@ -49,9 +49,14 @@ export function TaskRow({
           ]}>
           {done ? <Icon name="check" size={16} color={theme.success} /> : null}
         </Pressable>
+      ) : done ? (
+        <View style={[styles.tick, { borderColor: theme.success }]}>
+          <Icon name="check" size={16} color={theme.success} />
+        </View>
       ) : (
-        <View style={[styles.tick, { borderColor: done ? theme.success : theme.border }]}>
-          {done ? <Icon name="check" size={16} color={theme.success} /> : null}
+        // Not the viewer's to tick: a quiet marker rather than an empty checkbox.
+        <View style={[styles.tick, { borderColor: 'transparent' }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <View style={[styles.dot, { backgroundColor: theme.textMuted }]} />
         </View>
       )}
       <Pressable
@@ -104,4 +109,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 1,
   },
+  dot: { width: 6, height: 6, borderRadius: 3 },
 });
