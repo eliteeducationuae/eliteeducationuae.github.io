@@ -273,7 +273,7 @@ Complete these once, in this order. The function names come from the round 4 pla
 
 ## Per-student rates
 
-Tutor pay and family prices may be the same for every student or set individually. Run `supabase/migrations/20261014000000_rates.sql` once in the Supabase SQL editor (or `npx supabase db push`).
+Tutor pay and family prices may be the same for every student or set individually. Run `supabase/migrations/20261102000000_rates.sql` once in the Supabase SQL editor (or `npx supabase db push`).
 
 - **Defaults.** Unless an override is set, a tutor is paid their usual hourly rate (set on the tutor) and a family is charged the price of the lesson's service.
 - **Custom overrides.** An admin may set, for one student's subject (an enrolment), a custom hourly pay for that subject's tutor and a custom hourly price for the family. Either may be cleared at any time to return to the default. Tutor pay can only be set once the subject has a tutor. A custom family price is charged per hour, so a 90-minute lesson at AED 600 an hour is charged AED 900. Package credits are still used first, because a package is lessons the family has already paid for.
