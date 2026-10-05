@@ -19,7 +19,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
 import { isViewOnlyError, VIEW_ONLY_MESSAGE } from '@/data/view-as';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { politeError } from '@/lib/polite-error';
 
@@ -563,16 +562,14 @@ export function Field({
   );
 }
 
-/**
- * Colours for a Switch, so every switch reads the same. On: a gold track with a noir thumb in light mode, and in dark
- * mode the brand gold track with an ivory thumb, which stands out from both the track and the dark card.
- */
+/** Colours for a Switch, so every switch (contacts, WhatsApp) reads the same: a gold track with a noir thumb when on. */
 export function useSwitchColors(on: boolean) {
   const theme = useTheme();
-  const dark = useColorScheme() === 'dark';
-  const onThumb = dark ? theme.text : theme.onGold;
+  // The track shows the state: the accent gold when on, muted when off. When on, the thumb is noir in both themes so it
+  // stands out on the gold track (round 4 follow-up: an ivory thumb on dark mode's gold measured only about 2:1).
+  const onThumb = theme.onGold;
   return {
-    trackColor: { true: dark ? theme.gold : theme.accent, false: theme.textMuted },
+    trackColor: { true: theme.accent, false: theme.textMuted },
     thumbColor: on ? onThumb : theme.text,
     // react-native-web paints the "on" thumb teal unless told otherwise.
     ...({ activeThumbColor: onThumb } as object),
