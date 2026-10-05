@@ -1,9 +1,11 @@
 import { displayStatus, invoiceTotals, roundMoney } from '../billing';
-import { monthFigures, type FinanceData } from '../finance';
+import { formatLineDescription } from '../dates';
+import { creditNoteTrueCredit, monthFigures, type FinanceData } from '../finance';
 import {
   creditableLines,
   creditNoteDocumentTitle,
   creditRemaining,
+  dubaiDateKey,
   formatCreditNoteNumber,
   invoiceCustomer,
   invoiceDocumentTitle,
@@ -324,14 +326,21 @@ describe('VAT quarters', () => {
   });
 
   it('lists recent quarters newest first, including the current one', () => {
-    const qs = recentVatQuarters(new Date(2026, 0, 15), 1, 3);
+    const qs = recentVatQuarters(new Date(Date.UTC(2026, 0, 15, 8)), 1, 3);
     expect(qs.map((q) => q.label)).toEqual(['Jan – Mar 2026', 'Oct – Dec 2025', 'Jul – Sep 2025']);
-    const two = recentVatQuarters(new Date(2026, 1, 1), 3, 2);
+    const two = recentVatQuarters(new Date(Date.UTC(2026, 1, 1, 8)), 3, 2);
     expect(two.map((q) => [q.start, q.end])).toEqual([
       ['2025-12-01', '2026-02-28'],
       ['2025-09-01', '2025-11-30'],
     ]);
-    expect(recentVatQuarters(new Date(2026, 0, 31), 2, 2).map((q) => q.label)).toEqual(['Nov 2025 – Jan 2026', 'Aug – Oct 2025']);
+    expect(recentVatQuarters(new Date(Date.UTC(2026, 0, 31, 8)), 2, 2).map((q) => q.label)).toEqual(['Nov 2025 – Jan 2026', 'Aug – Oct 2025']);
+  });
+
+  it('takes the current quarter from the date in Dubai, wherever the device is', () => {
+    // 21:00 UTC on 31 March is 01:00 on 1 April in Dubai: the new quarter has begun.
+    expect(dubaiDateKey(new Date('2026-03-31T21:00:00Z'))).toBe('2026-04-01');
+    expect(recentVatQuarters(new Date('2026-03-31T21:00:00Z'), 1, 1)[0].label).toBe('Apr – Jun 2026');
+    expect(recentVatQuarters(new Date('2026-03-31T19:59:00Z'), 1, 1)[0].label).toBe('Jan – Mar 2026');
   });
 });
 
@@ -447,5 +456,23 @@ describe('finance with credit notes and refunds', () => {
     const attached = monthFigures(at(1, 1), { ...base, invoices: [{ ...base.invoices[0], creditNotes, refunds }] });
     expect(attached).toMatchObject({ credits: 100, refunds: 105, profit: 900, cashIn: 944.99 });
     expect(monthFigures(at(1, 1), base)).toMatchObject({ credits: 0, refunds: 0, profit: 1000, cashIn: 1049.99 });
+  });
+
+  it('counts only the part of a mixed note that was not re-invoiced as a credit', () => {
+    const mixed: CreditNoteRef = { id: 'n4', number: 'CN-0004', issueDate: '2026-02-20', subtotal: 550, vat: 27.5, total: 577.5, rebilled: true, rebilledNet: 450 };
+    expect(creditNoteTrueCredit(mixed)).toBe(100);
+    expect(creditNoteTrueCredit({ subtotal: 500, rebilled: true })).toBe(0);
+    expect(creditNoteTrueCredit({ subtotal: 500, rebilled: false })).toBe(500);
+    expect(creditNoteTrueCredit({ subtotal: 4000, rebilled: false, rebilledNet: 0 })).toBe(4000);
+    expect(monthFigures(at(1, 1), { ...base, creditNotes: [mixed] })).toMatchObject({ credits: 100, profit: 900 });
+  });
+});
+
+describe('formatLineDescription', () => {
+  it('prints a trailing ISO date in the British style and leaves other text alone', () => {
+    expect(formatLineDescription('IB Diploma 1:1 — Charlotte Hughes, 2026-08-24')).toBe('IB Diploma 1:1 — Charlotte Hughes, 24 Aug 2026');
+    expect(formatLineDescription('Ten lessons (10 lessons)')).toBe('Ten lessons (10 lessons)');
+    expect(formatLineDescription('Lesson 2026-08-24 notes')).toBe('Lesson 2026-08-24 notes');
+    expect(formatLineDescription('Odd, 2026-13-01')).toBe('Odd, 2026-13-01');
   });
 });

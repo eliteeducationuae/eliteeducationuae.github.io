@@ -94,6 +94,17 @@ export function formatDate(d: Date | string): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/**
+ * A line description for printing: a trailing ISO date (as charge descriptions carry, e.g.
+ * 'IB 1:1 — Sami, 2026-08-24') becomes '24 Aug 2026'. The stored text is unchanged.
+ */
+export function formatLineDescription(description: string): string {
+  return description.replace(/(\d{4})-(\d{2})-(\d{2})\s*$/, (whole, y: string, m: string, d: string) => {
+    const month = MONTHS[Number(m) - 1];
+    return month && Number(d) >= 1 && Number(d) <= 31 ? `${Number(d)} ${month} ${y}` : whole;
+  });
+}
+
 export function formatMonth(d: Date): string {
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }

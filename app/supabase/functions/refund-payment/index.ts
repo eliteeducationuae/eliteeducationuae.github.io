@@ -4,16 +4,26 @@
 // The database (begin_card_refund) checks the caller is an admin, the amount against what can still be refunded, and
 // whether a credit note is needed, and records the refund as pending before anything is sent to Stripe. The request is
 // built only from that stored refund and sent with its own idempotency key, so a retry (the same requestKey) can never
-// refund twice. Stripe's answer settles it (settle_card_refund); the webhook settles it too if this function cannot.
+// refund twice. A pending refund first created more than 23 hours ago (Stripe keeps idempotency keys for about a day)
+// is looked up among the payment intent's refunds by metadata.refund_id before it is ever sent again. Stripe's answer settles it (settle_card_refund); the webhook settles it too if this function cannot.
 // Secrets: STRIPE_SECRET_KEY. Never log request or response bodies here.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
-import { describeRefundFailure, mapRefundStatus, refundAmountFils, refundForm, refundIdempotencyKey } from '../_shared/stripe.ts';
+import {
+  describeRefundFailure,
+  findAppRefund,
+  mapRefundStatus,
+  refundAmountFils,
+  refundForm,
+  refundIdempotencyKey,
+  refundListPath,
+  refundNeedsLookup,
+} from '../_shared/stripe.ts';
 import { stripe, type StripeResult } from '../_shared/stripe-api.ts';
 
 const NO_KEY = 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).';
 const UNREACHABLE = 'Stripe could not be reached. The refund will update automatically, or try again in a moment.';
 
-type RefundRow = { id: string; invoice_id: string; payment_id: string; amount: number | string; status: string };
+type RefundRow = { id: string; invoice_id: string; payment_id: string; amount: number | string; status: string; created_at?: string };
 
 /** A short sentence for a Stripe error response about a refund. Never includes Stripe ids or card numbers. */
 function refundErrorMessage(res: StripeResult): string {
@@ -56,8 +66,20 @@ Deno.serve(async (req) => {
     if (payError || !payment?.stripe_payment_intent) return json({ error: 'This payment was not taken by card through Stripe.' }, 400);
 
     let res: StripeResult | null = null;
+    // A retry long after the first attempt: the idempotency key may have expired, so look for the refund first.
+    if (refundNeedsLookup(row.created_at, Date.now())) {
+      let list: StripeResult | null = null;
+      try {
+        list = await stripe(refundListPath(payment.stripe_payment_intent as string));
+      } catch {
+        list = null;
+      }
+      if (!list?.ok) return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
+      const found = findAppRefund(list.body, row.id);
+      if (found) res = { ok: true, status: 200, body: found };
+    }
     try {
-      res = await stripe('/refunds', {
+      if (!res) res = await stripe('/refunds', {
         form: refundForm({
           paymentIntent: payment.stripe_payment_intent as string,
           amountFils: refundAmountFils(row.amount),
@@ -70,7 +92,8 @@ Deno.serve(async (req) => {
       res = null;
     }
     // No answer at all: the refund may or may not have reached Stripe. It stays pending; the webhook (or a retry with
-    // the same requestKey, which resends the same request with the same idempotency key) settles it.
+    // the same requestKey, which resends the same request with the same idempotency key, or after 23 hours looks the
+    // refund up first) settles it.
     if (!res || (!res.ok && (res.status >= 500 || res.status === 429 || res.status === 409))) {
       return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
     }

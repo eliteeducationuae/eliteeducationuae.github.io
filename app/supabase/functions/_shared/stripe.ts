@@ -308,6 +308,33 @@ export function refundForm(o: { paymentIntent: string; amountFils: number; refun
   });
 }
 
+/**
+ * Stripe keeps idempotency keys for about 24 hours. A pending refund first created longer ago than this is looked up
+ * among the payment intent's refunds before it is sent again, so a late retry can never refund twice.
+ */
+export const REFUND_REPLAY_HOURS = 23;
+
+/** Whether a pending refund must be looked up in Stripe before it is sent again (its idempotency key may have expired). */
+export function refundNeedsLookup(createdAt: string | null | undefined, now: number): boolean {
+  const created = Date.parse(createdAt ?? '');
+  return !Number.isFinite(created) || now - created >= REFUND_REPLAY_HOURS * 3_600_000;
+}
+
+/** GET path listing a payment intent's refunds (the list endpoint is strongly consistent). */
+export function refundListPath(paymentIntent: string): string {
+  return `/refunds?${new URLSearchParams({ payment_intent: paymentIntent, limit: '100' }).toString()}`;
+}
+
+/** The Stripe refund made for this app refund (metadata.refund_id) in a page of refunds, or null. */
+export function findAppRefund(list: unknown, refundId: string): Record<string, unknown> | null {
+  const data = isObj(list) && Array.isArray(list.data) ? list.data : [];
+  for (const r of data) {
+    const md = isObj(r) && isObj(r.metadata) ? r.metadata : {};
+    if (md.refund_id === refundId) return r as Record<string, unknown>;
+  }
+  return null;
+}
+
 /** AED to fils for a refund (349.99 gives 34999). */
 export function refundAmountFils(aed: number | string): number {
   return toFils(Number(aed));

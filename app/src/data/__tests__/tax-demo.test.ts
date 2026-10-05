@@ -246,6 +246,61 @@ describe('credit notes', () => {
     for (const other of others) expect(db.charges.find((c) => c.id === other.chargeId)?.invoiceId).toBe(hughes.id);
   });
 
+  it('marks only the released lesson lines of a mixed note rebilled', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'u-admin');
+    const hughes = invoiceOf(db, 'inv-f-hughes');
+    const lesson = hughes.items.findIndex((i) => i.chargeId);
+    const other = hughes.items.findIndex((i, k) => k !== lesson && i.chargeId);
+    expect(other).toBeGreaterThanOrEqual(0);
+    const full = hughes.items[lesson].quantity * hughes.items[lesson].unitPrice;
+    const note = tax.issueCreditNote(
+      db,
+      admin,
+      {
+        invoiceId: hughes.id,
+        reason: 'Wrong date and a discount',
+        releaseCharges: true,
+        lines: [
+          { description: '', invoiceLine: lesson, net: full },
+          { description: '', invoiceLine: other, net: 100 },
+        ],
+      },
+      NOW,
+    );
+    expect(note).toMatchObject({ rebilled: true, rebilledNet: full, subtotal: full + 100 });
+    expect(note.lines.map((l) => !!l.rebilled)).toEqual([true, false]);
+    expect(db.charges.find((c) => c.id === hughes.items[other].chargeId)?.invoiceId).toBe(hughes.id);
+    // Only the AED 100 reduction is a credit to the family in the accounts.
+    const empty = { charges: [], packages: [], invoices: [], lessons: [], tutors: [], tutorInvoices: [], expenses: [], settings: { payTutorForLateCancel: false } };
+    expect(monthFigures(NOW, { ...empty, creditNotes: [note] }).credits).toBe(100);
+  });
+
+  it('cancelling a package sale gives a closing note that is not rebilled', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'u-admin');
+    const inv = cmd.sellPackage(db, admin, { familyId: 'f-hughes', name: 'Ten lessons', lessonsTotal: 10, price: 4000 }, NOW);
+    if (inv.status === 'draft') cmd.setInvoiceStatus(db, admin, inv.id, 'sent', NOW);
+    cmd.setInvoiceStatus(db, admin, inv.id, 'void', NOW);
+    const closing = db.creditNotes!.at(-1)!;
+    expect(closing).toMatchObject({ invoiceId: inv.id, reason: 'Invoice cancelled', rebilled: false, rebilledNet: 0, subtotal: 4000 });
+    expect(closing.lines.some((l) => l.rebilled)).toBe(false);
+  });
+
+  it('cancelling a lesson invoice with an ad hoc line rebills the lesson lines only', () => {
+    const db = createSeed(NOW);
+    const admin = who(db, 'u-admin');
+    const hughes = invoiceOf(db, 'inv-f-hughes');
+    hughes.items.push({ description: 'Registration fee', quantity: 1, unitPrice: 200 });
+    const lessonNet = hughes.items.filter((i) => i.chargeId).reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    cmd.setInvoiceStatus(db, admin, hughes.id, 'void', NOW);
+    const closing = db.creditNotes!.at(-1)!;
+    expect(closing.rebilled).toBe(true);
+    expect(closing.rebilledNet).toBe(Math.round(lessonNet * 100) / 100);
+    expect(closing.lines.at(-1)).toMatchObject({ description: 'Registration fee', net: 200 });
+    expect(closing.lines.at(-1)?.rebilled).toBeUndefined();
+  });
+
   it('cancelling a sent invoice issues a closing credit note and releases its lessons', () => {
     const db = createSeed(NOW);
     const admin = who(db, 'u-admin');

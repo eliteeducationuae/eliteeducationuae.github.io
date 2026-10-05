@@ -684,8 +684,13 @@ export interface CreditNoteRef {
   subtotal: number;
   vat: number;
   total: number;
-  /** True for the closing note of a cancelled invoice whose lessons are invoiced again. */
+  /** True when any lesson on the note was returned to be invoiced again. */
   rebilled: boolean;
+  /**
+   * The net of the lines whose lessons were returned to be invoiced again (a billing correction). The rest of the
+   * subtotal is a true credit. Missing on older data: then the whole subtotal when rebilled, otherwise none.
+   */
+  rebilledNet?: number;
 }
 
 export interface CreditNoteLine {
@@ -694,6 +699,8 @@ export interface CreditNoteLine {
   invoiceLine?: number;
   net: number;
   vat: number;
+  /** True when this line's lesson was returned to be invoiced again. */
+  rebilled?: boolean;
 }
 
 export interface CreditNote extends CreditNoteRef {

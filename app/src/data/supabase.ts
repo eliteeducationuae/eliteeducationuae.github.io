@@ -518,7 +518,7 @@ const toInvoice = (r: Row): Invoice => ({
 
 /** Invoices with their payments, credit notes (summaries) and refunds. The foreign keys are named, so embedding is unambiguous. */
 const INVOICE_SELECT =
-  '*, payments(*), credit_notes!credit_notes_invoice_id_fkey(id, number, issue_date, subtotal, vat, total, rebilled), refunds!refunds_invoice_id_fkey(*)';
+  '*, payments(*), credit_notes!credit_notes_invoice_id_fkey(id, number, issue_date, subtotal, vat, total, rebilled, rebilled_net), refunds!refunds_invoice_id_fkey(*)';
 
 function toTaxParty(v: unknown): TaxParty | undefined {
   if (!v || typeof v !== 'object') return undefined;
@@ -535,6 +535,7 @@ const toCreditNoteRef = (r: Row): CreditNoteRef => ({
   vat: Number(r.vat),
   total: Number(r.total),
   rebilled: !!r.rebilled,
+  ...(r.rebilled_net != null ? { rebilledNet: Number(r.rebilled_net) } : {}),
 });
 
 const toCreditNote = (r: Row): CreditNote => ({
@@ -549,6 +550,7 @@ const toCreditNote = (r: Row): CreditNote => ({
     ...(typeof l.invoiceLine === 'number' ? { invoiceLine: l.invoiceLine } : {}),
     net: Number(l.net),
     vat: Number(l.vat),
+    ...(l.rebilled === true ? { rebilled: true } : {}),
   })),
   supplier: toTaxParty(r.supplier),
   customer: toTaxParty(r.customer),

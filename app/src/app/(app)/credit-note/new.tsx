@@ -194,7 +194,7 @@ function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: Cre
       )}
       {preview.error && !typed.some((t) => t.error) ? <Banner tone="danger" icon="alert">{preview.error}</Banner> : null}
 
-      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: lesson on 12 September cancelled by the tutor." hint="Printed on the credit note. Required." />
+      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: lesson on 12 September cancelled by the tutor." hint={reason.trim() ? 'Printed on the credit note.' : 'Printed on the credit note. Required.'} />
       {mode === 'lines' ? (
         <SwitchRow
           label="Invoice these lessons again"
@@ -203,7 +203,7 @@ function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: Cre
           disabled={!anyInFull}
           hint={
             anyInFull
-              ? 'Use this when correcting an invoice. Only the lessons on lines credited in full return to the family’s unbilled list; a partial credit stays a lower price.'
+              ? 'Use this when correcting an invoice. Only the lessons on lines credited in full return to the family’s unbilled list and are marked re-invoiced; any other line on this note stays a credit.'
               : 'Available when a lesson line is credited in full. A partial credit lowers the price and is not invoiced again.'
           }
         />

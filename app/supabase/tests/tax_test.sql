@@ -473,3 +473,59 @@ select pg_temp.check(not exists (select 1 from public.profiles where id = 'a0000
   and not exists (select 1 from public.accountant_invites where email = 'acc@firm.ae'),
   'removing the accountant deletes their access and the invitation');
 reset role;
+
+-- Rebilled lines: only lines whose lessons are released are rebilled ----------------------------
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+insert into made select 'pkg_void', (public.sell_package('c0000000-0000-0000-0000-000000000001', 'Ten lessons', null, 10, 4000)).id;
+update public.invoices set status = 'void' where id = (select id from made where key = 'pkg_void');
+select pg_temp.check((select count(*) = 1 and bool_and(not rebilled and rebilled_net = 0 and subtotal = 4000
+      and not (lines->0 ? 'rebilled'))
+    from public.credit_notes where invoice_id = (select id from made where key = 'pkg_void')),
+  'cancelling a package sale gives a closing credit note that is not rebilled (nothing is released)');
+reset role;
+insert into public.charges (id, lesson_id, student_id, family_id, description, amount, status, date) values
+  ('c1000000-0000-0000-0000-0000000000a1', 'f0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000001', 'IB 1:1 — Sami Ahmed, 2026-09-20', 450, 'invoiced', '2026-09-20 16:00+04'),
+  ('c1000000-0000-0000-0000-0000000000a2', 'f0000000-0000-0000-0000-000000000002', 'd0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000001', 'IB 1:1 — Sami Ahmed, 2026-09-27', 450, 'invoiced', '2026-09-27 23:30+04'),
+  ('c1000000-0000-0000-0000-0000000000a3', 'f0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000001', 'IB 1:1 — Sami Ahmed, 2026-09-20', 450, 'invoiced', '2026-09-20 16:00+04');
+insert into public.invoices (id, number, family_id, issue_date, due_date, status, items, vat_rate) values
+  ('10000000-0000-0000-0000-000000000020', 'INV-9020', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-08', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450,"chargeId":"c1000000-0000-0000-0000-0000000000a1"},
+     {"description":"IB 1:1","quantity":1,"unitPrice":450,"chargeId":"c1000000-0000-0000-0000-0000000000a2"}]', 0.05),
+  ('10000000-0000-0000-0000-000000000021', 'INV-9021', 'c0000000-0000-0000-0000-000000000001', '2026-10-01', '2026-10-08', 'sent',
+   '[{"description":"IB 1:1","quantity":1,"unitPrice":450,"chargeId":"c1000000-0000-0000-0000-0000000000a3"},
+     {"description":"Registration fee","quantity":1,"unitPrice":200}]', 0.05);
+update public.charges set invoice_id = '10000000-0000-0000-0000-000000000020' where id in ('c1000000-0000-0000-0000-0000000000a1', 'c1000000-0000-0000-0000-0000000000a2');
+update public.charges set invoice_id = '10000000-0000-0000-0000-000000000021' where id = 'c1000000-0000-0000-0000-0000000000a3';
+set role authenticated;
+insert into made select 'mixed', (public.issue_credit_note('10000000-0000-0000-0000-000000000020', 'Wrong date and a discount',
+  '[{"invoiceLine":0,"net":450},{"invoiceLine":1,"net":100}]', true)).id;
+select pg_temp.check((select rebilled and subtotal = 550 and rebilled_net = 450
+      and (lines->0->>'rebilled')::boolean and not (lines->1 ? 'rebilled')
+    from public.credit_notes where id = (select id from made where key = 'mixed'))
+  and (select status = 'unbilled' from public.charges where id = 'c1000000-0000-0000-0000-0000000000a1')
+  and (select status = 'invoiced' from public.charges where id = 'c1000000-0000-0000-0000-0000000000a2'),
+  'a mixed note marks only the released lesson line rebilled; the AED 100 reduction stays a credit');
+update public.invoices set status = 'void' where id = '10000000-0000-0000-0000-000000000021';
+select pg_temp.check((select rebilled and subtotal = 650 and rebilled_net = 450
+      and (lines->0->>'rebilled')::boolean and not (lines->1 ? 'rebilled')
+    from public.credit_notes where invoice_id = '10000000-0000-0000-0000-000000000021')
+  and (select status = 'unbilled' from public.charges where id = 'c1000000-0000-0000-0000-0000000000a3'),
+  'cancelling a lesson invoice with a fee rebills the lesson line only; the fee is a credit');
+reset role;
+
+-- An outstanding accountant invitation never makes a parent or tutor an accountant -------------
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+select pg_temp.check(public.invite_accountant('later.parent@x') = 'invited', 'an accountant invitation is outstanding');
+reset role;
+insert into public.families (id, name, parent_name, email) values
+  ('c0000000-0000-0000-0000-000000000009', 'Later', 'Lena Later', 'Later.Parent@x');
+insert into auth.users (id, email, email_confirmed_at) values ('a0000000-0000-0000-0000-000000000019', 'later.parent@x', now());
+select pg_temp.check((select role = 'parent' and family_id = 'c0000000-0000-0000-0000-000000000009'
+      from public.profiles where id = 'a0000000-0000-0000-0000-000000000019')
+  and (select accepted_at is null from public.accountant_invites where email = 'later.parent@x'),
+  'a family added with an invited address signs in as the parent, not the accountant, and the invitation stays unaccepted');

@@ -3,7 +3,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 import { invoiceTotals } from '@/domain/billing';
-import { formatDate } from '@/domain/dates';
+import { formatDate, formatLineDescription } from '@/domain/dates';
 import { invoiceCustomer, invoiceDocumentTitle, invoiceLineTaxes, invoiceSupplier, round2 } from '@/domain/tax';
 import type { Family, Invoice, Settings, TaxParty } from '@/domain/types';
 
@@ -62,7 +62,7 @@ export function invoiceHTML(inv: Invoice, family: Family | undefined, settings: 
   const rows = invoiceLineTaxes(inv)
     .map(
       (l) =>
-        `<tr><td>${esc(l.description)}</td><td class="r">${l.quantity}</td><td class="r">${aed(l.unitPrice)}</td><td class="r">${aed(
+        `<tr><td>${esc(formatLineDescription(l.description))}</td><td class="r">${l.quantity}</td><td class="r">${aed(l.unitPrice)}</td><td class="r">${aed(
           l.net,
         )}</td><td class="r">${pct(l.vatRate)}</td><td class="r">${aed(l.vat)}</td><td class="r">${aed(l.gross)}</td></tr>`,
     )

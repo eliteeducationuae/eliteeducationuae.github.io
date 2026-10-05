@@ -23,6 +23,7 @@ import {
 } from '@/domain/payments';
 import type { AutopayStatus, Family, Invoice, PackageOffer, Service } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
+import { aed } from '@/lib/invoice-pdf';
 
 import { Badge, Banner, Button, Card, Chip, ErrorNote, Field, Row, Section, Segmented, Txt, type Tone } from './ui';
 
@@ -553,7 +554,7 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
           icon="card"
           variant="secondary"
           loading={charge.isPending}
-          onPress={() => confirm('Charge the saved card?', `${formatAED(balance)} will be taken from ${card} now.`, run, 'Charge card')}
+          onPress={() => confirm('Charge the saved card?', `${aed(balance)} will be taken from ${card} now.`, run, 'Charge card')}
         />
       )}
       <ErrorNote error={charge.error} />

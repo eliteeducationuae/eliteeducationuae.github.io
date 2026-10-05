@@ -84,15 +84,16 @@ export const tax = {
     if (input.gross !== undefined && input.gross !== null) {
       // An amount including VAT: one line whose net and VAT add up to exactly that amount. Nothing is released.
       const plan = planCreditFromGross(invoice, notes, input.gross, `Credit: ${reason}`);
-      const note = addCreditNote(db, invoice, plan, { reason, rebilled: false, now });
+      const note = addCreditNote(db, invoice, plan, { reason, now });
       settleInvoice(db, invoice, false);
       return note;
     }
     const lines = input.lines ?? [];
     const plan = planCreditNote(invoice, notes, lines);
-    // Lessons on the lines this note credits in full (with earlier notes) go back to be invoiced again. The note is
-    // marked rebilled only when at least one lesson is actually released.
+    // Lessons on the lines this note credits in full (with earlier notes) go back to be invoiced again. Only the lines
+    // whose lessons are actually released are marked rebilled; the rest of the note is a credit.
     const released = new Set<string>();
+    const releasedLines = new Set<number>();
     if (input.releaseCharges) {
       for (const line of creditableLines(invoice, notes)) {
         const chargeId = invoice.items[line.index]?.chargeId;
@@ -100,10 +101,11 @@ export const tax = {
         if (chargeId && thisNote > 0 && round2(line.credited + thisNote) >= line.net
           && db.charges.some((c) => c.id === chargeId && c.invoiceId === invoice.id)) {
           released.add(chargeId);
+          releasedLines.add(line.index);
         }
       }
     }
-    const note = addCreditNote(db, invoice, plan, { reason, rebilled: released.size > 0, now });
+    const note = addCreditNote(db, invoice, plan, { reason, rebilledLines: releasedLines, now });
     if (released.size > 0) releaseCharges(db, invoice.id, released);
     // Anything to release has been released, so a note that cancels the invoice keeps its other lessons billed.
     settleInvoice(db, invoice, false);
@@ -147,7 +149,7 @@ export const tax = {
         `Issue a credit note with this refund, or refund no more than the ${formatAED(Math.max(0, -before))} the family has overpaid.`,
       );
     }
-    const creditNoteId = plan ? addCreditNote(db, invoice, plan, { reason, rebilled: false, now }).id : undefined;
+    const creditNoteId = plan ? addCreditNote(db, invoice, plan, { reason, now }).id : undefined;
 
     const byCard = payment.method === 'card' && !!payment.viaStripe;
     if (input.method !== undefined && (byCard || (input.method !== 'bank-transfer' && input.method !== 'cash'))) {

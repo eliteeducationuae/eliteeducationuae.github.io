@@ -408,7 +408,8 @@ export const cmd = {
     if (status === 'draft') throw new Error('An issued tax invoice cannot be returned to draft. Issue a credit note instead.');
     if (status === 'void' && invoice.status !== 'draft') {
       // Mirrors invoices_cancel_with_credit_note: a closing credit note for everything not yet credited (per line, in
-      // order, then any remainder on its own line), with the lessons released to be invoiced again.
+      // order, then any remainder on its own line), with the lessons released to be invoiced again. Only the lines whose
+      // lesson is still on the invoice (and so is released below) are rebilled; package sales and ad hoc lines are credits.
       const notes = creditNotesOf(db).filter((n) => n.invoiceId === id);
       const target = creditRemaining(invoice, notes).net;
       if (target > 0) {
@@ -422,7 +423,11 @@ export const cmd = {
           }
         }
         if (round2(target - taken) > 0) lines.push({ description: 'Invoice cancelled', net: round2(target - taken) });
-        addCreditNote(db, invoice, planCreditNote(invoice, notes, lines), { reason: 'Invoice cancelled', rebilled: true, now });
+        const rebilledLines = new Set<number>();
+        invoice.items.forEach((item, k) => {
+          if (item.chargeId && db.charges.some((c) => c.id === item.chargeId && c.invoiceId === id)) rebilledLines.add(k);
+        });
+        addCreditNote(db, invoice, planCreditNote(invoice, notes, lines), { reason: 'Invoice cancelled', rebilledLines, now });
       }
     }
     stampTaxDetails(db, invoice);
@@ -642,7 +647,7 @@ export function publicRefund(r: DemoRefund): Refund {
 export function withTax(db: DemoDB, invoice: Invoice): Invoice {
   const creditNotes = (db.creditNotes ?? [])
     .filter((n) => n.invoiceId === invoice.id)
-    .map(({ id, number, issueDate, subtotal, vat, total, rebilled }) => ({ id, number, issueDate, subtotal, vat, total, rebilled }));
+    .map(({ id, number, issueDate, subtotal, vat, total, rebilled, rebilledNet }) => ({ id, number, issueDate, subtotal, vat, total, rebilled, rebilledNet }));
   const refunds = (db.refunds ?? []).filter((r) => r.invoiceId === invoice.id).map(publicRefund);
   return { ...invoice, creditNotes, refunds };
 }
@@ -700,9 +705,14 @@ export function addCreditNote(
   db: DemoDB,
   invoice: Invoice,
   plan: CreditNotePlan,
-  opts: { reason: string; rebilled: boolean; now?: Date },
+  opts: { reason: string; rebilledLines?: Set<number>; now?: Date },
 ): CreditNote {
   const now = opts.now ?? new Date();
+  // Mirrors _make_credit_note's p_rebilled_lines: lines crediting an invoice line whose lesson is released are rebilled.
+  const lines = plan.lines.map((l) =>
+    l.invoiceLine !== undefined && opts.rebilledLines?.has(l.invoiceLine) ? { ...l, rebilled: true } : l,
+  );
+  const rebilledNet = round2(lines.reduce((s, l) => s + (l.rebilled ? l.net : 0), 0));
   const family = db.families.find((f) => f.id === invoice.familyId);
   const note: CreditNote = {
     id: newId('cn'),
@@ -711,13 +721,14 @@ export function addCreditNote(
     subtotal: plan.subtotal,
     vat: plan.vat,
     total: plan.total,
-    rebilled: opts.rebilled,
+    rebilled: rebilledNet > 0,
+    rebilledNet,
     invoiceId: invoice.id,
     invoiceNumber: invoice.number,
     familyId: invoice.familyId,
     reason: opts.reason,
     vatRate: invoice.vatRate,
-    lines: plan.lines,
+    lines,
     supplier: invoice.supplier ?? supplierSnapshot(db.settings),
     customer: invoice.customer ?? customerSnapshot(family),
     createdAt: now.toISOString(),

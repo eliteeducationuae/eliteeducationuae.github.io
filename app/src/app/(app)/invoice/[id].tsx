@@ -94,7 +94,7 @@ export default function InvoicePage() {
       refreshing={invoice.isRefetching}
       footer={
         payable && me.role === 'parent' && !autopayHolds ? (
-          <Button title={`Pay ${formatAED(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
+          <Button title={`Pay ${aed(totals.balance)} by card`} icon="card" variant="gold" style={{ flex: 1 }} loading={pay.isPending} onPress={payByCard} />
         ) : undefined
       }>
       <Stack.Screen options={{ title }} />
@@ -206,7 +206,7 @@ export default function InvoicePage() {
           onPress={() =>
             confirm(
               'Pay now instead?',
-              `You will pay ${formatAED(totals.balance)} by card now, and autopay will not charge this invoice.`,
+              `You will pay ${aed(totals.balance)} by card now, and autopay will not charge this invoice.`,
               () => void payByCard().catch(() => undefined),
               'Pay now',
             )

@@ -45,6 +45,15 @@ const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 const inMonth = (iso: string, month: string) => iso.slice(0, 7) === month;
 
 /**
+ * The part of a credit note that lowers the price (a credit in the accounts): its subtotal less the net of lines whose
+ * lessons were returned to be invoiced again, which are counted when they are invoiced again.
+ */
+export function creditNoteTrueCredit(n: Pick<CreditNoteRef, 'subtotal' | 'rebilled' | 'rebilledNet'>): number {
+  const rebilledNet = n.rebilledNet ?? (n.rebilled ? n.subtotal : 0);
+  return roundMoney(Math.max(0, n.subtotal - rebilledNet));
+}
+
+/**
  * Profit and loss for one calendar month.
  * Revenue: lessons delivered (charges, with package credits at their per-lesson value).
  * Tutor costs: the tutor's submitted/approved/paid invoice for that month, otherwise estimated from lessons taught.
@@ -76,8 +85,8 @@ export function monthFigures(month: Date, data: FinanceData): MonthFigures {
     .filter((p) => inMonth(toDateKey(new Date(p.paidAt)), key))
     .reduce((s, p) => s + p.amount, 0);
   const credits = (data.creditNotes ?? data.invoices.flatMap((i) => i.creditNotes ?? []))
-    .filter((n) => !n.rebilled && inMonth(n.issueDate, key))
-    .reduce((s, n) => s + n.subtotal, 0);
+    .filter((n) => inMonth(n.issueDate, key))
+    .reduce((s, n) => s + creditNoteTrueCredit(n), 0);
   const refunds = (data.refunds ?? data.invoices.flatMap((i) => i.refunds ?? []))
     .filter((r) => r.status === 'succeeded' && inMonth(toDateKey(new Date(r.settledAt ?? r.createdAt)), key))
     .reduce((s, r) => s + r.amount, 0);

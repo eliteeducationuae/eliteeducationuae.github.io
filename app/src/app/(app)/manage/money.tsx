@@ -8,9 +8,9 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useCreditNotes, useLookup, useRefunds } from '@/data/hooks';
 import { useMe } from '@/data/session';
-import { formatAED, formatPercent, invoiceTotals } from '@/domain/billing';
+import { formatAED, formatPercent, invoiceTotals, roundMoney } from '@/domain/billing';
 import { formatDate, startOfMonth, toDateKey } from '@/domain/dates';
-import { monthSeries, receivables, type MonthFigures } from '@/domain/finance';
+import { creditNoteTrueCredit, monthSeries, receivables, type MonthFigures } from '@/domain/finance';
 import { tutorInvoiceTotal } from '@/domain/tutor-pay';
 import type { Expense, TutorInvoiceStatus } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -87,10 +87,10 @@ export default function Money() {
       title: 'Credit notes',
       run: () =>
         exportCSV(`credit-notes-${toDateKey(now)}.csv`, [
-          ['Number', 'Invoice', 'Family', 'Issued', 'Reason', 'Net', 'VAT', 'Total', 'Rebilled'],
+          ['Number', 'Invoice', 'Family', 'Issued', 'Reason', 'Net', 'VAT', 'Total', 'Net re-invoiced'],
           ...(creditNotes.data ?? [])
             .filter((n) => n.issueDate >= yearStart)
-            .map((n) => [n.number, n.invoiceNumber, familyName(n.familyId), n.issueDate, n.reason, n.subtotal, n.vat, n.total, n.rebilled ? 'yes' : 'no']),
+            .map((n) => [n.number, n.invoiceNumber, familyName(n.familyId), n.issueDate, n.reason, n.subtotal, n.vat, n.total, roundMoney(n.subtotal - creditNoteTrueCredit(n))]),
         ]),
     },
     {
@@ -181,8 +181,8 @@ export default function Money() {
           label="Cash received, less refunds"
           value={formatAED(shown.cashIn)}
           hint={shown.refunds ? `After ${formatAED(shown.refunds)} refunded` : undefined}
-          // More refunded than received in the period reads as a warning, not as income.
-          tone={shown.cashIn < 0 ? 'warning' : 'success'}
+          // More refunded than received in the period uses the same negative tone as a loss, never brand gold.
+          tone={shown.cashIn < 0 ? 'danger' : 'success'}
         />
         <Stat
           label="Owed by families"

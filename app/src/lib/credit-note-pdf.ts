@@ -1,5 +1,5 @@
 import { invoiceTotals } from '@/domain/billing';
-import { formatDate } from '@/domain/dates';
+import { formatDate, formatLineDescription } from '@/domain/dates';
 import { creditNoteDocumentTitle, invoiceCustomer, invoiceDocumentTitle, invoiceSupplier, round2 } from '@/domain/tax';
 import type { CreditNote, Family, Invoice, Settings } from '@/domain/types';
 
@@ -17,7 +17,7 @@ export function creditNoteHTML(note: CreditNote, invoice: Invoice | undefined, f
   const rows = note.lines
     .map(
       (l) =>
-        `<tr><td>${esc(l.description)}</td><td class="r">${aed(l.net)}</td><td class="r">${pct(note.vatRate)}</td><td class="r">${aed(
+        `<tr><td>${esc(formatLineDescription(l.description))}</td><td class="r">${aed(l.net)}</td><td class="r">${pct(note.vatRate)}</td><td class="r">${aed(
           l.vat,
         )}</td><td class="r">${aed(round2(l.net + l.vat))}</td></tr>`,
     )

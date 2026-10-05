@@ -334,9 +334,15 @@ export function vatQuarterFor(dateKey: string, startMonth: VatQuarterStartMonth)
   return { start: `${sy}-${pad(sm)}-01`, end: `${ey}-${pad(em)}-${pad(daysInMonth(ey, em))}`, label };
 }
 
-/** The current quarter and the ones before it, newest first. */
+/** The date in Dubai (UTC+4 all year, no daylight saving) as YYYY-MM-DD, wherever the device is. */
+export function dubaiDateKey(now: Date): string {
+  const d = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/** The current quarter (by the date in Dubai, where the business files its returns) and the ones before it, newest first. */
 export function recentVatQuarters(now: Date, startMonth: VatQuarterStartMonth, count: number): VatQuarter[] {
-  const key = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const key = dubaiDateKey(now);
   const out: VatQuarter[] = [];
   let q = vatQuarterFor(key, startMonth);
   for (let i = 0; i < count; i++) {

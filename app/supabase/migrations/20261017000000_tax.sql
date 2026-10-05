@@ -97,8 +97,11 @@ create table public.credit_notes (
   subtotal numeric(10,2) not null check (subtotal > 0),
   vat numeric(10,2) not null check (vat >= 0),
   total numeric(10,2) not null,
-  -- True when the credited lessons were released to be invoiced again (a billing correction, not a lower price).
+  -- True when any credited lesson was released to be invoiced again (a billing correction, not a lower price).
   rebilled boolean not null default false,
+  -- The net of the lines whose lessons were released (each such line carries "rebilled": true). The rest of the
+  -- subtotal is a true credit (a lower price) in the accounts.
+  rebilled_net numeric(10,2) not null default 0 check (rebilled_net >= 0 and rebilled_net <= subtotal),
   supplier jsonb,
   customer jsonb,
   created_by uuid,
@@ -338,10 +341,11 @@ create trigger invoices_guard_issued before update on public.invoices
 
 /**
  * Validates and inserts a credit note against a locked invoice (the caller holds it for update). p_lines is
- * [{ description, invoiceLine (int or null), net }]. p_vat overrides the note's VAT (used for refunds from a gross
- * amount). Not granted to anyone.
+ * [{ description, invoiceLine (int or null), net }]. p_rebilled_lines lists the invoice lines whose lessons are released
+ * to be invoiced again: the note's lines crediting them are marked rebilled. p_vat overrides the note's VAT (used for
+ * refunds from a gross amount). Not granted to anyone.
  */
-create function public._make_credit_note(inv public.invoices, p_reason text, p_lines jsonb, p_rebilled boolean, p_vat numeric default null)
+create function public._make_credit_note(inv public.invoices, p_reason text, p_lines jsonb, p_rebilled_lines int[], p_vat numeric default null)
 returns public.credit_notes language plpgsql security definer set search_path = public as $$
 declare
   r numeric := coalesce(inv.vat_rate, 0);
@@ -352,7 +356,7 @@ declare
   el jsonb; k int; net numeric; descr text;
   nets numeric[] := '{}'; vats numeric[] := '{}'; descs text[] := '{}'; refs int[] := '{}';
   big_n numeric := 0; note_vat numeric; diff numeric; take numeric; cap numeric; prev numeric; this_k numeric;
-  ord int[]; i int; out_lines jsonb := '[]'::jsonb;
+  ord int[]; i int; out_lines jsonb := '[]'::jsonb; reb boolean; reb_net numeric := 0;
   note public.credit_notes;
 begin
   if v_reason = '' then raise exception 'Please give a reason for the credit note.'; end if;
@@ -410,13 +414,17 @@ begin
   end if;
 
   for i in 1 .. array_length(nets, 1) loop
-    out_lines := out_lines || jsonb_build_array(jsonb_build_object('description', descs[i], 'invoiceLine', refs[i], 'net', nets[i], 'vat', vats[i]));
+    reb := refs[i] is not null and refs[i] = any (coalesce(p_rebilled_lines, '{}'::int[]));
+    out_lines := out_lines || jsonb_build_array(case when reb
+      then jsonb_build_object('description', descs[i], 'invoiceLine', refs[i], 'net', nets[i], 'vat', vats[i], 'rebilled', true)
+      else jsonb_build_object('description', descs[i], 'invoiceLine', refs[i], 'net', nets[i], 'vat', vats[i]) end);
+    if reb then reb_net := reb_net + nets[i]; end if;
   end loop;
 
   insert into public.credit_notes (number, invoice_id, family_id, reason, vat_rate, lines, subtotal, vat, total, rebilled,
-                                   supplier, customer, created_by)
+                                   rebilled_net, supplier, customer, created_by)
   values (public.next_credit_note_number(), inv.id, inv.family_id, v_reason, r, out_lines, big_n, note_vat, big_n + note_vat,
-          coalesce(p_rebilled, false), coalesce(inv.supplier, public._tax_supplier()),
+          reb_net > 0, reb_net, coalesce(inv.supplier, public._tax_supplier()),
           coalesce(inv.customer, public._tax_customer(inv.family_id)), auth.uid())
   returning * into note;
   return note;
@@ -487,7 +495,7 @@ begin
   return public._make_credit_note(inv, p_reason,
     jsonb_build_array(jsonb_build_object('description',
       coalesce(nullif(trim(p_description), ''), 'Refund: ' || trim(coalesce(p_reason, ''))), 'invoiceLine', null, 'net', net)),
-    false, vat);
+    '{}'::int[], vat);
 end $$;
 
 /**
@@ -496,15 +504,15 @@ end $$;
  * exactly the amount the office confirmed.
  *
  * p_release_charges ('Invoice these lessons again') returns to the unbilled list the lessons on the lines this note
- * credits in full. The note is marked rebilled only when at least one lesson is actually released; a partial line
- * credit or a gross amount is a lower price and always counts as a credit in the accounts.
+ * credits in full. Only the lines whose lessons are actually released are marked rebilled (with the note's rebilled_net);
+ * a partial line credit, a line with no lesson, or a gross amount is a lower price and counts as a credit in the accounts.
  */
 create function public.issue_credit_note(p_invoice_id uuid, p_reason text, p_lines jsonb,
   p_release_charges boolean default false, p_gross numeric default null)
 returns public.credit_notes language plpgsql security definer set search_path = public as $$
 declare
   inv public.invoices; note public.credit_notes; s public.settings; it jsonb; el jsonb;
-  k int := 0; this_k numeric; cap numeric; released text[] := '{}';
+  k int := 0; this_k numeric; cap numeric; released text[] := '{}'; released_k int[] := '{}';
 begin
   if not public.is_admin() then raise exception 'Admins only' using errcode = '42501'; end if;
   -- Locking the invoice serialises credit notes, refunds and cancellations on it.
@@ -530,11 +538,12 @@ begin
         if it ? 'chargeId' and this_k > 0 and public._tax_line_credited(inv.id, k) + this_k >= cap
            and exists (select 1 from public.charges c where c.id::text = it->>'chargeId' and c.invoice_id = inv.id) then
           released := array_append(released, it->>'chargeId');
+          released_k := array_append(released_k, k);
         end if;
         k := k + 1;
       end loop;
     end if;
-    note := public._make_credit_note(inv, p_reason, p_lines, cardinality(released) > 0);
+    note := public._make_credit_note(inv, p_reason, p_lines, released_k);
     update public.charges set status = 'unbilled', invoice_id = null
       where id::text = any (released) and invoice_id = inv.id;
   end if;
@@ -552,19 +561,25 @@ begin
 end $$;
 
 -- Cancelling a sent or paid invoice issues a closing credit note for whatever is not yet credited. The credited
--- lessons are released to be invoiced again (rebilled), as voiding has always done, unless elite.keep_charges is on.
+-- lessons are released to be invoiced again, as voiding has always done, unless elite.keep_charges is on. Only the lines
+-- whose lesson is still on the invoice (and so is released by invoices_release_charges, which runs after this trigger)
+-- are marked rebilled; a package sale, top-up or ad hoc line is a true credit.
 -- The family is told when they had paid something towards it (they may be owed a refund); for an unpaid invoice the
 -- credit note simply appears with the cancelled invoice in the app.
 create function public.invoices_cancel_with_credit_note() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare note public.credit_notes; lines jsonb; s public.settings;
+declare note public.credit_notes; lines jsonb; s public.settings; rebilled_k int[] := '{}';
 begin
   if old.status in ('sent', 'paid') and new.status = 'void'
      and (select coalesce(sum(subtotal), 0) from public.credit_notes where invoice_id = new.id) < public._tax_subtotal(new) then
     lines := public._tax_remaining_lines(new);
     if jsonb_array_length(lines) = 0 then return null; end if;
-    note := public._make_credit_note(new, 'Invoice cancelled', lines,
-      coalesce(current_setting('elite.keep_charges', true), '') <> 'on');
+    if coalesce(current_setting('elite.keep_charges', true), '') <> 'on' then
+      select coalesce(array_agg((t.k - 1)::int), '{}') into rebilled_k
+        from jsonb_array_elements(coalesce(new.items, '[]'::jsonb)) with ordinality as t(it, k)
+        where exists (select 1 from public.charges c where c.id::text = t.it->>'chargeId' and c.invoice_id = new.id);
+    end if;
+    note := public._make_credit_note(new, 'Invoice cancelled', lines, rebilled_k);
     if exists (select 1 from public.payments where invoice_id = new.id) then
       select * into s from public.settings where id = 1;
       perform public.notify_family(new.family_id,
@@ -864,6 +879,12 @@ begin
   if new.email_confirmed_at is null or new.email is null then return new; end if;
   select * into inv from public.accountant_invites where email = lower(trim(new.email));
   if inv.email is null or exists (select 1 from public.profiles where id = new.id) then return new; end if;
+  -- A tutor or family added with this address since the invitation wins: link_login_on_signup links them as such,
+  -- and the invitation stays unaccepted, so a parent or tutor never gains read access to the books.
+  if exists (select 1 from public.tutors where lower(email) = inv.email)
+     or exists (select 1 from public.families where lower(email) = inv.email) then
+    return new;
+  end if;
   insert into public.profiles (id, role, full_name, email)
   values (new.id, 'accountant',
           coalesce(nullif(trim(inv.full_name), ''), nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
@@ -911,7 +932,7 @@ end $$;
 
 revoke all on function public._tax_aed(numeric), public._tax_supplier(), public._tax_customer(uuid),
   public._tax_subtotal(public.invoices), public._tax_line_credited(uuid, int),
-  public._make_credit_note(public.invoices, text, jsonb, boolean, numeric), public._tax_remaining_lines(public.invoices),
+  public._make_credit_note(public.invoices, text, jsonb, int[], numeric), public._tax_remaining_lines(public.invoices),
   public._tax_settle_invoice(uuid, boolean), public._issue_credit_from_gross(public.invoices, numeric, text, text),
   public._map_refund_status(text), public._create_refund(uuid, numeric, text, boolean, text, boolean, text, text),
   public.settings_guard_numbers(), public.invoices_guard_delete(), public.credit_notes_guard(),

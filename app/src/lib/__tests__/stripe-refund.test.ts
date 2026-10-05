@@ -1,11 +1,15 @@
 import {
   classifyEvent,
   describeRefundFailure,
+  findAppRefund,
   invoiceBalanceFils,
   mapRefundStatus,
   refundAmountFils,
   refundForm,
   refundIdempotencyKey,
+  refundListPath,
+  refundNeedsLookup,
+  REFUND_REPLAY_HOURS,
 } from '../../../supabase/functions/_shared/stripe';
 
 const refundEvent = (type: string, object: Record<string, unknown>) => ({ id: 'evt_1', type, data: { object } });
@@ -174,5 +178,40 @@ describe('invoiceBalanceFils with credit notes and refunds', () => {
 
   it('accepts missing lists from the database', () => {
     expect(invoiceBalanceFils(items, 0.05, [], { credits: null, refunds: null })).toBe(104999);
+  });
+});
+
+describe('late refund retries', () => {
+  const created = '2026-10-01T10:00:00Z';
+  const at = (hours: number) => Date.parse(created) + hours * 3_600_000;
+
+  it('sends again with the idempotency key alone for 23 hours, then looks the refund up first', () => {
+    expect(REFUND_REPLAY_HOURS).toBe(23);
+    expect(refundNeedsLookup(created, at(0))).toBe(false);
+    expect(refundNeedsLookup(created, at(22.9))).toBe(false);
+    expect(refundNeedsLookup(created, at(23))).toBe(true);
+    expect(refundNeedsLookup(created, at(48))).toBe(true);
+    // Without a creation time it is always looked up.
+    expect(refundNeedsLookup(undefined, at(0))).toBe(true);
+    expect(refundNeedsLookup('not a date', at(0))).toBe(true);
+  });
+
+  it('lists the payment intent\'s refunds', () => {
+    expect(refundListPath('pi_123')).toBe('/refunds?payment_intent=pi_123&limit=100');
+  });
+
+  it('finds the Stripe refund carrying this refund\'s id in its metadata', () => {
+    const list = {
+      object: 'list',
+      data: [
+        { id: 're_other', status: 'succeeded', metadata: { refund_id: 'ref-2' } },
+        { id: 're_none', status: 'succeeded' },
+        { id: 're_mine', status: 'pending', metadata: { refund_id: 'ref-1', invoice_id: 'inv-1' } },
+      ],
+    };
+    expect(findAppRefund(list, 'ref-1')).toMatchObject({ id: 're_mine', status: 'pending' });
+    expect(findAppRefund(list, 'ref-3')).toBeNull();
+    expect(findAppRefund(null, 'ref-1')).toBeNull();
+    expect(findAppRefund({ data: 'x' }, 'ref-1')).toBeNull();
   });
 });

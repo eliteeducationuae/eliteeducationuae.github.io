@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Switch, useWindowDimensions, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { formatDate } from '@/domain/dates';
+import { formatDate, formatLineDescription } from '@/domain/dates';
 import { paymentLabel } from '@/domain/payments';
 import { invoiceLineTaxes, round2 } from '@/domain/tax';
 import type { CreditNote, CreditNoteRef, Invoice, Refund, RefundStatus, TaxParty } from '@/domain/types';
@@ -19,6 +19,22 @@ export const REFUND_STATUS: Record<RefundStatus, { label: string; tone: Tone }> 
   succeeded: { label: 'Refunded', tone: 'success' },
   failed: { label: 'Failed', tone: 'danger' },
 };
+
+/** 'Re-invoiced' when every line's lesson was returned to be invoiced again, 'Part re-invoiced' when some were, else 'Credit'. */
+export function creditNoteKind(note: Pick<CreditNoteRef, 'subtotal' | 'rebilled' | 'rebilledNet'>): string {
+  if (!note.rebilled) return 'Credit';
+  return note.rebilledNet !== undefined && note.rebilledNet < note.subtotal ? 'Part re-invoiced' : 'Re-invoiced';
+}
+
+/** Explains which lessons on a credit note were returned to be invoiced again. */
+export function rebilledSentence(note: Pick<CreditNote, 'lines'>): string {
+  const marked = note.lines.map((l, i) => (l.rebilled ? i + 1 : 0)).filter(Boolean);
+  if (marked.length === 0 || marked.length === note.lines.length) {
+    return 'The lessons on this credit note were returned to be invoiced again.';
+  }
+  const which = marked.length === 1 ? `line ${marked[0]}` : `lines ${marked.slice(0, -1).join(', ')} and ${marked[marked.length - 1]}`;
+  return `The lesson${marked.length === 1 ? '' : 's'} on ${which} of this credit note ${marked.length === 1 ? 'was' : 'were'} returned to be invoiced again. The other lines are a credit.`;
+}
 
 /** A VAT rate as printed, e.g. 0.05 -> '5%'. */
 export const vatPercent = pct;
@@ -71,7 +87,7 @@ export function CreditNoteCard({
         </View>
         <View style={{ alignItems: 'flex-end', gap: 4 }}>
           <Txt variant="h3">{aed(note.total)}</Txt>
-          <Badge label={note.rebilled ? 'Re-invoiced' : 'Credit'} tone="neutral" />
+          <Badge label={creditNoteKind(note)} tone="neutral" />
         </View>
       </Row>
     </Card>
@@ -213,7 +229,7 @@ export function Rule() {
 /** An invoice's lines for LineTaxTable. */
 export function invoiceLineViews(inv: Pick<Invoice, 'items' | 'vatRate'>): TaxLineView[] {
   return invoiceLineTaxes(inv).map((l) => ({
-    description: l.description,
+    description: formatLineDescription(l.description),
     quantity: `${l.quantity} × ${aed(l.unitPrice)}`,
     net: l.net,
     vatRate: l.vatRate,
@@ -224,7 +240,7 @@ export function invoiceLineViews(inv: Pick<Invoice, 'items' | 'vatRate'>): TaxLi
 
 /** A credit note's lines for LineTaxTable. */
 export function creditNoteLineViews(note: Pick<CreditNote, 'lines' | 'vatRate'>): TaxLineView[] {
-  return note.lines.map((l) => ({ description: l.description, net: l.net, vatRate: note.vatRate, vat: l.vat, gross: round2(l.net + l.vat) }));
+  return note.lines.map((l) => ({ description: formatLineDescription(l.description), net: l.net, vatRate: note.vatRate, vat: l.vat, gross: round2(l.net + l.vat) }));
 }
 
 /** A labelled on/off switch with an optional explanation underneath. */

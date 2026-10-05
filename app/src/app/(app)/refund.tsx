@@ -140,7 +140,7 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
         placeholder="0.00"
         hint={tooMuch ? `Only ${aed(refundable)} of this payment can be refunded.` : `Up to ${aed(refundable)}.`}
       />
-      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: package cancelled at the family's request." hint="Required." />
+      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: package cancelled at the family's request." hint={reason.trim() ? 'Printed on the refund record.' : 'Required.'} />
       {!card ? (
         <Section title="Refunded by">
           <Segmented
