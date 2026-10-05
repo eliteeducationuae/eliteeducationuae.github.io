@@ -277,7 +277,7 @@ Every tutor must hold a police clearance certificate, verified by Elite Educatio
 
 **Setting it up.**
 
-1. Run the migration `20261019000000_vetting.sql` (or `npx supabase db push`). It creates the private `vetting` storage bucket (PDFs and photos, 10 MB per file); tutors can read only their own folder and administrators can read everything. No other role can read the files.
+1. Run the migration `20261107000000_vetting.sql` (or `npx supabase db push`). It creates the private `vetting` storage bucket (PDFs and photos, 10 MB per file); tutors can read only their own folder and administrators can read everything. No other role can read the files.
 2. Redeploy `send-reminders` (`npx supabase functions deploy send-reminders`). Its hourly run now also queues police clearance expiry alerts 60, 30 and 7 days before a certificate expires and on the expiry date itself, for the tutor and for the office; `send-notifications` delivers them. A certificate verified late sends a single alert rather than several, and an older certificate that has been replaced sends none. Alerts never include bank details or file names.
 
 **Switching on enforcement.** Enforcement is off when the migration is first run, so that existing tutors are not blocked while they upload their certificates; until then the app warns but blocks nothing. Once your current tutors' certificates have been verified, switch it on in *Manage → Tutor checks*. From then on, a tutor without a verified, unexpired police clearance cannot be:
