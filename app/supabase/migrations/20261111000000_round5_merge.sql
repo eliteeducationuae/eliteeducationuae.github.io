@@ -51,7 +51,7 @@ update public.notification_outbox set url = case
    and (url in ('/admin/enquiries', '/admin/requests') or url like '/manage/tutor-invoice/%');
 
 -- Each function keeps its body and grants; only the quoted text changes. Stops if the expected text is missing.
-create function pg_temp.swap_literal(p_fn regprocedure, p_from text, p_to text) returns void language plpgsql as $$
+create or replace function pg_temp.swap_literal(p_fn regprocedure, p_from text, p_to text) returns void language plpgsql as $$
 declare def text := pg_get_functiondef(p_fn);
 begin
   if position(p_from in def) = 0 then

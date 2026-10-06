@@ -18,6 +18,7 @@ import type {
 
 import { adm, removeAdmissionsForStudents } from './admissions';
 import { eraseAudit } from './audit';
+import { removeAdmissionsForStudents, renameAdmissionsWorker } from './admissions';
 import { cw } from './classwork';
 import { allContacts, listFamilyContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
@@ -66,6 +67,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261113001300', name: 'handoverac_fix' },
   { version: '20261113001400', name: 'contactdel_fix' },
   { version: '20261113001500', name: 'secminor_fix' },
+  { version: '20261113001600', name: 'deletion_fix' },
   { version: '20261113001700', name: 'creditnote_fix' },
 ];
 
@@ -621,6 +623,9 @@ function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
     delete m.senderId;
     m.senderName = former;
   }
+  // Names beside their work (as the deletion fix migration): advisory updates, admissions tasks, handbook versions.
+  renameAdmissionsWorker(db, profile.fullName, former);
+  for (const h of db.handbookVersions ?? []) if (h.publishedByName === profile.fullName) h.publishedByName = former;
   delete db.reads[profile.id];
   return { role: profile.role, familyAnonymised: false, studentsAnonymised: 0, futureLessonsCancelled: 0, upcomingLessonsNeedingTutor: 0, invoicesRetained: 0, paymentsRetained: 0 };
 }
