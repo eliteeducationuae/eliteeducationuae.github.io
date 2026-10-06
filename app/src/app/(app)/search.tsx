@@ -6,12 +6,25 @@ import { Icon, type IconName } from '@/components/icon';
 import { EmptyState, ErrorNote, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
 import { useCanViewAs, useStartViewAs, viewAsRows } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
-import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors, useViewTargets } from '@/data/hooks';
+import {
+  useApplications,
+  useContactsForFamilies,
+  useEnquiries,
+  useEnrolments,
+  useFamilies,
+  useInvoices,
+  useOpportunities,
+  useStudents,
+  useTutors,
+  useViewTargets,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
 import { CLOSED_LABEL, closedLast, isClosed } from '@/domain/closed-accounts';
 import { studentSubjects } from '@/domain/enrolments';
+import { buildContactIndex, familiesByContact, matchesSearch as matches, normSearch as norm, viaContact } from '@/domain/search';
 import { spamLabel } from '@/domain/spam';
+import type { FamilyContact } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
 interface Hit {
@@ -21,8 +34,6 @@ interface Hit {
   href: Href;
 }
 
-const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
-const matches = (q: string, ...fields: (string | undefined)[]) => fields.some((f) => f && norm(f).includes(q));
 const PEOPLE_GROUPS = ['Students', 'Families', 'Tutors'];
 
 /** Find anyone or anything: students, families, tutors, invoices, enquiries, roles and applications. */
@@ -42,11 +53,17 @@ export default function Search() {
   const canViewAs = useCanViewAs();
   const viewTargets = useViewTargets();
   const viewAs = useStartViewAs();
+  // Families can also be found by their other contacts (a PA, the family office, a driver). Closed families are
+  // matched by name only, so their contacts are never fetched. Loaded once someone starts typing.
+  const openFamilyIds = useMemo(() => (families.data ?? []).filter((f) => !isClosed(f)).map((f) => f.id), [families.data]);
+  const contacts = useContactsForFamilies(openFamilyIds, admin && query.trim().length >= 2);
+  const contactIndex = useMemo(() => buildContactIndex(contacts), [contacts]);
 
   const groups = useMemo(() => {
     const q = norm(query.trim());
     if (q.length < 2) return [];
     const familyName = (id: string) => families.data?.find((f) => f.id === id)?.name ?? '';
+    const viaContacts = admin ? familiesByContact(contactIndex, q) : new Map<string, FamilyContact>();
     const out: { title: string; icon: IconName; hits: Hit[] }[] = [
       {
         title: 'Students',
@@ -69,8 +86,14 @@ export default function Search() {
           icon: 'person',
           // Closed accounts are matched by name only (never by their placeholder email) and say so.
           hits: closedLast(families.data, true)
-            .filter((f) => (isClosed(f) ? matches(q, f.name) : matches(q, f.name, f.parentName, f.email, f.phone)))
-            .map((f) => ({ key: f.id, title: `${f.name} family`, subtitle: isClosed(f) ? CLOSED_LABEL : `${f.parentName} · ${f.email}`, href: { pathname: '/manage/family-edit', params: { id: f.id } } })),
+            .map((f) => ({ f, direct: isClosed(f) ? matches(q, f.name) : matches(q, f.name, f.parentName, f.email, f.phone) }))
+            .filter(({ f, direct }) => direct || (!isClosed(f) && viaContacts.has(f.id)))
+            .map(({ f, direct }) => ({
+              key: f.id,
+              title: `${f.name} family`,
+              subtitle: isClosed(f) ? CLOSED_LABEL : direct ? `${f.parentName} · ${f.email}` : `${f.parentName} · ${viaContact(viaContacts.get(f.id)!)}`,
+              href: { pathname: '/manage/family-edit', params: { id: f.id } },
+            })),
         },
         {
           title: 'Tutors',
@@ -110,7 +133,7 @@ export default function Search() {
       );
     }
     return out.filter((g) => g.hits.length).map((g) => ({ ...g, hits: g.hits.slice(0, 8) }));
-  }, [query, admin, students.data, families.data, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
+  }, [query, admin, students.data, families.data, contactIndex, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
 
   // Admins on their own account can open the app as any family, tutor or student found above.
   const viewRows = useMemo(() => {

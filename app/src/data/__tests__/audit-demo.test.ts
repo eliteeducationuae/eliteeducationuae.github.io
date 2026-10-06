@@ -6,6 +6,7 @@ import { AccessError, cmd, type DemoDB } from '../demo/db';
 import { cw } from '../demo/classwork';
 import { ops } from '../demo/operations';
 import { createSeed } from '../demo/seed';
+import { seedAdmissions } from '../demo/admissions';
 
 const NOW = new Date(2026, 9, 2, 12, 0); // Fri 2 Oct 2026, midday
 const who = (db: DemoDB, role: string) => db.profiles.find((p) => p.role === role)!;
@@ -137,6 +138,24 @@ describe('demo audit trail', () => {
     expect(db.audit!.filter((e) => e.table === 'student_reports')).toHaveLength(1);
     expect(db.audit![0].after).toMatchObject({ status: 'approved' });
     expect(describeAuditEvent(db.audit![0], namesFor(db)).summary).toBe('Craig approved the report.');
+  });
+
+  it('records admissions cases, but not their lazy seeding', () => {
+    const db = fresh();
+    const admin = who(db, 'admin');
+    expect(db.admissions).toBeUndefined();
+    auditedWrite(db, admin, () => {
+      db.admissions = seedAdmissions(db, NOW);
+    });
+    expect(db.audit).toEqual([]);
+    const c = db.admissions!.cases[0];
+    auditedWrite(db, admin, () => {
+      c.status = 'on-hold';
+    });
+    expect(db.audit).toHaveLength(1);
+    const e = db.audit![0];
+    expect(e).toMatchObject({ table: 'admissions_cases', action: 'update', rowId: c.id, familyIds: [c.familyId], studentIds: [c.studentId] });
+    expect(describeAuditEvent(e, namesFor(db)).summary).toBe('Craig marked the admissions case as on hold.');
   });
 
   it('is for admins only', () => {

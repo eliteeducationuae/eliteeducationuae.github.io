@@ -65,6 +65,8 @@ export function snapshotAudited(db: DemoDB): AuditSnapshot {
   snap.set('accountant_invites', keyed(db.accountantInvites, (i) => i.email, (i) => toRow(i)));
   snap.set('tutor_documents', keyed(db.tutorDocuments, byId, (d) => toRow(d, { type: 'doc_type' })));
   snap.set('tutor_vetting_overrides', keyed(db.vettingOverrides, byId, (o) => toRow(o)));
+  // Admissions advisory is seeded lazily: until it exists the table is left out, so seeding it is not recorded as inserts.
+  if (db.admissions) snap.set('admissions_cases', keyed(db.admissions.cases, byId, (c) => toRow(c)));
   return structuredClone(snap);
 }
 
@@ -210,7 +212,9 @@ export function recordAuditChanges(db: DemoDB, before: AuditSnapshot, viewer: Pr
   const events: AuditEvent[] = [];
   const next = () => new Date(now.getTime() + events.length);
   for (const [table, rows] of current) {
-    const old = before.get(table) ?? new Map<string, Row>();
+    // A lazily seeded collection (admissions) that did not exist before this write: seeding is not a change.
+    if (!before.has(table)) continue;
+    const old = before.get(table)!;
     for (const [key, row] of rows) {
       const e = makeEvent(table, key, old.get(key), row, viewer, next(), lookup);
       if (e) events.push(e);
