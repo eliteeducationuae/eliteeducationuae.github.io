@@ -5,13 +5,15 @@ import { Spacing } from '@/constants/theme';
 import { builtInSyllabusesFor, courseStillFits, enrolmentFieldsFor } from '@/data/curriculum';
 import { CURRICULA, EXAM_BOARDS, levelsFor, SUBJECTS } from '@/domain/catalogue';
 import { enrolmentTitle, tutorChoicePatch, tutorTeaches, type EnrolmentDraft } from '@/domain/enrolments';
+import { enrolmentGivesNewStudent } from '@/domain/vetting';
 import { familyPricePlaceholder, parseRate, serviceForEnrolment, tutorPayPlaceholder } from '@/domain/rates';
 import { formatAED } from '@/domain/money';
-import type { Enrolment, Service, Student, Tutor } from '@/domain/types';
+import type { Enrolment, Service, Student, Tutor, TutorCompliance } from '@/domain/types';
 
 import { CataloguePicker } from './catalogue-picker';
 import { RateField, rateFieldError, rateFieldText } from './rates';
 import { Banner, Button, Card, Chip, Row, Txt } from './ui';
+import { tutorChipLabel, VettingWarning } from './vetting';
 
 /** Tutors who teach the subject first, then everyone else, each group in name order. */
 export function orderTutorsForSubject(tutors: Tutor[], subject?: string): { tutor: Tutor; teaches: boolean }[] {
@@ -44,7 +46,8 @@ export interface EnrolmentRatesOptions {
  * The list of subjects a student studies: subject, curriculum, level, exam board and (for staff) the tutor.
  * Omit `tutors` for families, which hides the tutor choice. `forFamily` words the built-in topic lists as
  * courses and drops the staff-only 'Build as we teach' choice. `rates` (admins only) adds the custom tutor pay
- * and family price per hour for each subject.
+ * and family price per hour for each subject. `vetting` (staff) marks tutors whose checks are incomplete and warns
+ * under a subject when one is newly chosen, before anything is saved.
  */
 export function EnrolmentEditor({
   value,
@@ -52,12 +55,14 @@ export function EnrolmentEditor({
   tutors,
   forFamily,
   rates,
+  vetting,
 }: {
   value: EnrolmentDraft[];
   onChange: (v: EnrolmentDraft[]) => void;
   tutors?: Tutor[];
   forFamily?: boolean;
   rates?: EnrolmentRatesOptions;
+  vetting?: Map<string, TutorCompliance>;
 }) {
   const update = (index: number, patch: Partial<EnrolmentDraft>) => onChange(value.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   const visible = value.map((d, index) => ({ d, index })).filter(({ d }) => d.active);
@@ -72,6 +77,7 @@ export function EnrolmentEditor({
           tutors={tutors}
           forFamily={forFamily}
           rates={rates}
+          vetting={vetting}
           onChange={(patch) => update(index, patch)}
           onRemove={() => onChange(removeDraft(value, index))}
         />
@@ -88,6 +94,7 @@ function SubjectCard({
   tutors,
   forFamily,
   rates,
+  vetting,
   onChange,
   onRemove,
 }: {
@@ -96,6 +103,7 @@ function SubjectCard({
   tutors?: Tutor[];
   forFamily?: boolean;
   rates?: EnrolmentRatesOptions;
+  vetting?: Map<string, TutorCompliance>;
   onChange: (patch: Partial<EnrolmentDraft>) => void;
   onRemove: () => void;
 }) {
@@ -168,7 +176,7 @@ function SubjectCard({
             {ordered.map(({ tutor, teaches }) => (
               <Chip
                 key={tutor.id}
-                label={teaches ? `${tutor.fullName} ✓` : tutor.fullName}
+                label={tutorChipLabel(teaches ? `${tutor.fullName} ✓` : tutor.fullName, vetting?.get(tutor.id))}
                 selected={draft.tutorId === tutor.id}
                 // Custom pay belongs to the student, subject and tutor together, so a new tutor starts at their usual rate.
                 onPress={() => choose(tutor.id)}
@@ -176,6 +184,10 @@ function SubjectCard({
             ))}
           </Row>
           {subject && ordered.some((t) => t.teaches) ? <Txt variant="small">✓ Teaches {subject}</Txt> : null}
+          {vetting && draft.tutorId && enrolmentGivesNewStudent(draft, rates?.saved ?? []) ? (
+            // The same warning as the lesson form, shown as soon as the tutor is chosen rather than after Save.
+            <VettingWarning key={draft.tutorId} tutorId={draft.tutorId} action="enrolment" checksLink />
+          ) : null}
           {rates && lostPay ? (
             <Banner tone="warning" icon="alert">
               {lostPay}

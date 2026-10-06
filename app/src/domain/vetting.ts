@@ -189,6 +189,52 @@ export function vettingBlockMessage(tutorName: string, action: 'lesson' | 'enrol
   return `${VETTING_BLOCK_PREFIX}: ${tutorName} cannot be ${BLOCKED_ACTION[action]} until their police clearance has been verified. An administrator can record an override with a reason.`;
 }
 
+/**
+ * True when saving this subject would give the tutor a new student, mirroring the server guard: a new subject,
+ * a different tutor, or a subject brought back into use. Unchanged subjects keep their tutor regardless of clearance.
+ */
+export function enrolmentGivesNewStudent(
+  draft: { id?: string; active: boolean; tutorId?: string },
+  saved: readonly { id: string; tutorId?: string; active?: boolean }[],
+): boolean {
+  if (!draft.active || !draft.tutorId) return false;
+  const existing = draft.id ? saved.find((e) => e.id === draft.id) : undefined;
+  return !existing || existing.tutorId !== draft.tutorId || existing.active === false;
+}
+
+/**
+ * The tutors (in first-seen order, without repeats) who would be given a new student by these subject drafts
+ * but cannot be yet: clearance enforced, not cleared and no override in force. Checked before anything is saved.
+ */
+export function blockedEnrolmentTutors(
+  drafts: readonly { id?: string; active: boolean; tutorId?: string }[],
+  saved: readonly { id: string; tutorId?: string; active?: boolean }[],
+  complianceFor: (tutorId: string) => TutorCompliance | undefined,
+  now: Date,
+): string[] {
+  const blocked: string[] = [];
+  for (const d of drafts) {
+    if (!d.tutorId || !enrolmentGivesNewStudent(d, saved) || blocked.includes(d.tutorId)) continue;
+    if (!canAssignTutor(complianceFor(d.tutorId), now).allowed) blocked.push(d.tutorId);
+  }
+  return blocked;
+}
+
+/** 'James Wilson', 'James Wilson and Omar Haddad', 'A, B and C'. */
+function joinNames(names: readonly string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The message shown when the student editor refuses to save because a subject would go to an uncleared tutor.
+ * It starts with the vetting prefix, so it is recognised as a vetting block, and says plainly that nothing was saved.
+ */
+export function enrolmentVettingMessage(tutorNames: readonly string[]): string {
+  const who = joinNames(tutorNames);
+  const choose = tutorNames.length > 1 ? 'choose other tutors' : 'choose another tutor';
+  return `${VETTING_BLOCK_PREFIX}: ${who} cannot be ${BLOCKED_ACTION.enrolment} until their police clearance has been verified, so nothing has been saved. Please record their checks or an override, or ${choose}, and then save again.`;
+}
+
 /** True when an error (or message) is a vetting block, so the UI can offer the override. */
 export function isVettingBlock(err: unknown): boolean {
   const message =

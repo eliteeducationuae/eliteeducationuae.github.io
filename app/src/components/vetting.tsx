@@ -284,11 +284,14 @@ export function VettingWarning({
   tutorId,
   action,
   expanded,
+  checksLink,
 }: {
   tutorId: string;
   action: 'lesson' | 'enrolment' | 'role';
   /** Open the override form straight away, e.g. after the server refused the assignment. */
   expanded?: boolean;
+  /** Offer admins a link to the tutor's checks as well, e.g. from the student editor. */
+  checksLink?: boolean;
 }) {
   const me = useMe();
   const today = useToday();
@@ -299,15 +302,29 @@ export function VettingWarning({
   const name = tutors.data?.find((t) => t.id === tutorId)?.fullName ?? 'This tutor';
   const verdict = canAssignTutor(c, today);
   const what = action === 'lesson' ? 'new lessons' : action === 'enrolment' ? 'new students' : 'new roles';
+  const checks =
+    checksLink && me.role === 'admin' ? (
+      <>
+        {' '}
+        <Txt
+          variant="muted"
+          color="accent"
+          accessibilityRole="link"
+          onPress={() => router.push({ pathname: '/manage/vetting/[tutorId]', params: { tutorId } })}>
+          Record their checks
+        </Txt>
+      </>
+    ) : null;
   if (!verdict.allowed) {
     const showForm = me.role === 'admin' && (open || expanded);
     return (
       <View style={{ gap: Spacing.two }}>
         <Banner tone="danger" icon="alert">
           {name} cannot be assigned {what} until their police clearance has been verified; {blockedReasonPhrase(c)}.
+          {checks}
           {me.role === 'admin' && !showForm ? (
             <>
-              {' '}
+              {checks ? ' · ' : ' '}
               <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => setOpen(true)}>
                 Record an override
               </Txt>
@@ -323,6 +340,7 @@ export function VettingWarning({
       <Banner tone="warning" icon="alert">
         {name}’s police clearance is {VETTING_PHRASE[c.vettingStatus]}. Police clearance is not enforced at present, so they can still be assigned {what}, but we
         recommend verifying their certificate first.
+        {checks}
       </Banner>
     );
   }
