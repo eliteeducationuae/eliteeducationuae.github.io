@@ -855,17 +855,6 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
  * Account deletion: a closed family's admissions cases go with everything filed under them (mirrors the round 5
  * merge's anonymise_student). Returns the document paths, whose demo files the caller removes.
  */
-/**
- * A closed login's name beside admissions work (advisory updates they wrote, tasks they completed) becomes `former`,
- * as anonymise_profile_data does on the server. The demo keeps only names, so it matches by name.
- */
-export function renameAdmissionsWorker(db: DemoDB, name: string, former: string) {
-  const s = db.admissions;
-  if (!s || !name) return;
-  for (const u of s.updates) if (u.authorName === name) u.authorName = former;
-  for (const t of s.tasks) if (t.doneByName === name) t.doneByName = former;
-}
-
 export function removeAdmissionsForStudents(db: DemoDB, studentIds: Set<string>): string[] {
   const s = store(db);
   const caseIds = new Set(s.cases.filter((c) => studentIds.has(c.studentId)).map((c) => c.id));

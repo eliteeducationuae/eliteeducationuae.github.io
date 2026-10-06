@@ -380,12 +380,18 @@ Round 5 adds View as, per-student rates, family contacts, the audit log, UAE tax
    12. `20261110000000_handover.sql`
    13. `20261111000000_round5_merge.sql`
    14. `20261112000000_round5_followups.sql`
-   <!-- r6 fix migrations -->
+   15. `20261113000800_launch_fix.sql`
+   16. `20261113001100_copy_fix.sql`
+   17. `20261113001300_handoverac_fix.sql`
+   18. `20261113001400_contactdel_fix.sql`
+   19. `20261113001500_secminor_fix.sql`
+   20. `20261113001600_deletion_fix.sql`
+   21. `20261113001700_creditnote_fix.sql`
 
-   Later fix migrations, named `20261113…_*_fix.sql`, are listed at the end of this list; run them last, in filename order. This is the one list of migrations to run for round 5: the sections below refer back to it rather than repeating it.
+   The fix migrations (`20261113…_*_fix.sql`) come last, in filename order. This is the one list of migrations to run for round 5: the sections below refer back to it rather than repeating it.
 
    The merge migration joins the features together: it restores the round 4 follow-up's notification links and readable charge dates where round 5 files had redefined those functions, keeps the office's enquiry notes away from families, stops a family contact's address becoming an accountant login, extends account deletion and *Download my data* to every round 5 record, lets View as read the round 5 screens, audits credit notes, refunds, accountant access, admissions cases and tutor documents, and records every migration in the ledger. The follow-ups migration makes the admissions timeline read *Advisory update sent: October 2026* when a monthly update is sent. As with round 4, do not use `npx supabase db push` unless the migration history has first been repaired (see step 1 of the *Round 4 setup checklist*).
-2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261112000000 round5_followups`, and the ledger should list 26 migrations.
+2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261113001700 creditnote_fix`, and the ledger should list 33 migrations.
 3. **View as.** In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard` (see *View as* below).
 4. **Deploy the Edge Functions.** Run `npx supabase functions deploy view-as refund-payment invite-accountant delete-account health-check backup-export ai-assist billing-portal charge-invoice create-checkout google-connect calendar-sync stripe-webhook send-notifications send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`. Every function a signed-in person can call to change something now refuses a View as session, and the scheduled ones report to *System health*. Run this from the `app/` folder so that `supabase/config.toml` keeps `stripe-webhook`, `google-connect` and `verify-captcha` open without a login.
 5. **Secrets.** Set `HEALTH_ALERT_EMAIL` (System health alerts), and make sure `APP_URL`, `RESEND_API_KEY` and `EMAIL_FROM` are set (the accountant's invitation and the health alerts use them). `ANTHROPIC_API_KEY` is optional: without it the admissions *AI draft* button uses the built-in template letter.
@@ -549,10 +555,10 @@ Both run automatically in GitHub Actions on every push and pull request (see *Co
 ## Database migrations
 
 - **Never edit a migration that has been applied** anywhere (production, or a teammate's database). Fix forward with a new migration.
-- Name each new file `<next timestamp>_<name>.sql` in `supabase/migrations`, with a timestamp later than every existing file (for example `20261112000000_waiting_list.sql`). Files run in name order.
+- Name each new file `<next timestamp>_<name>.sql` in `supabase/migrations`, with a timestamp later than every existing file (for example `20261201000000_waiting_list.sql`). Files run in name order.
 - **End every new migration** with a line that records it, so the app can show which version is live:
   ```sql
-  select public.record_migration('20261112000000', 'waiting_list');
+  select public.record_migration('20261201000000', 'waiting_list');
   ```
 - Add a matching SQL test, `supabase/tests/<name>_test.sql`, and add `<name>` to the list of tests in `supabase/tests/run.sh`. CI then checks it on every push.
 - Apply to production by pasting the file into the SQL editor, or with `npx supabase db push` (it applies only the migrations that are new) only once the migration history has been repaired (see *Round 4 setup checklist*, step 1).

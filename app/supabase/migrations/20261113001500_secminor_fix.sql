@@ -4,8 +4,10 @@
 --     admins, parents and the accountant. Everyone signed in still reads the service catalogue (name, length, subject,
 --     phase) through public.service_catalogue, which is all tutor and student screens need. Tutors and students no
 --     longer see package offers at all.
---  2. View as: while a person is protected, their pending email or phone change (email_change, phone_change) and their
---     user metadata cannot change either, so an email change cannot be started during a view and confirmed after it.
+--  2. View as: while a person is protected, their pending email or phone change (email_change, phone_change) cannot
+--     change either, so an email change cannot be started during a view and confirmed after it. User metadata
+--     (raw_user_meta_data) is left free: Google and Apple sign-in refresh it, and blocking it would stop the person
+--     signing in for 24 hours after a view.
 --     A revoked view now protects the person for 24 hours after it was revoked (the life of an email-change link).
 --  3. App error reports: anonymous reports are also limited per connection (20 an hour for each request_ip_hash()), as
 --     submit_enquiry does, so one script cannot use up the 200-an-hour allowance for genuine signed-out crash reports.
@@ -52,8 +54,7 @@ create or replace function public.view_as_protect_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare o jsonb := to_jsonb(old); n jsonb := to_jsonb(new);
 begin
-  if exists (select 1 from unnest(array['email', 'phone', 'encrypted_password', 'email_change', 'phone_change',
-                                        'raw_user_meta_data']) k
+  if exists (select 1 from unnest(array['email', 'phone', 'encrypted_password', 'email_change', 'phone_change']) k
              where n -> k is distinct from o -> k)
      and public.view_as_protects(new.id) then
     raise exception 'Account details cannot be changed while the office is viewing this account.' using errcode = '42501';

@@ -82,7 +82,7 @@ select pg_temp.check(pg_temp.err($q$update auth.users set email_change = 'thief@
 select pg_temp.check(pg_temp.err($q$update auth.users set phone_change = '+971500000001' where id = 'a0000000-0000-0000-0000-00000000000c'$q$)
   like '42501:%', 'a phone change cannot be started during a view');
 select pg_temp.check(pg_temp.err($q$update auth.users set raw_user_meta_data = '{"full_name":"X"}' where id = 'a0000000-0000-0000-0000-00000000000c'$q$)
-  like '42501:%', 'the user metadata cannot change during a view');
+  is null, 'the user metadata still updates during a view (Google and Apple sign-in refresh it)');
 select pg_temp.check(pg_temp.err($q$update auth.users set email_confirmed_at = now(), raw_app_meta_data = '{"provider":"email"}'
     where id = 'a0000000-0000-0000-0000-00000000000c'$q$) is null, 'other sign-in bookkeeping still updates during a view');
 select pg_temp.check(pg_temp.err($q$update auth.users set email_change = 'new@x' where id = 'a0000000-0000-0000-0000-0000000000b1'$q$) is null,

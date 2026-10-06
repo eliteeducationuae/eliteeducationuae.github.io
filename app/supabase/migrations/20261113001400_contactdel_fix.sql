@@ -14,6 +14,9 @@
 --     login. The family, its children, its other contacts and logins are left untouched. Requests recorded by the office
 --     (admin_record_deletion_request) keep their behaviour: a parent login closes its family.
 --  4. The migrations ledger records this file.
+--
+-- perform_account_deletion keeps 20261113000800_launch_fix's kept-records sentence (credit notes and refunds,
+-- public.deletion_kept_records).
 
 -- ---------------------------------------------------------------------------
 -- 1. The rule
@@ -160,8 +163,7 @@ begin
     when v_login_only then
       E'\n\nThe personal details held for this login have been removed. The family''s account, children and other contacts are unchanged.'
     when (v_summary->>'familyAnonymised')::boolean then
-      E'\n\nWhat was kept, for tax records: ' || public.deletion_count(v_summary, 'invoicesRetained', 'invoice', 'invoices')
-      || ' and ' || public.deletion_count(v_summary, 'paymentsRetained', 'payment', 'payments')
+      E'\n\nWhat was kept, for tax records: ' || public.deletion_kept_records(v_summary)
       || E'. Lesson dates, tutors and statuses are kept for invoicing. Personal details, lesson addresses, lesson notes, messages and homework have been removed.'
       || case when (v_summary->>'futureLessonsCancelled')::int > 0
            then E'\n\n' || public.deletion_count(v_summary, 'futureLessonsCancelled', 'upcoming lesson was', 'upcoming lessons were')

@@ -1,5 +1,4 @@
 import type { AdmissionsCase } from '@/domain/admissions';
-import { LAST_ADMIN_MESSAGE, last4 } from '@/domain/data-rights';
 import { closesOwnLoginOnly, LAST_ADMIN_MESSAGE, last4 } from '@/domain/data-rights';
 import { worstStatus } from '@/domain/system-health';
 import type {
@@ -18,7 +17,6 @@ import type {
 
 import { adm, removeAdmissionsForStudents } from './admissions';
 import { eraseAudit } from './audit';
-import { removeAdmissionsForStudents, renameAdmissionsWorker } from './admissions';
 import { cw } from './classwork';
 import { allContacts, listFamilyContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
@@ -623,8 +621,7 @@ function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
     delete m.senderId;
     m.senderName = former;
   }
-  // Names beside their work (as the deletion fix migration): advisory updates, admissions tasks, handbook versions.
-  renameAdmissionsWorker(db, profile.fullName, former);
+  // Handbook versions they published (as 20261113001600_deletion_fix; updates and tasks are renamed by forgetActorName).
   for (const h of db.handbookVersions ?? []) if (h.publishedByName === profile.fullName) h.publishedByName = former;
   delete db.reads[profile.id];
   return { role: profile.role, familyAnonymised: false, studentsAnonymised: 0, futureLessonsCancelled: 0, upcomingLessonsNeedingTutor: 0, invoicesRetained: 0, paymentsRetained: 0 };

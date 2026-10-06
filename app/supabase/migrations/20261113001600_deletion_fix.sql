@@ -11,6 +11,10 @@
 --     handbook versions (published by) read 'Former …' / 'Elite Education' once the login is closed. Tasks now record
 --     who completed them (admissions_tasks.done_by); tasks completed before this migration are matched by name.
 --  4. The migrations ledger records this file.
+--
+-- anonymise_family and anonymise_profile_data were also redefined by 20261113000800_launch_fix; the versions here keep
+-- every launch_fix change (credit notes and refunds counted, tasks matched by name only within the login's cases, the
+-- spam log address removed) as well as this file's.
 
 -- ---------------------------------------------------------------------------
 -- 3a. Admissions tasks record who completed them
@@ -89,7 +93,10 @@ begin
 
   -- The audit log keeps that each change happened, without the family's names, contact details or free text.
   perform public.audit_erase(array[p_family_id], sids, '{}', '{}');
-  return part;
+  -- Kept for tax records with the invoices and payments (as 20261113000800_launch_fix).
+  return part || jsonb_build_object(
+    'creditNotesRetained', (select count(*) from public.credit_notes where family_id = p_family_id),
+    'refundsRetained', (select count(*) from public.refunds where family_id = p_family_id));
 end $$;
 revoke all on function public.anonymise_family(uuid) from public, anon, authenticated;
 
@@ -117,10 +124,18 @@ begin
   update public.tutor_vetting_overrides set revoked_by_name = former where revoked_by = p_profile_id;
   update public.admissions_updates set author_name = former where author_id = p_profile_id;
   update public.handbook_versions set published_by_name = former where published_by = p_profile_id;
-  -- Tasks completed before done_by was recorded carry only the name.
-  update public.admissions_tasks set done_by_name = former
-   where done_by = p_profile_id
-      or (done_by is null and p.full_name is not null and done_by_name = p.full_name);
+  -- Tasks completed before done_by was recorded carry only the name, matched within the cases this login could act on
+  -- (as 20261113000800_launch_fix).
+  update public.admissions_tasks set done_by_name = former where done_by = p_profile_id;
+  update public.admissions_tasks k set done_by_name = former
+    from public.admissions_cases c
+   where c.id = k.case_id and k.done_by is null and p.full_name is not null and k.done_by_name = p.full_name
+     and (p.role = 'admin'
+          or (p.tutor_id is not null and c.adviser_tutor_id = p.tutor_id)
+          or (p.family_id is not null and c.family_id = p.family_id)
+          or (p.student_id is not null and c.student_id = p.student_id));
+  -- Their address in the spam log (as 20261113000800_launch_fix).
+  delete from public.submission_log where email is not null and lower(email) = v_email;
 
   perform public.anonymise_profile_records(p_profile_id);
   perform public.audit_erase('{}', '{}', '{}', array[p_profile_id]);
