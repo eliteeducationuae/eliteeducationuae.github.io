@@ -39,7 +39,7 @@ export default function Payroll() {
               <Avatar name={r.tutor.fullName} color={r.tutor.color} />
               <View style={{ flex: 1 }}>
                 <Txt variant="h3">{r.tutor.fullName}</Txt>
-                <Txt variant="muted">{payrollSubtitle(r, r.tutor.hourlyPay)}</Txt>
+                <Txt variant="muted">{payrollSubtitle(r, r.tutor.hourlyPay ?? 0)}</Txt>
               </View>
               <Txt variant="h3">{formatAED(r.amount)}</Txt>
             </Row>

@@ -196,12 +196,16 @@ function blankToNull(v: string | undefined): string | null | undefined {
   return v === undefined ? undefined : v.trim() || null;
 }
 
+/** The tutor columns everyone signed in may read (public.tutor_directory). */
+const TUTOR_DIRECTORY_COLUMNS = 'id, full_name, subjects, curricula, phases, color, deleted_at';
+
 const toTutor = (r: Row): Tutor => ({
   id: r.id,
   fullName: r.full_name,
-  email: r.email,
+  // Other tutors' email, phone and pay come back missing for non-admins (they read the tutor_directory view).
+  email: r.email ?? '',
   phone: r.phone ?? undefined,
-  hourlyPay: Number(r.hourly_pay),
+  hourlyPay: r.hourly_pay == null ? undefined : Number(r.hourly_pay),
   subjects: r.subjects ?? [],
   curricula: r.curricula ?? [],
   phases: r.phases ?? [],
@@ -1033,7 +1037,14 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       return toSettings(check(await client.from('settings').select('*').eq('id', 1).single()));
     },
     async listTutors() {
-      return check(await client.from('tutors').select('*').order('full_name')).map(toTutor);
+      // Security: public.tutors returns every row to admins but only a tutor's own row to a tutor (and none to anyone else);
+      // everyone reads names, subjects and colours from tutor_directory, never another tutor's pay, email or phone.
+      const [full, directory] = await Promise.all([
+        client.from('tutors').select('*').order('full_name'),
+        client.from('tutor_directory').select(TUTOR_DIRECTORY_COLUMNS).order('full_name'),
+      ]);
+      const own = new Map(check(full).map((r: Row) => [r.id, r]));
+      return check(directory).map((r: Row) => toTutor(own.get(r.id) ?? r));
     },
     async listFamilies() {
       return check(await client.from('families').select('*, family_billing(*)').order('name')).map(toFamily);

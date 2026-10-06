@@ -233,7 +233,7 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
 
     // Tax: demo databases saved before the tax settings existed get their defaults.
     getSettings: () => read((d) => ({ ...d.settings, vatQuarterStartMonth: d.settings.vatQuarterStartMonth ?? 1, nextCreditNoteNumber: d.settings.nextCreditNoteNumber ?? 1 })),
-    listTutors: () => read((d) => d.tutors),
+    listTutors: () => read((d, v) => q.tutors(d, v)),
     listFamilies: () => read((d, v) => pay.stripBilling(q.families(d, v), v)),
     listStudents: () => read((d, v) => q.students(d, v)),
     listServices: () => read((d) => d.services),

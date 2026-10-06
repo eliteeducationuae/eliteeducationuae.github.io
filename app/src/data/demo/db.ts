@@ -246,6 +246,14 @@ function stripPrivate(note: LessonNote, viewer: Profile): LessonNote {
 // ---------------------------------------------------------------------------
 
 export const q = {
+  /** Mirrors 20261113001200_tutorpay_fix.sql: admins and the tutor themself read the whole row; everyone else only the directory columns. */
+  tutors(db: DemoDB, viewer: Profile): Tutor[] {
+    return db.tutors.map((t) =>
+      viewer.role === 'admin' || (viewer.role === 'tutor' && viewer.tutorId === t.id)
+        ? t
+        : { id: t.id, fullName: t.fullName, email: '', subjects: t.subjects, curricula: t.curricula, phases: t.phases, color: t.color, deletedAt: t.deletedAt },
+    );
+  },
   students(db: DemoDB, viewer: Profile): Student[] {
     const ids = visibleStudentIds(db, viewer);
     return db.students

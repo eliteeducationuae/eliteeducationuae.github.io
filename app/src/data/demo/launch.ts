@@ -58,6 +58,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261110000000', name: 'handover' },
   { version: '20261111000000', name: 'round5_merge' },
   { version: '20261112000000', name: 'round5_followups' },
+  { version: '20261113001200', name: 'tutorpay_fix' },
 ];
 
 const appErrorsOf = (db: DemoDB) => (db.appErrors ??= []);
