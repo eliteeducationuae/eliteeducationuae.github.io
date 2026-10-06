@@ -13,6 +13,8 @@ import {
   recordDeletionRequest,
   systemHealth,
 } from '../demo/launch';
+import { adm } from '../demo/admissions';
+import { auditedWrite } from '../demo/audit';
 import { createSeed } from '../demo/seed';
 
 type DB = ReturnType<typeof createSeed>;
@@ -65,7 +67,70 @@ describe('exportMyData (mirrors export_my_data)', () => {
   });
 });
 
+describe('exportMyData: round 5 records (mirrors 20261113000800_launch_fix)', () => {
+  it('gives a parent the admissions shortlist, key dates, tasks and timeline, and only shared lesson plans', () => {
+    const db = createSeed();
+    const parent = who(db, 'parent');
+    const data = exportMyData(db, parent, NOW);
+    const cases = data.admissions as { shortlist: unknown[]; keyDates: unknown[]; tasks: unknown[]; timeline: unknown[] }[];
+    expect(cases.length).toBeGreaterThan(0);
+    expect(cases.some((c) => c.shortlist.length && c.keyDates.length && c.tasks.length && c.timeline.length)).toBe(true);
+    const staffOnly = (db.admissions?.events ?? []).filter((e) => !e.familyVisible).map((e) => e.title);
+    expect(JSON.stringify(cases)).not.toContain(staffOnly[0] ?? '\u0000');
+    for (const key of ['familyContacts', 'creditNotes', 'refunds', 'agreedPrices', 'lessonPlans']) expect(Array.isArray(data[key])).toBe(true);
+    const shared = new Set((db.lessonPlans ?? []).filter((p) => p.sharedWithFamily).map((p) => p.lessonId));
+    expect((data.lessonPlans as { lessonId: string }[]).every((p) => shared.has(p.lessonId))).toBe(true);
+    expect(data.tutorPay).toEqual([]);
+    expect(data.handovers).toEqual([]);
+  });
+
+  it('gives a tutor their pay rates, handover packs, lesson plans and vetting overrides', () => {
+    const db = createSeed();
+    const tutor = who(db, 'tutor');
+    const data = exportMyData(db, tutor, NOW);
+    const pay = db.enrolments.filter((e) => e.tutorId === tutor.tutorId && e.tutorPay !== undefined);
+    expect(data.tutorPay).toHaveLength(pay.length);
+    expect((data.handovers as unknown[]).length).toBe((db.handovers ?? []).filter((h) => h.toTutorId === tutor.tutorId || h.fromTutorId === tutor.tutorId).length);
+    expect(Array.isArray(data.lessonPlans) && Array.isArray(data.vettingOverrides)).toBe(true);
+    expect(data.agreedPrices).toEqual([]);
+    expect(data.admissions).toEqual([]);
+  });
+});
+
 describe('deleteMyAccount (mirrors delete-account)', () => {
+  it('keeps credit notes and refunds, and erases the family from the audit log', () => {
+    const db = createSeed();
+    const parent = who(db, 'parent');
+    const familyId = parent.familyId!;
+    const children = db.students.filter((s) => s.familyId === familyId).map((s) => s.fullName);
+    const invoice = db.invoices.find((i) => i.familyId === familyId)!;
+    db.creditNotes = [{ id: 'cn-1', number: 'CN-1', invoiceId: invoice.id, familyId, reason: 'Lesson cancelled' } as unknown as NonNullable<DB['creditNotes']>[number]];
+    db.refunds = [{ id: 'rf-1', invoiceId: invoice.id, familyId, amount: 105, reason: 'Lesson cancelled' } as unknown as NonNullable<DB['refunds']>[number]];
+    // A change to the family first, so the audit log holds its details.
+    auditedWrite(db, parent, () => {
+      db.families.find((f) => f.id === familyId)!.phone = '+971 50 123 4567';
+    }, NOW);
+
+    const summary = auditedWrite(db, parent, () => deleteMyAccount(db, parent, NOW), NOW);
+
+    expect(summary).toMatchObject({ creditNotesRetained: 1, refundsRetained: 1 });
+    expect(db.creditNotes).toHaveLength(1);
+    expect(db.refunds).toHaveLength(1);
+    const trail = JSON.stringify(db.audit ?? []);
+    for (const personal of [parent.fullName, parent.email, '+971 50 123 4567', ...children]) expect(trail).not.toContain(personal);
+    expect((db.audit ?? []).some((e) => e.familyIds.includes(familyId))).toBe(true);
+  });
+
+  it('replaces a closed tutor’s name beside the admissions documents they added', () => {
+    const db = createSeed();
+    const tutor = who(db, 'tutor');
+    const docs = adm.store(db).documents.filter((d) => d.uploadedBy === tutor.id);
+    expect(docs.length).toBeGreaterThan(0);
+    deleteMyAccount(db, tutor, NOW);
+    expect(docs.every((d) => d.uploadedByName === 'Former tutor')).toBe(true);
+    expect(JSON.stringify(adm.store(db))).not.toContain(tutor.fullName);
+  });
+
   it('anonymises a family, keeps invoices and cancels future lessons', () => {
     const db = createSeed();
     const parent = who(db, 'parent');

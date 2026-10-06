@@ -753,6 +753,8 @@ const toDeletionSummary = (r: Row | null | undefined): DeletionSummary => {
     upcomingLessonsNeedingTutor: n(s.upcomingLessonsNeedingTutor),
     invoicesRetained: n(s.invoicesRetained),
     paymentsRetained: n(s.paymentsRetained),
+    creditNotesRetained: n(s.creditNotesRetained),
+    refundsRetained: n(s.refundsRetained),
   };
 };
 

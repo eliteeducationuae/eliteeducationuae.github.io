@@ -1,9 +1,10 @@
-// Closes an account: anonymises the records (keeping invoices and payments for tax law), removes the person's files
-// and deletes their login.
+// Closes an account: anonymises the records (keeping invoices, credit notes, payments and refunds for tax law), removes
+// the person's files and deletes their login.
 //   {}               the signed-in person closes their own account.
 //   { requestId }    a signed-in admin carries out a recorded deletion request (pending or failed).
 // Returns 200 { ok: true, requestId, summary: { role, familyAnonymised, studentsAnonymised, futureLessonsCancelled,
-//   upcomingLessonsNeedingTutor, invoicesRetained, paymentsRetained, filesRemoved, loginsRemoved } };
+//   upcomingLessonsNeedingTutor, invoicesRetained, paymentsRetained, creditNotesRetained, refundsRetained, filesRemoved,
+//   loginsRemoved } };
 //   401 not signed in; 403 not an admin (with requestId); 404 no such request; 409 the only administrator, or a request
 //   already dealt with; 500 when it could not be finished (the request is marked failed so the office can try again).
 // The database work happens in perform_account_deletion (migration 20261108000000_launch.sql). No extra secrets.
@@ -25,6 +26,8 @@ type Summary = {
   upcomingLessonsNeedingTutor?: number;
   invoicesRetained?: number;
   paymentsRetained?: number;
+  creditNotesRetained?: number;
+  refundsRetained?: number;
   storagePaths?: string[];
   storageFolders?: string[];
   profileId?: string | null;
@@ -180,6 +183,8 @@ Deno.serve(withMonitoring(NAME, adminClient, async (req) => {
       upcomingLessonsNeedingTutor: summary.upcomingLessonsNeedingTutor ?? 0,
       invoicesRetained: summary.invoicesRetained ?? 0,
       paymentsRetained: summary.paymentsRetained ?? 0,
+      creditNotesRetained: summary.creditNotesRetained ?? 0,
+      refundsRetained: summary.refundsRetained ?? 0,
       filesRemoved,
       loginsRemoved,
     },

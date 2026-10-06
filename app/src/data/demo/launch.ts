@@ -1,3 +1,4 @@
+import type { AdmissionsCase } from '@/domain/admissions';
 import { LAST_ADMIN_MESSAGE, last4 } from '@/domain/data-rights';
 import { worstStatus } from '@/domain/system-health';
 import type {
@@ -14,7 +15,8 @@ import type {
   SystemHealth,
 } from '@/domain/types';
 
-import { removeAdmissionsForStudents } from './admissions';
+import { adm, removeAdmissionsForStudents } from './admissions';
+import { eraseAudit } from './audit';
 import { cw } from './classwork';
 import { allContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
@@ -58,6 +60,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261110000000', name: 'handover' },
   { version: '20261111000000', name: 'round5_merge' },
   { version: '20261112000000', name: 'round5_followups' },
+  { version: '20261113000800', name: 'launch_fix' },
   { version: '20261113001100', name: 'copy_fix' },
   { version: '20261113001700', name: 'creditnote_fix' },
 ];
@@ -239,6 +242,13 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
     admissions: [] as unknown[],
     tutorDocuments: [] as unknown[],
     handbookAcknowledgements: [] as unknown[],
+    // The rest of the round 5 records (as 20261113000800_launch_fix's export_my_data).
+    agreedPrices: [] as unknown[],
+    lessonPlans: [] as unknown[],
+    tutorPay: [] as unknown[],
+    handovers: [] as unknown[],
+    vettingOverrides: [] as unknown[],
+    accountantInvitation: null as unknown,
   };
   const base: DataExport = {
     format: 'elite-education-export/1',
@@ -255,6 +265,10 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
     const students = q.students(db, viewer);
     const invoices = viewer.role === 'parent' ? q.invoices(db, viewer) : [];
     const family = viewer.role === 'parent' ? (db.families.find((f) => f.id === viewer.familyId) ?? null) : null;
+    const sids = new Set(students.map((st) => st.id));
+    const lessonStart = new Map(db.lessons.map((l) => [l.id, l.start]));
+    // Seeded on first use, as the Admissions screens do.
+    const ad = adm.store(db);
     return {
       ...base,
       family: family
@@ -284,12 +298,44 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
       familyContacts: viewer.role === 'parent' && viewer.familyId ? allContacts(db).filter((c) => c.familyId === viewer.familyId) : [],
       creditNotes: viewer.role === 'parent' ? (db.creditNotes ?? []).filter((n) => n.familyId === viewer.familyId) : [],
       refunds: viewer.role === 'parent' ? (db.refunds ?? []).filter((r) => r.familyId === viewer.familyId).map(({ requestKey: _key, ...r }) => r) : [],
-      admissions: (db.admissions?.cases ?? [])
-        .filter((c) => students.some((st) => st.id === c.studentId))
+      // Admissions advisory as the family sees it: shortlist, key dates, tasks, updates, shared documents and timeline.
+      admissions: ad.cases
+        .filter((c) => sids.has(c.studentId))
         .map((c) => ({
-          ...c,
-          updates: (db.admissions?.updates ?? []).filter((u) => u.caseId === c.id && u.status === 'published'),
-          documents: (db.admissions?.documents ?? []).filter((d) => d.caseId === c.id && d.familyVisible).map((d) => ({ name: d.name, category: d.category })),
+          studentId: c.studentId,
+          kind: c.kind,
+          title: c.title,
+          entryYear: c.entryYear ?? null,
+          status: c.status,
+          summary: c.summary ?? null,
+          shortlist: ad.targets
+            .filter((t) => t.caseId === c.id)
+            .map((t) => ({ institution: t.institution, country: t.country ?? null, programme: t.programme ?? null, entryYear: t.entryYear ?? null, status: t.status, decisionDate: t.decisionDate ?? null })),
+          keyDates: ad.dates.filter((d) => d.caseId === c.id).map((d) => ({ title: d.title, kind: d.kind, dueOn: d.dueOn, time: d.time ?? null, done: d.done })),
+          tasks: ad.tasks.filter((k) => k.caseId === c.id).map((k) => ({ title: k.title, details: k.details ?? null, dueOn: k.dueOn ?? null, owner: k.owner, doneAt: k.doneAt ?? null })),
+          updates: ad.updates
+            .filter((u) => u.caseId === c.id && u.status === 'published')
+            .map((u) => ({ title: u.title, period: u.period ?? null, body: u.body, publishedAt: u.publishedAt ?? null })),
+          documents: ad.documents
+            .filter((d) => d.caseId === c.id && (d.familyVisible || d.uploadedBy === viewer.id))
+            .map((d) => ({ name: d.name, category: d.category, addedAt: d.createdAt })),
+          timeline: ad.events.filter((e) => e.caseId === c.id && e.familyVisible).map((e) => ({ at: e.at, title: e.title, detail: e.detail ?? null })),
+        })),
+      agreedPrices:
+        viewer.role === 'parent'
+          ? db.enrolments
+              .filter((e) => sids.has(e.studentId) && e.familyPrice !== undefined)
+              .map((e) => ({ studentId: e.studentId, subject: e.subject, hourlyPrice: e.familyPrice }))
+          : [],
+      // Plans shared with the family, with homework planned for everyone or for its own children.
+      lessonPlans: (db.lessonPlans ?? [])
+        .filter((p) => p.sharedWithFamily && db.lessons.some((l) => l.id === p.lessonId && l.studentIds.some((id) => sids.has(id))))
+        .map((p) => ({
+          lessonId: p.lessonId,
+          lessonStart: lessonStart.get(p.lessonId) ?? null,
+          objectives: p.objectives,
+          homework: p.homework.filter((h) => !h.studentId || sids.has(h.studentId)),
+          updatedAt: p.updatedAt,
         })),
     };
   }
@@ -310,6 +356,39 @@ export function exportMyData(db: DemoDB, viewer: Profile, now = new Date()): Dat
         .filter((d) => d.tutorId === viewer.tutorId)
         .map((d) => ({ type: d.type, title: d.title, fileName: d.fileName, issueDate: d.issueDate, expiryDate: d.expiryDate, status: d.status })),
       handbookAcknowledgements: (db.handbookAcks ?? []).filter((a) => a.tutorId === viewer.tutorId),
+      lessonPlans: (db.lessonPlans ?? [])
+        .filter((p) => db.lessons.some((l) => l.id === p.lessonId && l.tutorId === viewer.tutorId))
+        .map((p) => ({
+          lessonId: p.lessonId,
+          lessonStart: db.lessons.find((l) => l.id === p.lessonId)?.start ?? null,
+          objectives: p.objectives,
+          homework: p.homework,
+          sharedWithFamily: p.sharedWithFamily,
+          updatedAt: p.updatedAt,
+        })),
+      tutorPay: db.enrolments
+        .filter((e) => e.tutorId === viewer.tutorId && e.tutorPay !== undefined)
+        .map((e) => ({ subject: e.subject, studentId: e.studentId, hourlyPay: e.tutorPay })),
+      handovers: (db.handovers ?? [])
+        .filter((h) => h.toTutorId === viewer.tutorId || h.fromTutorId === viewer.tutorId)
+        .map((h) => ({
+          createdAt: h.createdAt,
+          reason: h.reason,
+          studentName: h.studentName ?? null,
+          subject: h.subject ?? null,
+          direction: h.toTutorId === viewer.tutorId ? 'received' : 'written',
+          note: h.note ?? null,
+        })),
+      vettingOverrides: (db.vettingOverrides ?? [])
+        .filter((o) => o.tutorId === viewer.tutorId)
+        .map((o) => ({ reason: o.reason, createdAt: o.createdAt, expiresAt: o.expiresAt, revokedAt: o.revokedAt ?? null })),
+    };
+  }
+  if (viewer.role === 'accountant') {
+    const invite = (db.accountantInvites ?? []).find((i) => i.email === me.email.toLowerCase());
+    return {
+      ...base,
+      accountantInvitation: invite ? { fullName: invite.fullName ?? null, email: invite.email, invitedAt: invite.invitedAt, acceptedAt: invite.acceptedAt ?? null } : null,
     };
   }
   return base;
@@ -411,8 +490,13 @@ function anonymiseFamily(db: DemoDB, familyId: string, now: Date): DeletionSumma
   for (const reads of Object.values(db.reads)) delete reads[familyId];
 
   // Logins for the parent and the children go.
-  db.profiles = db.profiles.filter((p) => p.role === 'admin' || (p.familyId !== familyId && !(p.studentId && studentIds.has(p.studentId))));
+  const closing = db.profiles.filter((p) => p.role !== 'admin' && (p.familyId === familyId || (!!p.studentId && studentIds.has(p.studentId))));
+  for (const p of closing) forgetActorName(db, p, () => false);
+  db.profiles = db.profiles.filter((p) => !closing.includes(p));
+  // The audit log keeps that each change happened, without the family's names, contact details or free text.
+  eraseAudit(db, { familyIds: [familyId], studentIds: [...studentIds], profileIds: closing.map((p) => p.id) });
 
+  // Invoices, credit notes, payments and refunds are kept for the period UAE law requires.
   const invoices = db.invoices.filter((i) => i.familyId === familyId);
   return {
     role: 'parent',
@@ -422,6 +506,8 @@ function anonymiseFamily(db: DemoDB, familyId: string, now: Date): DeletionSumma
     upcomingLessonsNeedingTutor: 0,
     invoicesRetained: invoices.length,
     paymentsRetained: invoices.reduce((n, i) => n + i.payments.length, 0),
+    creditNotesRetained: (db.creditNotes ?? []).filter((n) => n.familyId === familyId).length,
+    refundsRetained: (db.refunds ?? []).filter((r) => r.familyId === familyId).length,
   };
 }
 
@@ -429,6 +515,8 @@ function anonymiseFamily(db: DemoDB, familyId: string, now: Date): DeletionSumma
 function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary {
   const tutor = db.tutors.find((t) => t.id === tutorId);
   if (!tutor) throw new Error('Tutor not found');
+  // Tasks the adviser ticked off and updates they wrote keep only that they happened (as 20261113000800_launch_fix).
+  forgetTutorName(db, tutorId, tutor.fullName);
   tutor.fullName = 'Former tutor';
   tutor.email = placeholderEmail('tutor', tutorId);
   delete tutor.phone;
@@ -447,8 +535,10 @@ function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary
     delete b.availability;
   }
   const profileIds = new Set(db.profiles.filter((p) => p.tutorId === tutorId && p.role === 'tutor').map((p) => p.id));
+  for (const p of db.profiles) if (profileIds.has(p.id)) forgetActorName(db, p, (c) => c.adviserTutorId === tutorId);
   db.calendarConnections = (db.calendarConnections ?? []).filter((c) => !profileIds.has(c.profileId));
   db.profiles = db.profiles.filter((p) => !profileIds.has(p.id));
+  eraseAudit(db, { tutorIds: [tutorId], profileIds: [...profileIds] });
   const upcoming = db.lessons.filter((l) => l.tutorId === tutorId && l.status === 'scheduled' && isFuture(l.start, now)).length;
   return {
     role: 'tutor',
@@ -461,10 +551,61 @@ function anonymiseTutor(db: DemoDB, tutorId: string, now: Date): DeletionSummary
   };
 }
 
+/** How a closed login is named beside what they did (as anonymise_profile_data). */
+function formerName(role: string): string {
+  switch (role) {
+    case 'tutor':
+      return 'Former tutor';
+    case 'student':
+      return 'Former student';
+    case 'admin':
+      return 'Elite Education';
+    case 'accountant':
+      return 'Former accountant';
+    default:
+      return 'Former parent';
+  }
+}
+
+/**
+ * Names written beside a closed login's actions (as anonymise_profile_data in 20261113000800_launch_fix): documents
+ * they added, updates they wrote and tasks they ticked off in the cases they could act on, and an administrator's
+ * vetting reviews and overrides. The demo keeps names rather than ids for some of these, so they are matched by name.
+ */
+function forgetActorName(db: DemoDB, profile: Profile, inScope: (c: AdmissionsCase) => boolean) {
+  const former = formerName(profile.role);
+  const name = profile.fullName;
+  const ad = db.admissions;
+  if (ad) {
+    const cases = new Set(ad.cases.filter((c) => inScope(c) || (!!profile.familyId && c.familyId === profile.familyId)).map((c) => c.id));
+    for (const d of ad.documents) if (d.uploadedBy === profile.id) d.uploadedByName = former;
+    for (const u of ad.updates) if (cases.has(u.caseId) && u.authorName === name) u.authorName = former;
+    for (const k of ad.tasks) if (cases.has(k.caseId) && k.doneByName === name) k.doneByName = former;
+  }
+  if (profile.role === 'admin') {
+    for (const d of db.tutorDocuments ?? []) if (d.verifiedByName === name) d.verifiedByName = former;
+    for (const o of db.vettingOverrides ?? []) {
+      if (o.createdByName === name) o.createdByName = former;
+      if (o.revokedByName === name) o.revokedByName = former;
+    }
+  }
+}
+
+/** A closed tutor's name leaves the tasks and updates of the cases they advised, with or without a login. */
+function forgetTutorName(db: DemoDB, tutorId: string, name: string) {
+  for (const c of db.admissions?.cases ?? []) {
+    if (c.adviserTutorId !== tutorId) continue;
+    for (const k of db.admissions!.tasks) if (k.caseId === c.id && k.doneByName === name) k.doneByName = 'Former tutor';
+    for (const u of db.admissions!.updates) if (u.caseId === c.id && u.authorName === name) u.authorName = 'Former tutor';
+  }
+}
+
 /** Deletes one login (a student, or an administrator who is not the last one). */
 function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
   if (profile.role === 'admin' && db.profiles.filter((p) => p.role === 'admin').length <= 1) throw new Error(LAST_ADMIN_MESSAGE);
+  forgetActorName(db, profile, (c) => profile.role === 'admin' || (!!profile.studentId && c.studentId === profile.studentId));
   db.profiles = db.profiles.filter((p) => p.id !== profile.id);
+  eraseAudit(db, { profileIds: [profile.id] });
   // Tax: an accountant's invitation goes with their login.
   if (profile.role === 'accountant') db.accountantInvites = (db.accountantInvites ?? []).filter((i) => i.email !== profile.email.toLowerCase());
   db.calendarConnections = (db.calendarConnections ?? []).filter((c) => c.profileId !== profile.id);

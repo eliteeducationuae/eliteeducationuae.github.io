@@ -89,13 +89,24 @@ export function exportFileName(date: Date, extension = 'json'): string {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** e.g. "Kept 4 invoices and 3 payments; cancelled 2 future lessons; 1 upcoming lesson needs a new tutor". */
+/** "a", "a and b", "a, b and c". */
+const listJoin = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/**
+ * e.g. "Kept 4 invoices and 3 payments; cancelled 2 future lessons; 1 upcoming lesson needs a new tutor", or
+ * "Kept 4 invoices, 1 credit note, 3 payments and 1 refund" when credit notes or refunds were kept too.
+ */
 export function deletionSummaryText(s: DeletionSummary | undefined | null): string {
   if (!s) return '';
   const parts: string[] = [];
   const invoices = s.invoicesRetained ?? 0;
   const payments = s.paymentsRetained ?? 0;
-  if (invoices || payments) parts.push(`Kept ${plural(invoices, 'invoice')} and ${plural(payments, 'payment')}`);
+  const creditNotes = s.creditNotesRetained ?? 0;
+  const refunds = s.refundsRetained ?? 0;
+  if (invoices || payments || creditNotes || refunds) {
+    const kept = [plural(invoices, 'invoice'), creditNotes ? plural(creditNotes, 'credit note') : '', plural(payments, 'payment'), refunds ? plural(refunds, 'refund') : ''];
+    parts.push(`Kept ${listJoin(kept.filter(Boolean))}`);
+  }
   if (s.studentsAnonymised) parts.push(`anonymised ${plural(s.studentsAnonymised, 'student')}`);
   if (s.futureLessonsCancelled) parts.push(`cancelled ${plural(s.futureLessonsCancelled, 'future lesson')}`);
   if (s.upcomingLessonsNeedingTutor) {
