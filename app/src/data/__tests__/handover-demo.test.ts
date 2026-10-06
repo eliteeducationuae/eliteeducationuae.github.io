@@ -87,7 +87,7 @@ describe('seeded plans and handovers', () => {
   });
 
   it('assembles Sarah’s pack without James’s private note', () => {
-    const sources = ho.sources(db, who(db, 'tutor'), 'ho-charlotte');
+    const sources = ho.sources(db, who(db, 'tutor'), 'ho-charlotte', NOW);
     expect(sources.notes.some((n) => n.privateNote === SEED_PRIVATE_NOTE)).toBe(false);
     expect(sources.lessons.length).toBeLessThanOrEqual(10);
     expect(sources.lessons.every((l) => l.status === 'completed' || l.status === 'no-show')).toBe(true);
@@ -103,7 +103,7 @@ describe('seeded plans and handovers', () => {
   });
 
   it('fills every part of Sarah’s pack with coherent content', () => {
-    const sources = ho.sources(db, who(db, 'tutor'), 'ho-charlotte');
+    const sources = ho.sources(db, who(db, 'tutor'), 'ho-charlotte', NOW);
     const pack = assembleHandoverPack(sources, buildTopicLookup(SYLLABUSES, db.topicLists, db.topics), NOW);
     expect(pack.examDate).toBeDefined();
     expect(pack.daysToExam).toBeGreaterThan(0);
@@ -125,6 +125,42 @@ describe('handover packs (mirror the handovers policies and handover_pack)', () 
       expect(() => ho.sources(db, viewer, 'ho-charlotte')).toThrow('Handover pack not found.');
     }
     expect(() => ho.sources(db, who(db, 'admin'), 'ho-missing')).toThrow('Handover pack not found.');
+  });
+
+  it('closes the pack once the incoming tutor no longer teaches the student (as handover_is_current)', () => {
+    const db = withoutVetting(createSeed(NOW));
+    const admin = who(db, 'admin');
+    const sarah = who(db, 'tutor');
+    const covered = db.lessons.find((l) => l.id === db.handovers!.find((h) => h.id === 'ho-charlotte')!.lessonId)!;
+    // Sarah has no other Maths lessons with Charlotte, so the pack lasts until a week after the covered lesson.
+    expect(db.lessons.filter((l) => l.tutorId === 't-sarah' && l.studentIds.includes('s-charlotte'))).toEqual([covered]);
+    const day = 86_400_000;
+    const end = new Date(covered.end).getTime();
+    expect(ho.sources(db, sarah, 'ho-charlotte', new Date(end + 6 * day)).closed).toBeUndefined();
+    const closed = ho.sources(db, sarah, 'ho-charlotte', new Date(end + 8 * day));
+    expect(closed).toMatchObject({ closed: true, lessons: [], notes: [], homework: [], plans: [], ratings: [], resources: [] });
+    expect(closed.student).toEqual({ id: 's-charlotte', familyId: expect.any(String), fullName: expect.any(String) });
+    expect(closed.handover.note).toBe(SEED_HANDOVER_NOTE);
+    expect(closed.enrolment).toBeUndefined();
+    expect(closed.latestReport).toBeUndefined();
+    const pack = assembleHandoverPack(closed, buildTopicLookup(SYLLABUSES, db.topicLists, db.topics), NOW);
+    expect(pack).toMatchObject({ closed: true, handoverNote: SEED_HANDOVER_NOTE });
+    expect(pack.tutorNotes).toBeUndefined();
+    // Admins always get the full pack.
+    expect(ho.sources(db, admin, 'ho-charlotte', new Date(end + 8 * day)).closed).toBeUndefined();
+
+    // Moving Charlotte's Maths to Nour and back again: Nour keeps only the handover and its note.
+    const before = { ...db.enrolments.find((e) => e.studentId === 's-charlotte' && e.subject === 'Maths')! };
+    const toNour = enr.saveEnrolment(db, admin, { ...before, tutorId: 't-nour' });
+    const h = ho.afterEnrolmentSaved(db, before, toNour, NOW)!;
+    expect(ho.sources(db, nour, h.id, NOW).closed).toBeUndefined();
+    expect(ho.sources(db, nour, h.id, NOW).student.notes).toBe(SEED_CHARLOTTE_NOTES);
+    const back = enr.saveEnrolment(db, admin, { ...toNour, tutorId: before.tutorId });
+    ho.afterEnrolmentSaved(db, toNour, back, NOW);
+    const former = ho.sources(db, nour, h.id, NOW);
+    expect(former.closed).toBe(true);
+    expect(former.student.notes).toBeUndefined();
+    expect(former.notes).toEqual([]);
   });
 
   it('lists handovers for admins and the tutors involved only', () => {

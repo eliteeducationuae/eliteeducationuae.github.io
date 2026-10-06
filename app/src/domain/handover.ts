@@ -31,6 +31,11 @@ export interface HandoverSources {
   ratings: TopicRating[];
   resources: Resource[];
   latestReport?: StudentReport;
+  /**
+   * The incoming tutor no longer teaches the student (the enrolment moved on, or a covered lesson ended over a week
+   * ago): only the handover, its note and the student's name are present.
+   */
+  closed?: boolean;
 }
 
 export interface HandoverLessonSummary {
@@ -65,6 +70,8 @@ export interface HandoverPack {
   /** The student's tutor-only notes. */
   tutorNotes?: string;
   handoverNote?: string;
+  /** Only the handover and its note remain: see HandoverSources.closed. */
+  closed?: boolean;
 }
 
 export const HANDOVER_REASON_LABEL: Record<HandoverReason, string> = {
@@ -193,5 +200,6 @@ export function assembleHandoverPack(src: HandoverSources, topics: TopicLookup, 
   }
   if (student.notes?.trim()) pack.tutorNotes = student.notes;
   if (handover.note?.trim()) pack.handoverNote = handover.note;
+  if (src.closed) pack.closed = true;
   return pack;
 }

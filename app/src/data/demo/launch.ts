@@ -62,6 +62,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261112000000', name: 'round5_followups' },
   { version: '20261113000800', name: 'launch_fix' },
   { version: '20261113001100', name: 'copy_fix' },
+  { version: '20261113001300', name: 'handoverac_fix' },
   { version: '20261113001700', name: 'creditnote_fix' },
 ];
 
