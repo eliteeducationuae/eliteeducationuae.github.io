@@ -6,6 +6,7 @@ import { baseSource, setActiveSource, source } from './index';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { queryClient } from './query';
 import type { SignUpDetails, SocialProvider, WhatsAppPrefs } from './source';
+import { onSessionEnded } from './session-events';
 import { useViewNotice, ViewOnlyError, type ViewingState } from './view-as';
 
 export type { SocialProvider, SocialSignInResult } from './source';
@@ -150,11 +151,27 @@ export const useSession = create<SessionState>((set, get) => ({
   async signOut() {
     // While viewing, "sign out" returns the admin to their own account.
     if (get().viewing) return get().exitViewAs();
-    await source.signOut();
-    queryClient.clear();
-    set({ profile: null, status: 'signed-out' });
+    try {
+      await source.signOut();
+    } finally {
+      // Whatever the server said, nothing of this person's stays in memory on this device.
+      queryClient.clear();
+      useViewNotice.getState().clear();
+      set({ profile: null, status: 'signed-out', viewing: null });
+    }
   },
 }));
+
+// The session can also end outside this tab: signed out in another tab, or the server refused to refresh it. Nothing
+// of the person's stays on screen or in the cache; the sign-in gate then shows the sign-in page.
+onSessionEnded(() => {
+  const { status, viewing } = useSession.getState();
+  if (status !== 'signed-in') return;
+  if (viewing) dropView();
+  queryClient.clear();
+  useViewNotice.getState().clear();
+  useSession.setState({ profile: null, status: 'signed-out', viewing: null });
+});
 
 /** The "View as" in progress, or null. */
 export const useViewing = () => useSession((s) => s.viewing);

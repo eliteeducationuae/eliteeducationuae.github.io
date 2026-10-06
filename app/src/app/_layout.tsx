@@ -20,6 +20,7 @@ import { registerForPushNotifications, useNotificationTaps } from '@/lib/push';
 // Launch readiness
 import { source } from '@/data';
 import { configureErrorReporting, installGlobalErrorHandlers } from '@/lib/error-reporting';
+import { guardAgainstFraming, type FrameWindow } from '@/lib/frame-guard';
 
 import { ErrorBoundary } from '@/components/error-boundary';
 
@@ -27,6 +28,9 @@ export { ErrorBoundary };
 // Each screen gets its own boundary (inherited by every nested layout), so a screen that fails to render shows the
 // recovery screen in place, the navigators and the address stay as they were, and Try again re-renders that screen.
 export const unstable_settings = { screenErrorBoundary: ErrorBoundary };
+
+// Security: the web app never runs inside another site's frame (clickjacking); see src/lib/frame-guard.ts.
+if (Platform.OS === 'web' && typeof window !== 'undefined') guardAgainstFraming(window as unknown as FrameWindow);
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 

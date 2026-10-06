@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      Security policy for the web app. GitHub Pages cannot send HTTP headers, so the policy is set here instead.
+      The app talks only to its own files and the Supabase project (REST, storage, functions and realtime over wss).
+      Payments (Stripe Checkout), Apple and Google sign-in and meeting links open as new pages, not inside the app,
+      so they need no entry here. react-native-web writes its styles at run time, hence 'unsafe-inline' for styles
+      only; scripts must come from this site. frame-ancestors cannot be set from a meta tag: framing is refused by
+      the frame guard in src/lib/frame-guard.ts instead. If EXPO_PUBLIC_SUPABASE_URL points at another project, or a
+      Sentry DSN is added, update this list too (src/lib/__tests__/csp.test.ts checks it against src/config.ts).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tzahajbulieoalzuzclv.supabase.co; font-src 'self' data:; connect-src 'self' https://tzahajbulieoalzuzclv.supabase.co wss://tzahajbulieoalzuzclv.supabase.co; media-src 'self' blob: https://tzahajbulieoalzuzclv.supabase.co; frame-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>%WEB_TITLE%</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

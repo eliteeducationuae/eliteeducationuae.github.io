@@ -66,7 +66,12 @@ export function errorFingerprint(source: AppErrorSource, message: string, route?
 
 /** The message and stack of anything thrown. */
 export function describeError(error: unknown): { message: string; stack?: string; name?: string } {
-  if (error instanceof Error) return { message: error.message || error.name || 'Error', stack: error.stack, name: error.name };
+  if (error instanceof Error) {
+    // A server error shown to people with a calm message keeps the original text as its cause (see publicErrorMessage):
+    // the error log records the original, which is what the office needs to diagnose it.
+    const original = typeof error.cause === 'string' && error.cause ? error.cause : undefined;
+    return { message: original || error.message || error.name || 'Error', stack: error.stack, name: error.name };
+  }
   if (typeof error === 'string') return { message: error };
   if (error && typeof error === 'object') {
     const o = error as { message?: unknown; stack?: unknown; name?: unknown };

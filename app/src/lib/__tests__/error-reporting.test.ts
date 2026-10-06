@@ -4,6 +4,7 @@ import {
   buildErrorInput,
   configureErrorReporting,
   createRateLimiter,
+  describeError,
   errorFingerprint,
   installGlobalErrorHandlers,
   isExpectedError,
@@ -190,5 +191,13 @@ describe('installGlobalErrorHandlers', () => {
     expect(sent[0]).toMatchObject({ message: 'Uncaught', source: 'global' });
     expect(previous).toHaveBeenCalledWith(expect.any(Error), true);
     delete g.ErrorUtils;
+  });
+});
+
+describe('errors shown with a calm message', () => {
+  it('are logged with the original server text kept as the cause', () => {
+    const err = new Error('We could not reach Elite Education. Please check your connection and try again.', { cause: 'TypeError: Failed to fetch' });
+    expect(describeError(err).message).toBe('TypeError: Failed to fetch');
+    expect(isNetworkError(err)).toBe(true);
   });
 });

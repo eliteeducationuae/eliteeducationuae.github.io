@@ -19,6 +19,7 @@ import type { LessonLocation } from '@/domain/types';
 import { isVettingBlock } from '@/domain/vetting';
 import { withoutClosed } from '@/domain/closed-accounts';
 import { uuid } from '@/lib/id';
+import { normaliseMeetingUrl } from '@/lib/safe-url';
 
 type Repeat = 'once' | 'weekly' | 'fortnightly';
 
@@ -85,7 +86,10 @@ export default function NewLesson() {
   const clashCount = new Set([...clashSlots, ...busySlots]).size;
   const warning = slotWarning({ affected: clashCount, lessonClashes: clashSlots.size, googleBusy: busySlots.size });
 
-  const ready = studentIds.length > 0 && chosenTutorId && service && start;
+  // An online lesson's link must be a secure web address; it is opened for the family with one tap.
+  const meetingUrl = location === 'online' && where.trim() ? normaliseMeetingUrl(where) : null;
+  const badLink = location === 'online' && !!where.trim() && !meetingUrl;
+  const ready = studentIds.length > 0 && chosenTutorId && service && start && !badLink;
   const toggleStudent = (id: string) => setStudentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   async function submit() {
@@ -101,7 +105,7 @@ export default function NewLesson() {
         start: s.start.toISOString(),
         end: s.end.toISOString(),
         location,
-        meetingUrl: location === 'online' ? where.trim() || undefined : undefined,
+        meetingUrl: meetingUrl ?? undefined,
         address: location === 'in-person' ? where.trim() || undefined : undefined,
         seriesId,
       })),
@@ -219,6 +223,7 @@ export default function NewLesson() {
           onChangeText={setWhere}
           placeholder={location === 'online' ? 'https://meet.google.com/…' : 'e.g. Elite Education Centre, Al Barsha'}
           autoCapitalize={location === 'online' ? 'none' : 'sentences'}
+          hint={badLink ? 'Please enter a secure web address beginning https://, such as a Google Meet or Zoom link.' : undefined}
         />
       </Section>
 

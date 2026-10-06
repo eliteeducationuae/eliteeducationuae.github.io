@@ -553,6 +553,18 @@ Both run automatically in GitHub Actions on every push and pull request (see *Co
 
 **Later improvement.** The Edge Functions are written for Deno and are not yet type-checked in CI. A third job could install Deno (`denoland/setup-deno`) and run `deno check supabase/functions/*/index.ts`.
 
+## Web security (GitHub Pages)
+
+GitHub Pages cannot send HTTP security headers, so the website and the web app carry their policies in the page itself.
+
+- **Content-Security-Policy.** The web app's policy is in `public/index.html` (Expo's page template): scripts only from the site itself (no `eval`, no inline scripts), and network access only to the Supabase project (`https://` and `wss://` for realtime). Payments (Stripe Checkout), Apple and Google sign-in and meeting links open as new pages, so they need no entry. If `EXPO_PUBLIC_SUPABASE_URL` is changed or a Sentry DSN is added, add those hosts too. The website's policy (all five pages) allows Google Fonts, Cloudflare Turnstile and the Supabase project, and allows its two inline scripts by SHA-256 hash: **after editing an inline `<script>` in `index.html` or `404.html`, run `node app/scripts/site-csp.cjs --write`** (the unit tests fail until you do).
+- **Framing (clickjacking).** `frame-ancestors` and `X-Frame-Options` cannot be set from a page, so the web app hides itself and breaks out when it is loaded inside another site's frame (`src/lib/frame-guard.ts`). Moving the site behind a host that can send headers (Cloudflare Pages or Netlify) would allow a real `frame-ancestors 'none'` header.
+- **Referrer policy** is `strict-origin-when-cross-origin` everywhere: other sites see only the origin, never app paths.
+- **Sessions on the web.** Supabase keeps the session (access and refresh tokens) in the browser's `localStorage`, refreshes it automatically and signs out of the server on Sign out. Sign out also forgets the session on the device if the server cannot be reached, clears every cached screen (React Query), and ends any View as. A session that ends in another tab, or whose refresh is refused, returns this tab to the sign-in page. Nothing else personal is stored in the browser (the demo keeps its sample data in `localStorage`). Any script running on the page could read the tokens, which is why the policy above forbids inline and third-party scripts. On a shared computer people should always sign out.
+- **Links typed by people** (meeting links, resource and homework links) are opened only when they are ordinary web addresses (`src/lib/safe-url.ts`); meeting links must be `https://`.
+- **Error messages.** Raw database, API and network errors are never shown: people see a calm message, and the original goes to the error log (`publicErrorMessage` in `src/lib/polite-error.ts`).
+- **Idle timeout (proposal, not built).** For admin and accountant sessions on shared computers, sign out after 30 minutes without input on the web: a timer reset on pointer and key events in the root layout that calls `useSession.getState().signOut()`, with a one-minute warning. Supabase's own "Time-box user sessions" and "Inactivity timeout" settings (Authentication → Sessions, Pro plan) enforce the same on the server.
+
 ## Database migrations
 
 - **Never edit a migration that has been applied** anywhere (production, or a teammate's database). Fix forward with a new migration.
