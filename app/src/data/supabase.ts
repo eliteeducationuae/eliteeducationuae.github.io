@@ -14,6 +14,7 @@ import {
   webRedirectTo,
   type SocialProviderName,
 } from '@/lib/social-auth';
+import { publicErrorMessage } from '@/lib/polite-error';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import { auditEventFromRow } from '@/domain/audit';
@@ -89,6 +90,7 @@ import {
 } from './admissions-mapping';
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
+import { emitSessionEnded } from './session-events';
 import { handoverSourcesFromRpc, saveLessonPlanArgs, toHandover, toLessonPlan } from './handover-mapping';
 import { addChildSubjects, enrolmentRatesFromRow, familyContactPayload, setEnrolmentRatesArgs, toFamilyContact } from './rpc-mapping';
 import {
@@ -118,7 +120,9 @@ type Row = Record<string, any>;
 function serverError(message: string): Error {
   if (message.includes(VIEW_ONLY_MESSAGE)) return new ViewOnlyError();
   if (message.includes(VIEW_ENDED_MESSAGE)) return new Error(VIEW_ENDED_MESSAGE);
-  return new Error(message);
+  // Raw database, API and network errors can name tables, columns and constraints: people see a calm message instead.
+  const shown = publicErrorMessage(message);
+  return shown === message ? new Error(message) : new Error(shown, { cause: message });
 }
 
 /** Unwrap a Supabase response, throwing its error. Rows are mapped by hand, so the result is loosely typed. */
@@ -812,6 +816,12 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
         detectSessionInUrl: Platform.OS === 'web',
       },
     });
+  if (!injected) {
+    client.auth.onAuthStateChange((event) => {
+      // Signed out in another tab, or the refresh token was refused: the session store forgets the person.
+      if (event === 'SIGNED_OUT') emitSessionEnded();
+    });
+  }
 
   async function loadProfile(): Promise<Profile | null> {
     const { data } = await client.auth.getUser();
@@ -978,7 +988,11 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     async signOut() {
       // Stop reminders going to this device once signed out.
       await client.rpc('set_push_token', { p_token: null }).then(undefined, () => undefined);
-      await client.auth.signOut();
+      // Revoke the session on the server. If that fails (offline, server error), still forget it on this device, so
+      // that a shared computer never keeps someone's tokens after they have signed out.
+      const result = await client.auth.signOut().catch((error: unknown) => ({ error }));
+      if (result?.error) await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
     },
     async signUp(email, password, details) {
       const data = check(

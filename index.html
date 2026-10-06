@@ -5,6 +5,8 @@
 <html lang="en-GB" data-turnstile-sitekey="">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-iBeI2cKuTu9lq8aeWwrdMkIL39Sgf7Q33uTXZsRJzGw=' 'sha256-tBnMx941B2/p/lGrsz0ujsVtRa/Sic+7lVmBW2Cb38Y=' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://tzahajbulieoalzuzclv.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elite Education | Private Tuition in the UAE</title>
     <meta name="description" content="Elite Education provides discreet, personalised private tuition in the UAE across every subject, phase and curriculum, including IB, IGCSE, GCSE and A-Level, from primary through to university entrance.">
@@ -505,7 +507,9 @@
     function failure(err) {
         // Rate limit: the server's own polite message is shown exactly as written, as a calm notice rather than an error.
         if (limited(err)) return err.message || LIMITED;
-        var detail = err && err.message ? err.message.replace(/[.\s]+$/, '') + '. ' : '';
+        // Only the database's own messages (raised for people, code P0001) are shown; never raw technical errors.
+        var authored = err && err.code === 'P0001' && err.message && err.message.length < 300;
+        var detail = authored ? err.message.replace(/[.\s]+$/, '') + '. ' : '';
         return 'We could not send this just now. ' + detail + FALLBACK;
     }
 
