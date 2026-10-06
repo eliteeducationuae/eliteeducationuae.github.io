@@ -1,5 +1,5 @@
 import { toDateKey } from './dates';
-import type { DeletionRequest, DeletionSummary, Role } from './types';
+import type { DeletionRequest, DeletionSummary, FamilyContact, Role } from './types';
 
 /**
  * Data rights: what deleting an account removes and keeps, the typed confirmation, and file names for exports.
@@ -76,6 +76,32 @@ export function deletionConsequences(role: Role): DeletionConsequences {
       };
   }
 }
+
+/**
+ * Whether a parent login closing its own account closes only that login, not the family. Mirrors
+ * account_closes_own_login_only on the server: the login belongs to a contact who is not the family's main contact, and
+ * another contact of the family can still sign in. The main contact, or the family's last sign-in contact, closes the
+ * whole family.
+ */
+export function closesOwnLoginOnly(contacts: FamilyContact[], profileId: string): boolean {
+  const mine = contacts.find((c) => c.profileId === profileId);
+  if (!mine || mine.isPrimary) return false;
+  return contacts.some((c) => c.id !== mine.id && c.canLogIn);
+}
+
+/** Shown on Delete my account to a family contact who is not the main contact. */
+export const CONTACT_LOGIN_NOTE = "This closes your own sign-in only. The family's account and records stay with the main contact.";
+
+/** What closing a family contact's own login removes and keeps (a contact who is not the main contact). */
+export const CONTACT_LOGIN_CONSEQUENCES: DeletionConsequences = {
+  removed: ['Your login and contact details', "Your place in the family's list of contacts"],
+  kept: [
+    "The family's account, children's profiles and lessons, which stay with the main contact",
+    "Messages you sent stay in the family's conversation without your name",
+    'Invoices and payment records',
+  ],
+  note: 'The main contact can add you to the family again at any time.',
+};
 
 /** True only when the person typed DELETE exactly (surrounding spaces are ignored). */
 export function canConfirmDeletion(text: string): boolean {

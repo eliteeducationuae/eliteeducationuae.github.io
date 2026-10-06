@@ -170,6 +170,32 @@ describe('deleteMyAccount (mirrors delete-account)', () => {
     expect(requests[0].summary.invoicesRetained).toBe(invoicesBefore);
   });
 
+  it('closes only the login of a contact who is not the main contact (mirrors account_closes_own_login_only)', () => {
+    const db = createSeed();
+    const khalid = db.profiles.find((p) => p.id === 'u-parent2')!;
+    const familyId = khalid.familyId!;
+    const studentsBefore = db.students.filter((s) => s.familyId === familyId).map((s) => s.fullName);
+    const otherLogins = db.profiles.filter((p) => p.id !== khalid.id && p.familyId === familyId).map((p) => p.id);
+    expect(otherLogins.length).toBeGreaterThan(0);
+
+    const summary = deleteMyAccount(db, khalid, NOW);
+
+    expect(summary).toMatchObject({ loginOnly: true, familyAnonymised: false, role: 'parent' });
+    const family = db.families.find((f) => f.id === familyId)!;
+    expect(family.deletedAt).toBeFalsy();
+    expect(family.status).not.toBe('archived');
+    expect(db.students.filter((s) => s.familyId === familyId).map((s) => s.fullName)).toEqual(studentsBefore);
+    expect(otherLogins.every((id) => db.profiles.some((p) => p.id === id && p.familyId === familyId))).toBe(true);
+    expect(db.profiles.some((p) => p.id === khalid.id)).toBe(false);
+    expect((db.familyContacts ?? []).some((c) => c.id === 'fc-khalid')).toBe(false);
+    expect((db.familyContacts ?? []).some((c) => c.familyId === familyId && c.isPrimary)).toBe(true);
+    expect(deletionRequests(db, who(db, 'admin'))[0]).toMatchObject({ label: 'Family contact login (closed)', familyId: undefined });
+
+    // The main contact still closes the whole family.
+    expect(deleteMyAccount(db, who(db, 'parent'), NOW).familyAnonymised).toBe(true);
+    expect(db.families.find((f) => f.id === familyId)!.deletedAt).toBeTruthy();
+  });
+
   it('removes a tutor’s bank details and counts lessons needing a new tutor', () => {
     const db = createSeed();
     const tutor = who(db, 'tutor');
