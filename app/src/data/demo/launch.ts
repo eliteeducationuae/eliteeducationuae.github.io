@@ -14,7 +14,7 @@ import type {
   SystemHealth,
 } from '@/domain/types';
 
-import { removeAdmissionsForStudents } from './admissions';
+import { removeAdmissionsForStudents, renameAdmissionsWorker } from './admissions';
 import { cw } from './classwork';
 import { allContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
@@ -58,6 +58,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261110000000', name: 'handover' },
   { version: '20261111000000', name: 'round5_merge' },
   { version: '20261112000000', name: 'round5_followups' },
+  { version: '20261113001600', name: 'deletion_fix' },
 ];
 
 const appErrorsOf = (db: DemoDB) => (db.appErrors ??= []);
@@ -474,6 +475,9 @@ function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
     delete m.senderId;
     m.senderName = former;
   }
+  // Names beside their work (as the deletion fix migration): advisory updates, admissions tasks, handbook versions.
+  renameAdmissionsWorker(db, profile.fullName, former);
+  for (const h of db.handbookVersions ?? []) if (h.publishedByName === profile.fullName) h.publishedByName = former;
   delete db.reads[profile.id];
   return { role: profile.role, familyAnonymised: false, studentsAnonymised: 0, futureLessonsCancelled: 0, upcomingLessonsNeedingTutor: 0, invoicesRetained: 0, paymentsRetained: 0 };
 }

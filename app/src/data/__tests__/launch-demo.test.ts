@@ -130,6 +130,22 @@ describe('deleteMyAccount (mirrors delete-account)', () => {
     expect(deletionRequests(db, who(db, 'admin'))[0].label).toBe('Student login (closed)');
   });
 
+  it('removes a closed administrator\'s name from advisory updates, admissions tasks and handbook versions', () => {
+    const db = createSeed();
+    const bea = { id: 'u-bea', role: 'admin' as const, fullName: 'Bea Adviser', email: 'bea@x' };
+    db.profiles.push(bea);
+    db.admissions = {
+      cases: [], targets: [], dates: [], documents: [], events: [],
+      updates: [{ id: 'aup-1', caseId: 'c-1', kind: 'ad-hoc', title: 'Statement', body: '', status: 'draft', aiAssisted: false, authorName: 'Bea Adviser', createdAt: NOW.toISOString() }],
+      tasks: [{ id: 'at-1', caseId: 'c-1', title: 'Shortlist', owner: 'adviser', doneAt: NOW.toISOString(), doneByName: 'Bea Adviser' }],
+    } as unknown as NonNullable<DB['admissions']>;
+    (db.handbookVersions ??= []).push({ id: 'hb-9', version: 9, title: 'Handbook', body: 'Be on time.', publishedAt: NOW.toISOString(), publishedByName: 'Bea Adviser' });
+    deleteMyAccount(db, bea, NOW);
+    expect(db.admissions!.updates[0].authorName).toBe('Elite Education');
+    expect(db.admissions!.tasks[0].doneByName).toBe('Elite Education');
+    expect(db.handbookVersions!.find((h) => h.id === 'hb-9')!.publishedByName).toBe('Elite Education');
+  });
+
   it('refuses to delete the last administrator', () => {
     const db = createSeed();
     const admin = who(db, 'admin');
@@ -185,8 +201,8 @@ describe('logAppError and systemHealth', () => {
     const db = createSeed();
     const health = systemHealth(db, who(db, 'admin'), NOW);
     expect(health.checks.map((c) => c.key)).toEqual(['notifications', 'whatsapp', 'calendar', 'autopay', 'stripe', 'server-errors', 'app-errors', 'backups']);
-    expect(health.database.latest).toBe('20261112000000');
-    expect(health.database.latestName).toBe('round5_followups');
+    expect(health.database.latest).toBe('20261113001600');
+    expect(health.database.latestName).toBe('deletion_fix');
     expect(health.database.count).toBe(KNOWN_MIGRATIONS.length);
     expect(health.jobs.length).toBeGreaterThan(0);
     expect(health.checks.every((c) => c.detail.endsWith('.'))).toBe(true);
