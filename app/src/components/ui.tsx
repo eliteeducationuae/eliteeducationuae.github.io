@@ -18,7 +18,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, elevation, font, MaxContentWidth, Radius, Spacing, type Palette } from '@/constants/theme';
+import { isViewOnlyError, VIEW_ONLY_MESSAGE } from '@/data/view-as';
 import { useTheme } from '@/hooks/use-theme';
+import { politeError } from '@/lib/polite-error';
 
 import { Icon, type IconName } from './icon';
 
@@ -99,7 +101,9 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <View style={{ gap: Spacing.two + Spacing.one }}>
       <Row style={{ justifyContent: 'space-between' }}>
-        <SectionLabel>{title}</SectionLabel>
+        <View style={{ flexShrink: 1 }}>
+          <SectionLabel>{title}</SectionLabel>
+        </View>
         {action}
       </Row>
       {children}
@@ -113,7 +117,8 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <View style={{ gap: 6 }}>
       <Txt variant="label">{children}</Txt>
-      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+      {/* 2px so the gold rule never renders grey or white on screens that round a thinner line away. */}
+      <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
     </View>
   );
 }
@@ -295,7 +300,8 @@ export function EmptyState({ icon = 'sparkle', title, message, action }: { icon?
       <Txt variant="h2" style={{ textAlign: 'center' }}>
         {title}
       </Txt>
-      <View style={{ width: 28, height: 1.5, backgroundColor: theme.gold }} />
+      {/* 2px so the gold rule never renders grey or white on screens that round a thinner line away. */}
+      <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
       {message ? (
         <Txt variant="muted" style={{ textAlign: 'center', maxWidth: 380 }}>
           {message}
@@ -317,9 +323,17 @@ export function Loading() {
 
 export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null;
+  // A change refused while an admin is viewing as someone else is expected, not an error: keep it calm.
+  if (isViewOnlyError(error)) {
+    return (
+      <Banner tone="info" icon="eye">
+        {VIEW_ONLY_MESSAGE}
+      </Banner>
+    );
+  }
   return (
     <Banner tone="danger" icon="alert">
-      {error instanceof Error ? error.message : String(error)}
+      {politeError(error instanceof Error ? error.message : String(error))}
     </Banner>
   );
 }
@@ -513,17 +527,23 @@ export function Field({
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const { onFocus, onBlur } = input;
+  // A read-only field looks it: a muted surface and text, no gold focus ring, and it is announced as unavailable.
+  const readOnly = input.editable === false;
   return (
-    <Pressable onPress={() => ref.current?.focus()} style={{ gap: Spacing.one }} accessible={false}>
+    <Pressable onPress={readOnly ? undefined : () => ref.current?.focus()} style={{ gap: Spacing.one }} accessible={false}>
       <Txt variant="label">{label}</Txt>
       <TextInput
         ref={ref}
         accessibilityLabel={label}
+        accessibilityState={readOnly ? { disabled: true } : undefined}
+        {...(readOnly ? ({ 'aria-readonly': true, tabIndex: -1 } as object) : null)}
         placeholderTextColor={theme.textMuted}
         style={[
           styles.input,
           font('sans'),
-          { backgroundColor: theme.surface, borderColor: focused ? theme.gold : theme.border, color: theme.text },
+          readOnly
+            ? { backgroundColor: theme.surfaceAlt, borderColor: theme.border, color: theme.textMuted }
+            : { backgroundColor: theme.surface, borderColor: focused ? theme.gold : theme.border, color: theme.text },
           input.multiline && { minHeight: 96, textAlignVertical: 'top' },
           style,
         ]}
@@ -540,6 +560,20 @@ export function Field({
       {hint ? <Txt variant="small">{hint}</Txt> : null}
     </Pressable>
   );
+}
+
+/** Colours for a Switch, so every switch (contacts, WhatsApp) reads the same: a gold track with a noir thumb when on. */
+export function useSwitchColors(on: boolean) {
+  const theme = useTheme();
+  // The track shows the state: the accent gold when on, muted when off. When on, the thumb is noir in both themes so it
+  // stands out on the gold track (round 4 follow-up: an ivory thumb on dark mode's gold measured only about 2:1).
+  const onThumb = theme.onGold;
+  return {
+    trackColor: { true: theme.accent, false: theme.textMuted },
+    thumbColor: on ? onThumb : theme.text,
+    // react-native-web paints the "on" thumb teal unless told otherwise.
+    ...({ activeThumbColor: onThumb } as object),
+  };
 }
 
 export function Avatar({ name, color, size = 40 }: { name: string; color?: string; size?: number }) {
@@ -588,7 +622,8 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.two, paddingHorizontal: Spacing.three, alignItems: 'center' },
-  footerInner: { width: '100%', maxWidth: MaxContentWidth, flexDirection: 'row', gap: Spacing.two },
+  // Matches the content column: MaxContentWidth less the content's side padding.
+  footerInner: { width: '100%', maxWidth: MaxContentWidth - 2 * Spacing.three, flexDirection: 'row', gap: Spacing.two },
   card: { borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.three + Spacing.one, gap: Spacing.two },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignItems: 'stretch' },
   stat: { flexGrow: 1, flexBasis: 150 },

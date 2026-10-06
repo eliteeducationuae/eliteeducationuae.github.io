@@ -1,4 +1,25 @@
+import type { AuditActor, AuditCursor, AuditFilter, AuditPage } from '@/domain/audit';
+// Admissions advisory
+import type {
+  AdmissionsCase,
+  AdmissionsCaseInput,
+  AdmissionsDocument,
+  AdmissionsDocumentInput,
+  AdmissionsEvent,
+  AdmissionsFeeInput,
+  AdmissionsKeyDate,
+  AdmissionsKeyDateInput,
+  AdmissionsTarget,
+  AdmissionsTargetInput,
+  AdmissionsTask,
+  AdmissionsTaskInput,
+  AdvisoryUpdate,
+  AdvisoryUpdateInput,
+  AdvisoryUpdateKind,
+  AdvisoryUpdateStatus,
+} from '@/domain/admissions';
 import type { EnrolmentDraft } from '@/domain/enrolments';
+import type { HandoverSources } from '@/domain/handover';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
   ApplicationStatus,
@@ -31,6 +52,8 @@ import type {
   TutorAbsence,
   Charge,
   Family,
+  FamilyContact,
+  FamilyContactDraft,
   Homework,
   Invoice,
   InvoiceStatus,
@@ -49,7 +72,29 @@ import type {
   TopicRating,
   AutopayStatus,
   PackageOffer,
+  AccountantInvite,
+  CreditNote,
+  Refund,
+  // Tutor vetting and onboarding
+  HandbookAcknowledgement,
+  HandbookVersion,
+  TutorCompliance,
+  TutorDocument,
+  TutorDocumentType,
+  VettingOverride,
+  // Launch readiness
+  AppErrorInput,
+  AppErrorRow,
+  DataExport,
+  DeletionRequest,
+  DeletionSummary,
+  FunctionErrorRow,
+  SystemHealth,
+  Handover,
+  LessonPlan,
 } from '@/domain/types';
+
+import type { ViewAsSession, ViewTarget } from './view-as';
 
 export interface CompleteLessonInput {
   lessonId: string;
@@ -64,7 +109,14 @@ export interface CompleteLessonInput {
 }
 
 /** Private storage buckets files can be uploaded to. */
-export type StorageBucket = 'applications' | 'receipts' | 'classwork';
+export type StorageBucket =
+  | 'applications'
+  | 'receipts'
+  | 'classwork'
+  // Admissions advisory
+  | 'admissions'
+  // Tutor vetting and onboarding
+  | 'vetting';
 
 /** New homework (no id) or an edit to existing homework. */
 export interface HomeworkInput {
@@ -114,6 +166,9 @@ export type SocialProvider = 'apple' | 'google';
 export type SocialSignInResult = { status: 'signed-in'; profile: Profile } | { status: 'redirecting' } | { status: 'cancelled' };
 
 export type NewLesson = Omit<Lesson, 'id' | 'status'>;
+
+/** Session plans: what the tutor sends when saving a plan (the server sets the tutor and times). */
+export type LessonPlanInput = Omit<LessonPlan, 'tutorId' | 'createdAt' | 'updatedAt'>;
 
 /** WhatsApp reminder preferences: whether to send them, and the E.164 number (kept when opting out). */
 export interface WhatsAppPrefs {
@@ -169,6 +224,13 @@ export interface DataSource {
   loginEmails?(): Promise<string[]>;
   /** Store this device's push token for lesson reminders (production only). */
   savePushToken?(token: string): Promise<void>;
+  /** Admin only: everyone who is not an admin and has a login (parents, students and tutors), for "View as". */
+  listViewTargets?(): Promise<ViewTarget[]>;
+  /**
+   * Admin only: start a read-only view of the app as this person. The returned source is scoped to them and
+   * refuses every change; call end() to finish. The admin's own sign-in is left untouched.
+   */
+  startViewAs?(profileId: string): Promise<ViewAsSession>;
 
   // Reads
   getSettings(): Promise<Settings>;
@@ -194,10 +256,15 @@ export interface DataSource {
   saveService(service: Omit<Service, 'id'> & { id?: string }): Promise<Service>;
 
   // Subjects: enrolments and shared topic lists
-  /** Enrolments of the students the caller can see. */
+  /**
+   * Enrolments of the students the caller can see. The custom rates are present only where the caller
+   * may see them: tutorPay for admins and the enrolment's own tutor, familyPrice for admins and the family.
+   */
   listEnrolments(filter?: { studentId?: string }): Promise<Enrolment[]>;
   /** Admins only. `active: false` removes the subject from use but keeps its history. */
   saveEnrolment(e: EnrolmentDraft & { studentId: string }): Promise<Enrolment>;
+  /** Admins only. Sets or clears (null) the custom tutor pay and family price per hour for one enrolment. */
+  setEnrolmentRates(input: { enrolmentId: string; tutorPay: number | null; familyPrice: number | null }): Promise<void>;
   listTopicLists(): Promise<TopicList[]>;
   listTopics(filter?: { listId?: string }): Promise<Topic[]>;
   /**
@@ -247,6 +314,14 @@ export interface DataSource {
   listEnquiries(): Promise<Enquiry[]>;
   updateEnquiry(id: string, patch: Partial<Omit<Enquiry, 'id' | 'createdAt'>>): Promise<void>;
 
+  // Family contacts
+  /** The family's contacts, main contact first. Admins and the family see everything; a tutor who teaches the family sees names and relationships only; anyone else gets an empty list. */
+  listFamilyContacts(familyId: string): Promise<FamilyContact[]>;
+  /** Admins, or a parent for their own family. Making a contact the main one replaces the previous main contact. */
+  saveFamilyContact(familyId: string, contact: FamilyContactDraft): Promise<FamilyContact>;
+  /** Admins, or a parent for their own family. Never the main contact; a parent cannot remove the last contact who can sign in. */
+  removeFamilyContact(contactId: string): Promise<void>;
+
   // Availability, closures, absences, booking
   listAvailability(): Promise<Availability[]>;
   /** Replace all of a tutor's weekly availability. */
@@ -284,6 +359,11 @@ export interface DataSource {
   submitTutorApplication(a: NewTutorApplication): Promise<void>;
   listApplications(): Promise<TutorApplication[]>;
   updateApplication(id: string, patch: { status?: ApplicationStatus; notes?: string; tutorId?: string }): Promise<void>;
+  /**
+   * Admin only: mark an enquiry or tutor application as spam (kept, but out of the pipeline) or as genuine.
+   * With sendAck, marking as genuine also sends the usual thank-you email that was held back.
+   */
+  setSpamStatus(kind: 'enquiry' | 'application', id: string, spam: boolean, sendAck?: boolean): Promise<void>;
 
   // Tutor pay
   getPaymentDetails(tutorId: string): Promise<PaymentDetails | null>;
@@ -343,6 +423,184 @@ export interface DataSource {
   openBillingPortal?(familyId?: string): Promise<{ url: string }>;
   /** Admin: charge a sent invoice to the family's saved card now. */
   chargeSavedCard?(invoiceId: string): Promise<AutopayChargeResult>;
+
+  // Audit trail
+  /** Admins only: the audit trail, newest first. Pass the previous page's `next` to continue. */
+  listAuditEvents?(filter: AuditFilter, page?: { before?: AuditCursor; limit?: number }): Promise<AuditPage>;
+  /** Admins only: everyone who appears in the audit trail, for the person filter. */
+  listAuditActors?(): Promise<AuditActor[]>;
+  // Tax: credit notes, refunds and accountant access
+  /** Admins and accountants see every credit note; parents their family's; others none. */
+  listCreditNotes(filter?: { familyId?: string; invoiceId?: string }): Promise<CreditNote[]>;
+  getCreditNote(id: string): Promise<CreditNote | null>;
+  /** Admin: credit all or part of a sent or paid invoice. A full credit voids the invoice. */
+  issueCreditNote(input: CreditNoteInput): Promise<CreditNote>;
+  /** Admins and accountants see every refund; parents their family's; others none. */
+  listRefunds(filter?: { familyId?: string; invoiceId?: string }): Promise<Refund[]>;
+  /** Admin: return money against a payment. Card payments go back through Stripe; others are recorded. */
+  refundPayment(input: RefundInput): Promise<Refund>;
+  /** Admin: accountants invited to read the books. */
+  listAccountants(): Promise<AccountantInvite[]>;
+  /** Admin: invite an accountant. 'linked' when an accountant login with that email already exists. */
+  inviteAccountant(email: string, fullName?: string): Promise<'invited' | 'linked'>;
+  /** Admin: remove an accountant's invite and access. */
+  removeAccountant(email: string): Promise<void>;
+
+  // Admissions advisory
+  // Admin sees every case; an adviser tutor only their own cases; parents and students their family's.
+  // Families see documents only when shared with them (or their own uploads), updates only once sent,
+  // and timeline events only when family-visible.
+  listAdmissionsCases(filter?: { studentId?: string }): Promise<AdmissionsCase[]>;
+  getAdmissionsCase(id: string): Promise<AdmissionsCase | null>;
+  /** Admin creates and changes anything; the adviser may change the summary and status only. */
+  saveAdmissionsCase(input: AdmissionsCaseInput): Promise<AdmissionsCase>;
+  listAdmissionsTargets(filter?: { caseId?: string }): Promise<AdmissionsTarget[]>;
+  saveAdmissionsTarget(input: AdmissionsTargetInput): Promise<AdmissionsTarget>;
+  deleteAdmissionsTarget(id: string): Promise<void>;
+  /** `from`/`to` are YYYY-MM-DD, inclusive on the due date. */
+  listAdmissionsKeyDates(filter?: { caseId?: string; from?: string; to?: string }): Promise<AdmissionsKeyDate[]>;
+  saveAdmissionsKeyDate(input: AdmissionsKeyDateInput): Promise<AdmissionsKeyDate>;
+  deleteAdmissionsKeyDate(id: string): Promise<void>;
+  listAdmissionsTasks(filter?: { caseId?: string }): Promise<AdmissionsTask[]>;
+  saveAdmissionsTask(input: AdmissionsTaskInput): Promise<AdmissionsTask>;
+  /** Families may tick off only tasks owned by the family. */
+  setAdmissionsTaskDone(id: string, done: boolean): Promise<void>;
+  deleteAdmissionsTask(id: string): Promise<void>;
+  listAdmissionsDocuments(filter?: { caseId?: string }): Promise<AdmissionsDocument[]>;
+  /** Record an uploaded file (bucket 'admissions'). Family uploads are always shared with the family. */
+  addAdmissionsDocument(input: AdmissionsDocumentInput): Promise<AdmissionsDocument>;
+  /** Also removes the stored file. Families may delete only their own uploads. */
+  deleteAdmissionsDocument(id: string): Promise<void>;
+  listAdvisoryUpdates(filter?: { caseId?: string }): Promise<AdvisoryUpdate[]>;
+  saveAdvisoryUpdate(input: AdvisoryUpdateInput): Promise<AdvisoryUpdate>;
+  /** Advisers move draft and submitted only; the admin approves and publishes (a published update is final). */
+  setAdvisoryUpdateStatus(id: string, status: AdvisoryUpdateStatus): Promise<void>;
+  deleteAdvisoryUpdate(id: string): Promise<void>;
+  /** Newest first. */
+  listAdmissionsEvents(filter?: { caseId?: string }): Promise<AdmissionsEvent[]>;
+  addAdmissionsMilestone(caseId: string, title: string, detail?: string): Promise<void>;
+  /** Admin: raise a sent invoice for advisory fees, linked to the case. */
+  billAdmissionsFee(input: AdmissionsFeeInput): Promise<Invoice>;
+
+  // Tutor vetting and onboarding
+  /** Newest first. Admins see every tutor's documents, tutors their own, everyone else none. */
+  listTutorDocuments(filter?: { tutorId?: string }): Promise<TutorDocument[]>;
+  /** A tutor (for themselves) or an admin records an uploaded document; it starts as pending review. */
+  submitTutorDocument(input: NewTutorDocument): Promise<TutorDocument>;
+  /** Admin: verify (with dates) or reject (with a note) a document. */
+  reviewTutorDocument(id: string, decision: { approve: boolean; issueDate?: string; expiryDate?: string; note?: string }): Promise<void>;
+  /** Delete a document record and, best effort, its stored file. */
+  deleteTutorDocument(id: string): Promise<void>;
+  /** Admins get every tutor, tutors their own row, everyone else none. */
+  listTutorCompliance(): Promise<TutorCompliance[]>;
+  /** Newest first, including revoked and expired overrides. */
+  listVettingOverrides(filter?: { tutorId?: string }): Promise<VettingOverride[]>;
+  /** Admin: allow assignments to a tutor who is not cleared, for `days` (1 to 90, default 30). The reason needs 10+ characters. */
+  grantVettingOverride(tutorId: string, reason: string, days?: number): Promise<void>;
+  revokeVettingOverride(id: string): Promise<void>;
+  /** Whether assignments are blocked for tutors whose police clearance is not verified. */
+  getVettingEnforced(): Promise<boolean>;
+  setVettingEnforced(on: boolean): Promise<void>;
+  /** Newest version first. */
+  listHandbookVersions(): Promise<HandbookVersion[]>;
+  /** Admin: publish a new handbook version; every tutor is asked to acknowledge it. */
+  publishHandbook(title: string, body: string): Promise<HandbookVersion>;
+  listHandbookAcknowledgements(filter?: { tutorId?: string }): Promise<HandbookAcknowledgement[]>;
+  /** Tutor: acknowledge the current handbook version. */
+  acknowledgeHandbook(version: number): Promise<void>;
+
+  // Launch readiness: error reporting, system health, data export and account deletion
+  /** Record an app error for the office. Never throws: returns false when it could not be recorded. */
+  logAppError(e: AppErrorInput): Promise<boolean>;
+  /** Admin: the system health report (checks, scheduled jobs and database version). */
+  getSystemHealth(): Promise<SystemHealth>;
+  /** Admin: the most recent app errors, newest first. */
+  listAppErrors(limit?: number): Promise<AppErrorRow[]>;
+  /** Admin: the most recent Edge Function errors, newest first. */
+  listFunctionErrors(limit?: number): Promise<FunctionErrorRow[]>;
+  /** Everything held about the signed-in person, for download. */
+  exportMyData(): Promise<DataExport>;
+  /** Delete the signed-in person's account (financial records are kept, anonymised). Signs out locally. */
+  deleteMyAccount(): Promise<DeletionSummary>;
+  /** Admin: deletion requests, newest first. */
+  listDeletionRequests(): Promise<DeletionRequest[]>;
+  /** Admin: record a deletion request received by email or telephone. Returns its id. */
+  recordDeletionRequest(target: { profileId?: string; familyId?: string; tutorId?: string; reason?: string }): Promise<string>;
+  /** Admin: cancel a pending deletion request. */
+  cancelDeletionRequest(id: string): Promise<void>;
+  /** Admin: carry out a pending or failed deletion request now. */
+  processDeletionRequest(id: string): Promise<DeletionSummary>;
+
+  // Session plans and handover packs
+  getLessonPlan(lessonId: string): Promise<LessonPlan | null>;
+  /** Plans of lessons starting in [from, to) that the caller can see. */
+  listLessonPlans(range: { from: string; to: string }): Promise<LessonPlan[]>;
+  /** The lesson's tutor or an admin; scheduled lessons only. */
+  saveLessonPlan(input: LessonPlanInput): Promise<LessonPlan>;
+  deleteLessonPlan(lessonId: string): Promise<void>;
+  /** Admins: all. Tutors: those where they are the incoming or outgoing tutor. Newest first. */
+  listHandovers(filter?: { studentId?: string; lessonId?: string }): Promise<Handover[]>;
+  /** Raw material for a pack. Incoming tutor and admins only; throws otherwise. */
+  getHandoverSources(id: string): Promise<HandoverSources>;
+  /** The outgoing tutor or an admin. */
+  saveHandoverNote(id: string, note: string): Promise<void>;
+  /** The incoming tutor opened the pack. No-op for anyone else. */
+  markHandoverViewed(id: string): Promise<void>;
+}
+
+// Tax: credit notes, refunds and accountant access
+
+export interface CreditNoteLineInput {
+  description: string;
+  /** 0-based index of the invoice line being credited. */
+  invoiceLine?: number;
+  /** Net amount (before VAT) to credit. */
+  net: number;
+}
+
+export interface CreditNoteInput {
+  invoiceId: string;
+  reason: string;
+  /** Net amounts by line. Ignored when `gross` is given. */
+  lines: CreditNoteLineInput[];
+  /**
+   * Credit this amount including VAT instead of by line: one line with the VAT worked out from the gross, so the
+   * note's total is exactly this amount.
+   */
+  gross?: number;
+  /**
+   * Put the lessons on lines credited in full back to unbilled so they can be invoiced again. The note is marked
+   * rebilled only when a lesson is actually released (never for a gross amount).
+   */
+  releaseCharges?: boolean;
+}
+
+export interface RefundInput {
+  paymentId: string;
+  /** Gross amount to return, AED. */
+  amount: number;
+  reason: string;
+  /** Bank or cash reference for manual refunds. */
+  reference?: string;
+  /** How a refund recorded by hand went back. Defaults to the payment's own method. Ignored for card refunds. */
+  method?: 'bank-transfer' | 'cash';
+  /** Issue a credit note for the refunded amount at the same time. */
+  withCreditNote: boolean;
+  /** Unique per attempt so a retried request never refunds twice. */
+  requestKey: string;
+}
+
+// Tutor vetting and onboarding
+
+/** A document already uploaded to the 'vetting' bucket, to record for review. Dates are `YYYY-MM-DD`. */
+export interface NewTutorDocument {
+  tutorId: string;
+  type: TutorDocumentType;
+  filePath: string;
+  fileName?: string;
+  title?: string;
+  issueDate?: string;
+  expiryDate?: string;
 }
 
 /** Outcome of charging a saved card; 'skipped' when there was nothing to charge or no card/autopay. */
@@ -387,6 +645,8 @@ export interface NewTutorApplication {
   qualifications?: string;
   availability?: string;
   cvPath?: string;
+  /** Milliseconds from the form opening to submission; very fast submissions are marked as possible spam. */
+  elapsedMs?: number;
 }
 
 export interface ReportFields {
@@ -402,12 +662,25 @@ export interface ReportFields {
 export type AiRequest =
   | { task: 'report-draft'; reportId: string; facts: unknown }
   | { task: 'parent-update'; lessonId: string }
-  | { task: 'insights'; figures: unknown };
+  | { task: 'insights'; figures: unknown }
+  // Admissions advisory
+  | {
+      task: 'admissions-update';
+      caseId: string;
+      kind: AdvisoryUpdateKind;
+      period?: string;
+      notes?: string;
+      /** The names the app shows, used only when the server cannot read them itself. */
+      addressee?: string;
+      adviser?: string;
+    };
 
 export type AiResult =
   | { task: 'report-draft'; strengths: string; nextSteps: string; comment: string }
   | { task: 'parent-update'; message: string }
-  | { task: 'insights'; summary: string };
+  | { task: 'insights'; summary: string }
+  // Admissions advisory
+  | { task: 'admissions-update'; title: string; body: string };
 
 export interface SignUpDetails {
   fullName: string;
@@ -444,6 +717,8 @@ export interface NewEnquiry {
   message?: string;
   preferredTimes?: string;
   source?: Enquiry['source'];
+  /** Milliseconds from the form opening to submission; very fast submissions are marked as possible spam. */
+  elapsedMs?: number;
 }
 
 export interface NewLessonRequest {

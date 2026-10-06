@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 
@@ -9,6 +10,7 @@ import { useMe, useSession } from '@/data/session';
 import { confirm } from '@/lib/confirm';
 
 import { CalendarSyncCard } from './calendar-sync';
+import { DataPrivacyCard } from './data-privacy';
 import { GoogleCalendarCard } from './google-calendar';
 import { WhatsAppCard } from './whatsapp-card';
 import { Avatar, Badge, Button, Card, Row, Screen, Section, Txt } from './ui';
@@ -17,8 +19,12 @@ import { Avatar, Badge, Button, Card, Row, Screen, Section, Txt } from './ui';
 export function AccountScreen({ children }: { children?: ReactNode }) {
   const me = useMe();
   const signOut = useSession((s) => s.signOut);
+  const viewing = useSession((s) => !!s.viewing);
+  const exitViewAs = useSession((s) => s.exitViewAs);
   const settings = useSettings();
   const [resetting, setResetting] = useState(false);
+  // The accountant reads the books only: no lessons to sync and no lesson policies.
+  const books = me.role === 'accountant';
 
   return (
     <Screen>
@@ -35,10 +41,10 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
       </Card>
 
       <GoogleCalendarCard />
-      <CalendarSyncCard />
+      {books ? null : <CalendarSyncCard />}
       <WhatsAppCard />
 
-      {settings.data ? (
+      {settings.data && !books ? (
         <Section title="Policies">
           <Card>
             <Txt>
@@ -69,7 +75,22 @@ export function AccountScreen({ children }: { children?: ReactNode }) {
         </Section>
       ) : null}
 
-      <Button title="Sign out" variant="danger" icon="logout" onPress={() => signOut()} />
+      {/* Launch readiness */}
+      <DataPrivacyCard />
+
+      {viewing ? (
+        <Button
+          title="Exit view"
+          variant="secondary"
+          icon="eye"
+          onPress={async () => {
+            await exitViewAs();
+            router.replace('/admin');
+          }}
+        />
+      ) : (
+        <Button title="Sign out" variant="danger" icon="logout" onPress={() => signOut()} />
+      )}
     </Screen>
   );
 }

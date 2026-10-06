@@ -1,9 +1,12 @@
 import { toDateKey } from '@/domain/dates';
+import { enrolmentFor } from '@/domain/enrolments';
+import { applicationPayloadProblem, findDuplicateApplication, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
 
 import type { NewOpportunity, NewTutorApplication, ReportFields } from '../source';
-import { AccessError, lessonCountsFor, newId, requireAdmin, type DemoDB } from './db';
+import { AccessError, isFinanceReader, lessonCountsFor, linkList, newId, requireAdmin, type DemoDB } from './db';
+import { assertCleared, vet } from './vetting';
 
 /** Demo versions of roles, hiring, tutor pay, reports and expenses. Each mirrors a database function or policy. */
 
@@ -71,25 +74,93 @@ export const ops = {
     if (!b || b.status !== 'pending') throw new Error('That bid is no longer available');
     const o = db.opportunities.find((x) => x.id === b.opportunityId)!;
     if (o.status !== 'open') throw new Error('This opportunity has already been awarded or closed');
+    assertCleared(db, b.tutorId, 'role', now);
     Object.assign(o, { status: 'awarded', awardedTutorId: b.tutorId, awardedAt: now.toISOString() });
     b.status = 'awarded';
     for (const other of db.bids) if (other.opportunityId === o.id && other.id !== b.id && other.status === 'pending') other.status = 'declined';
+
+    // The winning tutor teaches the student's enrolment in this subject (created if missing), at the role's pay.
+    if (o.studentId) {
+      const subject = o.subject?.trim();
+      let e = enrolmentFor(db.enrolments, o.studentId, subject);
+      if (!e && subject) {
+        e = linkList(db, {
+          id: newId('enr'),
+          studentId: o.studentId,
+          subject: subject.slice(0, 80),
+          curriculum: o.curriculum?.trim().slice(0, 80) || undefined,
+          active: true,
+          createdAt: now.toISOString(),
+        });
+        db.enrolments.push(e);
+      }
+      if (e) {
+        // A new tutor starts afresh: their pay replaces any earlier tutor's.
+        if (e.tutorId !== b.tutorId) {
+          delete e.tutorPay;
+          delete e.tutorPaySource;
+        }
+        e.tutorId = b.tutorId;
+        if (o.payRate < 100000) {
+          e.tutorPay = o.payRate;
+          e.tutorPaySource = 'opportunity';
+        }
+      }
+    }
   },
 
-  submitApplication(db: DemoDB, a: NewTutorApplication, now = new Date()) {
+  submitApplication(db: DemoDB, input: NewTutorApplication, now = new Date()) {
+    const { elapsedMs, ...a } = input;
     if (!a.fullName.trim()) throw new Error('Please enter your name');
     if (!a.email.includes('@')) throw new Error('Please enter a valid email address');
-    db.applications.push({ ...a, phases: a.phases ?? [], id: newId('app'), createdAt: now.toISOString(), fullName: a.fullName.trim(), email: a.email.trim().toLowerCase(), status: 'applied' });
+    // Mirrors public.submit_tutor_application: size limits, rate limits, merging repeats and flagging possible spam.
+    const problem = applicationPayloadProblem(a);
+    if (problem) throw new Error(problem);
+    const email = a.email.trim().toLowerCase();
+    const at = now.toISOString();
+    const log = (db.formSubmissions ??= []);
+    if (rateLimited(log.filter((x) => x.kind === 'application'), { email }, SPAM_LIMITS.application, now)) throw new RateLimitError();
+    log.push({ kind: 'application', email, at });
+    const reasons = spamReasons({ names: [a.fullName], text: [a.experience, a.qualifications, a.subjects, a.availability], elapsedMs });
+    // Only a clean repeat is folded in, and it only fills blanks: anyone who knows the email could send it.
+    const dup = reasons.length ? undefined : findDuplicateApplication(db.applications, { email }, now);
+    if (dup) {
+      for (const k of ['subjects', 'qualifications', 'availability', 'cvPath', 'experience'] as const) {
+        if (!dup[k]?.trim() && a[k]?.trim()) dup[k] = a[k]!.trim();
+      }
+      // A repeat's telephone number is noted for the office to confirm, never written into the contact details.
+      dup.notes = repeatPhoneNote(dup.notes, dup.phone, a.phone, now);
+      dup.curricula = [...new Set([...dup.curricula, ...a.curricula])];
+      dup.phases = [...new Set([...(dup.phases ?? []), ...(a.phases ?? [])])];
+      dup.repeatCount = (dup.repeatCount ?? 0) + 1;
+      dup.lastSubmittedAt = at;
+      return;
+    }
+    db.applications.push({
+      ...a,
+      phases: a.phases ?? [],
+      id: newId('app'),
+      createdAt: at,
+      fullName: a.fullName.trim(),
+      email,
+      status: 'applied',
+      spamStatus: reasons.length ? 'suspected' : 'clean',
+      spamReasons: reasons,
+      repeatCount: 0,
+      lastSubmittedAt: at,
+    });
   },
   applications(db: DemoDB, viewer: Profile) {
     requireAdmin(viewer);
     return db.applications;
   },
-  updateApplication(db: DemoDB, viewer: Profile, id: string, patch: Partial<DemoDB['applications'][number]>) {
+  updateApplication(db: DemoDB, viewer: Profile, id: string, patch: Partial<DemoDB['applications'][number]>, now = new Date()) {
     requireAdmin(viewer);
     const a = db.applications.find((x) => x.id === id);
     if (!a) throw new Error('Application not found');
     Object.assign(a, patch);
+    // Tutor vetting and onboarding: hiring starts the new tutor's onboarding checklist.
+    if (a.status === 'hired' && a.tutorId) vet.startOnboarding(db, a.tutorId, now);
   },
 
   paymentDetails(db: DemoDB, viewer: Profile, tutorId: string): PaymentDetails | null {
@@ -105,7 +176,8 @@ export const ops = {
     db.paymentDetails.push({ ...d, iban, swift: d.swift?.trim().toUpperCase() || undefined, updatedAt: now.toISOString() });
   },
 
-  tutorInvoices: (db: DemoDB, viewer: Profile) => db.tutorInvoices.filter((i) => isStaffTutor(viewer, i.tutorId)),
+  // Accountants read every tutor invoice (but never tutors' bank details).
+  tutorInvoices: (db: DemoDB, viewer: Profile) => db.tutorInvoices.filter((i) => isFinanceReader(viewer) || isStaffTutor(viewer, i.tutorId)),
   createTutorInvoice(db: DemoDB, viewer: Profile, tutorId: string, month: string, now = new Date()): string {
     if (!isStaffTutor(viewer, tutorId)) throw new AccessError('Not allowed');
     const tutor = db.tutors.find((t) => t.id === tutorId)!;
@@ -120,7 +192,7 @@ export const ops = {
     const onOther = new Set(
       db.tutorInvoices.filter((i) => i.id !== inv!.id).flatMap((i) => i.items.map((x) => x.lessonId).filter((x): x is string => !!x)),
     );
-    const lines = tutorInvoiceLines(tutor, db.lessons, db.services, db.students, m, db.settings, onOther);
+    const lines = tutorInvoiceLines(tutor, db.lessons, db.services, db.students, m, db.settings, onOther, db.enrolments);
     inv.items = [...lines, ...inv.items.filter((i) => !i.lessonId)];
     inv.status = 'draft';
     return inv.id;
@@ -228,7 +300,7 @@ export const ops = {
   },
 
   expenses(db: DemoDB, viewer: Profile): Expense[] {
-    requireAdmin(viewer);
+    if (!isFinanceReader(viewer)) throw new AccessError('Only an admin can do that.');
     return db.expenses;
   },
   saveExpense(db: DemoDB, viewer: Profile, e: Omit<Expense, 'id'> & { id?: string }) {

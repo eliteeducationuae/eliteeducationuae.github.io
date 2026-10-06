@@ -3,7 +3,7 @@
  * Kept free of React / Supabase so it can be unit tested and shared by every data source.
  */
 
-export type Role = 'admin' | 'tutor' | 'parent' | 'student';
+export type Role = 'admin' | 'tutor' | 'parent' | 'student' | 'accountant';
 
 /** Free text. The legacy values 'IB', 'IGCSE' and 'A-Level' remain valid. */
 export type Curriculum = string;
@@ -30,6 +30,10 @@ export interface Profile {
 
 export type FamilyStatus = 'prospect' | 'active' | 'archived';
 
+/**
+ * A family. `parentName`, `email` and `phone` mirror the family's main contact
+ * (see FamilyContact.isPrimary); the full list lives in the family's contacts.
+ */
 export interface Family {
   id: string;
   name: string;
@@ -43,7 +47,49 @@ export interface Family {
   autopay?: boolean;
   /** The card kept on file for this family. Only present for admins and the family itself. */
   savedCard?: SavedCard;
+  /** UAE Tax Registration Number of a company payer. Only present for admins and the family itself. */
+  trn?: string;
+  /** Address shown on tax invoices. Only present for admins and the family itself. */
+  billingAddress?: string;
+  /** Company or legal name billed on tax invoices (defaults to the parent's name). Only present for admins and the family itself. */
+  billingName?: string;
+  /** Set when the family's account was closed and anonymised. */
+  deletedAt?: string;
 }
+
+export type ContactRelationship = 'mother' | 'father' | 'parent' | 'guardian' | 'pa' | 'family_office' | 'driver' | 'other';
+export type ContactChannel = 'email' | 'phone' | 'whatsapp';
+
+/**
+ * One person the family wants us to keep in touch with: parents, guardians, a personal
+ * assistant, a family office or a driver. Exactly one contact per family is the main one.
+ *
+ * Tutors who teach the family receive only id, familyId, name, relationship and isPrimary:
+ * email and phone are undefined and every flag is false.
+ */
+export interface FamilyContact {
+  id: string;
+  familyId: string;
+  name: string;
+  relationship: ContactRelationship;
+  email?: string;
+  phone?: string;
+  preferredChannel: ContactChannel;
+  canLogIn: boolean;
+  receivesInvoices: boolean;
+  receivesReports: boolean;
+  receivesLessonNotes: boolean;
+  receivesWhatsApp: boolean;
+  emergencyContact: boolean;
+  isPrimary: boolean;
+  /** True once this contact has signed in. */
+  hasLogin: boolean;
+  /** The linked login, for matching message senders. Absent for tutors. */
+  profileId?: string;
+  createdAt?: string;
+}
+
+export type FamilyContactDraft = Omit<FamilyContact, 'id' | 'familyId' | 'hasLogin' | 'profileId' | 'createdAt'> & { id?: string };
 
 export interface Student {
   id: string;
@@ -62,15 +108,18 @@ export interface Student {
   examDate?: string;
   /** Tutor-only notes (never shown to families). */
   notes?: string;
+  /** Set when the student's record was anonymised because the account was closed. */
+  deletedAt?: string;
 }
 
 export interface Tutor {
   id: string;
   fullName: string;
+  /** Blank, like phone and hourlyPay, unless the viewer is an admin or this tutor (see 20261113001200_tutorpay_fix.sql). */
   email: string;
   phone?: string;
-  /** Pay to the tutor in AED per hour taught. */
-  hourlyPay: number;
+  /** Pay to the tutor in AED per hour taught. Only admins and the tutor themself may read it. */
+  hourlyPay?: number;
   /** Subjects taught, e.g. 'Chemistry'. */
   subjects: string[];
   /** Curricula taught, e.g. 'IGCSE'. */
@@ -79,6 +128,8 @@ export interface Tutor {
   phases: string[];
   /** Calendar colour. */
   color: string;
+  /** Set when the tutor's account was closed and anonymised. */
+  deletedAt?: string;
 }
 
 export interface Service {
@@ -106,6 +157,12 @@ export interface Enrolment {
   topicListId?: string;
   active: boolean;
   createdAt?: string;
+  /** Custom AED per hour paid to the tutor for this student and subject. Only present for admins and the teaching tutor. */
+  tutorPay?: number;
+  /** 'opportunity' when the pay was set by awarding an opportunity and not changed since. */
+  tutorPaySource?: 'custom' | 'opportunity';
+  /** Custom AED per hour charged to the family for this subject. Only present for admins and the family. */
+  familyPrice?: number;
 }
 
 /** A shared topic list for one subject, curriculum and level. */
@@ -269,6 +326,10 @@ export interface Charge {
   invoiceId?: string;
   packageId?: string;
   date: string;
+  /** 'custom' when the enrolment's family price was used instead of the service price. */
+  priceSource?: 'service' | 'custom';
+  /** The custom AED per hour the amount was worked out from (custom prices only). */
+  hourlyPrice?: number;
 }
 
 export interface InvoiceItem {
@@ -290,6 +351,8 @@ export interface Payment {
   method: PaymentMethod;
   paidAt: string;
   reference?: string;
+  /** True when taken through Stripe and refundable by card. */
+  viaStripe?: boolean;
 }
 
 export interface Invoice {
@@ -307,6 +370,16 @@ export interface Invoice {
   autopayStatus?: AutopayStatus;
   /** Why the last automatic charge failed, in words the family can act on. */
   autopayError?: string;
+  /** Date of supply (the lessons or package), when different from the issue date. */
+  supplyDate?: string;
+  /** Supplier details frozen when the invoice was issued. */
+  supplier?: TaxParty;
+  /** Customer details frozen when the invoice was issued. */
+  customer?: TaxParty;
+  /** Credit notes issued against this invoice. */
+  creditNotes?: CreditNoteRef[];
+  /** Money returned to the family against this invoice. */
+  refunds?: Refund[];
 }
 
 export interface Settings {
@@ -332,6 +405,18 @@ export interface Settings {
   emailMessages: boolean;
   /** Parents can only request lessons at least this many hours ahead. */
   bookingNoticeHours: number;
+  /** Registered legal name shown on tax invoices (falls back to businessName). */
+  legalName?: string;
+  /** UAE Tax Registration Number (15 digits). Invoices become tax invoices once set. */
+  trn?: string;
+  registeredAddress?: string;
+  /** Extra line printed at the foot of invoices and credit notes. */
+  invoiceFooter?: string;
+  /** First month of the VAT quarter cycle the FTA assigned (1 = Jan/Apr/Jul/Oct). */
+  vatQuarterStartMonth: VatQuarterStartMonth;
+  nextCreditNoteNumber: number;
+  /** Website forms must pass the Cloudflare Turnstile security check; submissions without it are kept but marked as possible spam. */
+  captchaRequired?: boolean;
 }
 
 /** A weekly block when a tutor can teach. `weekday` 0 = Monday. Times are `HH:MM`. */
@@ -383,6 +468,11 @@ export interface CalendarConnection {
   lastError?: string;
 }
 
+/** How a public form submission looks: `suspected` and `spam` are kept but left out of the pipeline. */
+export type SpamStatus = 'clean' | 'suspected' | 'spam';
+/** Why a submission was marked as possible spam. */
+export type SpamReason = 'link-in-name' | 'links' | 'too-fast' | 'captcha';
+
 export type EnquiryStatus = 'new' | 'contacted' | 'trial-booked' | 'enrolled' | 'lost';
 export type EnquirySource = 'app' | 'website' | 'referral' | 'phone' | 'other';
 
@@ -407,6 +497,12 @@ export interface Enquiry {
   nextActionAt?: string;
   notes?: string;
   lostReason?: string;
+  /** Undefined means clean. */
+  spamStatus?: SpamStatus;
+  spamReasons?: SpamReason[];
+  /** How many repeat submissions were merged into this one. */
+  repeatCount?: number;
+  lastSubmittedAt?: string;
 }
 
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'withdrawn';
@@ -522,6 +618,12 @@ export interface TutorApplication {
   status: ApplicationStatus;
   notes?: string;
   tutorId?: string;
+  /** Undefined means clean. */
+  spamStatus?: SpamStatus;
+  spamReasons?: SpamReason[];
+  /** How many repeat submissions were merged into this one. */
+  repeatCount?: number;
+  lastSubmittedAt?: string;
 }
 
 export interface PaymentDetails {
@@ -541,6 +643,8 @@ export interface TutorInvoiceItem {
   quantity: number;
   unitPrice: number;
   lessonId?: string;
+  /** 'custom' when a per-student pay rate set the unit price. */
+  rateSource?: 'usual' | 'custom';
 }
 
 export interface TutorInvoice {
@@ -631,4 +735,375 @@ export interface PackageOffer {
   /** Shown to parents. */
   active: boolean;
   sort: number;
+}
+
+// ---------------------------------------------------------------------------
+// Tax: credit notes, refunds and accountant access
+// ---------------------------------------------------------------------------
+
+/** A supplier or customer as printed on a tax document. */
+export interface TaxParty {
+  name: string;
+  address?: string;
+  trn?: string;
+  email?: string;
+}
+
+/** 1 = quarters start Jan/Apr/Jul/Oct, 2 = Feb/May/Aug/Nov, 3 = Mar/Jun/Sep/Dec. */
+export type VatQuarterStartMonth = 1 | 2 | 3;
+
+/** The summary of a credit note carried on its invoice. */
+export interface CreditNoteRef {
+  id: string;
+  number: string;
+  issueDate: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  /** True when any lesson on the note was returned to be invoiced again. */
+  rebilled: boolean;
+  /**
+   * The net of the lines whose lessons were returned to be invoiced again (a billing correction). The rest of the
+   * subtotal is a true credit. Missing on older data: then the whole subtotal when rebilled, otherwise none.
+   */
+  rebilledNet?: number;
+}
+
+export interface CreditNoteLine {
+  description: string;
+  /** 0-based index of the invoice line credited, when it credits one. */
+  invoiceLine?: number;
+  net: number;
+  vat: number;
+  /** True when this line's lesson was returned to be invoiced again. */
+  rebilled?: boolean;
+}
+
+export interface CreditNote extends CreditNoteRef {
+  invoiceId: string;
+  invoiceNumber: string;
+  familyId: string;
+  reason: string;
+  vatRate: number;
+  lines: CreditNoteLine[];
+  supplier?: TaxParty;
+  customer?: TaxParty;
+  createdAt: string;
+}
+
+export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+
+export interface Refund {
+  id: string;
+  invoiceId: string;
+  familyId: string;
+  paymentId: string;
+  amount: number;
+  method: PaymentMethod;
+  status: RefundStatus;
+  reason: string;
+  reference?: string;
+  creditNoteId?: string;
+  failureReason?: string;
+  createdAt: string;
+  settledAt?: string;
+}
+
+/** An accountant invited to read the books. */
+export interface AccountantInvite {
+  email: string;
+  fullName?: string;
+  invitedAt: string;
+  acceptedAt?: string;
+}
+
+/** A VAT return period. Dates are YYYY-MM-DD, inclusive. */
+export interface VatQuarter {
+  start: string;
+  end: string;
+  /** e.g. 'Jan – Mar 2026' or 'Dec 2025 – Feb 2026'. */
+  label: string;
+}
+
+export interface VatSummaryRow {
+  kind: 'invoice' | 'credit-note' | 'expense';
+  date: string;
+  reference: string;
+  party?: string;
+  net: number;
+  vatRate?: number;
+  vat: number;
+  gross: number;
+}
+
+export interface VatSummary {
+  quarter: VatQuarter;
+  invoiceCount: number;
+  standardRatedNet: number;
+  /** Net of credit notes against standard-rated invoices (shown as 'Less credit notes (net)'). */
+  standardRatedCreditsNet: number;
+  /** 0% invoices issued while the business had a TRN. */
+  zeroRatedNet: number;
+  /** 0% invoices issued without a TRN (before VAT registration): outside the scope of VAT, not zero-rated. */
+  outOfScopeNet: number;
+  outputVat: number;
+  creditNoteCount: number;
+  creditsNet: number;
+  creditsVat: number;
+  netOutputVat: number;
+  expenseCount: number;
+  expensesGross: number;
+  inputVat: number;
+  /** Negative when VAT is reclaimable. */
+  netVatPayable: number;
+  rows: VatSummaryRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Tutor vetting and onboarding
+// ---------------------------------------------------------------------------
+
+export type TutorDocumentType = 'police_clearance' | 'passport_id' | 'qualification' | 'other';
+export type TutorDocumentReview = 'pending' | 'verified' | 'rejected';
+
+/** A document a tutor uploads for vetting, e.g. a police clearance certificate. Dates are `YYYY-MM-DD`. */
+export interface TutorDocument {
+  id: string;
+  tutorId: string;
+  type: TutorDocumentType;
+  title?: string;
+  /** Path in the private 'vetting' bucket, `tutors/<tutorId>/<file>`. */
+  filePath: string;
+  fileName?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: TutorDocumentReview;
+  reviewNote?: string;
+  createdAt: string;
+  verifiedAt?: string;
+  verifiedByName?: string;
+}
+
+/** A tutor's police clearance position: 'expiring' is still cleared, within 60 days of expiry. */
+export type VettingStatus = 'cleared' | 'expiring' | 'pending' | 'expired' | 'missing';
+
+/** An administrator's time-limited permission to assign work to a tutor who is not yet cleared. */
+export interface VettingOverride {
+  id: string;
+  tutorId: string;
+  reason: string;
+  createdAt: string;
+  createdByName?: string;
+  expiresAt: string;
+  revokedAt?: string;
+  revokedByName?: string;
+}
+
+/** One tutor's vetting and onboarding position (mirrors public.tutor_compliance()). */
+export interface TutorCompliance {
+  tutorId: string;
+  vettingStatus: VettingStatus;
+  /** Expiry of the police clearance that determines the status. */
+  clearanceExpiry?: string;
+  /** Documents of any type awaiting review. */
+  documentsPending: number;
+  bankDetails: boolean;
+  availabilitySet: boolean;
+  calendarConnected: boolean;
+  whatsappOptIn: boolean;
+  /** Current handbook version, if one has been published. */
+  handbookVersion?: number;
+  handbookAcknowledgedVersion?: number;
+  onboardingStartedAt?: string;
+  /** The active override, if any. `until` is an ISO time. */
+  override?: { id: string; reason: string; until: string };
+  /** Whether assignments are blocked for tutors who are not cleared. */
+  enforced: boolean;
+}
+
+export interface HandbookVersion {
+  id: string;
+  version: number;
+  title: string;
+  /** Markdown. */
+  body: string;
+  publishedAt: string;
+  publishedByName?: string;
+}
+
+export interface HandbookAcknowledgement {
+  tutorId: string;
+  version: number;
+  acknowledgedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Launch readiness: error reporting, system health, data export and account deletion
+
+/** Where an app error was caught. */
+export type AppErrorSource = 'boundary' | 'query' | 'mutation' | 'global' | 'manual';
+
+export type AppPlatform = 'ios' | 'android' | 'web' | 'unknown';
+
+/** What the app sends to log_app_error. Never contains profile fields; messages are scrubbed of personal data first. */
+export interface AppErrorInput {
+  message: string;
+  stack?: string;
+  route?: string;
+  platform: AppPlatform;
+  appVersion?: string;
+  source: AppErrorSource;
+  fingerprint?: string;
+}
+
+/** An app error as administrators see it. */
+export interface AppErrorRow {
+  id: string;
+  createdAt: string;
+  profileId?: string;
+  role?: string;
+  platform: AppPlatform;
+  appVersion?: string;
+  route?: string;
+  source: AppErrorSource;
+  message: string;
+  stack?: string;
+  fingerprint?: string;
+}
+
+/** A failure recorded by an Edge Function. */
+export interface FunctionErrorRow {
+  id: string;
+  createdAt: string;
+  functionName: string;
+  message: string;
+  status?: number;
+  context?: Record<string, unknown>;
+}
+
+export type HealthStatus = 'ok' | 'warning' | 'failing';
+
+export interface HealthCheck {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  /** A full sentence explaining the state. */
+  detail: string;
+  count?: number;
+}
+
+export interface HealthJob {
+  name: string;
+  lastStartedAt?: string;
+  lastSucceededAt?: string;
+  lastFailedAt?: string;
+  lastError?: string;
+}
+
+export interface MigrationRecord {
+  version: string;
+  name: string;
+  appliedAt?: string;
+}
+
+export interface SystemHealth {
+  checkedAt: string;
+  status: HealthStatus;
+  checks: HealthCheck[];
+  jobs: HealthJob[];
+  database: { latest: string; latestName: string; count: number; migrations: MigrationRecord[] };
+}
+
+export type DeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+export type DeletionTargetKind = 'profile' | 'family' | 'tutor';
+
+/** What an account deletion removed and kept. */
+export interface DeletionSummary {
+  role?: Role;
+  familyAnonymised?: boolean;
+  studentsAnonymised?: number;
+  futureLessonsCancelled?: number;
+  upcomingLessonsNeedingTutor?: number;
+  invoicesRetained?: number;
+  paymentsRetained?: number;
+  /** Kept with the invoices and payments for tax records (families only). */
+  creditNotesRetained?: number;
+  refundsRetained?: number;
+  /** True when a family contact who is not the main contact closed only their own login; the family stays open. */
+  loginOnly?: boolean;
+}
+
+export interface DeletionRequest {
+  id: string;
+  createdAt: string;
+  status: DeletionRequestStatus;
+  targetKind: DeletionTargetKind;
+  profileId?: string;
+  familyId?: string;
+  tutorId?: string;
+  role?: Role;
+  label: string;
+  reason?: string;
+  completedAt?: string;
+  summary: DeletionSummary;
+  error?: string;
+}
+
+/** The signed-in person's data, as returned by export_my_data. Sections are loosely typed: they are passed through to the file. */
+export interface DataExport extends Record<string, unknown> {
+  format: 'elite-education-export/1';
+  exportedAt: string;
+  account: Record<string, unknown>;
+  family?: Record<string, unknown> | null;
+  tutor?: Record<string, unknown> | null;
+  paymentDetails?: { accountName?: string; bankName?: string; ibanLast4?: string } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Session plans and handover packs
+// ---------------------------------------------------------------------------
+
+/** Homework the tutor intends to set; no studentId = every student in the lesson. */
+export interface PlannedHomework {
+  studentId?: string;
+  title: string;
+  details?: string;
+}
+
+/** A tutor's plan for an upcoming lesson. One per lesson. */
+export interface LessonPlan {
+  lessonId: string;
+  /** The lesson's tutor when the plan was saved. */
+  tutorId?: string;
+  objectives: string;
+  topicIds: string[];
+  resourceIds: string[];
+  homework: PlannedHomework[];
+  /** Parents and the student can read the plan when true. */
+  sharedWithFamily: boolean;
+  createdAt?: string;
+  updatedAt: string;
+}
+
+/** Why a tutor received a handover pack: covering one lesson, taking over a subject, or winning a new student. */
+export type HandoverReason = 'cover' | 'reassigned' | 'awarded';
+
+/** A student passing from one tutor to another, with the outgoing tutor's note. */
+export interface Handover {
+  id: string;
+  createdAt: string;
+  reason: HandoverReason;
+  studentId: string;
+  /** The student's name when the handover was made, for a tutor who cannot see the student yet. */
+  studentName?: string;
+  subject?: string;
+  enrolmentId?: string;
+  lessonId?: string;
+  opportunityId?: string;
+  fromTutorId?: string;
+  toTutorId: string;
+  /** The outgoing tutor's handover note. */
+  note?: string;
+  noteUpdatedAt?: string;
+  viewedAt?: string;
 }

@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
+import { bookingPriceNotes } from '@/components/rates';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { tutorChipLabel, useComplianceMap, VettingWarning } from '@/components/vetting';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useBusyBlocks, useClosures, useEnrolments, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
@@ -14,6 +16,8 @@ import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey 
 import { defaultSubject, enrolmentFor, sameSubject, subjectsFor } from '@/domain/enrolments';
 import { expandWeeklySkipping, findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
+import { isVettingBlock } from '@/domain/vetting';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { uuid } from '@/lib/id';
 
 type Repeat = 'once' | 'weekly' | 'fortnightly';
@@ -23,6 +27,7 @@ export default function NewLesson() {
   const lookup = useLookup();
   const students = useStudents();
   const tutors = useTutors();
+  const vetting = useComplianceMap();
   const services = useServices();
   const enrolments = useEnrolments();
   const create = useAction(source.createLessons);
@@ -86,7 +91,8 @@ export default function NewLesson() {
   async function submit() {
     if (!ready) return;
     const seriesId = n > 1 ? uuid() : undefined;
-    await create.mutateAsync([
+    // A refusal (e.g. a vetting block) is shown from create.error below.
+    const made = await create.mutateAsync([
       slots.map((s) => ({
         tutorId: chosenTutorId!,
         studentIds,
@@ -99,13 +105,14 @@ export default function NewLesson() {
         address: location === 'in-person' ? where.trim() || undefined : undefined,
         seriesId,
       })),
-    ]);
+    ]).catch(() => null);
+    if (made === null) return;
     router.back();
   }
 
   if (!lookup.ready) return <Loading />;
   const q = query.trim().toLowerCase();
-  const studentList = (students.data ?? []).filter((s) => studentIds.includes(s.id) || !q || s.fullName.toLowerCase().includes(q));
+  const studentList = withoutClosed(students.data).filter((s) => studentIds.includes(s.id) || !q || s.fullName.toLowerCase().includes(q));
 
   return (
     <Screen
@@ -126,7 +133,14 @@ export default function NewLesson() {
             <Chip key={s.id} label={s.fullName} selected={studentIds.includes(s.id)} onPress={() => toggleStudent(s.id)} />
           ))}
         </Row>
-        {studentIds.length > 1 ? <Txt variant="small">Group lesson: each student is charged the service rate.</Txt> : null}
+        {studentIds.length > 1 ? (
+          <Txt variant="small">Group lesson: each family is charged its own price, and the tutor is paid the highest rate among the students.</Txt>
+        ) : null}
+        {bookingPriceNotes(studentIds, subject, allEnrolments, (id) => lookup.student(id)?.fullName).map((line) => (
+          <Txt key={line} variant="small">
+            {line}
+          </Txt>
+        ))}
       </Section>
 
       {studentIds.length ? (
@@ -154,8 +168,8 @@ export default function NewLesson() {
 
       <Section title="Tutor">
         <Row gap={Spacing.one} wrap>
-          {(tutors.data ?? []).map((t) => (
-            <Chip key={t.id} label={t.fullName} selected={chosenTutorId === t.id} onPress={() => setTutorId(t.id)} />
+          {withoutClosed(tutors.data).map((t) => (
+            <Chip key={t.id} label={tutorChipLabel(t.fullName, vetting.get(t.id))} selected={chosenTutorId === t.id} onPress={() => setTutorId(t.id)} />
           ))}
         </Row>
       </Section>
@@ -242,6 +256,7 @@ export default function NewLesson() {
           </View>
         </Section>
       ) : null}
+      {chosenTutorId ? <VettingWarning key={chosenTutorId} tutorId={chosenTutorId} action="lesson" expanded={isVettingBlock(create.error)} /> : null}
       <ErrorNote error={create.error} />
     </Screen>
   );

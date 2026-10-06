@@ -17,6 +17,7 @@ import { shareProgressReport } from '@/lib/report';
 import { HomeworkStatusBadge } from './homework';
 import { Icon } from './icon';
 import { MasteryHeatmap, ProgressSummary } from './progress';
+import { StudentSubjectRates } from './rates';
 import { SharedResources } from './resources';
 import { Badge, Button, Card, Chip, EmptyState, Loading, Row, Section, Segmented, Stat, StatGrid, Txt } from './ui';
 
@@ -183,6 +184,7 @@ export function StudentOverview({ student, initialTab = 'progress' }: { student:
                 {selectedDetail ? <Txt variant="small">{selectedDetail}</Txt> : null}
               </View>
             ) : null}
+            <StudentSubjectRates enrolment={selected} student={student} />
             {tree.units.length ? (
               <>
                 <ProgressSummary

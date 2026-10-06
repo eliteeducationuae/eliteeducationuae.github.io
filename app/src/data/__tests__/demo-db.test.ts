@@ -52,7 +52,8 @@ describe('visibility (mirrors row-level security)', () => {
   it('tutors see their own lessons and students but no billing', () => {
     const tutor = viewer(db, 'tutor');
     expect(q.lessons(db, tutor, YEAR.from, YEAR.to).every((l) => l.tutorId === 't-sarah')).toBe(true);
-    expect(q.students(db, tutor).map((s) => s.id).sort()).toEqual(['s-karim', 's-layla', 's-yasmin']);
+    // Sarah covers one of Charlotte's lessons in the seed, so Charlotte is hers to see too.
+    expect(q.students(db, tutor).map((s) => s.id).sort()).toEqual(['s-charlotte', 's-karim', 's-layla', 's-yasmin']);
     expect(q.invoices(db, tutor)).toEqual([]);
   });
 
@@ -122,7 +123,8 @@ describe('commands', () => {
     const db = createSeed(NOW);
     const admin = viewer(db, 'admin');
     const invoice = cmd.sellPackage(db, admin, { familyId: 'f-hughes', name: 'IB 5 pack', serviceId: 'svc-ib', lessonsTotal: 5, price: 2000 }, NOW);
-    expect(invoiceTotals(invoice).total).toBe(2000);
+    // The seeded business is VAT registered: 5% on top of the package price.
+    expect(invoiceTotals(invoice)).toMatchObject({ subtotal: 2000, vat: 100, total: 2100 });
     const lesson = db.lessons.find((l) => l.status === 'scheduled' && l.studentIds.includes('s-charlotte'))!;
     cmd.completeLesson(db, admin, { lessonId: lesson.id, status: 'completed', attendance: {}, summary: 's', topicIds: [], ratings: [], homework: [] });
     const pkg = db.packages.find((p) => p.name === 'IB 5 pack')!;

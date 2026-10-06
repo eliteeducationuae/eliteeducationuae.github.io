@@ -2,11 +2,12 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
 
-import { Button, Card, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { Button, Card, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useSettings } from '@/data/hooks';
-import type { Settings } from '@/domain/types';
+import { isValidTrn, normaliseTrn, VAT_QUARTER_OPTIONS } from '@/domain/tax';
+import type { Settings, VatQuarterStartMonth } from '@/domain/types';
 
 export default function SettingsScreen() {
   const settings = useSettings();
@@ -29,7 +30,14 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [emailInvoices, setEmailInvoices] = useState(initial.emailInvoices);
   const [emailMessages, setEmailMessages] = useState(initial.emailMessages);
   const [notice, setNotice] = useState(String(initial.bookingNoticeHours));
+  const [legalName, setLegalName] = useState(initial.legalName ?? '');
+  const [trn, setTrn] = useState(initial.trn ?? '');
+  const [address, setAddress] = useState(initial.registeredAddress ?? '');
+  const [footer, setFooter] = useState(initial.invoiceFooter ?? '');
+  const [quarterStart, setQuarterStart] = useState<VatQuarterStartMonth>(initial.vatQuarterStartMonth ?? 1);
+  const [captcha, setCaptcha] = useState(initial.captchaRequired ?? false);
   const pct = (s: string) => Math.max(0, Math.min(100, Number(s) || 0)) / 100;
+  const trnInvalid = !!trn.trim() && !isValidTrn(trn);
 
   return (
     <Screen
@@ -39,6 +47,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
           variant="gold"
           style={{ flex: 1 }}
           loading={save.isPending}
+          disabled={trnInvalid}
           onPress={async () => {
             await save.mutateAsync([
               {
@@ -55,6 +64,13 @@ function SettingsForm({ initial }: { initial: Settings }) {
                 emailInvoices: emailInvoices,
                 emailMessages: emailMessages,
                 bookingNoticeHours: Math.max(0, parseInt(notice, 10) || 0),
+                // Tax details: a blank clears the field.
+                legalName: legalName.trim(),
+                trn: normaliseTrn(trn),
+                registeredAddress: address.trim(),
+                invoiceFooter: footer.trim(),
+                vatQuarterStartMonth: quarterStart,
+                captchaRequired: captcha,
               },
             ]);
             router.back();
@@ -83,13 +99,37 @@ function SettingsForm({ initial }: { initial: Settings }) {
         <Card style={{ gap: Spacing.three }}>
           <Row gap={Spacing.two}>
             <View style={{ flex: 1 }}>
-              <Field label="VAT %" value={vat} onChangeText={setVat} keyboardType="decimal-pad" hint="5 once VAT-registered" />
+              <Field label="VAT %" value={vat} onChangeText={setVat} keyboardType="decimal-pad" hint="UAE standard rate is 5%." />
             </View>
             <View style={{ flex: 1 }}>
               <Field label="Payment terms (days)" value={dueDays} onChangeText={setDueDays} keyboardType="number-pad" />
             </View>
           </Row>
           <Field label="Bank details on invoices" value={bank} onChangeText={setBank} multiline />
+        </Card>
+      </Section>
+      <Section title="Tax details (shown on tax invoices)">
+        <Card style={{ gap: Spacing.three }}>
+          <Field label="Legal name" value={legalName} onChangeText={setLegalName} placeholder={initial.businessName} hint="As registered with the FTA. Leave blank to use the business name." />
+          <Field
+            label="TRN"
+            value={trn}
+            onChangeText={setTrn}
+            keyboardType="number-pad"
+            placeholder="100000000000003"
+            hint={trnInvalid ? 'Enter the 15-digit TRN from your VAT certificate.' : 'Once set, invoices are issued as tax invoices.'}
+          />
+          <Field label="Registered address" value={address} onChangeText={setAddress} multiline />
+          <Field label="Invoice footer (optional)" value={footer} onChangeText={setFooter} multiline hint="Printed at the foot of invoices and credit notes." />
+          <View style={{ gap: Spacing.one }}>
+            <Txt variant="label">VAT quarters start in</Txt>
+            <Row gap={Spacing.one} wrap>
+              {VAT_QUARTER_OPTIONS.map((o) => (
+                <Chip key={o.value} label={o.label} selected={quarterStart === o.value} onPress={() => setQuarterStart(o.value)} />
+              ))}
+            </Row>
+            <Txt variant="small">As shown on your VAT registration certificate.</Txt>
+          </View>
         </Card>
       </Section>
       <Section title="Booking">
@@ -101,6 +141,17 @@ function SettingsForm({ initial }: { initial: Settings }) {
             keyboardType="number-pad"
             hint="Families can only request times at least this far ahead. Set tutors’ hours under Tutors → Availability."
           />
+        </Card>
+      </Section>
+      <Section title="Website forms">
+        <Card style={{ gap: Spacing.two }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt style={{ flex: 1 }}>Security check on website forms</Txt>
+            <Switch value={captcha} onValueChange={setCaptcha} accessibilityLabel="Security check on website forms" />
+          </Row>
+          <Txt variant="small">
+            Uses Cloudflare Turnstile, which needs to be set up on the website first (see the setup guide). When on, anything sent without the check by someone who is not signed in is kept and marked as possible spam, including the app’s own public forms, which do not show the check.
+          </Txt>
         </Card>
       </Section>
       <Section title="Emails to families">
@@ -128,6 +179,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
           />
         </Card>
       </Section>
+      {trnInvalid ? <Txt variant="small" color="danger">Enter the 15-digit TRN from your VAT certificate.</Txt> : null}
       <ErrorNote error={save.error} />
     </Screen>
   );

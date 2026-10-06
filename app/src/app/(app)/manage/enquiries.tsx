@@ -1,27 +1,37 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { ENQUIRY_STATUS } from '@/components/enquiries';
+import { RepeatNote, SpamActions, SpamFilterChip, SpamNote } from '@/components/spam';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Segmented, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useEnquiries } from '@/data/hooks';
 import { relativeDay } from '@/domain/dates';
+import { isPossibleSpam, withoutSpam } from '@/domain/spam';
 import type { EnquiryStatus } from '@/domain/types';
 
-type Filter = 'open' | 'enrolled' | 'lost';
+type Filter = 'open' | 'enrolled' | 'lost' | 'spam';
 
 /** The pipeline from first contact to enrolled family. */
 export default function Enquiries() {
   const enquiries = useEnquiries();
-  const [filter, setFilter] = useState<Filter>('open');
+  const params = useLocalSearchParams<{ view?: string }>();
+  const [filter, setFilter] = useState<Filter>(() => (params.view === 'spam' ? 'spam' : 'open'));
   if (enquiries.isLoading) return <Loading />;
-  const all = enquiries.data ?? [];
+  // Possible spam is kept for review but left out of the pipeline and its figures.
+  const all = withoutSpam(enquiries.data ?? []);
+  const spam = (enquiries.data ?? [])
+    .filter(isPossibleSpam)
+    .sort((a, b) => (a.spamStatus === b.spamStatus ? 0 : a.spamStatus === 'suspected' ? -1 : 1) || b.createdAt.localeCompare(a.createdAt));
   const open = all.filter((e) => e.status === 'new' || e.status === 'contacted' || e.status === 'trial-booked');
-  const list = (filter === 'open' ? open : all.filter((e) => e.status === filter)).sort((a, b) => {
-    const order: EnquiryStatus[] = ['new', 'contacted', 'trial-booked', 'enrolled', 'lost'];
-    return order.indexOf(a.status) - order.indexOf(b.status) || b.createdAt.localeCompare(a.createdAt);
-  });
+  const list =
+    filter === 'spam'
+      ? spam
+      : (filter === 'open' ? open : all.filter((e) => e.status === filter)).sort((a, b) => {
+          const order: EnquiryStatus[] = ['new', 'contacted', 'trial-booked', 'enrolled', 'lost'];
+          return order.indexOf(a.status) - order.indexOf(b.status) || b.createdAt.localeCompare(a.createdAt);
+        });
   const decided = all.filter((e) => e.status === 'enrolled' || e.status === 'lost');
   const conversion = decided.length ? Math.round((all.filter((e) => e.status === 'enrolled').length / decided.length) * 100) : null;
 
@@ -44,7 +54,10 @@ export default function Enquiries() {
           { value: 'lost', label: 'Lost' },
         ]}
       />
-      {list.length === 0 ? (
+      <SpamFilterChip count={spam.length} selected={filter === 'spam'} onPress={() => setFilter(filter === 'spam' ? 'open' : 'spam')} />
+      {list.length === 0 && filter === 'spam' ? (
+        <EmptyState icon="inbox" title="No possible spam" message="Messages that look automated are kept here so that nothing genuine is lost." />
+      ) : list.length === 0 ? (
         <EmptyState icon="inbox" title="No enquiries in this view" message="Enquiries from the website, the app and phone calls you log appear here." />
       ) : (
         <View style={{ gap: Spacing.two }}>
@@ -68,6 +81,14 @@ export default function Enquiries() {
                   <Txt variant="small">via {e.source}</Txt>
                 </View>
               </Row>
+              {filter === 'spam' ? (
+                <>
+                  <SpamNote item={e} />
+                  <SpamActions kind="enquiry" id={e.id} status={e.spamStatus} />
+                </>
+              ) : (
+                <RepeatNote repeatCount={e.repeatCount} />
+              )}
               {e.nextActionAt && e.status !== 'enrolled' && e.status !== 'lost' ? (
                 <Txt variant="small" color="warning">
                   Follow up {relativeDay(`${e.nextActionAt}T12:00:00`).toLowerCase()}

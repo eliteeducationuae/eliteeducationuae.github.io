@@ -58,7 +58,7 @@ export function HomeworkEditor({ studentId, value, onChange }: { studentId: stri
         multiline
         value={value.details}
         onChangeText={(details) => onChange({ ...value, details })}
-        placeholder="Instructions for the student, e.g. Show all working and check each answer against the mark scheme."
+        placeholder="Instructions for the student. For example, show all working and check each answer against the mark scheme."
       />
       <View style={{ gap: Spacing.two }}>
         <Field

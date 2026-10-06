@@ -1,0 +1,59 @@
+# Runs the app checks and the database tests on every push and pull request, on every branch.
+# Require both jobs on main under Settings → Branches → Branch protection rules (see app/README.md, "Continuous integration").
+# deploy.yml publishes the site and web app from main only, and runs `npm run check` again before it builds.
+name: Checks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (lint, types, unit tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        working-directory: app
+        run: npm ci
+
+      - name: Lint, typecheck and unit tests
+        working-directory: app
+        run: npm run check
+
+  database:
+    name: Database (migrations, row-level security, server functions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner image ships PostgreSQL under /usr/lib/postgresql/<version>/bin; install it only if it is missing.
+      - name: Ensure PostgreSQL is available
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql
+          fi
+          ls /usr/lib/postgresql/*/bin/initdb
+
+      # Starts its own throwaway server on a temporary socket, applies every migration and runs each SQL test file.
+      - name: Database tests
+        working-directory: app
+        run: bash supabase/tests/run.sh

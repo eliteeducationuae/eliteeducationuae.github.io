@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy policy | Elite Education</title>
+    <meta name="description" content="How Elite Education collects, uses and protects the personal data of families, students, tutors and enquirers, under the UAE Personal Data Protection Law.">
+    <meta name="theme-color" content="#0A0A0A">
+    <meta name="color-scheme" content="light dark">
+    <link rel="canonical" href="https://eliteeducation.me/privacy/">
+    <link rel="icon" type="image/png" sizes="96x96" href="../assets/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Gelasio:wght@400;700&display=swap">
+    <style>
+        :root {
+            --noir: #0A0A0A;
+            --gold: #C9A84C;
+            --ivory: #F9F8F5;
+            --stone: #888888;
+            --white: #FFFFFF;
+
+            --bg: var(--ivory);
+            --surface: var(--white);
+            --panel: var(--ivory);
+            --text: var(--noir);
+            --muted: #6B6B6B;
+            --line: #E5E0D4;
+            --shadow: 0 1px 2px rgba(10, 10, 10, 0.04), 0 8px 24px rgba(10, 10, 10, 0.05);
+
+            --serif: Georgia, Gelasio, 'Times New Roman', serif;
+            --sans: Calibri, Carlito, 'Segoe UI', Arial, sans-serif;
+            --gutter: 2rem;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: var(--noir);
+                --surface: #141414;
+                --panel: #1C1C1C;
+                --text: var(--ivory);
+                --muted: #A8A49B;
+                --line: #2A2925;
+                --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+            }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body { font-family: var(--sans); font-size: 1.0625rem; color: var(--text); background: var(--bg); line-height: 1.65; }
+        img { display: block; max-width: 100%; height: auto; }
+        a { color: inherit; }
+        :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+        .wrap { max-width: 880px; margin: 0 auto; padding: 0 var(--gutter); }
+
+        /* Header */
+        header { background: var(--noir); color: var(--white); border-bottom: 1px solid rgba(201, 168, 76, 0.35); }
+        header .wrap { max-width: 1120px; display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding-top: 0.9rem; padding-bottom: 0.9rem; }
+        .brand { display: block; padding: 0.25rem 0; flex-shrink: 0; }
+        .brand img { width: 132px; }
+        header nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1.75rem; }
+        header nav a { color: var(--ivory); text-decoration: none; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 0.35rem 0; border-bottom: 1px solid transparent; }
+        header nav a:hover, header nav a[aria-current="page"] { border-bottom-color: var(--gold); }
+        header nav a.signin { color: var(--gold); }
+
+        /* Page */
+        main { padding: 4.5rem 0 5rem; }
+        .label { display: inline-flex; align-items: center; gap: 0.75rem; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+        .label::before { content: ''; width: 32px; height: 1px; background: var(--gold); }
+        h1, h2, h3 { font-family: var(--serif); color: var(--text); line-height: 1.25; }
+        h1 { font-weight: 400; font-size: clamp(2rem, 4.5vw, 2.75rem); }
+        h2 { font-weight: 700; font-size: 1.5rem; margin: 3rem 0 1rem; scroll-margin-top: 1.5rem; }
+        h3 { font-weight: 700; font-size: 1.125rem; margin: 1.75rem 0 0.5rem; }
+        .rule { width: 72px; height: 1px; background: var(--gold); border: 0; margin: 1.5rem 0; }
+        .meta { color: var(--muted); font-size: 0.9375rem; }
+        .lead { font-size: 1.1875rem; color: var(--muted); margin-top: 1rem; }
+
+        .notice { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 12px; padding: 1.25rem 1.5rem; margin: 2rem 0 0; }
+        .notice strong { display: block; font-size: 0.8125rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 0.35rem; }
+        .notice p { color: var(--muted); }
+
+        .contents { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem 1.75rem; margin: 2.5rem 0 0; box-shadow: var(--shadow); }
+        .contents p { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+        .contents ol { columns: 2; column-gap: 2rem; padding-left: 1.25rem; }
+        .contents li { break-inside: avoid; margin-bottom: 0.35rem; }
+        .contents a { text-decoration: none; border-bottom: 1px solid transparent; }
+        .contents a:hover { border-bottom-color: var(--gold); }
+
+        article p, article li { margin-bottom: 0.85rem; }
+        article ul, article ol { padding-left: 1.4rem; margin-bottom: 0.85rem; }
+        article li { margin-bottom: 0.5rem; }
+        article a { text-decoration: none; border-bottom: 1px solid var(--gold); overflow-wrap: anywhere; }
+        article strong { font-weight: 700; }
+
+        .table-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.975rem; }
+        th, td { text-align: left; vertical-align: top; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+        tr:last-child td { border-bottom: 0; }
+        th { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.25rem; margin: 1.5rem 0; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; box-shadow: var(--shadow); }
+        .card h3 { margin-top: 0; }
+        .card h3::after { content: ''; display: block; width: 32px; height: 1px; background: var(--gold); margin-top: 0.6rem; }
+        .card p { color: var(--muted); margin-bottom: 0.5rem; }
+        .card p:last-child { margin-bottom: 0; }
+        .steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+        .steps li { counter-increment: step; position: relative; padding-left: 2.5rem; }
+        .steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.75rem; height: 1.75rem; border: 1px solid var(--gold); border-radius: 50%; font-family: var(--serif); font-size: 0.9375rem; display: flex; align-items: center; justify-content: center; }
+
+        /* Footer */
+        footer { background: var(--noir); color: #BDB8AD; padding: 3.5rem 0; border-top: 1px solid rgba(201, 168, 76, 0.35); }
+        footer .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.25rem; }
+        footer img { width: 140px; padding: 0.5rem 0; }
+        footer .essence { font-family: var(--serif); font-size: 1rem; color: var(--gold); letter-spacing: 0.04em; }
+        footer .footlinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.5rem; font-size: 0.9375rem; }
+        footer .footlinks a { color: #CFCBC2; text-decoration: none; border-bottom: 1px solid transparent; }
+        footer .footlinks a:hover, footer .footlinks a[aria-current="page"] { border-bottom-color: var(--gold); }
+        footer .footline { font-size: 0.9375rem; letter-spacing: 0.04em; color: #CFCBC2; }
+        footer .footline a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(201, 168, 76, 0.6); }
+
+        @media (max-width: 640px) {
+            :root { --gutter: 16px; }
+            body { font-size: 1rem; }
+            header .wrap { gap: 1rem; }
+            .brand img { width: 104px; }
+            header nav { gap: 0.25rem 1.1rem; }
+            header nav a { font-size: 0.75rem; letter-spacing: 0.12em; }
+            header nav a.optional { display: none; }
+            main { padding: 3rem 0 3.5rem; }
+            h2 { font-size: 1.3125rem; margin-top: 2.5rem; }
+            .contents { padding: 1.25rem; }
+            .contents ol { columns: 1; }
+            .notice { padding: 1rem 1.15rem; }
+            th, td { padding: 0.65rem 0.75rem; }
+        }
+        @media print {
+            header nav, .contents { display: none; }
+            header, footer { background: none; color: #000; }
+        }
+    </style>
+</head>
+<body>
+<!--
+  FOR CRAIG — DRAFT FOR LEGAL REVIEW. Points to confirm with your lawyer (and accountant where marked) before removing the draft notice:
+  1. The legal entity name, trade licence number, registered address and emirate to show under "Who we are".
+  2. Whether Elite Education must appoint a Data Protection Officer under the PDPL and its Executive Regulations, and whose name to show.
+  3. The lawful bases listed in section 4, in particular consent for children's data and WhatsApp, and "legitimate interests" for safeguarding.
+  4. Police clearance and vetting documents for tutors: what is collected, the basis, and how long it is kept (currently "for as long as the tutor works with us and up to two years after").
+  5. The processor list and the countries where each stores data (Supabase project region, Stripe, Resend, Twilio, Google, Apple, Expo, and Anthropic if AI drafting is used), and the transfer safeguards relied on.
+  6. [Accountant] The retention period for invoices, credit notes and payment records under UAE VAT law (currently "at least five years").
+  7. Retention of enquiries (currently 24 months) and of tutor applications (currently 12 months).
+  8. The complaint route to the UAE Data Office, and whether the wording should also mention DIFC or ADGM data protection law if any activity falls there.
+  9. Whether students aged 16 and over may consent for themselves in any respect.
+  10. The 30-day response time for rights requests, and the statement that AI providers do not train on our data (check the provider's current terms).
+-->
+<header>
+    <div class="wrap">
+        <a class="brand" href="../" aria-label="Elite Education home"><img src="../assets/logo-white-wide.png" width="132" height="50" alt="Elite Education"></a>
+        <nav aria-label="Main">
+            <a class="optional" href="../">Home</a>
+            <a href="../privacy/" aria-current="page">Privacy</a>
+            <a href="../terms/">Terms</a>
+            <a href="../support/">Support</a>
+            <a class="signin" href="/app/">Sign in</a>
+        </nav>
+    </div>
+</header>
+<main>
+    <div class="wrap">
+        <p class="label">Legal</p>
+        <h1>Privacy policy</h1>
+        <hr class="rule">
+        <p class="meta">Draft of October 2026. This policy will apply from the date shown here once it is in force.</p>
+        <div class="notice" role="note">
+            <strong>Draft for legal review &ndash; not yet in force</strong>
+            <p>This policy is being reviewed by our legal advisers and may change before it takes effect. If you have a question about your data in the meantime, please write to <a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a>.</p>
+        </div>
+        <p class="lead">Discretion is at the heart of what we do. This policy explains, in plain terms, what personal data Elite Education holds about families, students, tutors and enquirers, why we hold it, who helps us look after it, and the choices you have.</p>
+        <nav class="contents" aria-label="Contents">
+            <p>Contents</p>
+            <ol>
+                <li><a href="#who-we-are">Who we are</a></li>
+                <li><a href="#scope">What this policy covers</a></li>
+                <li><a href="#data-we-collect">The data we collect</a></li>
+                <li><a href="#why">Why we use it and our lawful bases</a></li>
+                <li><a href="#payments">Payments</a></li>
+                <li><a href="#messages">Emails, notifications and WhatsApp</a></li>
+                <li><a href="#calendar">Google Calendar for tutors</a></li>
+                <li><a href="#providers">Our service providers</a></li>
+                <li><a href="#transfers">International transfers</a></li>
+                <li><a href="#retention">How long we keep data</a></li>
+                <li><a href="#rights">Your rights</a></li>
+                <li><a href="#security">Security</a></li>
+                <li><a href="#children">Children</a></li>
+                <li><a href="#cookies">Cookies and similar technologies</a></li>
+                <li><a href="#changes">Changes to this policy</a></li>
+                <li><a href="#contact">Contact us</a></li>
+            </ol>
+        </nav>
+        <article>
+            <h2 id="who-we-are">1. Who we are</h2>
+            <p>Elite Education provides private tuition in the United Arab Emirates through our website, eliteeducation.me, and the Elite Education app for iPhone, iPad, Android and the web. In this policy, "Elite Education", "we", "us" and "our" mean [legal entity name], [trade licence number], [registered address], United Arab Emirates.</p>
+            <p>We are the controller of the personal data described in this policy. We process it in accordance with the UAE Federal Decree-Law No. 45 of 2021 on the Protection of Personal Data (the "PDPL") and, where it applies to you, comparable laws such as the EU and UK General Data Protection Regulation.</p>
+
+            <h2 id="scope">2. What this policy covers</h2>
+            <p>This policy covers personal data we collect when you enquire about tuition, apply to teach with us, use the Elite Education app, receive lessons, pay invoices or communicate with us. It does not cover websites or services run by others, even where we link to them.</p>
+
+            <h2 id="data-we-collect">3. The data we collect</h2>
+            <h3>Parents and guardians</h3>
+            <ul>
+                <li>Your name, email address, telephone number and, where you provide it, your address and preferred contact method.</li>
+                <li>Your sign-in details: your email address, or the identifier provided by Sign in with Apple or Sign in with Google. We never receive your Apple or Google password.</li>
+                <li>Lesson bookings, requests, cancellations, invoices, credit notes, packages and payment records.</li>
+                <li>Messages you exchange with our office and your child's tutors, and your notification and WhatsApp preferences.</li>
+            </ul>
+            <h3>Students, including children under 18</h3>
+            <ul>
+                <li>Name, year group, school, curriculum and subjects.</li>
+                <li>Lesson notes, topics covered, progress ratings, reports, homework and the work students hand in, including photographs of written work.</li>
+                <li>Where a student has their own sign-in, their email address and messages.</li>
+                <li>Any information about learning needs or wellbeing that a parent chooses to share so that we can teach well. We ask for this only when it is needed and treat it with particular care.</li>
+            </ul>
+            <p>We collect the personal data of children under 18 only with the consent of a parent or guardian, who creates the child's profile and may review, correct or remove it at any time.</p>
+            <h3>Tutors and tutor applicants</h3>
+            <ul>
+                <li>Name, contact details, qualifications, subjects, CV and references.</li>
+                <li>Identity, right-to-work, police clearance and other vetting documents, collected to keep students safe.</li>
+                <li>Availability, time off, lessons taught, invoices and the bank details needed to pay you. Bank details are visible only to you and to the people in our office who make payments.</li>
+                <li>If you choose to connect it, access to your Google Calendar (see section 7).</li>
+            </ul>
+            <h3>Enquiries</h3>
+            <p>When you contact us through the website, the app, by email or by telephone, we keep your name, contact details, the student's year group and subjects, and the notes of our conversation, so that we can respond and arrange a consultation.</p>
+            <h3>Technical data</h3>
+            <p>When something goes wrong in the app, it sends us a short error report: the screen, the app version, the type of device and a description of the error. Email addresses, telephone numbers, long numbers and access tokens are removed from these reports before they leave your device. If you allow notifications, we store a notification token for your device. We do not use advertising identifiers and we do not track you across other apps or websites.</p>
+
+            <h2 id="why">4. Why we use it and our lawful bases</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th scope="col">Purpose</th><th scope="col">Lawful basis</th></tr></thead>
+                    <tbody>
+                        <tr><td>Arranging and delivering lessons, recording progress and preparing reports</td><td>Performance of our contract with you; consent of a parent or guardian for children's data</td></tr>
+                        <tr><td>Invoicing, taking payment and keeping financial records</td><td>Performance of our contract; compliance with UAE tax and accounting law</td></tr>
+                        <tr><td>Vetting tutors, including police clearance</td><td>Compliance with legal obligations and our legitimate interest in safeguarding children; your consent where required</td></tr>
+                        <tr><td>Sending lesson reminders, notes, invoices and messages by email or push notification</td><td>Performance of our contract</td></tr>
+                        <tr><td>Sending reminders by WhatsApp</td><td>Your consent, which you may withdraw at any time in the app</td></tr>
+                        <tr><td>Responding to enquiries and applications</td><td>Steps taken at your request before entering into a contract</td></tr>
+                        <tr><td>Keeping the service secure and fixing errors</td><td>Our legitimate interest in providing a reliable and secure service</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>We do not sell personal data, we do not use it for advertising, and we do not make decisions about you by automated means alone. Where we use writing assistance to help a tutor draft a report, the tutor and our office always review the text before it is sent to you.</p>
+
+            <h2 id="payments">5. Payments</h2>
+            <p>Card payments, Apple Pay and Google Pay are processed by Stripe. Your card number is entered directly with Stripe and is never stored on our systems; we see only the card type, its last four digits and its expiry date, so that you can recognise the card you have saved. Invoices are issued in UAE dirhams (AED).</p>
+
+            <h2 id="messages">6. Emails, notifications and WhatsApp</h2>
+            <p>We send service messages by email and, if you allow them, by push notification. WhatsApp reminders are sent only if you opt in, and you may switch them off at any time under Account in the app. Our messages never contain bank details; for anything sensitive, we will ask you to open the app.</p>
+
+            <h2 id="calendar">7. Google Calendar for tutors</h2>
+            <p>Tutors and our office may connect a Google Calendar. When you do, the app adds your lessons to that calendar and reads only the times you are busy, so that lessons are not booked when you are unavailable. It does not read the content of your other events. You may disconnect at any time in the app or in your Google account settings. Our use of information received from Google follows the Google API Services User Data Policy, including its Limited Use requirements.</p>
+
+            <h2 id="providers">8. Our service providers</h2>
+            <p>We use carefully chosen providers who process personal data on our behalf, under contract and only on our instructions:</p>
+            <ul>
+                <li><strong>Supabase</strong>: hosting of our database, sign-in and file storage.</li>
+                <li><strong>Stripe</strong>: card payments.</li>
+                <li><strong>Resend</strong>: delivery of emails.</li>
+                <li><strong>Twilio</strong>: delivery of WhatsApp messages, for those who opt in.</li>
+                <li><strong>Google</strong>: Sign in with Google, Google Calendar for tutors who connect it, and push notifications on Android.</li>
+                <li><strong>Apple</strong>: Sign in with Apple and push notifications on iPhone and iPad.</li>
+                <li><strong>Expo</strong>: delivery of push notifications and of app updates.</li>
+                <li><strong>Anthropic</strong>: writing assistance used by tutors and our office when drafting reports, where used. Names are kept to a minimum and nothing is used to train their models.</li>
+                <li><strong>GitHub</strong>: hosting of this website.</li>
+            </ul>
+            <p>We may also share personal data where the law requires it, to protect a child's safety, or with our professional advisers under a duty of confidentiality.</p>
+
+            <h2 id="transfers">9. International transfers</h2>
+            <p>Some of our providers store or process data outside the United Arab Emirates, for example in the European Union or the United States. Where data leaves the UAE, we rely on the safeguards permitted by the PDPL, such as transfers to countries with adequate protection or contractual commitments that protect your data to the standard the law requires.</p>
+
+            <h2 id="retention">10. How long we keep data</h2>
+            <ul>
+                <li><strong>Invoices, credit notes and payment records</strong> are kept for the period required by UAE tax law, currently at least five years from the end of the relevant tax period, even after an account is closed. When an account is closed, these records are kept in anonymised form, retaining only what the law requires.</li>
+                <li><strong>Lesson notes, progress, homework and messages</strong> are kept while the account is open, and deleted when the account is closed. For past lessons we keep only the date, tutor, service and status, without names, addresses, meeting links or notes, so that retained invoices can be checked.</li>
+                <li><strong>Tutor vetting documents</strong> are kept for as long as the tutor works with us and for up to two years afterwards, unless the law requires otherwise.</li>
+                <li><strong>Enquiries</strong> that do not lead to lessons are deleted after 24 months, and unsuccessful tutor applications after 12 months.</li>
+                <li><strong>Error reports</strong> are deleted after 90 days, and our nightly backup copies after 35 days.</li>
+            </ul>
+
+            <h2 id="rights">11. Your rights</h2>
+            <p>Subject to the conditions set out in the law, you have the right to:</p>
+            <ul>
+                <li><strong>Access</strong> the personal data we hold about you, and <strong>download</strong> it at any time in the app under Account &rarr; Your data and privacy &rarr; Download my data.</li>
+                <li><strong>Correct</strong> data that is inaccurate or incomplete, in the app or by writing to us.</li>
+                <li><strong>Delete</strong> your account and personal data in the app under Account &rarr; Your data and privacy &rarr; Delete my account, or by writing to us. Records we must keep by law are retained as described in section 10.</li>
+                <li><strong>Restrict or object</strong> to certain processing, including any processing based on our legitimate interests.</li>
+                <li><strong>Withdraw consent</strong> at any time, for example to WhatsApp reminders, without affecting processing that took place before.</li>
+                <li><strong>Complain</strong> to the UAE Data Office if you believe we have not handled your data lawfully. We would be grateful for the chance to resolve your concern first.</li>
+            </ul>
+            <p>We respond to requests within 30 days. We may need to confirm your identity before acting on a request.</p>
+
+            <h2 id="security">12. Security</h2>
+            <p>Data is encrypted in transit and at rest. Access within the app is controlled by role, so that each family sees only its own information and each tutor only their own students. Bank details and calendar connections are held separately with additional restrictions. Our office accesses personal data only when needed to provide the service, and we review access regularly.</p>
+
+            <h2 id="children">13. Children</h2>
+            <p>Many of our students are under 18. A parent or guardian creates each child's profile and gives consent on the child's behalf, and may see the child's lessons, progress and homework. Students who have their own sign-in can see their timetable, homework and feedback. We never use children's data for marketing, and we design every part of the service with safeguarding in mind.</p>
+
+            <h2 id="cookies">14. Cookies and similar technologies</h2>
+            <p>This website does not use advertising or analytics cookies. The web version of the app stores only what is essential, such as keeping you signed in on your own device. Our website loads its typefaces from Google Fonts, which receives your device's internet address in order to deliver them.</p>
+
+            <h2 id="changes">15. Changes to this policy</h2>
+            <p>We may update this policy from time to time. When we make a significant change, we will tell you in the app or by email before it takes effect, and the date at the top of this page will change.</p>
+
+            <h2 id="contact">16. Contact us</h2>
+            <p>For any question about your personal data, or to exercise your rights, please write to <a href="mailto:hello@eliteeducation.me">hello@eliteeducation.me</a> with the subject "Privacy". We treat every request with discretion.</p>
+        </article>
+    </div>
+</main>
+<footer>
+    <div class="wrap">
+        <img src="../assets/logo-white-wide.png" width="140" height="53" alt="Elite Education">
+        <p class="essence">Excellence. Discretion. Results.</p>
+        <p class="footlinks">
+            <a href="../privacy/" aria-current="page">Privacy policy</a>
+            <a href="../terms/">Terms of service</a>
+            <a href="../support/">Support</a>
+        </p>
+        <p class="footline">Elite Education | <a href="https://eliteeducation.me">eliteeducation.me</a></p>
+    </div>
+</footer>
+</body>
+</html>

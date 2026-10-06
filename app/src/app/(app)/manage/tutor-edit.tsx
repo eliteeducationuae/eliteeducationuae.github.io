@@ -3,13 +3,18 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
+import { HistorySection } from '@/components/history';
 import { LoginHint } from '@/components/login-hint';
+import { TutorChecksSummary } from '@/components/vetting';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
-import { Button, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
+import { Banner, Button, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useTutors } from '@/data/hooks';
+import { useAction, useLessons, useLookup, useTutors } from '@/data/hooks';
 import { CURRICULA, inCatalogue, PHASES, SUBJECTS } from '@/domain/catalogue';
+import { isClosed } from '@/domain/closed-accounts';
+import { addDays, formatDate, formatDay, formatTime } from '@/domain/dates';
 import type { Tutor } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -18,7 +23,56 @@ export default function EditTutor() {
   const tutors = useTutors();
   if (tutors.isLoading) return <Loading />;
   const existing = id ? tutors.data?.find((t) => t.id === id) : undefined;
+  if (existing && isClosed(existing)) return <ClosedTutor tutor={existing} />;
   return <TutorForm key={existing?.id ?? 'new'} existing={existing} />;
+}
+
+/**
+ * A closed tutor is kept only for past lessons and pay records: nothing to edit and no login to send. Their upcoming
+ * lessons are listed so the office can open each one and reassign it.
+ */
+function ClosedTutor({ tutor }: { tutor: Tutor }) {
+  const [range] = useState(() => {
+    const from = new Date();
+    return { from, to: addDays(from, 366) };
+  });
+  const lessons = useLessons(range.from, range.to);
+  const lookup = useLookup();
+  const upcoming = (lessons.data ?? [])
+    .filter((l) => l.tutorId === tutor.id && l.status === 'scheduled')
+    .sort((a, b) => a.start.localeCompare(b.start));
+  const count = upcoming.length;
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: tutor.fullName }} />
+      <Banner icon="person">
+        {`This tutor’s account was closed on ${formatDate(tutor.deletedAt!)}. Their name, contact details, availability and bank details have been removed. Past lessons and pay records are kept.`}
+      </Banner>
+      {lessons.isLoading ? (
+        <Loading />
+      ) : (
+        <Section title="Upcoming lessons">
+          {count ? (
+            <View style={{ gap: Spacing.two }}>
+              <Banner tone="warning" icon="calendar">
+                {`${count} upcoming ${count === 1 ? 'lesson needs' : 'lessons need'} another tutor. Open each lesson to reassign it.`}
+              </Banner>
+              {upcoming.map((l) => (
+                <ListItem
+                  key={l.id}
+                  title={`${formatDay(l.start)} at ${formatTime(l.start)}`}
+                  subtitle={[l.subject, l.studentIds.map((id) => lookup.student(id)?.fullName).filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                  onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: l.id } })}
+                />
+              ))}
+            </View>
+          ) : (
+            <Txt variant="muted">No upcoming lessons need another tutor.</Txt>
+          )}
+        </Section>
+      )}
+    </Screen>
+  );
 }
 
 function TutorForm({ existing }: { existing?: Tutor }) {
@@ -76,6 +130,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
           onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}
         />
       ) : null}
+      {existing ? <TutorChecksSummary tutorId={existing.id} /> : null}
       <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
       <Section title="Teaches">
         <View style={{ gap: Spacing.three }}>
@@ -94,6 +149,8 @@ function TutorForm({ existing }: { existing?: Tutor }) {
         </Row>
       </Section>
       <ErrorNote error={save.error} />
+      {existing ? <ViewAsActions tutorId={existing.id} /> : null}
+      {existing ? <HistorySection filter={{ tutorId: existing.id }} /> : null}
     </Screen>
   );
 }

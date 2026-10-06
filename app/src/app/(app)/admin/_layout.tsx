@@ -1,5 +1,8 @@
 import { RoleTabs } from '@/components/role-tabs';
 
+// Launch readiness: a calm, branded screen when something here fails to render.
+export { ErrorBoundary } from '@/components/error-boundary';
+
 export default function AdminLayout() {
   return (
     <RoleTabs

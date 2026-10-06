@@ -11,6 +11,7 @@ import {
   customerForm,
   describeStripeError,
   invoiceBalanceFils,
+  isPermanentWebhookError,
   offerChargeFils,
   offSessionIntentForm,
   portalForm,
@@ -426,5 +427,21 @@ describe('autopayReplayAllowed', () => {
     expect(autopayReplayAllowed({ ...base, sentAt: '2026-10-01T11:00:01Z' })).toBe(true);
     expect(autopayReplayAllowed({ ...base, sentAt: '2026-10-01T11:00:00Z' })).toBe(false);
     expect(autopayReplayAllowed({ ...base, sentAt: 'not a date' })).toBe(false);
+  });
+});
+
+describe('isPermanentWebhookError', () => {
+  it('treats missing rows and malformed metadata as permanent', () => {
+    expect(isPermanentWebhookError({ code: '23503', message: 'insert or update on table "payments" violates foreign key constraint' })).toBe(true);
+    expect(isPermanentWebhookError({ code: '22P02', message: 'invalid input syntax for type uuid' })).toBe(true);
+    expect(isPermanentWebhookError({ code: 'P0001', message: 'Family not found' })).toBe(true);
+    expect(isPermanentWebhookError({ code: 'P0001', message: 'A payment intent is required' })).toBe(true);
+  });
+
+  it('leaves transient errors to Stripe\'s retries', () => {
+    expect(isPermanentWebhookError({ code: '57014', message: 'canceling statement due to statement timeout' })).toBe(false);
+    expect(isPermanentWebhookError({ code: '40P01', message: 'deadlock detected' })).toBe(false);
+    expect(isPermanentWebhookError({ message: 'fetch failed' })).toBe(false);
+    expect(isPermanentWebhookError(null)).toBe(false);
   });
 });

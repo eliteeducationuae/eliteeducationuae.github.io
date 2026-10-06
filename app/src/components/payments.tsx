@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction } from '@/data/hooks';
+import { useAction, useEnrolments } from '@/data/hooks';
 import { queryClient } from '@/data/query';
 import { formatAED } from '@/domain/billing';
 import {
@@ -23,7 +23,9 @@ import {
 } from '@/domain/payments';
 import type { AutopayStatus, Family, Invoice, PackageOffer, Service } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
+import { aed } from '@/lib/invoice-pdf';
 
+import { hasCustomFamilyPrice } from './rate-rules';
 import { Badge, Banner, Button, Card, Chip, ErrorNote, Field, Row, Section, Segmented, Txt, type Tone } from './ui';
 
 /** Card payments on the parent and admin screens: saved card, autopay, lesson top-ups and package offers. */
@@ -181,6 +183,7 @@ export function OfferCard({
   onBuy,
   loading,
   disabled,
+  hideSaving,
 }: {
   offer: PackageOffer;
   service?: Service;
@@ -188,8 +191,10 @@ export function OfferCard({
   onBuy: () => void;
   loading?: boolean;
   disabled?: boolean;
+  /** The saving is worked out against the standard rate, so it is hidden from families with an agreed price. */
+  hideSaving?: boolean;
 }) {
-  const saving = offerSavingPct(offer, service);
+  const saving = hideSaving ? 0 : offerSavingPct(offer, service);
   return (
     <Card style={{ gap: Spacing.two }}>
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
@@ -228,6 +233,9 @@ export function OfferCard({
 
 export function BuyLessons({ offers, services, vatRate }: { offers: PackageOffer[]; services: Service[]; vatRate: number }) {
   const buy = useAction(source.buyPackageOffer);
+  // A family sees only its own children's subjects, with their agreed prices.
+  const enrolments = useEnrolments();
+  const agreedPrice = hasCustomFamilyPrice(enrolments.data ?? []);
   const [buying, setBuying] = useState<string | null>(null);
   const shown = activeOffers(offers);
   if (!shown.length) return null;
@@ -258,7 +266,11 @@ export function BuyLessons({ offers, services, vatRate }: { offers: PackageOffer
 
   return (
     <Section title="Buy more lessons">
-      <Txt variant="muted">Prepaid lessons are used automatically, before anything is added to your next invoice.</Txt>
+      <Txt variant="muted">
+        {agreedPrice
+          ? 'Prepaid lessons are used automatically, before your agreed hourly price applies. Please contact us if you would like advice on the best option for your family.'
+          : 'Prepaid lessons are used automatically, before anything is added to your next invoice.'}
+      </Txt>
       <View style={{ gap: Spacing.two }}>
         {shown.map((o) => (
           <OfferCard
@@ -268,6 +280,7 @@ export function BuyLessons({ offers, services, vatRate }: { offers: PackageOffer
             vatRate={vatRate}
             loading={buying === o.id}
             disabled={!!buying && buying !== o.id}
+            hideSaving={agreedPrice}
             onBuy={() => start(o)}
           />
         ))}
@@ -553,7 +566,7 @@ export function ChargeSavedCardButton({ invoice, family, balance }: { invoice: I
           icon="card"
           variant="secondary"
           loading={charge.isPending}
-          onPress={() => confirm('Charge the saved card?', `${formatAED(balance)} will be taken from ${card} now.`, run, 'Charge card')}
+          onPress={() => confirm('Charge the saved card?', `${aed(balance)} will be taken from ${card} now.`, run, 'Charge card')}
         />
       )}
       <ErrorNote error={charge.error} />

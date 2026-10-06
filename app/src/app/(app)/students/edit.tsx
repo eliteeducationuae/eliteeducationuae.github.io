@@ -3,15 +3,18 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
-import { EnrolmentEditor } from '@/components/enrolment-editor';
+import { draftRatesInvalid, EnrolmentEditor } from '@/components/enrolment-editor';
+import { useComplianceMap } from '@/components/vetting';
 import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
-import { useEnrolments, useFamilies, useStudents, useTutors } from '@/data/hooks';
+import { useEnrolments, useFamilies, useServices, useStudents, useTutors } from '@/data/hooks';
 import { PHASES } from '@/domain/catalogue';
-import { activeEnrolments, draftFromEnrolment, validateEnrolments, type EnrolmentDraft } from '@/domain/enrolments';
+import { activeEnrolments, draftFromEnrolment, ratesChanged, validateEnrolments, type EnrolmentDraft } from '@/domain/enrolments';
 import type { Enrolment, Student } from '@/domain/types';
+import { blockedEnrolmentTutors, enrolmentVettingMessage } from '@/domain/vetting';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 export default function EditStudent() {
   const { id, familyId } = useLocalSearchParams<{ id?: string; familyId?: string }>();
@@ -33,6 +36,8 @@ export default function EditStudent() {
 function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Student; enrolments: Enrolment[]; defaultFamilyId?: string }) {
   const families = useFamilies();
   const tutors = useTutors();
+  const services = useServices();
+  const vetting = useComplianceMap();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [fullName, setFullName] = useState(existing?.fullName ?? '');
@@ -49,13 +54,18 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
   // Remembered after the first write, so retrying after a failed subject save updates rather than duplicates.
   const [savedId, setSavedId] = useState<string | undefined>(existing?.id);
 
-  const valid = fullName.trim() && familyId && (!examDate || /^\d{4}-\d{2}-\d{2}$/.test(examDate));
+  const ratesInvalid = drafts.some((d) => d.active && draftRatesInvalid(d));
+  const valid = fullName.trim() && familyId && (!examDate || /^\d{4}-\d{2}-\d{2}$/.test(examDate)) && !ratesInvalid;
 
   const submit = async () => {
     setError(null);
     const active = drafts.filter((d) => d.active);
     if (!savedId && !active.length) {
       setError(new Error('Please add at least one subject.'));
+      return;
+    }
+    if (ratesInvalid) {
+      setError(new Error('Please correct the rates marked below before saving.'));
       return;
     }
     const problem = validateEnrolments(drafts);
@@ -65,6 +75,14 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
     }
     setSaving(true);
     try {
+      // Police clearance is checked for every changed subject before anything is written, so a refusal leaves the
+      // student exactly as it was rather than saving the details and failing part-way through the subjects.
+      const compliance = await queryClient.fetchQuery({ queryKey: ['tutor-compliance'], queryFn: () => source.listTutorCompliance(), staleTime: 0 });
+      const blocked = blockedEnrolmentTutors(drafts, enrolments, (t) => compliance.find((c) => c.tutorId === t), new Date());
+      if (blocked.length) {
+        setError(new Error(enrolmentVettingMessage(blocked.map((t) => tutors.data?.find((x) => x.id === t)?.fullName ?? 'This tutor'))));
+        return;
+      }
       const saved = await source.saveStudent({
         id: savedId,
         fullName: fullName.trim(),
@@ -85,6 +103,11 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
       for (const [i, d] of next.entries()) {
         if (!d.id && !d.active) continue;
         const e = await source.saveEnrolment({ ...d, subject: d.subject.trim(), studentId: saved.id });
+        // Rates are kept apart from the subject itself and set only when they have changed.
+        const original = d.id ? enrolments.find((x) => x.id === d.id) : undefined;
+        if (d.active && ratesChanged(d, original)) {
+          await source.setEnrolmentRates({ enrolmentId: e.id, tutorPay: d.tutorPay ?? null, familyPrice: d.familyPrice ?? null });
+        }
         next[i] = { ...d, id: e.id };
         setDrafts([...next]);
       }
@@ -116,14 +139,20 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
         action={<Button title="New family" size="sm" variant="ghost" icon="plus" onPress={() => router.push('/manage/family-edit')} />}>
         {(families.data ?? []).length === 0 ? <Banner>Add the family first, then come back to add the student.</Banner> : null}
         <Row gap={Spacing.one} wrap>
-          {(families.data ?? []).map((f) => (
+          {withoutClosed(families.data).map((f) => (
             <Chip key={f.id} label={`${f.name} (${f.parentName})`} selected={familyId === f.id} onPress={() => setFamilyId(f.id)} />
           ))}
         </Row>
       </Section>
       <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
       <Section title="Subjects">
-        <EnrolmentEditor value={drafts} onChange={setDrafts} tutors={tutors.data ?? []} />
+        <EnrolmentEditor
+          value={drafts}
+          onChange={setDrafts}
+          tutors={withoutClosed(tutors.data)}
+          rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }}
+          vetting={vetting}
+        />
       </Section>
       <Field label="School" value={school} onChangeText={setSchool} />
       <Row gap={Spacing.two}>

@@ -1,14 +1,27 @@
 // Push reminders ~24 hours before each lesson, to the tutor and the family.
-// Schedule hourly (Supabase dashboard → Edge Functions → Schedules, or pg_cron).
+// Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
+// Schedule hourly (Supabase → Integrations → Cron, or the pg_cron SQL in the README's Round 4 setup checklist).
 // It also queues WhatsApp reminders (lessons, overdue invoices, homework due) for people who opted in;
 // send-notifications delivers those within a minute. The database holds them back overnight (quiet hours, UAE time).
+// Admissions advisory reminders (key dates and tasks) are queued as push and email notifications, 08:00–20:59 UAE time.
+// It also queues police clearance expiry alerts (60, 30 and 7 days before, and on expiry) for tutors and the office,
+// which send-notifications delivers in the same way.
 import { adminClient } from '../_shared/supabase.ts';
+import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 
-Deno.serve(async () => {
+const monitored = withMonitoring('send-reminders', adminClient, async () => {
   const db = adminClient();
   const { data: queued, error: queueError } = await db.rpc('queue_whatsapp_reminders');
   if (queueError) console.error('queue_whatsapp_reminders failed', queueError.message);
-  const whatsapp = `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages`;
+  const { data: admissionsQueued, error: admissionsError } = await db.rpc('queue_admissions_reminders');
+  if (admissionsError) console.error('queue_admissions_reminders failed', admissionsError.message);
+  const { data: vetting, error: vettingError } = await db.rpc('queue_vetting_alerts');
+  if (vettingError) console.error('queue_vetting_alerts failed', vettingError.message);
+  const whatsapp =
+    `queued ${typeof queued === 'number' ? queued : 0} WhatsApp messages` +
+    `, ${typeof admissionsQueued === 'number' ? admissionsQueued : 0} admissions reminders` +
+    ` and ${typeof vetting === 'number' ? vetting : 0} clearance alerts`;
   const now = Date.now();
   const { data: lessons } = await db
     .from('lessons')
@@ -53,3 +66,8 @@ Deno.serve(async () => {
   await db.from('lessons').update({ reminded_at: new Date().toISOString() }).in('id', lessons.map((l) => l.id));
   return new Response(`sent ${messages.length} pushes, ${whatsapp}`);
 });
+
+// A call without the cron secret is refused before monitoring, so it never counts as a run.
+Deno.serve((req) =>
+  isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET')) ? monitored(req) : refuseCronCall(),
+);

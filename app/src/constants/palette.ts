@@ -43,8 +43,9 @@ export const Colors = {
     warningBg: '#F7EFDC',
     danger: '#8E3A33',
     dangerBg: '#F6E7E5',
-    info: '#3F4A56',
-    infoBg: '#EEF0F2',
+    // Information: Stone Grey deepened for AA text, on an ivory-stone tint (no cool blue-grey, per the brand palette).
+    info: '#5C5A55',
+    infoBg: '#F1EFEA',
     tabBar: Brand.white,
     tabActive: Brand.noir,
     shadow: '#1A1408',
@@ -72,8 +73,9 @@ export const Colors = {
     warningBg: '#2A2212',
     danger: '#E29A92',
     dangerBg: '#2E1715',
-    info: '#B7C0CA',
-    infoBg: '#1A1D21',
+    // Information in dark mode: light stone on warm charcoal.
+    info: '#C4C1BA',
+    infoBg: '#1C1B19',
     tabBar: '#0F0F0F',
     tabActive: Brand.gold,
     shadow: '#000000',

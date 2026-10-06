@@ -3,8 +3,12 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
 
+import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
+import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
+import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
+import { LessonPlanSection } from '@/components/plans';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -25,8 +29,12 @@ import {
 import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
 import { lessonSubject, studentSubjects } from '@/domain/enrolments';
+import { lessonFamilyCharge } from '@/domain/rates';
 import { addDays, formatDay, formatTime, fromDateAndTime, minutesBetween, startOfDay, toDateKey } from '@/domain/dates';
 import { cancellationOutcome, coverOptions, findBusyClashes, findClashes, isAbsent } from '@/domain/scheduling';
+import type { Enrolment, Lesson, Service } from '@/domain/types';
+import { canAssignTutor } from '@/domain/vetting';
+import { withoutClosed } from '@/domain/closed-accounts';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 
@@ -123,6 +131,10 @@ export default function LessonDetail() {
         </Section>
       ) : null}
 
+      {isStaff && scheduled ? <LessonVettingNote tutorId={l.tutorId} /> : null}
+      <LessonPlanSection lesson={l} />
+      <HandoverLink lessonId={l.id} />
+
       {isStaff && scheduled ? (
         <Button
           title={started ? 'Record the lesson: notes, attendance and homework' : 'Record the lesson early'}
@@ -148,8 +160,18 @@ export default function LessonDetail() {
       ) : null}
       {mode === 'cover' ? <CoverPanel lesson={l} onDone={() => setMode('view')} /> : null}
 
-      {mode === 'cancel' ? <CancelPanel lessonId={l.id} start={l.start} serviceRate={service?.rate ?? 0} studentCount={l.studentIds.filter((sid) => lookup.student(sid)).length} onDone={() => setMode('view')} /> : null}
+      {mode === 'cancel' ? (
+        <CancelPanel
+          lesson={l}
+          service={service}
+          // Families only see their own children; tutors' enrolments carry no family prices, so they see the service price.
+          studentIds={l.studentIds.filter((sid) => lookup.student(sid))}
+          enrolments={enrolments.data ?? []}
+          onDone={() => setMode('view')}
+        />
+      ) : null}
       {mode === 'move' ? <ReschedulePanel lesson={l} onDone={() => setMode('view')} /> : null}
+      <HistorySection filter={{ entityId: l.id }} />
     </Screen>
   );
 }
@@ -215,33 +237,56 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
   const sameDay = useLessons(day, addDays(day, 1));
   const busyBlocks = useBusyBlocks(day, addDays(day, 1));
   const reassign = useAction(source.reassignLesson);
+  const vetting = useComplianceMap();
+  const [now] = useState(() => new Date());
   if (!tutors.data || !sameDay.data) return <Loading />;
   const away = isAbsent(lesson.tutorId, new Date(lesson.start), absences.data ?? []);
-  const options = coverOptions(lesson, tutors.data, sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? []);
+  // Tutors who cannot take new lessons (clearance enforced, no override) go last, with a way to resolve it.
+  const options = coverOptions(lesson, withoutClosed(tutors.data), sameDay.data, availability.data ?? [], absences.data ?? [], busyBlocks.data ?? [])
+    .map((o, i) => ({ o, i, blocked: !canAssignTutor(vetting.get(o.tutor.id), now).allowed }))
+    .sort((a, b) => Number(a.blocked) - Number(b.blocked) || a.i - b.i);
   return (
     <Card style={{ gap: Spacing.three }}>
       <Txt variant="h3">Choose a tutor</Txt>
       {away ? <Banner tone="warning" icon="alert">The usual tutor is away that day.</Banner> : null}
       {options.length === 0 ? <Txt variant="muted">Nobody else is free at this time.</Txt> : null}
-      {options.map((o) => (
-        <Row key={o.tutor.id} style={{ justifyContent: 'space-between' }}>
+      {options.map(({ o, blocked }) => (
+        <Row key={o.tutor.id} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
           <Row gap={Spacing.two} style={{ flex: 1 }}>
             <Avatar name={o.tutor.fullName} color={o.tutor.color} size={32} />
             <View style={{ flex: 1 }}>
-              <Txt>{o.tutor.fullName}</Txt>
-              <Txt variant="small">{o.available ? 'Free and within their availability' : 'Free, but outside their usual hours'}</Txt>
+              <Row gap={Spacing.two} wrap>
+                <Txt>{o.tutor.fullName}</Txt>
+                {notCleared(vetting.get(o.tutor.id)) ? <VettingBadge status={vetting.get(o.tutor.id)!.vettingStatus} /> : null}
+              </Row>
+              <Txt variant="small">
+                {blocked
+                  ? 'Police clearance must be verified, or an override recorded, before new lessons can be assigned'
+                  : o.available
+                    ? 'Free and within their availability'
+                    : 'Free, but outside their usual hours'}
+              </Txt>
             </View>
           </Row>
-          <Button
-            title="Assign"
-            size="sm"
-            loading={reassign.isPending && reassign.variables?.[1] === o.tutor.id}
-            onPress={async () => {
-              await reassign.mutateAsync([lesson.id, o.tutor.id]);
-              onDone();
-              notify('Tutor changed', `${o.tutor.fullName} is now teaching this lesson and has been notified.`);
-            }}
-          />
+          {blocked ? (
+            <Button
+              title="Record override"
+              size="sm"
+              variant="outline"
+              onPress={() => router.push({ pathname: '/manage/vetting/[tutorId]', params: { tutorId: o.tutor.id } })}
+            />
+          ) : (
+            <Button
+              title="Assign"
+              size="sm"
+              loading={reassign.isPending && reassign.variables?.[1] === o.tutor.id}
+              onPress={async () => {
+                await reassign.mutateAsync([lesson.id, o.tutor.id]);
+                onDone();
+                notify('Tutor changed', `${o.tutor.fullName} is now teaching this lesson and has been notified.`);
+              }}
+            />
+          )}
         </Row>
       ))}
       <ErrorNote error={reassign.error} />
@@ -251,18 +296,19 @@ function CoverPanel({ lesson, onDone }: { lesson: NonNullable<ReturnType<typeof 
 }
 
 function CancelPanel({
-  lessonId,
-  start,
-  serviceRate,
-  studentCount,
+  lesson,
+  service,
+  studentIds,
+  enrolments,
   onDone,
 }: {
-  lessonId: string;
-  start: string;
-  serviceRate: number;
-  studentCount: number;
+  lesson: Lesson;
+  service?: Service;
+  studentIds: string[];
+  enrolments: Enrolment[];
   onDone: () => void;
 }) {
+  const { id: lessonId, start } = lesson;
   const me = useMe();
   const settings = useSettings();
   const cancel = useAction(source.cancelLesson);
@@ -273,7 +319,8 @@ function CancelPanel({
   const preview = cancellationOutcome({ start }, new Date(), settings.data, { waiveFee: me.role === 'tutor' || (me.role === 'admin' && waive) });
   const late = preview.hoursNotice < settings.data.cancellationHours;
   // Families only see their own children, so this is what they would be charged.
-  const fee = serviceRate * preview.fee * studentCount;
+  // Each family pays its own agreed price where it has one, otherwise the service price.
+  const fee = service ? studentIds.reduce((sum, sid) => sum + lessonFamilyCharge(lesson, service, sid, enrolments).amount * preview.fee, 0) : 0;
 
   return (
     <Card style={{ gap: Spacing.three }}>

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { payrollSubtitle } from '@/components/rates';
 import { Avatar, Button, Card, Loading, Row, Screen, Stat, StatGrid, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useLessons, useSettings, useTutors } from '@/data/hooks';
+import { useEnrolments, useLessons, useSettings, useTutors } from '@/data/hooks';
 import { formatAED, tutorEarnings } from '@/domain/billing';
 import { formatMonth, startOfMonth } from '@/domain/dates';
-import { plural } from '@/lib/id';
 
 export default function Payroll() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -14,9 +14,10 @@ export default function Payroll() {
   const lessons = useLessons(month, next);
   const tutors = useTutors();
   const settings = useSettings();
+  const enrolments = useEnrolments();
 
-  if (lessons.isLoading || tutors.isLoading || !settings.data) return <Loading />;
-  const rows = (tutors.data ?? []).map((t) => ({ tutor: t, ...tutorEarnings(t, lessons.data ?? [], settings.data!) }));
+  if (lessons.isLoading || tutors.isLoading || enrolments.isLoading || !settings.data) return <Loading />;
+  const rows = (tutors.data ?? []).map((t) => ({ tutor: t, ...tutorEarnings(t, lessons.data ?? [], settings.data!, enrolments.data ?? []) }));
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const hours = rows.reduce((s, r) => s + r.hours, 0);
 
@@ -38,9 +39,7 @@ export default function Payroll() {
               <Avatar name={r.tutor.fullName} color={r.tutor.color} />
               <View style={{ flex: 1 }}>
                 <Txt variant="h3">{r.tutor.fullName}</Txt>
-                <Txt variant="muted">
-                  {plural(r.lessons, 'lesson')} · {plural(r.hours, 'hour')} × {formatAED(r.tutor.hourlyPay).replace(' ', '\u00A0')}
-                </Txt>
+                <Txt variant="muted">{payrollSubtitle(r, r.tutor.hourlyPay ?? 0)}</Txt>
               </View>
               <Txt variant="h3">{formatAED(r.amount)}</Txt>
             </Row>
@@ -50,6 +49,7 @@ export default function Payroll() {
       <Txt variant="small">
         Includes completed and no-show lessons{settings.data.payTutorForLateCancel ? ', plus late cancellations' : ''}. Change this in Business settings.
       </Txt>
+      <Txt variant="small">Custom rates agreed for a student apply to that student’s lessons with their own tutor. Group lessons pay the highest rate among the students.</Txt>
     </Screen>
   );
 }

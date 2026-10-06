@@ -1,8 +1,11 @@
 import { router } from 'expo-router';
 
 import { GreetingCard, NextLessonCard, QuickActions } from '@/components/dashboard';
+import { HandoverBanners } from '@/components/handover';
 import { LessonCard } from '@/components/lessons';
+import { PlansDueCard } from '@/components/plans';
 import { Banner, EmptyState, Loading, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
+import { ClearanceBanner } from '@/components/vetting';
 import { useBids, useLessons, useLookup, useOpportunities } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { addDays, isSameDay, minutesBetween, startOfDay, startOfWeek } from '@/domain/dates';
@@ -58,10 +61,13 @@ export default function TutorToday() {
           { icon: 'school', label: 'Opportunities', onPress: () => router.push('/opportunities') },
         ]}
       />
+      <ClearanceBanner />
       <StatGrid>
         <Stat label="Today" value={String(todays.filter((l) => l.status !== 'cancelled').length)} hint={todays.length === 1 ? 'lesson' : 'lessons'} />
         <Stat label="This week" value={plural(Number(weekHours.toFixed(1)), 'hour')} hint={plural(week.length, 'lesson')} onPress={() => router.push('/pay')} />
       </StatGrid>
+      <PlansDueCard lessons={mine} />
+      <HandoverBanners />
       {(() => {
         const fresh = (opportunities.data ?? []).filter((o) => o.status === 'open' && !(bids.data ?? []).some((b) => b.opportunityId === o.id && b.tutorId === me.tutorId));
         return fresh.length ? (

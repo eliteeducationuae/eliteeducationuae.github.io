@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { CataloguePicker } from '@/components/catalogue-picker';
 import { modernCurriculum, subjectLine } from '@/components/catalogue-choice';
 import { ENQUIRY_STATUS } from '@/components/enquiries';
+import { RepeatNote, SpamActions, SpamBanner } from '@/components/spam';
 import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { builtInSyllabusesFor } from '@/data/curriculum';
@@ -14,7 +15,9 @@ import { useAction, useEnquiries, useFamilies, useStudents, useTutors } from '@/
 import { CURRICULA, EXAM_BOARDS, LEVELS, PHASES, SUBJECTS, cleanChoice } from '@/domain/catalogue';
 import { addDays, formatDate, relativeDay, toDateKey } from '@/domain/dates';
 import { tutorTeaches, validateEnrolments } from '@/domain/enrolments';
+import { isPossibleSpam } from '@/domain/spam';
 import type { Enquiry, EnquiryStatus } from '@/domain/types';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 const NEXT: { status: EnquiryStatus; label: string }[] = [
   { status: 'new', label: 'New' },
@@ -57,6 +60,7 @@ function Detail({ e }: { e: Enquiry }) {
   return (
     <Screen>
       <Stack.Screen options={{ title: e.parentName }} />
+      <SpamBanner kind="enquiry" id={e.id} item={e} />
       <Card style={{ gap: Spacing.two }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
@@ -64,6 +68,7 @@ function Detail({ e }: { e: Enquiry }) {
             <Txt variant="muted">
               {relativeDay(e.createdAt)} via {e.source}
             </Txt>
+            <RepeatNote repeatCount={e.repeatCount} />
           </View>
           <Badge label={ENQUIRY_STATUS[e.status].label} tone={ENQUIRY_STATUS[e.status].tone} />
         </Row>
@@ -80,6 +85,7 @@ function Detail({ e }: { e: Enquiry }) {
             <Button title="Email" icon="mail" size="sm" variant="secondary" onPress={() => Linking.openURL(`mailto:${e.email}?subject=${encodeURIComponent('Your enquiry with Elite Education')}`)} />
           ) : null}
         </Row>
+        {!isPossibleSpam(e) && e.status === 'new' ? <SpamActions kind="enquiry" id={e.id} status={e.spamStatus} compact /> : null}
       </Card>
 
       <Section title="Stage">
@@ -99,7 +105,9 @@ function Detail({ e }: { e: Enquiry }) {
       </Section>
 
       <Section title="Next steps">
-        {family && student ? (
+        {isPossibleSpam(e) ? (
+          <Txt variant="muted">Next steps will appear here once this enquiry has been marked as not spam.</Txt>
+        ) : family && student ? (
           <Card style={{ gap: Spacing.two }}>
             <Txt>
               {family.name} family{family.status === 'prospect' ? ' (prospect)' : ''} · {student.fullName}
@@ -173,7 +181,7 @@ function ConvertCard({ e }: { e: Enquiry }) {
   const lastName = e.parentName.trim().split(' ').pop() ?? e.parentName;
   const lists = builtInSyllabusesFor(subject, curriculum);
   const chosenList = lists.some((l) => l.id === syllabusId) ? syllabusId : undefined;
-  const sortedTutors = [...(tutors.data ?? [])].sort(
+  const sortedTutors = withoutClosed(tutors.data).sort(
     (a, b) => Number(tutorTeaches(b, subject)) - Number(tutorTeaches(a, subject)) || a.fullName.localeCompare(b.fullName),
   );
   const busy = saveFamily.isPending || saveStudent.isPending || saveEnrolment.isPending || update.isPending;

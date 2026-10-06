@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { font, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { source } from '@/data';
-import { useMessages, useThreads } from '@/data/hooks';
+import { useFamilyContacts, useMessages, useThreads } from '@/data/hooks';
 import { queryClient } from '@/data/query';
 import { useMe } from '@/data/session';
+import { RELATIONSHIP_LABELS } from '@/domain/contacts';
 import { formatTime, relativeDay } from '@/domain/dates';
 import type { Message } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -53,6 +54,9 @@ export function Conversation({ familyId }: { familyId: string }) {
   const me = useMe();
   const insets = useSafeAreaInsets();
   const messages = useMessages(familyId);
+  const contacts = useFamilyContacts(familyId);
+  // A parent sender's relationship (Mother, Father…), by login. Tutors never see profile ids, so they see the name alone.
+  const relationshipBySender = new Map((contacts.data ?? []).filter((c) => c.profileId).map((c) => [c.profileId!, RELATIONSHIP_LABELS[c.relationship]]));
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -98,7 +102,7 @@ export function Conversation({ familyId }: { familyId: string }) {
           ) : list.length === 0 ? (
             <EmptyState icon="people" title="No messages yet" message="Write your first message below. Everyone in this conversation will be notified." />
           ) : (
-            list.map((m, i) => <Bubble key={m.id} m={m} mine={m.senderId === me.id} showDay={i === 0 || relativeDay(list[i - 1].createdAt) !== relativeDay(m.createdAt)} />)
+            list.map((m, i) => <Bubble key={m.id} m={m} relationship={m.senderId ? relationshipBySender.get(m.senderId) : undefined} mine={m.senderId === me.id} showDay={i === 0 || relativeDay(list[i - 1].createdAt) !== relativeDay(m.createdAt)} />)
           )}
         </View>
       </ScrollView>
@@ -130,7 +134,7 @@ export function Conversation({ familyId }: { familyId: string }) {
   );
 }
 
-function Bubble({ m, mine, showDay }: { m: Message; mine: boolean; showDay: boolean }) {
+function Bubble({ m, mine, showDay, relationship }: { m: Message; mine: boolean; showDay: boolean; relationship?: string }) {
   const theme = useTheme();
   return (
     <View style={{ gap: 4 }}>
@@ -143,7 +147,13 @@ function Bubble({ m, mine, showDay }: { m: Message; mine: boolean; showDay: bool
         {!mine ? (
           <Txt variant="small" style={{ fontWeight: '700', color: theme.accent }}>
             {m.senderName}
-            {m.senderRole === 'tutor' ? ' · tutor' : m.senderRole === 'admin' ? ' · Elite Education' : ''}
+            {m.senderRole === 'tutor'
+              ? ' · tutor'
+              : m.senderRole === 'admin'
+                ? ' · Elite Education'
+                : m.senderRole === 'parent' && relationship
+                  ? ` · ${relationship}`
+                  : ''}
           </Txt>
         ) : null}
         <Txt style={{ color: mine ? theme.onPrimary : theme.text }}>{m.body}</Txt>

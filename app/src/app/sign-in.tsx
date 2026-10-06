@@ -17,6 +17,7 @@ const ROLE_INFO: Record<Role, { label: string; icon: IconName; blurb: string }> 
   tutor: { label: 'Tutor', icon: 'school', blurb: 'Your schedule, lesson notes and pay' },
   parent: { label: 'Parent', icon: 'people', blurb: 'Lessons, progress reports and invoices' },
   student: { label: 'Student', icon: 'book', blurb: 'Your lessons, homework and progress' },
+  accountant: { label: 'Accountant', icon: 'money', blurb: 'Invoices, VAT returns and exports, read only' },
 };
 
 type Mode = 'sign-in' | 'sign-up' | 'verify' | 'reset';
@@ -310,7 +311,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headline: { fontSize: 28, lineHeight: 36, textAlign: 'center' },
-  rule: { width: 32, height: 1.5 },
+  rule: { width: 32, height: 2 },
   essence: {
     fontSize: 13,
     lineHeight: 18,

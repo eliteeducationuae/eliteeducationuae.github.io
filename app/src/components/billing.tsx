@@ -15,11 +15,12 @@ export const INVOICE_STATUS: Record<DisplayInvoiceStatus, { label: string; tone:
   overdue: { label: 'Overdue', tone: 'danger' },
   paid: { label: 'Paid', tone: 'success' },
   void: { label: 'Void', tone: 'neutral' },
+  credited: { label: 'Credited', tone: 'neutral' },
 };
 
 export function InvoiceCard({ invoice, familyName }: { invoice: Invoice; familyName?: string }) {
   const status = displayStatus(invoice);
-  const { total, balance } = invoiceTotals(invoice);
+  const { total, balance, credited } = invoiceTotals(invoice);
   const s = INVOICE_STATUS[status];
   return (
     <Card
@@ -38,6 +39,8 @@ export function InvoiceCard({ invoice, familyName }: { invoice: Invoice; familyN
         </View>
       </Row>
       {balance > 0 && balance < total ? <Txt variant="small">{formatAED(balance)} outstanding</Txt> : null}
+      {credited > 0 && status !== 'credited' ? <Txt variant="small">Credited {formatAED(credited)}</Txt> : null}
+      {balance < 0 ? <Txt variant="small">{formatAED(-balance)} in credit, to be refunded</Txt> : null}
     </Card>
   );
 }

@@ -3,11 +3,14 @@ import { View } from 'react-native';
 
 import { subjectLine } from '@/components/catalogue-choice';
 import { BID_STATUS, fitNote, opportunityTone, tutorFits } from '@/components/opportunities';
+import { awardPaySentence } from '@/components/rates';
+import { useComplianceMap, VettingBadge } from '@/components/vetting';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useAvailability, useBids, useLessons, useOpportunities, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
+import { isClosed } from '@/domain/closed-accounts';
 import { addDays, formatDate, minutesBetween, relativeDay, startOfWeek } from '@/domain/dates';
 import type { Tutor } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
@@ -19,6 +22,7 @@ export default function OpportunityDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const opportunities = useOpportunities();
   const bids = useBids();
+  const vetting = useComplianceMap();
   const tutors = useTutors();
   const availability = useAvailability();
   const lessons = useLessons(weekStart, addDays(weekStart, 14));
@@ -27,8 +31,9 @@ export default function OpportunityDetail() {
   if (opportunities.isLoading || bids.isLoading || tutors.isLoading) return <Loading />;
   const o = opportunities.data?.find((x) => x.id === id);
   if (!o) return <Screen><EmptyState title="Role not found" /></Screen>;
-  const theirs = (bids.data ?? []).filter((b) => b.opportunityId === o.id && b.status !== 'withdrawn');
   const tutor = (tid: string) => tutors.data?.find((t) => t.id === tid);
+  // A closed tutor's bid can no longer be chosen, so it is not offered (the server withdraws it too).
+  const theirs = (bids.data ?? []).filter((b) => b.opportunityId === o.id && b.status !== 'withdrawn' && !(b.status === 'pending' && isClosed(tutor(b.tutorId))));
   const winner = o.awardedTutorId ? tutor(o.awardedTutorId) : undefined;
   const s = opportunityTone(o);
 
@@ -90,6 +95,7 @@ export default function OpportunityDetail() {
       ) : null}
 
       <Section title={`Tutors interested (${theirs.length})`}>
+        {o.studentId && o.status === 'open' ? <Txt variant="small">{awardPaySentence(o.payRate, o.subject)}</Txt> : null}
         {theirs.length === 0 ? <EmptyState icon="people" title="No interest yet" message="Tutors were notified when you posted this role. Their responses will appear here." /> : null}
         <View style={{ gap: Spacing.two }}>
           {theirs.map((b) => {
@@ -106,6 +112,7 @@ export default function OpportunityDetail() {
                       <Txt variant="h3">{t.fullName}</Txt>
                       <Badge label={bs.label} tone={bs.tone} />
                     </Row>
+                    {vetting.get(t.id) ? <VettingBadge status={vetting.get(t.id)!.vettingStatus} /> : null}
                     <Txt variant="small">
                       {[`${st.hours}h/week booked`, st.offered ? `${st.offered}h/week offered` : 'no availability set'].join(' · ')}
                       {st.note ? ' · ' : ''}

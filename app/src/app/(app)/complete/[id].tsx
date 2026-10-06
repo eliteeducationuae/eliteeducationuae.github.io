@@ -10,10 +10,12 @@ import { Spacing } from '@/constants/theme';
 import { getSyllabus } from '@/data/curriculum';
 import { source } from '@/data';
 import { PartialSaveError } from '@/data/source';
-import { useAction, useEnrolments, useLesson, useLookup, useRatings, useTopicLookup } from '@/data/hooks';
+import { useAction, useEnrolments, useLesson, useLessonPlan, useLookup, useRatings, useResources, useTopicLookup } from '@/data/hooks';
+import { useMe } from '@/data/session';
 import { addDays, formatDay, toDateKey } from '@/domain/dates';
 import { enrolmentFor, enrolmentTitle, lessonSubject } from '@/domain/enrolments';
 import { classworkFolder } from '@/domain/homework';
+import { isPlanEmpty, prefillFromPlan, type RecordPrefill } from '@/domain/plans';
 import { masteryByTopic, type Syllabus } from '@/domain/progress';
 import { DEFAULT_UNIT } from '@/domain/topics';
 import type { Attachment, AttendanceMark, TopicRating } from '@/domain/types';
@@ -26,6 +28,20 @@ export default function CompleteLesson() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const lookup = useLookup();
   const lesson = useLesson(id);
+  const enrolments = useEnrolments();
+  const topics = useTopicLookup();
+  const plan = useLessonPlan(id);
+  const resources = useResources();
+  if (lesson.isLoading || !lookup.ready || enrolments.isLoading || !topics.ready || plan.isLoading || resources.isLoading) return <Loading />;
+  // Start from the lesson plan, when there is one.
+  const prefill = prefillFromPlan(plan.data, lesson.data?.studentIds ?? [], resources.data ?? []);
+  return <RecordForm key={plan.data?.updatedAt ?? 'none'} id={id} prefill={prefill} planned={!isPlanEmpty(plan.data)} />;
+}
+
+function RecordForm({ id, prefill, planned }: { id: string; prefill: RecordPrefill; planned: boolean }) {
+  const me = useMe();
+  const lookup = useLookup();
+  const lesson = useLesson(id);
   const allRatings = useRatings();
   const enrolments = useEnrolments();
   const topics = useTopicLookup();
@@ -35,13 +51,13 @@ export default function CompleteLesson() {
 
   const [status, setStatus] = useState<'completed' | 'no-show'>('completed');
   const [attendance, setAttendance] = useState<Record<string, AttendanceMark>>({});
-  const [topicIds, setTopicIds] = useState<string[]>([]);
+  const [topicIds, setTopicIds] = useState<string[]>(prefill.topicIds);
   const [ratings, setRatings] = useState<Record<string, Rating>>({});
-  const [summary, setSummary] = useState('');
+  const [summary, setSummary] = useState(prefill.summary);
   const [privateNote, setPrivateNote] = useState('');
-  const [homework, setHomework] = useState<Record<string, string>>({});
+  const [homework, setHomework] = useState<Record<string, string>>(prefill.homework);
   // Optional instructions and attachments per student, revealed on request.
-  const [homeworkExtras, setHomeworkExtras] = useState<Record<string, { open: boolean; details: string; attachments: Attachment[] }>>({});
+  const [homeworkExtras, setHomeworkExtras] = useState<Record<string, { open: boolean; details: string; attachments: Attachment[] }>>(prefill.homeworkExtras);
   const [browseUnit, setBrowseUnit] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -159,6 +175,11 @@ export default function CompleteLesson() {
           onPress={save}
         />
       }>
+      {planned ? (
+        <Banner icon="book">
+          Pre-filled from {!!me.tutorId && l?.tutorId === me.tutorId ? 'your' : 'the'} lesson plan. Please review before saving.
+        </Banner>
+      ) : null}
       <Segmented
         value={status}
         onChange={setStatus}
@@ -320,7 +341,7 @@ export default function CompleteLesson() {
                       multiline
                       value={extras.details}
                       onChangeText={(details) => setExtras({ details })}
-                      placeholder="Instructions for the student, for example, show all working."
+                      placeholder="Instructions for the student. For example, show all working and check each answer against the mark scheme."
                     />
                     <AttachmentEditor
                       value={extras.attachments}

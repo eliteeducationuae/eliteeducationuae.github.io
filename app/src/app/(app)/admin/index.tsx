@@ -6,6 +6,8 @@ import { Banner, Button, Card, EmptyState, ListItem, Loading, Row, Screen, Secti
 import { Spacing } from '@/constants/theme';
 import { Icon } from '@/components/icon';
 import { RiskRow, useAtRisk } from '@/components/insights';
+import { TutorChecksRow, useTutorChecksCount } from '@/components/vetting';
+import { SpamReviewLine } from '@/components/spam';
 import {
   useAbsences,
   useApplications,
@@ -26,6 +28,7 @@ import { chargeRevenue, displayStatus, formatAED, invoiceTotals, packageRemainin
 import { addDays, isSameDay, startOfDay, startOfMonth, toDateKey } from '@/domain/dates';
 import { adminSummary, greetingLine } from '@/domain/greeting';
 import { byStart, lessonsDuringAbsence } from '@/domain/scheduling';
+import { suspectedCount, withoutSpam } from '@/domain/spam';
 import { useTheme } from '@/hooks/use-theme';
 import { plural } from '@/lib/id';
 
@@ -49,6 +52,7 @@ export default function AdminDashboard() {
   const reports = useStudentReports();
   const applications = useApplications();
   const atRisk = useAtRisk();
+  const tutorChecks = useTutorChecksCount();
 
   const today = (lessons.data ?? []).filter((l) => isSameDay(new Date(l.start), now)).sort(byStart);
   const activeToday = today.filter((l) => l.status !== 'cancelled' && l.status !== 'late-cancel');
@@ -64,8 +68,8 @@ export default function AdminDashboard() {
   const outstanding = open.reduce((s, i) => s + invoiceTotals(i).balance, 0);
   const overdue = open.filter((i) => displayStatus(i) === 'overdue');
   const lowCredit = (packages.data ?? []).filter((p) => packageRemaining(p) <= 2);
-  const newEnquiries = (enquiries.data ?? []).filter((e) => e.status === 'new');
-  const followUps = (enquiries.data ?? []).filter(
+  const newEnquiries = withoutSpam(enquiries.data ?? []).filter((e) => e.status === 'new');
+  const followUps = withoutSpam(enquiries.data ?? []).filter(
     (e) => e.nextActionAt && e.nextActionAt <= toDateKey(now) && (e.status === 'contacted' || e.status === 'trial-booked'),
   );
   const pending = (requests.data ?? []).filter((r) => r.status === 'pending');
@@ -73,8 +77,8 @@ export default function AdminDashboard() {
   const rolesWithBids = (opportunities.data ?? []).filter((o) => o.status === 'open' && (bids.data ?? []).some((b) => b.opportunityId === o.id && b.status === 'pending'));
   const invoicesToApprove = (tutorInvoices.data ?? []).filter((i) => i.status === 'submitted');
   const reportsToReview = (reports.data ?? []).filter((r) => r.status === 'submitted');
-  const newApplications = (applications.data ?? []).filter((a) => a.status === 'applied');
-  const attention = rolesWithBids.length + invoicesToApprove.length + reportsToReview.length + newApplications.length + atRisk.list.length + needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
+  const newApplications = withoutSpam(applications.data ?? []).filter((a) => a.status === 'applied');
+  const attention = tutorChecks + rolesWithBids.length + invoicesToApprove.length + reportsToReview.length + newApplications.length + atRisk.list.length + needsNotes.length + overdue.length + lowCredit.length + newEnquiries.length + followUps.length + pending.length + needCover.length;
 
   const loading = lessons.isLoading || charges.isLoading || invoices.isLoading || !lookup.ready;
 
@@ -108,6 +112,7 @@ export default function AdminDashboard() {
 
           {attention ? (
             <Section title="Needs attention">
+              <TutorChecksRow />
               {pending.length ? (
                 <ListItem
                   title={`${plural(pending.length, 'lesson request')} to approve`}
@@ -151,7 +156,7 @@ export default function AdminDashboard() {
               {newEnquiries.length ? (
                 <ListItem
                   title={`${plural(newEnquiries.length, 'new enquiry', 'new enquiries')}`}
-                  subtitle={newEnquiries.map((e) => e.parentName).join(', ')}
+                  subtitle={newEnquiries.map((e) => (e.repeatCount ? `${e.parentName} (received ${e.repeatCount + 1} times)` : e.parentName)).join(', ')}
                   left={<Icon name="inbox" size={22} color={theme.gold} />}
                   onPress={() => router.push('/manage/enquiries')}
                 />
@@ -205,6 +210,8 @@ export default function AdminDashboard() {
               Everything is in order. There are no overdue invoices or missing lesson notes.
             </Banner>
           )}
+          {/* Held as possible spam: a quiet pointer, deliberately outside "Needs attention" and its count. */}
+          <SpamReviewLine enquiries={suspectedCount(enquiries.data)} applications={suspectedCount(applications.data)} />
 
           <Section
             title="Today’s lessons"

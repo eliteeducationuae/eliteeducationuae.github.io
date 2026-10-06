@@ -4,16 +4,20 @@
 // Returns { url }. Set up the portal once in Stripe: Settings → Billing → Customer portal.
 // Secrets: STRIPE_SECRET_KEY, APP_URL.
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 import { portalForm } from '../_shared/stripe.ts';
 import { stripe } from '../_shared/stripe-api.ts';
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('billing-portal', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
     const supabase = userClient(req);
     const { data: auth } = await supabase.auth.getUser();
     if (!auth?.user) return json({ error: 'Please sign in again.' }, 401);
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
     const { data: profile } = await supabase.from('profiles').select('role, family_id').eq('id', auth.user.id).single();
 
     let familyId: string | null = null;
@@ -37,4 +41,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+}));

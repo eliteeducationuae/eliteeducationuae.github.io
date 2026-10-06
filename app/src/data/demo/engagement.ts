@@ -1,12 +1,15 @@
 import { enrolmentTitle, topicListKey } from '@/domain/enrolments';
 import { findClashes, openSlots } from '@/domain/scheduling';
-import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, Thread, TutorAbsence } from '@/domain/types';
+import { enquiryPayloadProblem, findDuplicateEnquiry, mergeMessage, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
+import type { Audience, Availability, Closure, Enquiry, FamilyStatus, Profile, SpamReason, Thread, TutorAbsence } from '@/domain/types';
 import { surnameOf } from '@/lib/social-auth';
 
 import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
+import { syncPrimaryFromFamily } from './contacts';
 import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
+import { assertCleared } from './vetting';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
 
@@ -20,6 +23,9 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
   return false;
 }
 
+/** Blank fields a repeat enquiry may fill in on the one it is merged into. A telephone number is only noted. */
+const MERGE_FIELDS = ['studentName', 'curriculum', 'subject', 'phase', 'yearGroup', 'preferredTimes'] as const;
+
 export const eq = {
   /** Mirrors public.set_my_name: only a parent whose family is still a prospect is renamed. */
   setMyName(db: DemoDB, viewer: Profile, fullName: string): Profile {
@@ -30,11 +36,17 @@ export const eq = {
     if (!me || me.role !== 'parent') return viewer;
     const family = db.families.find((f) => f.id === me.familyId);
     if (family && family.status !== 'prospect') return me;
-    if (family && family.parentName === me.fullName) {
+    const renamesFamily = !!family && family.parentName === me.fullName;
+    if (family && renamesFamily) {
       family.parentName = clean;
       family.name = surnameOf(clean);
     }
     me.fullName = clean;
+    // Their own contact entry carries the same name, and the main contact follows the family record.
+    for (const c of db.familyContacts ?? []) {
+      if (c.familyId === me.familyId && (c.profileId === me.id || c.email?.toLowerCase() === me.email.toLowerCase())) c.name = clean;
+    }
+    if (family && renamesFamily) syncPrimaryFromFamily(db, family);
     return me;
   },
   /** Mirrors public.add_my_child: a parent adds a child with 1 to 10 subjects. */
@@ -89,12 +101,39 @@ export const eq = {
     const f = db.families.find((x) => x.id === familyId);
     if (f) f.status = status;
   },
-  submitEnquiry(db: DemoDB, viewer: Profile | null, e: NewEnquiry, now = new Date()) {
+  submitEnquiry(db: DemoDB, viewer: Profile | null, input: NewEnquiry, now = new Date()) {
+    const { elapsedMs, ...e } = input;
     if (!e.parentName.trim()) throw new Error('Please enter your name');
     if (!e.email?.trim() && !e.phone?.trim()) throw new Error('Please give an email address or phone number');
+    const isAdmin = viewer?.role === 'admin';
+    const at = now.toISOString();
+    let reasons: SpamReason[] = [];
+    if (!isAdmin) {
+      // Mirrors public.submit_enquiry: size limits, rate limits, merging repeats and flagging possible spam.
+      const problem = enquiryPayloadProblem(e);
+      if (problem) throw new Error(problem);
+      const email = e.email?.trim().toLowerCase() || undefined;
+      const log = (db.formSubmissions ??= []);
+      if (rateLimited(log.filter((x) => x.kind === 'enquiry'), { email }, SPAM_LIMITS.enquiry, now)) throw new RateLimitError();
+      log.push({ kind: 'enquiry', email, at });
+      // A signed-in family is never flagged: their forms arrive pre-filled, so a quick tap is normal.
+      if (viewer?.role !== 'parent' || !viewer.familyId) {
+        reasons = spamReasons({ names: [e.parentName, e.studentName], text: [e.message, e.preferredTimes], elapsedMs });
+      }
+      // Only a clean repeat is folded in, and it only fills blanks.
+      const dup = reasons.length ? undefined : findDuplicateEnquiry(db.enquiries, { ...e, email }, now);
+      if (dup) {
+        for (const k of MERGE_FIELDS) if (!dup[k]?.trim() && e[k]?.trim()) dup[k] = e[k]!.trim();
+        dup.notes = repeatPhoneNote(dup.notes, dup.phone, e.phone, now);
+        dup.message = mergeMessage(dup.message, e.message, now);
+        dup.repeatCount = (dup.repeatCount ?? 0) + 1;
+        dup.lastSubmittedAt = at;
+        return;
+      }
+    }
     db.enquiries.push({
       id: newId('enq'),
-      createdAt: now.toISOString(),
+      createdAt: at,
       status: 'new',
       source: e.source ?? 'app',
       ...e,
@@ -102,12 +141,23 @@ export const eq = {
       subject: tidy(e.subject),
       phase: tidy(e.phase),
       familyId: viewer?.role === 'parent' ? viewer.familyId : undefined,
+      spamStatus: reasons.length ? 'suspected' : 'clean',
+      spamReasons: reasons,
+      repeatCount: 0,
+      lastSubmittedAt: at,
     });
   },
   enquiries(db: DemoDB, viewer: Profile): Enquiry[] {
+    // Enquiries hold the office's staff-only notes, so only administrators read them (as after the round 5 merge).
     if (viewer.role === 'admin') return db.enquiries;
-    if (viewer.role === 'parent') return db.enquiries.filter((e) => e.familyId && e.familyId === viewer.familyId);
     return [];
+  },
+  /** Mirrors public.set_submission_spam. The demo sends no emails, so the acknowledgement option has nothing to send. */
+  setSpamStatus(db: DemoDB, viewer: Profile, kind: 'enquiry' | 'application', id: string, spam: boolean) {
+    requireAdmin(viewer);
+    const item = kind === 'enquiry' ? db.enquiries.find((x) => x.id === id) : db.applications.find((x) => x.id === id);
+    if (!item) throw new Error(kind === 'enquiry' ? 'Enquiry not found' : 'Application not found');
+    item.spamStatus = spam ? 'spam' : 'clean';
   },
   updateEnquiry(db: DemoDB, viewer: Profile, id: string, patch: Partial<Enquiry>) {
     requireAdmin(viewer);
@@ -223,6 +273,7 @@ export const eq = {
         l.start = r.start;
         l.end = r.end;
       } else {
+        assertCleared(db, r.tutorId, 'lesson', now);
         const previous = [...db.lessons].reverse().find((l) => l.studentIds.includes(r.studentId));
         db.lessons.push({
           id: newId('les'),
@@ -248,10 +299,11 @@ export const eq = {
     if (!r) throw new Error('Request not found');
     r.status = 'withdrawn';
   },
-  reassignLesson(db: DemoDB, viewer: Profile, lessonId: string, tutorId: string) {
+  reassignLesson(db: DemoDB, viewer: Profile, lessonId: string, tutorId: string, now = new Date()) {
     requireAdmin(viewer);
     const l = db.lessons.find((x) => x.id === lessonId && x.status === 'scheduled');
     if (!l) throw new Error('Only scheduled lessons can be reassigned');
+    if (l.tutorId !== tutorId) assertCleared(db, tutorId, 'lesson', now);
     if (findClashes({ start: new Date(l.start), end: new Date(l.end), tutorId, studentIds: [], ignoreLessonId: l.id }, db.lessons).length) {
       throw new Error(`${db.tutors.find((t) => t.id === tutorId)?.fullName ?? 'That tutor'} already has a lesson then`);
     }

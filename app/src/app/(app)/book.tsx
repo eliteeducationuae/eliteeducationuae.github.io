@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { agreedPriceSentence } from '@/components/rates';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -9,6 +10,7 @@ import { useAction, useEnrolments, useLessons, useLookup, useOpenSlots, useServi
 import { addDays, formatDay, formatTime, startOfDay, toDateKey } from '@/domain/dates';
 import { activeEnrolments, enrolmentFor, enrolmentTitle, lessonSubject, sameSubject } from '@/domain/enrolments';
 import { byStart } from '@/domain/scheduling';
+import { withoutClosed } from '@/domain/closed-accounts';
 
 const today = startOfDay(new Date());
 const WINDOW_DAYS = 21;
@@ -33,7 +35,7 @@ export default function Book() {
 
   const all = lessons.data ?? [];
   const moving = lessonId ? all.find((l) => l.id === lessonId) : undefined;
-  const kids = students.data ?? [];
+  const kids = withoutClosed(students.data);
   const student = kids.find((s) => s.id === (studentId ?? moving?.studentIds[0])) ?? (kids.length === 1 ? kids[0] : undefined);
   const theirs = student ? all.filter((l) => l.studentIds.includes(student.id)).sort(byStart) : [];
   const allEnrolments = enrolments.data ?? [];
@@ -178,7 +180,11 @@ export default function Book() {
           )}
 
           <Field label="Note for us (optional)" value={note} onChangeText={setNote} multiline placeholder="e.g. Before the mock examination on Thursday" />
-          {kind === 'new-lesson' && service ? <Txt variant="small">Extra lessons are charged at the usual rate for {service.name}.</Txt> : null}
+          {kind === 'new-lesson' && agreedPriceSentence(enrolment) ? (
+            <Txt variant="small">{agreedPriceSentence(enrolment)}</Txt>
+          ) : kind === 'new-lesson' && service ? (
+            <Txt variant="small">Extra lessons are charged at the usual rate for {service.name}.</Txt>
+          ) : null}
           <ErrorNote error={request.error} />
           <View />
         </>

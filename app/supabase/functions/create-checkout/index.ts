@@ -6,14 +6,19 @@
 // Apple Pay and Google Pay appear automatically once switched on in the Stripe Dashboard.
 // Secrets: STRIPE_SECRET_KEY, APP_URL (where Stripe returns the parent afterwards).
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
+import { refuseViewAs } from '../_shared/view-as.ts';
 import { checkoutInvoiceForm, checkoutOfferForm, invoiceBalanceFils, offerChargeFils } from '../_shared/stripe.ts';
 import { ensureCustomer, stripe } from '../_shared/stripe-api.ts';
 
 const CHARGING = 'Your saved card is being charged for this invoice. Please wait a moment and refresh.';
 
+/** Credit notes and refunds, embedded so the balance matches invoice_balance in the database. */
+const ADJUSTMENTS = 'credit_notes!credit_notes_invoice_id_fkey(total), refunds!refunds_invoice_id_fkey(amount, status)';
+
 const OFFER_GONE = 'This lesson package is no longer available.';
 
-/** The app's address, e.g. https://eliteeducationuae.github.io/app. Never guessed: Stripe must return parents to the app. */
+/** The app's address, e.g. https://eliteeducation.me/app. Never guessed: Stripe must return parents to the app. */
 const appUrl = () => (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
 const NO_APP_URL = 'Card payments are not set up yet (APP_URL is missing).';
 
@@ -22,13 +27,14 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
   const { data: inv, error } = await supabase
     .from('invoices')
-    .select('id, number, status, items, vat_rate, family_id, autopay_status, payments(amount)')
+    .select(`id, number, status, items, vat_rate, family_id, autopay_status, payments(amount), ${ADJUSTMENTS}`)
     .eq('id', invoiceId)
     .single();
   if (error || !inv) return json({ error: 'Invoice not found' }, 404);
   if (inv.status !== 'sent') return json({ error: 'This invoice is not payable' }, 400);
 
-  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? []);
+  // Credit notes reduce what is owed and refunds add back to it, so a credited invoice is never overcharged.
+  const balance = invoiceBalanceFils(inv.items, inv.vat_rate, inv.payments ?? [], { credits: inv.credit_notes, refunds: inv.refunds });
   if (balance <= 0) return json({ error: 'Nothing left to pay' }, 400);
 
   const admin = adminClient();
@@ -79,9 +85,12 @@ async function offerCheckout(req: Request, offerId: string) {
   return json({ url: res.body.url });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMonitoring('create-checkout', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
+    // A View as session (read only) cannot pay for anything.
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
     if (!appUrl()) return json({ error: NO_APP_URL }, 500);
     const body = await req.json().catch(() => ({}));
     if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
@@ -90,4 +99,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+}));

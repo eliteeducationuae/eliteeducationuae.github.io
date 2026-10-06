@@ -3,12 +3,28 @@ import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/icon';
-import { EmptyState, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
+import { EmptyState, ErrorNote, Field, ListItem, Screen, Section, Txt } from '@/components/ui';
+import { useCanViewAs, useStartViewAs, viewAsRows } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
-import { useApplications, useEnquiries, useEnrolments, useFamilies, useInvoices, useOpportunities, useStudents, useTutors } from '@/data/hooks';
+import {
+  useApplications,
+  useContactsForFamilies,
+  useEnquiries,
+  useEnrolments,
+  useFamilies,
+  useInvoices,
+  useOpportunities,
+  useStudents,
+  useTutors,
+  useViewTargets,
+} from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatAED, invoiceTotals } from '@/domain/billing';
+import { CLOSED_LABEL, closedLast, isClosed } from '@/domain/closed-accounts';
 import { studentSubjects } from '@/domain/enrolments';
+import { buildContactIndex, familiesByContact, matchesSearch as matches, normSearch as norm, viaContact } from '@/domain/search';
+import { spamLabel } from '@/domain/spam';
+import type { FamilyContact } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 
 interface Hit {
@@ -18,8 +34,7 @@ interface Hit {
   href: Href;
 }
 
-const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
-const matches = (q: string, ...fields: (string | undefined)[]) => fields.some((f) => f && norm(f).includes(q));
+const PEOPLE_GROUPS = ['Students', 'Families', 'Tutors'];
 
 /** Find anyone or anything: students, families, tutors, invoices, enquiries, roles and applications. */
 export default function Search() {
@@ -35,22 +50,31 @@ export default function Search() {
   const opportunities = useOpportunities();
   const applications = useApplications();
   const enrolments = useEnrolments();
+  const canViewAs = useCanViewAs();
+  const viewTargets = useViewTargets();
+  const viewAs = useStartViewAs();
+  // Families can also be found by their other contacts (a PA, the family office, a driver). Closed families are
+  // matched by name only, so their contacts are never fetched. Loaded once someone starts typing.
+  const openFamilyIds = useMemo(() => (families.data ?? []).filter((f) => !isClosed(f)).map((f) => f.id), [families.data]);
+  const contacts = useContactsForFamilies(openFamilyIds, admin && query.trim().length >= 2);
+  const contactIndex = useMemo(() => buildContactIndex(contacts), [contacts]);
 
   const groups = useMemo(() => {
     const q = norm(query.trim());
     if (q.length < 2) return [];
     const familyName = (id: string) => families.data?.find((f) => f.id === id)?.name ?? '';
+    const viaContacts = admin ? familiesByContact(contactIndex, q) : new Map<string, FamilyContact>();
     const out: { title: string; icon: IconName; hits: Hit[] }[] = [
       {
         title: 'Students',
         icon: 'people',
-        hits: (students.data ?? [])
+        hits: closedLast(students.data, true)
           .map((s) => ({ s, subjects: studentSubjects(enrolments.data ?? [], s.id) }))
-          .filter(({ s, subjects }) => matches(q, s.fullName, s.school, s.curriculum, s.yearGroup, s.phase, subjects))
+          .filter(({ s, subjects }) => (isClosed(s) ? matches(q, s.fullName) : matches(q, s.fullName, s.school, s.curriculum, s.yearGroup, s.phase, subjects)))
           .map(({ s, subjects }) => ({
             key: s.id,
             title: s.fullName,
-            subtitle: [subjects, s.yearGroup, s.school].filter(Boolean).join(' · '),
+            subtitle: isClosed(s) ? CLOSED_LABEL : [subjects, s.yearGroup, s.school].filter(Boolean).join(' · '),
             href: { pathname: '/students/[id]', params: { id: s.id } },
           })),
       },
@@ -60,16 +84,23 @@ export default function Search() {
         {
           title: 'Families',
           icon: 'person',
-          hits: (families.data ?? [])
-            .filter((f) => matches(q, f.name, f.parentName, f.email, f.phone))
-            .map((f) => ({ key: f.id, title: `${f.name} family`, subtitle: `${f.parentName} · ${f.email}`, href: { pathname: '/manage/family-edit', params: { id: f.id } } })),
+          // Closed accounts are matched by name only (never by their placeholder email) and say so.
+          hits: closedLast(families.data, true)
+            .map((f) => ({ f, direct: isClosed(f) ? matches(q, f.name) : matches(q, f.name, f.parentName, f.email, f.phone) }))
+            .filter(({ f, direct }) => direct || (!isClosed(f) && viaContacts.has(f.id)))
+            .map(({ f, direct }) => ({
+              key: f.id,
+              title: `${f.name} family`,
+              subtitle: isClosed(f) ? CLOSED_LABEL : direct ? `${f.parentName} · ${f.email}` : `${f.parentName} · ${viaContact(viaContacts.get(f.id)!)}`,
+              href: { pathname: '/manage/family-edit', params: { id: f.id } },
+            })),
         },
         {
           title: 'Tutors',
           icon: 'school',
-          hits: (tutors.data ?? [])
-            .filter((t) => matches(q, t.fullName, t.email, ...t.subjects, ...(t.curricula ?? []), ...(t.phases ?? [])))
-            .map((t) => ({ key: t.id, title: t.fullName, subtitle: t.subjects.join(', '), href: { pathname: '/manage/tutor-edit', params: { id: t.id } } })),
+          hits: closedLast(tutors.data, true)
+            .filter((t) => (isClosed(t) ? matches(q, t.fullName) : matches(q, t.fullName, t.email, ...t.subjects, ...(t.curricula ?? []), ...(t.phases ?? []))))
+            .map((t) => ({ key: t.id, title: t.fullName, subtitle: isClosed(t) ? CLOSED_LABEL : t.subjects.join(', '), href: { pathname: '/manage/tutor-edit', params: { id: t.id } } })),
         },
         {
           title: 'Invoices',
@@ -83,7 +114,7 @@ export default function Search() {
           icon: 'inbox',
           hits: (enquiries.data ?? [])
             .filter((e) => matches(q, e.parentName, e.studentName, e.email, e.phone, e.subject, e.phase, e.curriculum))
-            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.subject, e.curriculum, e.status].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
+            .map((e) => ({ key: e.id, title: e.parentName, subtitle: [e.studentName, e.subject, e.curriculum, e.status, spamLabel(e)].filter(Boolean).join(' · '), href: { pathname: '/manage/enquiry/[id]', params: { id: e.id } } })),
         },
         {
           title: 'Roles',
@@ -97,12 +128,29 @@ export default function Search() {
           icon: 'person',
           hits: (applications.data ?? [])
             .filter((a) => matches(q, a.fullName, a.email))
-            .map((a) => ({ key: a.id, title: a.fullName, subtitle: `${a.email} · ${a.status}`, href: { pathname: '/manage/application/[id]', params: { id: a.id } } })),
+            .map((a) => ({ key: a.id, title: a.fullName, subtitle: [a.email, a.status, spamLabel(a)].filter(Boolean).join(' · '), href: { pathname: '/manage/application/[id]', params: { id: a.id } } })),
         },
       );
     }
     return out.filter((g) => g.hits.length).map((g) => ({ ...g, hits: g.hits.slice(0, 8) }));
-  }, [query, admin, students.data, families.data, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
+  }, [query, admin, students.data, families.data, contactIndex, tutors.data, invoices.data, enquiries.data, opportunities.data, applications.data, enrolments.data]);
+
+  // Admins on their own account can open the app as any family, tutor or student found above.
+  const viewRows = useMemo(() => {
+    if (!canViewAs || !viewTargets.data) return [];
+    const ids = (title: string) => groups.find((g) => g.title === title)?.hits.map((h) => ({ id: h.key, title: h.title })) ?? [];
+    return viewAsRows(viewTargets.data, { families: ids('Families'), tutors: ids('Tutors'), students: ids('Students') });
+  }, [canViewAs, viewTargets.data, groups]);
+
+  const renderGroup = (g: (typeof groups)[number]) => (
+    <Section key={g.title} title={g.title}>
+      <View style={{ gap: Spacing.two }}>
+        {g.hits.map((h) => (
+          <ListItem key={h.key} title={h.title} subtitle={h.subtitle} left={<Icon name={g.icon} size={20} color={theme.accent} />} onPress={() => router.replace(h.href)} />
+        ))}
+      </View>
+    </Section>
+  );
 
   return (
     <Screen>
@@ -125,15 +173,27 @@ export default function Search() {
       ) : groups.length === 0 ? (
         <EmptyState icon="search" title="No matches" message={`We could not find anything for “${query.trim()}”.`} />
       ) : (
-        groups.map((g) => (
-          <Section key={g.title} title={g.title}>
-            <View style={{ gap: Spacing.two }}>
-              {g.hits.map((h) => (
-                <ListItem key={h.key} title={h.title} subtitle={h.subtitle} left={<Icon name={g.icon} size={20} color={theme.accent} />} onPress={() => router.replace(h.href)} />
-              ))}
-            </View>
-          </Section>
-        ))
+        <>
+          {/* People first, then View as for them, so it is not pushed below invoices and enquiries. */}
+          {groups.filter((g) => PEOPLE_GROUPS.includes(g.title)).map(renderGroup)}
+          {viewRows.length ? (
+            <Section title="View as">
+              <View style={{ gap: Spacing.two }}>
+                {viewRows.map(({ key, title, subtitle, target }) => (
+                  <ListItem
+                    key={key}
+                    title={title}
+                    subtitle={subtitle}
+                    left={<Icon name="eye" size={20} color={target ? theme.accent : theme.textMuted} />}
+                    onPress={target && !viewAs.busyId ? () => void viewAs.start(target) : undefined}
+                  />
+                ))}
+                <ErrorNote error={viewAs.error} />
+              </View>
+            </Section>
+          ) : null}
+          {groups.filter((g) => !PEOPLE_GROUPS.includes(g.title)).map(renderGroup)}
+        </>
       )}
     </Screen>
   );

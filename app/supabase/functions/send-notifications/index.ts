@@ -1,12 +1,16 @@
 // Delivers queued notifications (public.notification_outbox): push via Expo, email via Resend,
-// and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account).
-// Schedule every minute (Supabase → Edge Functions → Schedules).
+// and WhatsApp via Twilio (approved templates only, and only to people who opted in under Account, or family contacts
+// without a login whom the family or office recorded as agreeing to WhatsApp messages).
+// Optional secret: CRON_SECRET (then each scheduled call must send it in the x-cron-secret header).
+// Schedule every minute (Supabase → Integrations → Cron, or the pg_cron SQL in the README's Round 4 setup checklist).
 // Secrets: RESEND_API_KEY, EMAIL_FROM (e.g. "Elite Education <hello@eliteeducation.me>"), APP_URL.
 // WhatsApp secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (+971…), and the approved
 // Content SIDs TWILIO_TEMPLATE_LESSON_REMINDER, TWILIO_TEMPLATE_LESSON_NOTES, TWILIO_TEMPLATE_INVOICE_SENT,
 // TWILIO_TEMPLATE_INVOICE_AUTOPAY, TWILIO_TEMPLATE_INVOICE_OVERDUE, TWILIO_TEMPLATE_HOMEWORK_DUE. Without them WhatsApp rows are marked skipped.
 import { adminClient } from '../_shared/supabase.ts';
-import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv } from '../_shared/whatsapp.ts';
+import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
+import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv, whatsappRecipient } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
 /** Written to a WhatsApp row while it is claimed for sending (see below). */
@@ -33,9 +37,9 @@ function emailHtml(subject: string, body: string, link?: string) {
   </div></body></html>`;
 }
 
-Deno.serve(async () => {
+const monitored = withMonitoring('send-notifications', adminClient, async () => {
   const db = adminClient();
-  const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me';
+  const appUrl = Deno.env.get('APP_URL') ?? 'https://eliteeducation.me/app';
   const from = Deno.env.get('EMAIL_FROM') ?? 'Elite Education <hello@eliteeducation.me>';
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const twilio = twilioConfigFromEnv((k) => Deno.env.get(k));
@@ -45,7 +49,7 @@ Deno.serve(async () => {
   const now = new Date().toISOString();
   const { data: queue, error } = await db
     .from('notification_outbox')
-    .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number)')
+    .select('*, profiles(push_token, whatsapp_opt_in, whatsapp_number), family_contacts(receives_whatsapp, phone)')
     .is('sent_at', null)
     .lt('attempts', MAX_ATTEMPTS)
     .or(`whatsapp_not_before.is.null,whatsapp_not_before.lte."${now}"`)
@@ -92,9 +96,9 @@ Deno.serve(async () => {
       // An earlier run claimed this row and stopped before recording Twilio's answer. Keep a trace for the office.
       notes.push('WhatsApp outcome unknown: the send was interrupted, so it was not retried');
     } else if (n.whatsapp && n.whatsapp_status === 'pending') {
-      const optedIn = n.profiles?.whatsapp_opt_in === true;
-      const number = n.profiles?.whatsapp_number as string | null;
-      if (!optedIn || !number) {
+      // A login's own opt-in, or a family contact (no login) who still agrees to WhatsApp messages.
+      const number = whatsappRecipient(n);
+      if (!number) {
         wa.whatsapp_status = 'skipped';
       } else if (!twilio) {
         wa.whatsapp_status = 'skipped';
@@ -151,3 +155,8 @@ Deno.serve(async () => {
   }
   return new Response(`sent ${sent} of ${queue?.length ?? 0}`);
 });
+
+// A call without the cron secret is refused before monitoring, so it never counts as a run.
+Deno.serve((req) =>
+  isAuthorisedCronCall(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET')) ? monitored(req) : refuseCronCall(),
+);

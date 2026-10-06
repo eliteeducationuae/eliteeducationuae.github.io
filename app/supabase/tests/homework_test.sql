@@ -440,3 +440,77 @@ reset role;
 
 select pg_temp.check(not exists (select 1 from public.notification_outbox where body like '%AE9903312345%' or body like '%IBAN%'),
   'bank details never appear in homework notifications');
+
+-- Homework from a lesson must name a lesson the student was in, taught by the caller.
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+do $$ begin
+  perform public.save_homework(null, 'd0000000-0000-0000-0000-000000000002', 'Borrowed lesson', null, current_date + 7, '[]',
+    'f0000000-0000-0000-0000-000000000001');
+  raise exception 'attached homework to another tutor''s lesson';
+exception when raise_exception then
+  if sqlerrm <> 'Lesson not found' then raise; end if;
+  raise notice 'ok - a tutor cannot attach homework to another tutor''s lesson';
+end $$;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000a');
+do $$ begin
+  perform public.save_homework(null, 'd0000000-0000-0000-0000-000000000001', 'Wrong lesson', null, current_date + 7, '[]',
+    'f0000000-0000-0000-0000-000000000002');
+  raise exception 'attached homework to a lesson the student was not in';
+exception when raise_exception then
+  if sqlerrm <> 'Lesson not found' then raise; end if;
+  raise notice 'ok - homework cannot name a lesson the student was not in';
+end $$;
+select pg_temp.check((public.save_homework(null, 'd0000000-0000-0000-0000-000000000002', 'Admin lesson task', null, current_date + 7, '[]',
+  'f0000000-0000-0000-0000-000000000002')).lesson_id = 'f0000000-0000-0000-0000-000000000002', 'an admin sets homework from any lesson the student was in');
+
+-- Hand-ins may cite only the student's own folder, never a library file.
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
+do $$ begin
+  perform public.submit_homework((select id from ids where k = 'hw'), 'Here is the sheet',
+    '[{"kind":"file","name":"Kept.pdf","path":"resources/r5.pdf"}]');
+  raise exception 'library file in a hand-in';
+exception when raise_exception then
+  if sqlerrm = 'library file in a hand-in' then raise; end if;
+  raise notice 'ok - a hand-in cannot cite a library file';
+end $$;
+
+-- Storage policies on the classwork bucket (run against the storage stand-in in shim.sql).
+reset role;
+select pg_temp.check((select not public and file_size_limit = 26214400 from storage.buckets where id = 'classwork'),
+  'the classwork bucket is private with a 25 MB limit');
+set role authenticated;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+insert into storage.objects (bucket_id, name) values ('classwork', 'students/d0000000-0000-0000-0000-000000000001/mum.jpg');
+select pg_temp.check((select count(*) from storage.objects where name = 'students/d0000000-0000-0000-0000-000000000001/mum.jpg') = 1,
+  'a parent uploads to and reads their child''s folder');
+do $$ begin
+  insert into storage.objects (bucket_id, name) values ('classwork', 'resources/mum.pdf');
+  raise exception 'parent uploaded to the library';
+exception when insufficient_privilege then raise notice 'ok - a parent cannot upload to the library';
+end $$;
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000e');
+do $$ begin
+  insert into storage.objects (bucket_id, name) values ('classwork', 'students/d0000000-0000-0000-0000-000000000001/x.jpg');
+  raise exception 'another parent uploaded to the child''s folder';
+exception when insufficient_privilege then raise notice 'ok - another parent cannot upload to the child''s folder';
+end $$;
+select pg_temp.check((select count(*) from storage.objects) = 0, 'another parent cannot list the child''s files');
+delete from storage.objects where name = 'students/d0000000-0000-0000-0000-000000000001/mum.jpg';
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000c');
+select pg_temp.check((select count(*) from storage.objects) = 1, 'another parent cannot delete the child''s files');
+delete from storage.objects where name = 'students/d0000000-0000-0000-0000-000000000001/mum.jpg';
+select pg_temp.check((select count(*) from storage.objects) = 0, 'the uploader deletes a file nothing refers to');
+select pg_temp.as_user('a0000000-0000-0000-0000-00000000000d');
+insert into storage.objects (bucket_id, name) values ('classwork', 'students/d0000000-0000-0000-0000-000000000001/answer.jpg');
+delete from storage.objects where name = 'students/d0000000-0000-0000-0000-000000000001/answer.jpg';
+select pg_temp.check((select count(*) from storage.objects) = 1, 'a file cited by a hand-in cannot be deleted, even by its uploader');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
+insert into storage.objects (bucket_id, name) values ('classwork', 'resources/r5.pdf');
+select pg_temp.check((select count(*) from storage.objects where name = 'resources/r5.pdf') = 1, 'a tutor uploads to the library');
+delete from storage.objects where name = 'resources/r5.pdf';
+select pg_temp.check((select count(*) from storage.objects where name = 'resources/r5.pdf') = 1,
+  'a library resource''s file cannot be deleted while the resource exists');
+select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b2');
+select pg_temp.check((select count(*) from storage.objects where name like 'students/%') = 0, 'another tutor cannot list the student''s files');
+reset role;

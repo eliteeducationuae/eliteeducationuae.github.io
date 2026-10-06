@@ -127,8 +127,9 @@ export function familyActivity(students: Student[], lessons: Lesson[], now: Date
 }
 
 /** Of the enquiries received since `since`, how many enrolled (and how many were lost). */
-export function enquiryConversion(enquiries: Pick<Enquiry, 'createdAt' | 'status'>[], since: string) {
-  const list = enquiries.filter((e) => e.createdAt >= since);
+export function enquiryConversion(enquiries: (Pick<Enquiry, 'createdAt' | 'status'> & { spamStatus?: Enquiry['spamStatus'] })[], since: string) {
+  // Possible spam is kept for review but never counts towards the pipeline.
+  const list = enquiries.filter((e) => e.createdAt >= since && e.spamStatus !== 'suspected' && e.spamStatus !== 'spam');
   const enrolled = list.filter((e) => e.status === 'enrolled').length;
   const lost = list.filter((e) => e.status === 'lost').length;
   const decided = enrolled + lost;

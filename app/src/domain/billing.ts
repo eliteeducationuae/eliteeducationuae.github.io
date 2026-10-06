@@ -1,6 +1,9 @@
-import { addDays, minutesBetween, toDateKey } from './dates';
+import { addDays, formatDate, minutesBetween, toDateKey } from './dates';
+import { formatAED, roundMoney } from './money';
+import { lessonFamilyCharge, lessonTutorRate } from './rates';
 import type {
   Charge,
+  Enrolment,
   Invoice,
   InvoiceItem,
   Lesson,
@@ -11,13 +14,12 @@ import type {
   Tutor,
 } from './types';
 
-export function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+export { formatAED, roundMoney };
 
-export function formatAED(n: number): string {
-  const fixed = roundMoney(n).toFixed(Number.isInteger(roundMoney(n)) ? 0 : 2);
-  return `AED ${fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+/** A share (0–1) as a whole percentage with a true minus sign, e.g. -2.07 -> '−207%'. */
+export function formatPercent(share: number): string {
+  const p = Math.round(share * 100);
+  return `${p < 0 ? '−' : ''}${Math.abs(p)}%`;
 }
 
 export interface InvoiceTotals {
@@ -25,20 +27,34 @@ export interface InvoiceTotals {
   vat: number;
   total: number;
   paid: number;
+  /** Credit notes issued against the invoice (VAT included). */
+  credited: number;
+  /** Money returned to the family (failed refunds are left out). */
+  refunded: number;
+  /** total - credited - paid + refunded. Negative when the family has paid more than it owes. */
   balance: number;
 }
 
-export function invoiceTotals(invoice: Pick<Invoice, 'items' | 'vatRate' | 'payments'>): InvoiceTotals {
+export function invoiceTotals(
+  invoice: Pick<Invoice, 'items' | 'vatRate' | 'payments'> & Partial<Pick<Invoice, 'creditNotes' | 'refunds'>>,
+): InvoiceTotals {
   const subtotal = roundMoney(invoice.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0));
   const vat = roundMoney(subtotal * invoice.vatRate);
   const total = roundMoney(subtotal + vat);
   const paid = roundMoney(invoice.payments.reduce((sum, p) => sum + p.amount, 0));
-  return { subtotal, vat, total, paid, balance: roundMoney(total - paid) };
+  const credited = roundMoney((invoice.creditNotes ?? []).reduce((sum, c) => sum + c.total, 0));
+  const refunded = roundMoney((invoice.refunds ?? []).filter((r) => r.status !== 'failed').reduce((sum, r) => sum + r.amount, 0));
+  return { subtotal, vat, total, paid, credited, refunded, balance: roundMoney(total - credited - paid + refunded) };
 }
 
-export type DisplayInvoiceStatus = Invoice['status'] | 'overdue' | 'part-paid';
+/** 'credited': cancelled by credit notes covering the whole invoice. 'void' remains for invoices voided before credit notes. */
+export type DisplayInvoiceStatus = Invoice['status'] | 'overdue' | 'part-paid' | 'credited';
 
 export function displayStatus(invoice: Invoice, now: Date = new Date()): DisplayInvoiceStatus {
+  if (invoice.status === 'void') {
+    const { total, credited } = invoiceTotals(invoice);
+    return (invoice.creditNotes?.length ?? 0) > 0 && credited >= total - 0.005 ? 'credited' : 'void';
+  }
   if (invoice.status !== 'sent') return invoice.status;
   const { paid, balance } = invoiceTotals(invoice);
   if (balance <= 0) return 'paid';
@@ -67,6 +83,8 @@ export interface ChargeResult {
 /**
  * Work out what each student owes for a lesson once it has happened (or was late-cancelled / missed).
  * A full-price lesson draws a package credit when the family has one; reduced fees are always invoiced.
+ * The full fee is the enrolment's custom family price per hour when one is set, else the service price
+ * (see lessonFamilyCharge); late-cancel and no-show fees are that fraction of it.
  */
 export function chargesForLesson(
   lesson: Lesson,
@@ -75,6 +93,7 @@ export function chargesForLesson(
   packages: LessonPackage[],
   settings: Pick<Settings, 'lateCancelFee' | 'noShowFee'>,
   attendance: Record<string, 'present' | 'late' | 'absent'> = {},
+  enrolments: Enrolment[] = [],
 ): ChargeResult {
   const result: ChargeResult = { charges: [], packageDraws: [] };
   const date = new Date(lesson.start);
@@ -100,7 +119,7 @@ export function chargesForLesson(
     }
     if (fee <= 0) continue;
 
-    const description = `${service.name} — ${student.fullName}, ${toDateKey(date)}${label ? ` (${label})` : ''}`;
+    const description = `${service.name} — ${student.fullName}, ${formatDate(date)}${label ? ` (${label})` : ''}`;
     const base = {
       lessonId: lesson.id,
       studentId,
@@ -122,12 +141,50 @@ export function chargesForLesson(
     if (pkg) {
       remaining.set(pkg.id, (remaining.get(pkg.id) ?? 0) - 1);
       result.packageDraws.push(pkg.id);
-      result.charges.push({ ...base, amount: 0, status: 'package', packageId: pkg.id });
+      result.charges.push({ ...base, amount: 0, status: 'package', packageId: pkg.id, priceSource: 'service' });
     } else {
-      result.charges.push({ ...base, amount: roundMoney(service.rate * fee), status: 'unbilled' });
+      const full = lessonFamilyCharge(lesson, service, studentId, enrolments);
+      result.charges.push({
+        ...base,
+        // A charge at the family's agreed price says so, so it never reads like an inconsistent service-priced line.
+        ...(full.source === 'custom'
+          ? { description: customChargeDescription(service.name, lesson, student.fullName, formatDate(date), label, full.hourly) }
+          : null),
+        amount: roundMoney(full.amount * fee),
+        status: 'unbilled',
+        priceSource: full.source,
+        hourlyPrice: full.source === 'custom' ? full.hourly : undefined,
+      });
     }
   }
   return result;
+}
+
+/** Lesson hours as written on an invoice: '1.5', '0.75'. */
+function hoursText(lesson: Pick<Lesson, 'start' | 'end'>): string {
+  return String(Math.round((minutesBetween(new Date(lesson.start), new Date(lesson.end)) / 60) * 100) / 100);
+}
+
+/**
+ * Description of a charge at the family's agreed hourly price, e.g.
+ * 'IB Diploma 1:1 (Arabic) — Omar Al Mansoori, 21 Sep 2026 · agreed price AED 480 per hour', or for a lesson that is
+ * not 60 minutes '… · 1.5 hours at the agreed price of AED 415 per hour'. Mirrors apply_charges in the rates migration.
+ */
+export function customChargeDescription(
+  serviceName: string,
+  lesson: Pick<Lesson, 'start' | 'end' | 'subject'>,
+  studentName: string,
+  dateText: string,
+  label: string,
+  hourly: number,
+): string {
+  const subject = lesson.subject?.trim();
+  const minutes = minutesBetween(new Date(lesson.start), new Date(lesson.end));
+  const price =
+    minutes === 60
+      ? `agreed price ${formatAED(hourly)} per hour`
+      : `${hoursText(lesson)} hours at the agreed price of ${formatAED(hourly)} per hour`;
+  return `${serviceName}${subject ? ` (${subject})` : ''} — ${studentName}, ${dateText}${label ? ` (${label})` : ''} · ${price}`;
 }
 
 /** Turn a family's unbilled charges into invoice line items. */
@@ -164,16 +221,24 @@ export interface TutorEarnings {
   lessons: number;
   hours: number;
   amount: number;
+  /** Paid lessons priced at a per-student custom rate. */
+  customLessons: number;
 }
 
-/** What a tutor has earned for lessons in a period. */
+/**
+ * What a tutor has earned for lessons in a period: hours × the lesson's rate, where the rate is
+ * the tutor's usual pay or a per-student custom pay (the highest in a group; see lessonTutorRate).
+ */
 export function tutorEarnings(
   tutor: Tutor,
   lessons: Lesson[],
   settings: Pick<Settings, 'payTutorForLateCancel'>,
+  enrolments: Enrolment[] = [],
 ): TutorEarnings {
   let count = 0;
   let minutes = 0;
+  let amount = 0;
+  let customLessons = 0;
   for (const l of lessons) {
     if (l.tutorId !== tutor.id) continue;
     const paid =
@@ -182,10 +247,14 @@ export function tutorEarnings(
       (l.status === 'late-cancel' && settings.payTutorForLateCancel);
     if (!paid) continue;
     count++;
-    minutes += minutesBetween(new Date(l.start), new Date(l.end));
+    const m = minutesBetween(new Date(l.start), new Date(l.end));
+    minutes += m;
+    const rate = lessonTutorRate(l, tutor, enrolments);
+    amount += (m / 60) * rate.rate;
+    if (rate.source === 'custom') customLessons++;
   }
   const hours = minutes / 60;
-  return { lessons: count, hours: roundMoney(hours), amount: roundMoney(hours * tutor.hourlyPay) };
+  return { lessons: count, hours: roundMoney(hours), amount: roundMoney(amount), customLessons };
 }
 
 /** Revenue recognised from charges in a period (package credits valued at the package's per-lesson price). */

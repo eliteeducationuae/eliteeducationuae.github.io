@@ -3,13 +3,19 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { PackageCard } from '@/components/billing';
+import { FamilyContactsSection } from '@/components/family-contacts';
+import { HistorySection } from '@/components/history';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
-import { Button, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented } from '@/components/ui';
+import { Banner, Button, Card, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useEnrolments, useFamilies, usePackages, useStudents } from '@/data/hooks';
+import { isClosed } from '@/domain/closed-accounts';
+import { formatDate } from '@/domain/dates';
 import { studentSubjects } from '@/domain/enrolments';
+import { isValidTrn, normaliseTrn } from '@/domain/tax';
 import type { Family, FamilyStatus } from '@/domain/types';
 
 export default function EditFamily() {
@@ -17,7 +23,20 @@ export default function EditFamily() {
   const families = useFamilies();
   if (families.isLoading) return <Loading />;
   const existing = id ? families.data?.find((f) => f.id === id) : undefined;
+  if (existing && isClosed(existing)) return <ClosedFamily family={existing} />;
   return <FamilyForm key={existing?.id ?? 'new'} existing={existing} />;
+}
+
+/** A closed family is kept only for its invoices and payments: nothing to edit and no login to send. */
+function ClosedFamily({ family }: { family: Family }) {
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: `${family.name} family` }} />
+      <Banner icon="person">
+        {`This family’s account was closed on ${formatDate(family.deletedAt!)}. Contact details, the children’s profiles, lesson notes, messages and homework have been removed. Invoices, payments and lesson dates are kept for the period UAE law requires.`}
+      </Banner>
+    </Screen>
+  );
 }
 
 function FamilyForm({ existing }: { existing?: Family }) {
@@ -30,7 +49,14 @@ function FamilyForm({ existing }: { existing?: Family }) {
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
   const [status, setStatus] = useState<FamilyStatus>(existing?.status ?? 'active');
-  const valid = name.trim() && parentName.trim() && /\S+@\S+/.test(email);
+  const [billingName, setBillingName] = useState(existing?.billingName ?? '');
+  const [billingAddress, setBillingAddress] = useState(existing?.billingAddress ?? '');
+  const [trn, setTrn] = useState(existing?.trn ?? '');
+  const trnInvalid = !!trn.trim() && !isValidTrn(trn);
+  // An existing family's contacts are edited in the Contacts section; the form keeps its main contact as it is.
+  const valid = (existing ? !!name.trim() : !!(name.trim() && parentName.trim() && /\S+@\S+/.test(email))) && !trnInvalid;
+  // Only sent when filled in or being cleared, so a family without billing details stays without them.
+  const optional = (value: string, before?: string) => value.trim() || (before ? '' : undefined);
   const kids = existing ? (students.data ?? []).filter((s) => s.familyId === existing.id) : [];
 
   return (
@@ -44,7 +70,17 @@ function FamilyForm({ existing }: { existing?: Family }) {
           loading={save.isPending}
           onPress={async () => {
             const saved = await save.mutateAsync([
-              { id: existing?.id, name: name.trim(), parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined, status },
+              {
+                ...(existing
+                  ? // The main contact's details are kept as they are now, so a change made in Contacts meanwhile is not undone.
+                    { id: existing.id, parentName: existing.parentName, email: existing.email, phone: existing.phone }
+                  : { parentName: parentName.trim(), email: email.trim(), phone: phone.trim() || undefined }),
+                name: name.trim(),
+                status,
+                billingName: optional(billingName, existing?.billingName),
+                billingAddress: optional(billingAddress, existing?.billingAddress),
+                trn: optional(normaliseTrn(trn), existing?.trn),
+              },
             ]);
             if (existing) router.back();
             else router.replace({ pathname: '/students/edit', params: { familyId: saved.id } });
@@ -53,10 +89,20 @@ function FamilyForm({ existing }: { existing?: Family }) {
       }>
       <Stack.Screen options={{ title: existing ? `${existing.name} family` : 'New family' }} />
       <Field label="Family name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="e.g. Al Mansoori" />
-      <Field label="Parent / guardian" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
-      <Field label="Email (for invoices and reports)" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-      <Field label="Phone / WhatsApp" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <LoginHint email={email} who="parent" name={parentName} />
+      {existing ? null : (
+        <>
+          <Field label="Main contact name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
+          <Field
+            label="Main contact email (invoices, reports and sign-in)"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <Field label="Main contact phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <LoginHint email={email} who="parent" name={parentName} />
+        </>
+      )}
       <Section title="Status">
         <Segmented
           value={status}
@@ -68,9 +114,31 @@ function FamilyForm({ existing }: { existing?: Family }) {
           ]}
         />
       </Section>
+      <Section title="Billing details (optional)">
+        <Card style={{ gap: Spacing.three }}>
+          <Txt variant="muted">Add these when a company pays, so they appear on its tax invoices.</Txt>
+          <Field
+            label="Billed to (company or legal name)"
+            value={billingName}
+            onChangeText={setBillingName}
+            autoCapitalize="words"
+            placeholder={parentName.trim() || undefined}
+            hint="Printed as the customer on tax invoices. Leave blank to use the parent’s name."
+          />
+          <Field label="Billing address" value={billingAddress} onChangeText={setBillingAddress} multiline />
+          <Field
+            label="Customer TRN"
+            value={trn}
+            onChangeText={setTrn}
+            keyboardType="number-pad"
+            hint={trnInvalid ? 'Enter the 15-digit TRN from the VAT certificate.' : 'Only for VAT-registered companies.'}
+          />
+        </Card>
+      </Section>
       <ErrorNote error={save.error} />
       {existing ? (
         <>
+          <FamilyContactsSection familyId={existing.id} editable intro="Contact changes are saved as soon as you make them." />
           <Section
             title="Students"
             action={<Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/students/edit', params: { familyId: existing.id } })} />}>
@@ -90,6 +158,8 @@ function FamilyForm({ existing }: { existing?: Family }) {
           <Section title="Card and autopay">
             <FamilyCardAdmin family={existing} />
           </Section>
+          <ViewAsActions familyId={existing.id} />
+          <HistorySection filter={{ familyId: existing.id }} />
         </>
       ) : null}
     </Screen>
