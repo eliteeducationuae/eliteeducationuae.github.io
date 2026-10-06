@@ -42,7 +42,7 @@ export default function Families() {
                     <Badge label={CLOSED_LABEL} />
                   ) : (
                     <Row gap={Spacing.one} wrap>
-                      <Badge label={logins.has(f.email.toLowerCase()) ? 'Can log in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />
+                      <Badge label={logins.has(f.email.toLowerCase()) ? 'Can sign in' : 'No login yet'} tone={logins.has(f.email.toLowerCase()) ? 'success' : 'neutral'} />
                       {f.autopay ? <Badge label="Autopay" tone="gold" /> : null}
                     </Row>
                   )

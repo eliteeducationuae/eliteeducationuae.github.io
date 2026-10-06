@@ -117,6 +117,6 @@ describe('configuration', () => {
     expect(isCaptchaForm('application')).toBe(true);
     expect(isCaptchaForm('login')).toBe(false);
     expect(isCaptchaForm(undefined)).toBe(false);
-    expect(FAILURE_MESSAGE).toBe('We could not complete the security check. Please try again, or email craig@craigobrieneducation.com.');
+    expect(FAILURE_MESSAGE).toBe('We could not complete the security check. Please try again, or email hello@eliteeducation.me.');
   });
 });

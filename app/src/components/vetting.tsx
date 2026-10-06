@@ -446,7 +446,7 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
   async function send() {
     const problem =
       validateDocumentDates({ type, issueDate, expiryDate }, today) ??
-      (!file ? 'Please choose the file to upload' : type === 'other' && !title.trim() ? 'Please give the document a title' : null);
+      (!file ? 'Please choose the file to upload.' : type === 'other' && !title.trim() ? 'Please give the document a title.' : null);
     setError(problem);
     if (problem || !file) return;
     setUploading(true);
@@ -612,7 +612,7 @@ export function DateKeyField({ label, value, onChange }: { label: string; value:
       keyboardType="number-pad"
       inputMode="numeric"
       maxLength={10}
-      hint={words ?? (value.trim() ? 'Please enter the full date as YYYY-MM-DD' : undefined)}
+      hint={words ?? (value.trim() ? 'Please enter the full date, for example 2026-10-06.' : undefined)}
     />
   );
 }

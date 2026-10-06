@@ -203,7 +203,7 @@ export function normaliseContactDraft(d: FamilyContactDraft): FamilyContactDraft
 
 /** The messages the SQL RPCs raise, word for word. */
 export const CONTACT_ERRORS = {
-  name: "Please enter the contact's name.",
+  name: "Please enter the contact’s name.",
   email: 'Please enter a valid email address.',
   loginNeedsEmail: 'A contact who can sign in needs an email address.',
   primaryNeedsEmail: 'The main contact needs an email address.',

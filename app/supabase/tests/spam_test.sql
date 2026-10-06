@@ -31,7 +31,7 @@ begin
     get stacked diagnostics hint = pg_exception_hint;
   end;
   if got is distinct from 'Thank you. We have received several messages from you in a short time, so we have paused further '
-      || 'submissions for now. We will be in touch shortly; if your enquiry is urgent, please email craig@craigobrieneducation.com.'
+      || 'submissions for now. We will be in touch shortly; if your enquiry is urgent, please email hello@eliteeducation.me.'
      or hint is distinct from 'rate_limited' then
     raise exception 'FAILED: % (got: %)', label, coalesce(got, 'no error');
   end if;
@@ -293,19 +293,19 @@ update public.settings set captcha_required = false;
 -- Size limits ------------------------------------------------------------------------------
 set role anon;
 select pg_temp.raises($q$select pg_temp.enquire('big@x', 'Hi', p_name => repeat('a', 201))$q$,
-  'Please shorten the name to 200 characters or fewer', 'a very long name is refused politely');
+  'Please shorten the name to 200 characters or fewer.', 'a very long name is refused politely');
 select pg_temp.raises($q$select pg_temp.enquire('big@x', 'Hi', p_student => repeat('a', 201))$q$,
-  'Please shorten the name to 200 characters or fewer', 'a very long student name is refused politely');
+  'Please shorten the name to 200 characters or fewer.', 'a very long student name is refused politely');
 select pg_temp.raises($q$select pg_temp.enquire(repeat('a', 199) || '@x', 'Hi')$q$,
-  'Please check the email address or telephone number', 'a very long email is refused politely');
+  'Please check the email address or telephone number.', 'a very long email is refused politely');
 select pg_temp.raises($q$select public.submit_enquiry('Big', null, repeat('1', 51), null, null, null, null, null, 'website')$q$,
-  'Please check the email address or telephone number', 'a very long telephone number is refused politely');
+  'Please check the email address or telephone number.', 'a very long telephone number is refused politely');
 select pg_temp.raises($q$select pg_temp.enquire('big@x', repeat('a', 4001))$q$,
-  'Please shorten your message to 4,000 characters or fewer', 'a very long message is refused politely');
+  'Please shorten your message to 4,000 characters or fewer.', 'a very long message is refused politely');
 select pg_temp.raises($q$select public.submit_enquiry('Big', 'big@x', null, null, null, null, null, repeat('a', 1001), 'website')$q$,
-  'Please shorten your answers a little', 'very long preferred times are refused politely');
+  'Please shorten your answers a little.', 'very long preferred times are refused politely');
 select pg_temp.raises($q$select public.submit_enquiry('Big', 'big@x', null, null, null, repeat('a', 101), null, null, 'website')$q$,
-  'Please shorten your answers a little', 'a very long year group is refused politely');
+  'Please shorten your answers a little.', 'a very long year group is refused politely');
 select pg_temp.raises($q$select pg_temp.enquire('big@x', repeat('a', 4000))$q$, null, 'a 4,000-character message is accepted');
 reset role;
 
@@ -442,11 +442,11 @@ update public.settings set captcha_required = false;
 -- Application size limits
 set role anon;
 select pg_temp.raises($q$select pg_temp.apply('big@x', p_name => repeat('a', 201))$q$,
-  'Please shorten the name to 200 characters or fewer', 'a very long applicant name is refused politely');
+  'Please shorten the name to 200 characters or fewer.', 'a very long applicant name is refused politely');
 select pg_temp.raises($q$select pg_temp.apply('big@x', p_experience => repeat('a', 4001))$q$,
-  'Please shorten your message to 4,000 characters or fewer', 'a very long experience is refused politely');
+  'Please shorten your message to 4,000 characters or fewer.', 'a very long experience is refused politely');
 select pg_temp.raises($q$select pg_temp.apply('big@x', array(select 'c' || i from generate_series(1, 21) i))$q$,
-  'Please shorten your answers a little', 'too many curricula are refused politely');
+  'Please shorten your answers a little.', 'too many curricula are refused politely');
 select pg_temp.raises($q$select pg_temp.apply('big@x', p_phases => array(select 'p' || i from generate_series(1, 11) i))$q$,
   'Please choose up to ten phases', 'the ten-phase rule still applies');
 reset role;

@@ -211,12 +211,12 @@ describe('vetting blocks', () => {
 describe('validateDocumentDates', () => {
   const v = (type: TutorDocument['type'], issueDate?: string, expiryDate?: string) => validateDocumentDates({ type, issueDate, expiryDate }, TODAY);
   it('checks format and order', () => {
-    expect(v('police_clearance', '2026-1-4', '2027-01-04')).toBe('Please enter dates as YYYY-MM-DD');
-    expect(v('police_clearance', '2026-02-30', '2027-01-04')).toBe('Please enter dates as YYYY-MM-DD');
-    expect(v('police_clearance', '2026-01-04')).toBe('Please enter the expiry date of the police clearance certificate');
-    expect(v('police_clearance', '2026-10-05', '2027-10-05')).toBe('The issue date cannot be in the future');
-    expect(v('passport_id', '2026-01-04', '2025-01-04')).toBe('The expiry date cannot be before the issue date');
-    expect(v('police_clearance', '2025-01-04', '2026-10-03')).toBe('This certificate has already expired');
+    expect(v('police_clearance', '2026-1-4', '2027-01-04')).toBe('Please enter each date as year-month-day, for example 2026-10-06.');
+    expect(v('police_clearance', '2026-02-30', '2027-01-04')).toBe('Please enter each date as year-month-day, for example 2026-10-06.');
+    expect(v('police_clearance', '2026-01-04')).toBe('Please enter the expiry date of the police clearance certificate.');
+    expect(v('police_clearance', '2026-10-05', '2027-10-05')).toBe('The issue date cannot be in the future.');
+    expect(v('passport_id', '2026-01-04', '2025-01-04')).toBe('The expiry date cannot be before the issue date.');
+    expect(v('police_clearance', '2025-01-04', '2026-10-03')).toBe('This certificate has already expired.');
   });
   it('accepts valid dates, expiry today and optional expiry for other types', () => {
     expect(v('police_clearance', '2026-01-04', '2027-01-04')).toBeNull();

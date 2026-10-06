@@ -25,7 +25,7 @@ export function deletionConsequences(role: Role): DeletionConsequences {
       return {
         removed: [
           'Your login and contact details',
-          "Your children's logins and any other parent login for your family",
+          "Your children’s logins and any other parent login for your family",
           'The other contacts recorded for your family',
           "Your children's profiles",
           'Admissions advisory records, letters and documents',
@@ -56,8 +56,8 @@ export function deletionConsequences(role: Role): DeletionConsequences {
       return {
         removed: ['Your login'],
         kept: [
-          "Messages you sent stay in your family's conversation without your name",
-          "Your lessons, notes and reports, which stay with your parent's account",
+          "Messages you sent stay in your family’s conversation without your name",
+          "Your lessons, notes and reports, which stay with your parent’s account",
         ],
         note: 'Your parent can ask us to remove these records at any time.',
       };

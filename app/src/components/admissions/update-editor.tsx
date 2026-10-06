@@ -222,7 +222,7 @@ function Editor({ c, update }: { c: AdmissionsCase; update?: AdvisoryUpdate }) {
     if (earlier) {
       confirm(
         `An update for ${period.trim()} has already been sent`,
-        `The family received “${earlier.title}” on ${formatDate(earlier.publishedAt ?? earlier.createdAt)}. Send this one as well? If it adds to that letter, you may prefer to choose Update instead of Monthly update.`,
+        `The family received “${earlier.title}” on ${formatDate(earlier.publishedAt ?? earlier.createdAt)}. Send this one as well? If it adds to that letter, you may prefer to choose Other update instead of Monthly update.`,
         () => moveTo('published'),
         'Send anyway',
       );

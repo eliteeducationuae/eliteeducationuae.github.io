@@ -5,7 +5,7 @@ describe('deletionConsequences', () => {
     const c = deletionConsequences('parent');
     expect(c.removed.join(' ')).toMatch(/children's profiles/);
     expect(c.removed.join(' ')).toMatch(/future lessons/i);
-    expect(c.removed.join(' ')).toMatch(/children's logins and any other parent login/);
+    expect(c.removed.join(' ')).toMatch(/children’s logins and any other parent login/);
     expect(c.kept.join(' ')).toMatch(/Lesson dates and invoices, without contact details/);
     expect(c.kept.join(' ')).toMatch(/UAE law/);
   });
@@ -25,7 +25,7 @@ describe('deletionConsequences', () => {
 
   it('tells students the family records stay with the parent', () => {
     const c = deletionConsequences('student');
-    expect(c.kept.join(' ')).toMatch(/parent's account/);
+    expect(c.kept.join(' ')).toMatch(/parent’s account/);
     expect(c.note).toMatch(/Your parent can ask us to remove/);
     expect(c.removed).toEqual(['Your login']);
     expect(c.kept.join(' ')).toMatch(/without your name/);

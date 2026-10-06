@@ -33,7 +33,7 @@ function ClosedFamily({ family }: { family: Family }) {
     <Screen>
       <Stack.Screen options={{ title: `${family.name} family` }} />
       <Banner icon="person">
-        {`This family's account was closed on ${formatDate(family.deletedAt!)}. Contact details, the children's profiles, lesson notes, messages and homework have been removed. Invoices, payments and lesson dates are kept for the period UAE law requires.`}
+        {`This family’s account was closed on ${formatDate(family.deletedAt!)}. Contact details, the children’s profiles, lesson notes, messages and homework have been removed. Invoices, payments and lesson dates are kept for the period UAE law requires.`}
       </Banner>
     </Screen>
   );

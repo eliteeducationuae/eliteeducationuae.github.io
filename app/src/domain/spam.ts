@@ -23,7 +23,7 @@ export const SPAM_LIMITS: { enquiry: SpamLimits; application: SpamLimits } = {
 
 export const RATE_LIMIT_CODE = 'PT429';
 export const RATE_LIMIT_MESSAGE =
-  'Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email craig@craigobrieneducation.com.';
+  'Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email hello@eliteeducation.me.';
 
 /** Raised when someone has sent too many forms in a short time. The message is shown to them as it is. */
 export class RateLimitError extends Error {
@@ -50,10 +50,10 @@ export const SPAM_REASON_LABEL: Record<SpamReason, string> = {
 };
 
 export const PAYLOAD_MESSAGES = {
-  name: 'Please shorten the name to 200 characters or fewer',
-  contact: 'Please check the email address or telephone number',
-  message: 'Please shorten your message to 4,000 characters or fewer',
-  other: 'Please shorten your answers a little',
+  name: 'Please shorten the name to 200 characters or fewer.',
+  contact: 'Please check the email address or telephone number.',
+  message: 'Please shorten your message to 4,000 characters or fewer.',
+  other: 'Please shorten your answers a little.',
 } as const;
 
 const LINK = /(https?:\/\/|www\.)/gi;

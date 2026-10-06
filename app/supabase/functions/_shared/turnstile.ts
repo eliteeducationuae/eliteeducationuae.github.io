@@ -6,7 +6,7 @@
 
 export const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
-export const FAILURE_MESSAGE = 'We could not complete the security check. Please try again, or email craig@craigobrieneducation.com.';
+export const FAILURE_MESSAGE = 'We could not complete the security check. Please try again, or email hello@eliteeducation.me.';
 
 export type CaptchaForm = 'enquiry' | 'application';
 

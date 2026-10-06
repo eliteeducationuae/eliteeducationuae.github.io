@@ -46,7 +46,7 @@ function ClosedTutor({ tutor }: { tutor: Tutor }) {
     <Screen>
       <Stack.Screen options={{ title: tutor.fullName }} />
       <Banner icon="person">
-        {`This tutor's account was closed on ${formatDate(tutor.deletedAt!)}. Their name, contact details, availability and bank details have been removed. Past lessons and pay records are kept.`}
+        {`This tutor’s account was closed on ${formatDate(tutor.deletedAt!)}. Their name, contact details, availability and bank details have been removed. Past lessons and pay records are kept.`}
       </Banner>
       {lessons.isLoading ? (
         <Loading />

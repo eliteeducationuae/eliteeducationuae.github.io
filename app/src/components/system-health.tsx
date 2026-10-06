@@ -22,6 +22,14 @@ const JOB_NAMES: Record<string, string> = {
   backups: 'Nightly backups',
 };
 
+const ERROR_SOURCES: Record<string, string> = {
+  boundary: 'Screen',
+  query: 'Loading',
+  mutation: 'Saving',
+  global: 'App',
+  manual: 'Reported',
+};
+
 function Expandable({ title, subtitle, detail, badge }: { title: string; subtitle: string; detail?: string; badge?: string }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
@@ -49,7 +57,7 @@ function Expandable({ title, subtitle, detail, badge }: { title: string; subtitl
 
 function AppErrorItem({ e }: { e: AppErrorRow }) {
   const where = [e.platform, e.route, e.appVersion ? `v${e.appVersion}` : undefined].filter(Boolean).join(' · ');
-  return <Expandable title={firstLine(e.message)} subtitle={`${when(e.createdAt)} · ${where}`} detail={e.stack || e.message} badge={e.source} />;
+  return <Expandable title={firstLine(e.message)} subtitle={`${when(e.createdAt)} · ${where}`} detail={e.stack || e.message} badge={ERROR_SOURCES[e.source] ?? e.source} />;
 }
 
 function FunctionErrorItem({ e }: { e: FunctionErrorRow }) {
@@ -57,7 +65,7 @@ function FunctionErrorItem({ e }: { e: FunctionErrorRow }) {
   return (
     <Expandable
       title={firstLine(e.message)}
-      subtitle={`${when(e.createdAt)} · ${e.functionName}${e.status ? ` · ${e.status}` : ''}`}
+      subtitle={`${when(e.createdAt)} · ${JOB_NAMES[e.functionName] ?? e.functionName}${e.status ? ` · ${e.status}` : ''}`}
       detail={detail}
     />
   );

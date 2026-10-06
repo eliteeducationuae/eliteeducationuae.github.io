@@ -40,7 +40,7 @@ export default function Tutors() {
                     <Badge label={CLOSED_LABEL} />
                   ) : (
                     <Row gap={Spacing.one} wrap>
-                      <Badge label={canLogIn ? 'Can log in' : 'No login yet'} tone={canLogIn ? 'success' : 'neutral'} />
+                      <Badge label={canLogIn ? 'Can sign in' : 'No login yet'} tone={canLogIn ? 'success' : 'neutral'} />
                       {vetting ? <VettingBadge status={vetting} /> : null}
                     </Row>
                   )

@@ -5,6 +5,7 @@
  * Rows are stored with snake_case database column keys, exactly as `public.audit_events` holds them.
  */
 
+import { CASE_STATUS_LABELS, type AdmissionsCaseStatus } from './admissions';
 import { formatAED } from './billing';
 import { formatDate, formatDay, formatTime } from './dates';
 
@@ -158,6 +159,9 @@ function stable(v: unknown): string {
     .map((k) => `${JSON.stringify(k)}:${stable(o[k])}`)
     .join(',')}}`;
 }
+
+const isBlank = (v: unknown) => v === null || v === undefined || v === '';
+const sameShown = (x: unknown, y: unknown) => (isBlank(x) && isBlank(y)) || stable(x) === stable(y);
 
 function project(row: Record<string, unknown>, keys: (k: string) => boolean): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -350,6 +354,15 @@ const LABELS: Record<string, string> = {
   next_steps: 'Next steps',
   ai_assisted: 'Drafted with assistance',
   unit_price: 'Unit price',
+  captcha_required: 'Security check on website forms',
+  trn: 'TRN',
+  legal_name: 'Legal name',
+  registered_address: 'Registered address',
+  invoice_footer: 'Invoice footer',
+  vat_quarter_start_month: 'VAT quarters start in',
+  vetting_enforced: 'Police clearance required',
+  billing_name: 'Billed to',
+  billing_address: 'Billing address',
 };
 
 const MONEY = new Set(['hourly_pay', 'rate', 'amount', 'price', 'pay_rate', 'unit_price']);
@@ -637,7 +650,7 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
       const title = quoted(str('title'));
       if (e.action === 'insert') return done(`${who} opened the admissions case${title}.`);
       if (e.action === 'delete') return done(`${who} removed the admissions case${title}.`);
-      if (changed('status')) return done(`${who} marked the admissions case${title} as ${humanise(to('status') ?? 'updated').toLowerCase()}.`, ['status']);
+      if (changed('status')) return done(`${who} marked the admissions case${title} as ${(CASE_STATUS_LABELS[to('status') as AdmissionsCaseStatus] ?? humanise(to('status') ?? 'updated')).toLowerCase()}.`, ['status']);
       return done(`${who} updated the admissions case${title}.`);
     }
     case 'tutor_documents': {
@@ -716,7 +729,8 @@ export function describeAuditEvent(e: AuditEvent, names: AuditNames): AuditDescr
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
   const changes = keys
     // Redacted values look the same on both sides, but they are only stored when they changed.
-    .filter((k) => !omit.includes(k) && (stable(b[k]) !== stable(a[k]) || b[k] === REDACTED || a[k] === REDACTED))
+    // An empty value and a missing one both read 'not set', so a change between them is not listed.
+    .filter((k) => !omit.includes(k) && (!sameShown(b[k], a[k]) || b[k] === REDACTED || a[k] === REDACTED))
     .map((k) => changeLine(k, b[k], a[k], names));
   return context ? { summary, context, changes } : { summary, changes };
 }

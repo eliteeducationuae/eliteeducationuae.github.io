@@ -151,7 +151,7 @@ describe('placeholders', () => {
   it('describes the service price per hour', () => {
     expect(familyPricePlaceholder(igcse)).toBe('Default: AED 350 — IGCSE and GCSE 1:1 price');
     expect(familyPricePlaceholder(alevel)).toBe('Default: AED 366.67 — A-Level 1:1 price');
-    expect(familyPricePlaceholder()).toBe("Default: the lesson's service price");
+    expect(familyPricePlaceholder()).toBe("Default: the lesson’s service price");
   });
 });
 
