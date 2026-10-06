@@ -33,6 +33,7 @@ export type FamilyStatus = 'prospect' | 'active' | 'archived';
 /**
  * A family. `parentName`, `email` and `phone` mirror the family's main contact
  * (see FamilyContact.isPrimary); the full list lives in the family's contacts.
+ * Tutors read families by name only (public.family_directory): `email` is empty and `phone` absent for them.
  */
 export interface Family {
   id: string;

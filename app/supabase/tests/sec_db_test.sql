@@ -68,7 +68,8 @@ insert into storage.objects (bucket_id, name, owner_id) values
 set role authenticated;
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b3');
 select pg_temp.check((select count(*) from public.students) = 0 and (select count(*) from public.enrolments) = 0
-  and (select count(*) from public.homework) = 0 and (select count(*) from public.families) = 0,
+  and (select count(*) from public.homework) = 0 and (select count(*) from public.families) = 0
+  and (select count(*) from public.family_directory) = 0,
   'a former tutor no longer sees the student, their subjects, their homework or the family''s contact details');
 select pg_temp.check((select count(*) from public.student_notes) = 0, 'a former tutor no longer reads the office''s tutor-only notes');
 select pg_temp.check(pg_temp.err($q$update public.student_notes set notes = 'changed'$q$) is null
@@ -91,7 +92,7 @@ select pg_temp.check((select count(*) from public.lessons) = 1 and (select priva
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b1');
 select pg_temp.check((select count(*) from public.students) = 1 and (select count(*) from public.student_notes) = 1
   and (select count(*) from public.homework) = 1 and (select count(*) from public.messages) = 1
-  and (select count(*) from public.families) = 1 and (select count(*) from storage.objects where bucket_id = 'classwork') = 1,
+  and (select count(*) from public.family_directory) = 1 and (select count(*) from storage.objects where bucket_id = 'classwork') = 1,
   'the current tutor sees the student, the notes, the homework, the conversation and the files');
 select public.send_message('f1000000-0000-0000-0000-000000000001', 'See you on Tuesday.');
 select pg_temp.as_user('a0000000-0000-0000-0000-0000000000b4');

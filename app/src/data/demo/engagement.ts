@@ -8,7 +8,7 @@ import { enrolmentFieldsFor, resolveBuiltInSyllabus } from '../curriculum';
 import type { NewChild, NewEnquiry, NewLessonRequest } from '../source';
 
 import { syncPrimaryFromFamily } from './contacts';
-import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, type DemoDB } from './db';
+import { AccessError, linkList, newId, notifyAdmins, requireAdmin, tidy, visibleStudentIds, type DemoDB } from './db';
 import { assertCleared } from './vetting';
 
 /** Demo versions of the engagement features. Each mirrors a database function or policy. */
@@ -17,8 +17,9 @@ function canAccessThread(db: DemoDB, viewer: Profile, familyId: string): boolean
   if (viewer.role === 'admin') return true;
   if (viewer.role === 'parent') return viewer.familyId === familyId;
   if (viewer.role === 'tutor') {
-    const kids = new Set(db.students.filter((s) => s.familyId === familyId).map((s) => s.id));
-    return db.lessons.some((l) => l.tutorId === viewer.tutorId && l.studentIds.some((id) => kids.has(id)));
+    // Mirrors can_access_thread (20261114000200_sec_db.sql): a tutor who currently teaches one of the family's children.
+    const mine = visibleStudentIds(db, viewer);
+    return db.students.some((s) => s.familyId === familyId && mine.has(s.id));
   }
   return false;
 }

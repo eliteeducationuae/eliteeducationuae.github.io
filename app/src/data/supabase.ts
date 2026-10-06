@@ -198,6 +198,8 @@ function blankToNull(v: string | undefined): string | null | undefined {
 
 /** The tutor columns everyone signed in may read (public.tutor_directory). */
 const TUTOR_DIRECTORY_COLUMNS = 'id, full_name, subjects, curricula, phases, color, deleted_at';
+/** The columns of public.family_directory: names and status, never the main contact's email or telephone. */
+const FAMILY_DIRECTORY_COLUMNS = 'id, name, parent_name, status, created_at, deleted_at';
 
 const toTutor = (r: Row): Tutor => ({
   id: r.id,
@@ -1049,7 +1051,15 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       return check(directory).map((r: Row) => toTutor(own.get(r.id) ?? r));
     },
     async listFamilies() {
-      return check(await client.from('families').select('*, family_billing(*)').order('name')).map(toFamily);
+      // Security: public.families returns the whole row (with the main contact's email and telephone) to the office, the
+      // accountant and the family itself, and nothing to a tutor; everyone reads the families they can see by name from
+      // family_directory (20261114000600_sec_db_families.sql), so a tutor gets names only.
+      const [full, directory] = await Promise.all([
+        client.from('families').select('*, family_billing(*)').order('name'),
+        client.from('family_directory').select(FAMILY_DIRECTORY_COLUMNS).order('name'),
+      ]);
+      const own = new Map(check(full).map((r: Row) => [r.id, r]));
+      return check(directory).map((r: Row) => toFamily(own.get(r.id) ?? { ...r, email: '' }));
     },
     async listStudents() {
       // student_notes is protected by RLS, so families simply get no notes back.
