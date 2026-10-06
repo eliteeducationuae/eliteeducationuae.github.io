@@ -51,7 +51,8 @@ export function UpdateCard({
         {showStatus ? <Badge label={UPDATE_STATUS_LABELS[update.status]} tone={updateStatusTone(update.status)} /> : null}
       </Row>
       <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
-      <Txt variant="muted" numberOfLines={5}>
+      {/* No line clamp: previewText already ends on a whole sentence with one ellipsis, and a clamp would add a second. */}
+      <Txt variant="muted">
         {previewText(update.body)}
       </Txt>
       <Txt variant="small">
