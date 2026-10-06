@@ -6,8 +6,16 @@ import { SUPPORT_EMAIL } from '@/config';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
+import { useFamilyContacts } from '@/data/hooks';
 import { useSession } from '@/data/session';
-import { canConfirmDeletion, deletionConsequences, DELETE_CONFIRM_WORD } from '@/domain/data-rights';
+import {
+  canConfirmDeletion,
+  closesOwnLoginOnly,
+  CONTACT_LOGIN_CONSEQUENCES,
+  CONTACT_LOGIN_NOTE,
+  deletionConsequences,
+  DELETE_CONFIRM_WORD,
+} from '@/domain/data-rights';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
 import { saveDataExport } from '@/lib/data-export';
@@ -37,10 +45,14 @@ export function DeleteAccountScreen() {
   const signOut = useSession((s) => s.signOut);
   // Kept from the first render: the profile disappears once the account has been deleted.
   const [role] = useState(() => profile?.role ?? 'parent');
+  const [me] = useState(() => (profile?.role === 'parent' ? { id: profile.id, familyId: profile.familyId } : undefined));
+  // A family contact who is not the main contact closes only their own sign-in (account_closes_own_login_only).
+  const contacts = useFamilyContacts(me?.familyId);
+  const ownLoginOnly = !!me && closesOwnLoginOnly(contacts.data ?? [], me.id);
   const [typed, setTyped] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const consequences = deletionConsequences(role);
+  const consequences = ownLoginOnly ? CONTACT_LOGIN_CONSEQUENCES : deletionConsequences(role);
   const confirmed = canConfirmDeletion(typed);
 
   async function downloadFirst() {
@@ -83,6 +95,7 @@ export function DeleteAccountScreen() {
           Deleting your account is permanent. We are sorry to see you leave, and we would be glad to help with anything first: please write to{' '}
           {SUPPORT_EMAIL}.
         </Txt>
+        {ownLoginOnly ? <Txt variant="h3">{CONTACT_LOGIN_NOTE}</Txt> : null}
       </Card>
 
       <Section title="What will be removed">
@@ -124,7 +137,9 @@ export function DeleteAccountScreen() {
             onPress={() =>
               confirm(
                 'Delete your account?',
-                'This cannot be undone. Your login and personal details will be removed straight away.',
+                ownLoginOnly
+                  ? "This cannot be undone. Your login and personal details will be removed straight away; the family's account stays with the main contact."
+                  : 'This cannot be undone. Your login and personal details will be removed straight away.',
                 deleteNow,
                 'Delete',
               )

@@ -1,4 +1,14 @@
-import { canConfirmDeletion, deletionConsequences, deletionSummaryText, exportFileName, last4 } from '../data-rights';
+import {
+  canConfirmDeletion,
+  closesOwnLoginOnly,
+  CONTACT_LOGIN_CONSEQUENCES,
+  CONTACT_LOGIN_NOTE,
+  deletionConsequences,
+  deletionSummaryText,
+  exportFileName,
+  last4,
+} from '../data-rights';
+import type { FamilyContact } from '../types';
 
 describe('deletionConsequences', () => {
   it('tells parents that invoices are kept without contact details', () => {
@@ -73,5 +83,41 @@ describe('last4', () => {
   it('keeps only the last four characters', () => {
     expect(last4('AE07 0331 2345 6789 0123 456')).toBe('3456');
     expect(last4('')).toBeUndefined();
+  });
+});
+
+describe('closesOwnLoginOnly (mirrors account_closes_own_login_only)', () => {
+  const contact = (id: string, over: Partial<FamilyContact>): FamilyContact => ({
+    id,
+    familyId: 'f',
+    name: id,
+    relationship: 'parent',
+    preferredChannel: 'email',
+    canLogIn: true,
+    receivesInvoices: true,
+    receivesReports: true,
+    receivesLessonNotes: true,
+    receivesWhatsApp: false,
+    emergencyContact: false,
+    isPrimary: false,
+    hasLogin: false,
+    ...over,
+  });
+  const main = contact('main', { isPrimary: true, profileId: 'u-main', hasLogin: true });
+  const driver = contact('driver', { relationship: 'driver', profileId: 'u-driver', hasLogin: true });
+
+  it("closes only a non-main contact's own login", () => {
+    expect(closesOwnLoginOnly([main, driver], 'u-driver')).toBe(true);
+  });
+
+  it('closes the family for the main contact, the last sign-in contact, or a login with no contact', () => {
+    expect(closesOwnLoginOnly([main, driver], 'u-main')).toBe(false);
+    expect(closesOwnLoginOnly([{ ...main, canLogIn: false, profileId: undefined }, driver], 'u-driver')).toBe(false);
+    expect(closesOwnLoginOnly([main], 'u-other')).toBe(false);
+  });
+
+  it('says in plain words that the family stays with the main contact', () => {
+    expect(CONTACT_LOGIN_NOTE).toBe("This closes your own sign-in only. The family's account and records stay with the main contact.");
+    expect(CONTACT_LOGIN_CONSEQUENCES.kept.join(' ')).toMatch(/stay with the main contact/);
   });
 });

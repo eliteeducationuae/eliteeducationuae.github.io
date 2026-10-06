@@ -1,4 +1,4 @@
-import { LAST_ADMIN_MESSAGE, last4 } from '@/domain/data-rights';
+import { closesOwnLoginOnly, LAST_ADMIN_MESSAGE, last4 } from '@/domain/data-rights';
 import { worstStatus } from '@/domain/system-health';
 import type {
   AppErrorInput,
@@ -16,7 +16,7 @@ import type {
 
 import { removeAdmissionsForStudents } from './admissions';
 import { cw } from './classwork';
-import { allContacts, syncPrimaryFromFamily } from './contacts';
+import { allContacts, listFamilyContacts, syncPrimaryFromFamily } from './contacts';
 import { enr, newId, q, requireAdmin, type DemoDB } from './db';
 import { eq } from './engagement';
 import { ops } from './operations';
@@ -58,6 +58,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261110000000', name: 'handover' },
   { version: '20261111000000', name: 'round5_merge' },
   { version: '20261112000000', name: 'round5_followups' },
+  { version: '20261113001400', name: 'contactdel_fix' },
 ];
 
 const appErrorsOf = (db: DemoDB) => (db.appErrors ??= []);
@@ -478,7 +479,23 @@ function removeProfile(db: DemoDB, profile: Profile): DeletionSummary {
   return { role: profile.role, familyAnonymised: false, studentsAnonymised: 0, futureLessonsCancelled: 0, upcomingLessonsNeedingTutor: 0, invoicesRetained: 0, paymentsRetained: 0 };
 }
 
-function deleteForProfile(db: DemoDB, profile: Profile, now: Date): DeletionSummary {
+/**
+ * Mirrors account_closes_own_login_only: a family contact who is not the main contact, closing their own account, leaves
+ * the family (as remove_family_contact does) and only their login is removed. The family, its children, its other
+ * contacts and logins stay.
+ */
+function closesOwnLogin(db: DemoDB, profile: Profile): boolean {
+  if (profile.role !== 'parent' || !profile.familyId) return false;
+  return closesOwnLoginOnly(listFamilyContacts(db, profile, profile.familyId), profile.id);
+}
+
+function removeContactLogin(db: DemoDB, profile: Profile): DeletionSummary {
+  db.familyContacts = allContacts(db).filter((c) => !(c.familyId === profile.familyId && c.profileId === profile.id));
+  return { ...removeProfile(db, profile), loginOnly: true };
+}
+
+function deleteForProfile(db: DemoDB, profile: Profile, now: Date, self = false): DeletionSummary {
+  if (self && closesOwnLogin(db, profile)) return removeContactLogin(db, profile);
   if (profile.role === 'parent' && profile.familyId) return anonymiseFamily(db, profile.familyId, now);
   if (profile.role === 'tutor' && profile.tutorId) return anonymiseTutor(db, profile.tutorId, now);
   return removeProfile(db, profile);
@@ -522,17 +539,18 @@ function profileLabel(db: DemoDB, profile: Profile): string {
 export function deleteMyAccount(db: DemoDB, viewer: Profile, now = new Date()): DeletionSummary {
   const me = db.profiles.find((p) => p.id === viewer.id);
   if (!me) throw new Error('Your account could not be found.');
-  const summary = deleteForProfile(db, me, now);
+  const familyId = me.familyId;
+  const summary = deleteForProfile(db, me, now, true);
   requestsOf(db).push({
     id: newId('del'),
     createdAt: now.toISOString(),
     status: 'completed',
     // Like begin_account_deletion: the request names the login, and its label loses the name once completed.
     targetKind: 'profile',
-    familyId: me.role === 'parent' ? me.familyId : undefined,
+    familyId: me.role === 'parent' && !summary.loginOnly ? familyId : undefined,
     tutorId: me.role === 'tutor' ? me.tutorId : undefined,
     role: me.role,
-    label: closedLabel('profile', me.role),
+    label: summary.loginOnly ? 'Family contact login (closed)' : closedLabel('profile', me.role),
     reason: 'Deleted from the app',
     completedAt: now.toISOString(),
     summary,

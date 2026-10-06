@@ -1025,6 +1025,8 @@ export interface DeletionSummary {
   upcomingLessonsNeedingTutor?: number;
   invoicesRetained?: number;
   paymentsRetained?: number;
+  /** True when a family contact who is not the main contact closed only their own login; the family stays open. */
+  loginOnly?: boolean;
 }
 
 export interface DeletionRequest {
