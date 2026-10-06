@@ -95,10 +95,10 @@ describe('isAppleRelayEmail', () => {
 describe('friendlySocialError', () => {
   it('explains a provider that is not switched on', () => {
     expect(friendlySocialError('google', 'Unsupported provider: provider is not enabled')).toBe(
-      'Sign in with Google is not available yet. Please use your email address and password, or contact us.',
+      'Google sign-in is not available yet. Please sign in with your email.',
     );
     expect(friendlySocialError('apple', 'Unsupported provider: provider is not enabled')).toBe(
-      'Sign in with Apple is not available yet. Please use your email address and password, or contact us.',
+      'Apple sign-in is not available yet. Please sign in with your email.',
     );
   });
 

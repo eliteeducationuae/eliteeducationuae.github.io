@@ -109,7 +109,7 @@ export function friendlySocialError(provider: SocialProviderName, message: strin
     return 'Sign-in was cancelled.';
   }
   if (m.includes('provider is not enabled') || m.includes('unsupported provider') || m.includes('provider not enabled')) {
-    return `Sign in with ${label(provider)} is not available yet. Please use your email address and password, or contact us.`;
+    return `${label(provider)} sign-in is not available yet. Please sign in with your email.`;
   }
   return `We could not sign you in with ${label(provider)}. Please try again, or use your email address.`;
 }

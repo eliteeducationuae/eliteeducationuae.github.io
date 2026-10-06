@@ -15,6 +15,7 @@ import {
   type SocialProviderName,
 } from '@/lib/social-auth';
 import { publicErrorMessage } from '@/lib/polite-error';
+import { isProviderOff, loadProviders, probeAuthorize, providerUnavailableMessage } from '@/lib/auth-providers';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import { auditEventFromRow } from '@/domain/audit';
@@ -869,20 +870,28 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
   }
 
   async function startProviderSignIn(provider: SocialProvider): Promise<SocialSignInResult | 'done'> {
+    // A provider switched off in Supabase would land on a raw "Unsupported provider" page; say so here instead.
+    const providers = await loadProviders(url, anonKey);
+    if (isProviderOff(providers, provider)) throw new Error(providerUnavailableMessage(provider));
+
     // (1) Web: hand the whole page to the provider; restoreSession picks the session up on return.
     if (Platform.OS === 'web') {
       await AsyncStorage.setItem(PENDING_PROVIDER_KEY, provider).catch(() => undefined);
-      const { error } = await client.auth.signInWithOAuth({
+      const { data, error } = await client.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: webRedirectTo(window.location.origin, process.env.EXPO_BASE_URL),
           queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+          skipBrowserRedirect: true,
         },
       });
-      if (error) {
+      // The settings could not be read: check the authorize answer first, so a refusal stays in the app.
+      const refused = !error && !providers.known && (await probeAuthorize(data.url));
+      if (error || refused || !data.url) {
         await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
-        throw new Error(error.message);
+        throw new Error(refused ? providerUnavailableMessage(provider) : (error?.message ?? 'missing url'));
       }
+      window.location.assign(data.url);
       return { status: 'redirecting' };
     }
 
@@ -948,7 +957,7 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       } catch (err) {
         // Never log tokens; show families a plain-English message instead of the raw provider error.
         const message = err instanceof Error ? err.message : String(err);
-        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not');
+        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not') || message.includes('is not available yet');
         throw new Error(friendly ? message : friendlySocialError(provider, message));
       }
       if (started !== 'done') return started;
