@@ -22,8 +22,20 @@ const OFFER_GONE = 'This lesson package is no longer available.';
 const appUrl = () => (Deno.env.get('APP_URL') ?? '').trim().replace(/\/+$/, '');
 const NO_APP_URL = 'Card payments are not set up yet (APP_URL is missing).';
 
+/** Stripe's own error text stays in the logs (it can name Stripe ids); the family sees a plain sentence. */
+function stripeFailure(res: { status: number; body: { error?: { message?: string } } | null }) {
+  console.error('create-checkout: Stripe refused the session', res.status, res.body?.error?.message ?? '');
+  return json({ error: 'The card payment page could not be opened just now. Please try again in a moment.' }, 502);
+}
+
 async function invoiceCheckout(req: Request, invoiceId: string) {
   const supabase = userClient(req);
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return json({ error: 'Please sign in again.' }, 401);
+  // Only the family itself (a parent login) or the office may pay, or take an invoice out of autopay: the accountant
+  // and tutors may be able to read some invoices, but must never start a payment.
+  const { data: profile } = await supabase.from('profiles').select('role, family_id').eq('id', auth.user.id).single();
+  if (profile?.role !== 'parent' && profile?.role !== 'admin') return json({ error: 'Only the family or the office can pay an invoice.' }, 403);
   // Row-level security means this only finds invoices the signed-in parent (or admin) may see.
   const { data: inv, error } = await supabase
     .from('invoices')
@@ -31,6 +43,7 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
     .eq('id', invoiceId)
     .single();
   if (error || !inv) return json({ error: 'Invoice not found' }, 404);
+  if (profile.role === 'parent' && inv.family_id !== profile.family_id) return json({ error: 'Invoice not found' }, 404);
   if (inv.status !== 'sent') return json({ error: 'This invoice is not payable' }, 400);
 
   // Credit notes reduce what is owed and refunds add back to it, so a credited invoice is never overcharged.
@@ -57,7 +70,7 @@ async function invoiceCheckout(req: Request, invoiceId: string) {
   const res = await stripe('/checkout/sessions', {
     form: checkoutInvoiceForm({ invoiceId: inv.id, invoiceNumber: inv.number, balanceFils: balance, customerId, familyId: family.id, appUrl: appUrl() }),
   });
-  if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
+  if (!res.ok) return stripeFailure(res);
   return json({ url: res.body.url });
 }
 
@@ -81,22 +94,20 @@ async function offerCheckout(req: Request, offerId: string) {
   const res = await stripe('/checkout/sessions', {
     form: checkoutOfferForm({ offer, vatRate: settings?.vat_rate ?? 0, amountFils: amount, customerId, familyId: family.id, appUrl: appUrl() }),
   });
-  if (!res.ok) return json({ error: res.body?.error?.message ?? 'Stripe error' }, 502);
+  if (!res.ok) return stripeFailure(res);
   return json({ url: res.body.url });
 }
 
+// Unexpected errors are thrown to withMonitoring, which logs the detail and answers with a courteous generic message,
+// so database or Stripe internals never reach the app.
 Deno.serve(withMonitoring('create-checkout', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  try {
-    // A View as session (read only) cannot pay for anything.
-    const refused = await refuseViewAs(req);
-    if (refused) return refused;
-    if (!appUrl()) return json({ error: NO_APP_URL }, 500);
-    const body = await req.json().catch(() => ({}));
-    if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
-    if (typeof body?.offerId === 'string') return await offerCheckout(req, body.offerId);
-    return json({ error: 'Choose an invoice or a lesson package to pay for.' }, 400);
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
-  }
+  // A View as session (read only) cannot pay for anything.
+  const refused = await refuseViewAs(req);
+  if (refused) return refused;
+  if (!appUrl()) return json({ error: NO_APP_URL }, 500);
+  const body = await req.json().catch(() => ({}));
+  if (typeof body?.invoiceId === 'string') return await invoiceCheckout(req, body.invoiceId);
+  if (typeof body?.offerId === 'string') return await offerCheckout(req, body.offerId);
+  return json({ error: 'Choose an invoice or a lesson package to pay for.' }, 400);
 }));

@@ -12,11 +12,13 @@ import {
   usePackages,
   useRefunds,
   useSettings,
+  useTutorCostEstimates,
   useTutorInvoices,
   useTutors,
 } from '@/data/hooks';
+import { useMe } from '@/data/session';
 import { formatAED } from '@/domain/billing';
-import { addDays, startOfMonth } from '@/domain/dates';
+import { addDays, startOfMonth, toDateKey } from '@/domain/dates';
 import type { FinanceData } from '@/domain/finance';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -39,9 +41,14 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
   const enrolments = useEnrolments();
   const creditNotes = useCreditNotes();
   const refunds = useRefunds();
+  // The accountant cannot read lessons, so their tutor-cost estimates come from the server as monthly totals.
+  const fromLessons = useMe().role !== 'accountant';
+  const estimates = useTutorCostEstimates(toDateKey(FROM), toDateKey(TO), !fromLessons);
   const data = useMemo(() => {
     if (!charges.data || !packages.data || !invoices.data || !lessons.data || !tutors.data || !tutorInvoices.data || !expenses.data || !settings.data || !enrolments.data) return null;
     if (!creditNotes.data || !refunds.data) return null;
+    // Should the estimates fail to load, the screen shows tutor invoices only and says so (never a silent 0).
+    if (!fromLessons && !estimates.data && !estimates.isError) return null;
     return {
       charges: charges.data,
       packages: packages.data,
@@ -54,8 +61,24 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
       enrolments: enrolments.data,
       creditNotes: creditNotes.data,
       refunds: refunds.data,
+      tutorCostEstimates: fromLessons ? undefined : estimates.data,
     };
-  }, [charges.data, packages.data, invoices.data, lessons.data, tutors.data, tutorInvoices.data, expenses.data, settings.data, enrolments.data, creditNotes.data, refunds.data]);
+  }, [
+    charges.data,
+    packages.data,
+    invoices.data,
+    lessons.data,
+    tutors.data,
+    tutorInvoices.data,
+    expenses.data,
+    settings.data,
+    enrolments.data,
+    creditNotes.data,
+    refunds.data,
+    fromLessons,
+    estimates.data,
+    estimates.isError,
+  ]);
   return {
     data,
     refetch: () => {
@@ -65,6 +88,7 @@ export function useFinanceData(): { data: FinanceData | null; refetch: () => voi
       tutorInvoices.refetch();
       creditNotes.refetch();
       refunds.refetch();
+      if (!fromLessons) estimates.refetch();
     },
     refreshing: charges.isRefetching || expenses.isRefetching,
   };

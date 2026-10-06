@@ -6,6 +6,7 @@ import { baseSource, setActiveSource, source } from './index';
 import { AuthNotice, NOT_LINKED } from './messages';
 import { queryClient } from './query';
 import type { SignUpDetails, SocialProvider, WhatsAppPrefs } from './source';
+import { onSessionEnded } from './session-events';
 import { useViewNotice, ViewOnlyError, type ViewingState } from './view-as';
 
 export type { SocialProvider, SocialSignInResult } from './source';
@@ -51,6 +52,8 @@ interface SessionState {
   setMyName(fullName: string): Promise<void>;
   /** Save the signed-in person's WhatsApp opt-in and number; the signed-in profile is refreshed. */
   setWhatsApp(prefs: WhatsAppPrefs): Promise<void>;
+  /** Give the signed-in person a new calendar feed link; the old one stops working. Refused while viewing. */
+  resetMyIcsToken(): Promise<void>;
   /**
    * Admin "View as": while set, `profile` is the person being viewed and every change is refused. Never
    * persisted, so a reload returns the admin to their own account.
@@ -131,6 +134,13 @@ export const useSession = create<SessionState>((set, get) => ({
     const profile = await source.setWhatsApp(prefs);
     set({ profile });
   },
+  async resetMyIcsToken() {
+    if (get().viewing) throw new ViewOnlyError();
+    if (!source.resetIcsToken) throw new Error('Resetting the calendar link is not available.');
+    const icsToken = await source.resetIcsToken();
+    const profile = get().profile;
+    if (profile) set({ profile: { ...profile, icsToken } });
+  },
   async signIn(email, password) {
     const profile = await source.signIn(email, password);
     queryClient.clear();
@@ -150,11 +160,27 @@ export const useSession = create<SessionState>((set, get) => ({
   async signOut() {
     // While viewing, "sign out" returns the admin to their own account.
     if (get().viewing) return get().exitViewAs();
-    await source.signOut();
-    queryClient.clear();
-    set({ profile: null, status: 'signed-out' });
+    try {
+      await source.signOut();
+    } finally {
+      // Whatever the server said, nothing of this person's stays in memory on this device.
+      queryClient.clear();
+      useViewNotice.getState().clear();
+      set({ profile: null, status: 'signed-out', viewing: null });
+    }
   },
 }));
+
+// The session can also end outside this tab: signed out in another tab, or the server refused to refresh it. Nothing
+// of the person's stays on screen or in the cache; the sign-in gate then shows the sign-in page.
+onSessionEnded(() => {
+  const { status, viewing } = useSession.getState();
+  if (status !== 'signed-in') return;
+  if (viewing) dropView();
+  queryClient.clear();
+  useViewNotice.getState().clear();
+  useSession.setState({ profile: null, status: 'signed-out', viewing: null });
+});
 
 /** The "View as" in progress, or null. */
 export const useViewing = () => useSession((s) => s.viewing);

@@ -21,6 +21,7 @@ import { createSeed } from './seed';
 import { tax } from './tax';
 import * as launch from './launch';
 import { setWhatsAppPrefs } from './whatsapp';
+import { resetIcsToken } from './ics';
 import { vet } from './vetting';
 
 const DB_KEY = 'elite.demo.db';
@@ -161,6 +162,11 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       const updated = await writeOwn((d, v) => setWhatsAppPrefs(d, v, prefs));
       viewer = updated;
       return updated;
+    },
+    async resetIcsToken(profileId) {
+      const token = await writeOwn((d, v) => resetIcsToken(d, v, profileId));
+      if (viewer && (profileId ?? viewer.id) === viewer.id) viewer = { ...viewer, icsToken: token };
+      return token;
     },
     async signOut() {
       viewer = null;
@@ -382,10 +388,10 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     saveOpportunity: (o) => write((d, v) => ops.saveOpportunity(d, v, o)),
     placeBid: (id, pitch, availability) => write((d, v) => ops.placeBid(d, v, id, pitch, availability)),
     withdrawBid: (id) => write((d, v) => ops.withdrawBid(d, v, id)),
-    awardOpportunity: (bidId) =>
+    awardOpportunity: (bidId, subject) =>
       write((d, v) => {
-        const previousTutorId = ho.tutorBeforeAward(d, bidId);
-        ops.awardOpportunity(d, v, bidId);
+        const previousTutorId = ho.tutorBeforeAward(d, bidId, subject);
+        ops.awardOpportunity(d, v, bidId, new Date(), subject);
         // Session plans and handover packs: the winning tutor gets a handover when the role is for a known student.
         const opportunityId = d.bids.find((b) => b.id === bidId)?.opportunityId;
         if (opportunityId) ho.afterAward(d, opportunityId, new Date(), previousTutorId);
@@ -450,6 +456,7 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     getCreditNote: (id) => read((d, v) => tax.creditNote(d, v, id)),
     issueCreditNote: (input) => write((d, v) => tax.issueCreditNote(d, v, input)),
     listRefunds: (filter) => read((d, v) => tax.refunds(d, v, filter)),
+    tutorCostEstimates: (from, to) => read((d, v) => tax.tutorCostEstimates(d, v, from, to)),
     refundPayment: (input) => write((d, v) => tax.refundPayment(d, v, input)),
     listAccountants: () => read((d, v) => tax.accountants(d, v)),
     inviteAccountant: (email, fullName) => write((d, v) => tax.inviteAccountant(d, v, email, fullName)),

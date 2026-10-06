@@ -11,7 +11,8 @@ function takePendingLink(): string | null {
   try {
     const target = sessionStorage.getItem('elite.redirect');
     sessionStorage.removeItem('elite.redirect');
-    return target && target.startsWith('/') && target !== '/' ? target : null;
+    // Only paths inside the app: never '//host' or '/\host', which a browser would read as another site.
+    return target && target.startsWith('/') && !/^\/[/\\]/.test(target) && target !== '/' ? target : null;
   } catch {
     return null;
   }

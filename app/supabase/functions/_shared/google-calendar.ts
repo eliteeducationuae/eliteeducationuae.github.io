@@ -21,8 +21,17 @@ export const BRAND_FOOTER = 'Elite Education | eliteeducation.me';
 // OAuth
 // ---------------------------------------------------------------------------
 
-/** The Google consent screen URL. Offline access with prompt=consent so Google always returns a refresh token. */
-export function buildAuthUrl(opts: { clientId: string; redirectUri: string; state: string; loginHint?: string | null }): string {
+/**
+ * The Google consent screen URL. Offline access with prompt=consent so Google always returns a refresh token.
+ * codeChallenge (PKCE, S256) binds the code Google returns to the verifier kept with the state on the server.
+ */
+export function buildAuthUrl(opts: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  loginHint?: string | null;
+  codeChallenge?: string | null;
+}): string {
   const params = new URLSearchParams({
     client_id: opts.clientId,
     redirect_uri: opts.redirectUri,
@@ -34,17 +43,84 @@ export function buildAuthUrl(opts: { clientId: string; redirectUri: string; stat
     state: opts.state,
   });
   if (opts.loginHint) params.set('login_hint', opts.loginHint);
+  if (opts.codeChallenge) {
+    params.set('code_challenge', opts.codeChallenge);
+    params.set('code_challenge_method', 'S256');
+  }
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
-export function tokenExchangeBody(opts: { code: string; clientId: string; clientSecret: string; redirectUri: string }): URLSearchParams {
-  return new URLSearchParams({
+export function tokenExchangeBody(opts: {
+  code: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  codeVerifier?: string | null;
+}): URLSearchParams {
+  const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: opts.code,
     client_id: opts.clientId,
     client_secret: opts.clientSecret,
     redirect_uri: opts.redirectUri,
   });
+  if (opts.codeVerifier) body.set('code_verifier', opts.codeVerifier);
+  return body;
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let out = '';
+  let i = 0;
+  for (; i + 2 < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+  }
+  if (i < bytes.length) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8);
+    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '');
+  }
+  return out.replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+/** A PKCE code verifier: 64 random base64url characters (RFC 7636 allows 43 to 128). */
+export function newCodeVerifier(): string {
+  const bytes = new Uint8Array(48);
+  globalThis.crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+/** The S256 PKCE code challenge for a verifier: base64url(SHA-256(verifier)) without padding. */
+export async function codeChallengeFor(verifier: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+/** The Calendar scope google-connect cannot work without (the person may untick it on Google's consent screen). */
+export const REQUIRED_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+/** True when the token response granted calendar.events. An answer without a scope list is given the benefit of the doubt. */
+export function grantsCalendar(scope: string | undefined): boolean {
+  if (scope === undefined) return true;
+  return scope.split(/\s+/).includes(REQUIRED_CALENDAR_SCOPE);
+}
+
+/**
+ * Where google-connect may send the person after Google: only an address that starts with one of the allowed prefixes
+ * (APP_URL, CALENDAR_RETURN_URLS, the GitHub Pages app and the app's own scheme) at a path, query or fragment boundary,
+ * so https://app.example cannot admit https://app.example.evil. Whitespace, backslashes and control characters are
+ * refused outright, as browsers treat a backslash like a slash. Null when it is not allowed.
+ */
+export function allowedReturnTo(value: unknown, prefixes: string[]): string | null {
+  if (typeof value !== 'string' || !value || value.length > 2000) return null;
+  // deno-lint-ignore no-control-regex
+  if (/[\s\\\u0000-\u001f\u007f]/.test(value)) return null;
+  const allowed = prefixes.map((p) => p.trim()).filter(Boolean);
+  const matches = (prefix: string) => {
+    if (!value.startsWith(prefix)) return false;
+    const next = value.charAt(prefix.length);
+    return prefix.endsWith('/') || next === '' || next === '/' || next === '?' || next === '#';
+  };
+  return allowed.some(matches) ? value : null;
 }
 
 export function refreshBody(opts: { refreshToken: string; clientId: string; clientSecret: string }): URLSearchParams {
@@ -74,6 +150,8 @@ export interface GoogleTokens {
   /** ISO time a minute before Google's stated expiry. */
   expiresAt: string;
   email?: string;
+  /** The space-separated scopes Google granted, when it says. */
+  scope?: string;
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -129,6 +207,7 @@ export function parseTokenResponse(json: unknown, now: Date): GoogleTokens {
   if (typeof body.refresh_token === 'string' && body.refresh_token) tokens.refreshToken = body.refresh_token;
   const email = emailFromIdToken(body.id_token);
   if (email) tokens.email = email;
+  if (typeof body.scope === 'string') tokens.scope = body.scope;
   return tokens;
 }
 

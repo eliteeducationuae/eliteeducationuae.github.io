@@ -14,6 +14,8 @@ import {
   webRedirectTo,
   type SocialProviderName,
 } from '@/lib/social-auth';
+import { publicErrorMessage } from '@/lib/polite-error';
+import { isProviderOff, loadProviders, probeAuthorize, providerUnavailableMessage } from '@/lib/auth-providers';
 import { brandTutorColor } from '@/lib/tutor-colors';
 import { lessonHomeworkWarning, normaliseLink } from '@/domain/homework';
 import { auditEventFromRow } from '@/domain/audit';
@@ -89,6 +91,7 @@ import {
 } from './admissions-mapping';
 import { APPLE_NATIVE, appleNativeSignIn } from './apple-native';
 import { AuthNotice, NOT_LINKED } from './messages';
+import { emitSessionEnded } from './session-events';
 import { handoverSourcesFromRpc, saveLessonPlanArgs, toHandover, toLessonPlan } from './handover-mapping';
 import { addChildSubjects, enrolmentRatesFromRow, familyContactPayload, setEnrolmentRatesArgs, toFamilyContact } from './rpc-mapping';
 import {
@@ -118,7 +121,9 @@ type Row = Record<string, any>;
 function serverError(message: string): Error {
   if (message.includes(VIEW_ONLY_MESSAGE)) return new ViewOnlyError();
   if (message.includes(VIEW_ENDED_MESSAGE)) return new Error(VIEW_ENDED_MESSAGE);
-  return new Error(message);
+  // Raw database, API and network errors can name tables, columns and constraints: people see a calm message instead.
+  const shown = publicErrorMessage(message);
+  return shown === message ? new Error(message) : new Error(shown, { cause: message });
 }
 
 /** Unwrap a Supabase response, throwing its error. Rows are mapped by hand, so the result is loosely typed. */
@@ -198,6 +203,8 @@ function blankToNull(v: string | undefined): string | null | undefined {
 
 /** The tutor columns everyone signed in may read (public.tutor_directory). */
 const TUTOR_DIRECTORY_COLUMNS = 'id, full_name, subjects, curricula, phases, color, deleted_at';
+/** The columns of public.family_directory: names and status, never the main contact's email or telephone. */
+const FAMILY_DIRECTORY_COLUMNS = 'id, name, parent_name, status, created_at, deleted_at';
 
 const toTutor = (r: Row): Tutor => ({
   id: r.id,
@@ -810,6 +817,12 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
         detectSessionInUrl: Platform.OS === 'web',
       },
     });
+  if (!injected) {
+    client.auth.onAuthStateChange((event) => {
+      // Signed out in another tab, or the refresh token was refused: the session store forgets the person.
+      if (event === 'SIGNED_OUT') emitSessionEnded();
+    });
+  }
 
   async function loadProfile(): Promise<Profile | null> {
     const { data } = await client.auth.getUser();
@@ -857,20 +870,28 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
   }
 
   async function startProviderSignIn(provider: SocialProvider): Promise<SocialSignInResult | 'done'> {
+    // A provider switched off in Supabase would land on a raw "Unsupported provider" page; say so here instead.
+    const providers = await loadProviders(url, anonKey);
+    if (isProviderOff(providers, provider)) throw new Error(providerUnavailableMessage(provider));
+
     // (1) Web: hand the whole page to the provider; restoreSession picks the session up on return.
     if (Platform.OS === 'web') {
       await AsyncStorage.setItem(PENDING_PROVIDER_KEY, provider).catch(() => undefined);
-      const { error } = await client.auth.signInWithOAuth({
+      const { data, error } = await client.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: webRedirectTo(window.location.origin, process.env.EXPO_BASE_URL),
           queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+          skipBrowserRedirect: true,
         },
       });
-      if (error) {
+      // The settings could not be read: check the authorize answer first, so a refusal stays in the app.
+      const refused = !error && !providers.known && (await probeAuthorize(data.url));
+      if (error || refused || !data.url) {
         await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
-        throw new Error(error.message);
+        throw new Error(refused ? providerUnavailableMessage(provider) : (error?.message ?? 'missing url'));
       }
+      window.location.assign(data.url);
       return { status: 'redirecting' };
     }
 
@@ -936,7 +957,7 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       } catch (err) {
         // Never log tokens; show families a plain-English message instead of the raw provider error.
         const message = err instanceof Error ? err.message : String(err);
-        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not');
+        const friendly = message.startsWith('Sign in with') || message.startsWith('We could not') || message.includes('is not available yet');
         throw new Error(friendly ? message : friendlySocialError(provider, message));
       }
       if (started !== 'done') return started;
@@ -959,6 +980,11 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       if (!profile) throw new Error(NOT_LINKED);
       return profile;
     },
+    async resetIcsToken(profileId) {
+      const token = check<string | null>(await client.rpc('reset_ics_token', { p_profile: profileId ?? null }));
+      if (!token) throw new Error('The calendar link could not be reset. Please try again.');
+      return token;
+    },
     async signIn(email, password) {
       check(await client.auth.signInWithPassword({ email: email.trim(), password }));
       const profile = await loadProfile();
@@ -971,7 +997,11 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     async signOut() {
       // Stop reminders going to this device once signed out.
       await client.rpc('set_push_token', { p_token: null }).then(undefined, () => undefined);
-      await client.auth.signOut();
+      // Revoke the session on the server. If that fails (offline, server error), still forget it on this device, so
+      // that a shared computer never keeps someone's tokens after they have signed out.
+      const result = await client.auth.signOut().catch((error: unknown) => ({ error }));
+      if (result?.error) await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      await AsyncStorage.removeItem(PENDING_PROVIDER_KEY).catch(() => undefined);
     },
     async signUp(email, password, details) {
       const data = check(
@@ -1049,7 +1079,15 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       return check(directory).map((r: Row) => toTutor(own.get(r.id) ?? r));
     },
     async listFamilies() {
-      return check(await client.from('families').select('*, family_billing(*)').order('name')).map(toFamily);
+      // Security: public.families returns the whole row (with the main contact's email and telephone) to the office, the
+      // accountant and the family itself, and nothing to a tutor; everyone reads the families they can see by name from
+      // family_directory (20261114000600_sec_db_families.sql), so a tutor gets names only.
+      const [full, directory] = await Promise.all([
+        client.from('families').select('*, family_billing(*)').order('name'),
+        client.from('family_directory').select(FAMILY_DIRECTORY_COLUMNS).order('name'),
+      ]);
+      const own = new Map(check(full).map((r: Row) => [r.id, r]));
+      return check(directory).map((r: Row) => toFamily(own.get(r.id) ?? { ...r, email: '' }));
     },
     async listStudents() {
       // student_notes is protected by RLS, so families simply get no notes back.
@@ -1633,8 +1671,8 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     async withdrawBid(opportunityId) {
       check(await client.rpc('withdraw_bid', { p_opportunity_id: opportunityId }));
     },
-    async awardOpportunity(bidId) {
-      check(await client.rpc('award_opportunity', { p_bid_id: bidId }));
+    async awardOpportunity(bidId, subject) {
+      check(await client.rpc('award_opportunity', { p_bid_id: bidId, p_subject: subject?.trim() || null }));
     },
 
     async submitTutorApplication(a) {
@@ -1934,6 +1972,10 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       );
       const row = check(await client.from('credit_notes').select(CREDIT_NOTE_SELECT).eq('id', created.id).maybeSingle());
       return toCreditNote(row ?? created);
+    },
+    async tutorCostEstimates(from, to) {
+      const rows = check<{ month: string; amount: number | string }[]>(await client.rpc('tutor_cost_estimates', { p_from: from, p_to: to }));
+      return (rows ?? []).map((r) => ({ month: String(r.month).slice(0, 7), amount: Number(r.amount) }));
     },
     async listRefunds(filter = {}) {
       let query = client.from('refunds').select('*');

@@ -11,6 +11,7 @@
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { errorMessage, logFunctionError, withMonitoring } from '../_shared/monitoring.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
+import { GOOGLE_REVOKE_URL } from '../_shared/google-calendar.ts';
 
 const NAME = 'delete-account';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -97,6 +98,43 @@ async function removeFiles(db: Db, summary: Summary): Promise<number> {
   return removed;
 }
 
+/**
+ * The Google Calendar tokens of the logins a deletion request covers (the person, or every login of a tutor). Read
+ * before perform_account_deletion deletes the rows, so the access can be withdrawn at Google once the deletion is done.
+ */
+async function googleTokensFor(db: Db, requestId: string): Promise<string[]> {
+  try {
+    const { data: request } = await db.from('deletion_requests').select('profile_id, tutor_id').eq('id', requestId).maybeSingle();
+    const ids = new Set<string>();
+    if (request?.profile_id) ids.add(request.profile_id as string);
+    if (request?.tutor_id) {
+      const { data: tutorLogins } = await db.from('profiles').select('id').eq('tutor_id', request.tutor_id);
+      for (const p of tutorLogins ?? []) ids.add(p.id as string);
+    }
+    if (!ids.size) return [];
+    const { data } = await db.from('calendar_connections').select('refresh_token, access_token').in('profile_id', [...ids]);
+    return (data ?? []).map((c) => (c.refresh_token as string | null) ?? (c.access_token as string | null)).filter((t): t is string => !!t);
+  } catch {
+    return [];
+  }
+}
+
+/** Withdraws this app's access at Google. Best effort: the tokens are already deleted from the database either way. */
+async function revokeGoogle(db: Db, tokens: string[]) {
+  for (const token of tokens) {
+    try {
+      const res = await fetch(GOOGLE_REVOKE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token }),
+      });
+      await res.body?.cancel();
+    } catch {
+      await logFunctionError(db, NAME, 'Withdrawing Google Calendar access failed (network)', null);
+    }
+  }
+}
+
 async function fail(db: Db, requestId: string, message: string) {
   await db.rpc('fail_account_deletion', { p_request_id: requestId, p_error: message });
   await logFunctionError(db, NAME, message, 500, { requestId });
@@ -145,6 +183,7 @@ Deno.serve(withMonitoring(NAME, adminClient, async (req) => {
     requestId = data as string;
   }
 
+  const googleTokens = await googleTokensFor(db, requestId);
   const { data: performed, error: performError } = await db.rpc('perform_account_deletion', { p_request_id: requestId, p_actor: uid });
   if (isLastAdmin(performError)) {
     await fail(db, requestId, LAST_ADMIN);
@@ -157,6 +196,7 @@ Deno.serve(withMonitoring(NAME, adminClient, async (req) => {
   const summary = performed as Summary;
 
   const filesRemoved = await removeFiles(db, summary);
+  await revokeGoogle(db, googleTokens);
 
   // Deleting the auth user removes the profile too (profiles cascade). The request itself stays, without personal details.
   const logins = [summary.profileId, ...(summary.linkedProfileIds ?? [])].filter((id): id is string => !!id);
