@@ -6,6 +6,7 @@ import { SUPPORT_EMAIL } from '@/config';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
+import { flagViewError } from '@/data/view-as';
 import { useSession } from '@/data/session';
 import { canConfirmDeletion, deletionConsequences, DELETE_CONFIRM_WORD } from '@/domain/data-rights';
 import { useTheme } from '@/hooks/use-theme';
@@ -47,7 +48,8 @@ export function DeleteAccountScreen() {
     setDownloading(true);
     try {
       await saveDataExport(await source.exportMyData());
-    } catch {
+    } catch (err) {
+      if (flagViewError(err)) return;
       notify('We could not prepare your data', `Please try again in a moment, or email ${SUPPORT_EMAIL}.`);
     } finally {
       setDownloading(false);
@@ -60,6 +62,7 @@ export function DeleteAccountScreen() {
       await source.deleteMyAccount();
     } catch (err) {
       setDeleting(false);
+      if (flagViewError(err)) return;
       notify('Your account has not been deleted', err instanceof Error ? err.message : 'Please try again in a moment.');
       return;
     }

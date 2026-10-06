@@ -7,6 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useTutorCompliance, useTutors } from '@/data/hooks';
 import { useMe } from '@/data/session';
+import { flagViewError } from '@/data/view-as';
 import type { TutorCompliance, TutorDocument, TutorDocumentType, VettingStatus } from '@/domain/types';
 import {
   blockedReasonPhrase,
@@ -475,7 +476,8 @@ export function DocumentUploadCard({ tutorId, onBehalf }: { tutorId: string; onB
     } catch (e) {
       // The file reached storage but was not recorded: remove it so no orphan is left in the private bucket.
       if (uploaded && source.removeFile) await source.removeFile('vetting', uploaded).catch(() => undefined);
-      setError(e instanceof Error ? e.message : String(e));
+      // While an admin is viewing as the tutor, the refusal is shown as the calm view-only notice, not a red error.
+      if (!flagViewError(e)) setError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }

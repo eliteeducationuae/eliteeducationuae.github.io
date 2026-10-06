@@ -6,6 +6,7 @@ import { Linking, Platform, Pressable, View } from 'react-native';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
+import { flagViewError } from '@/data/view-as';
 import { notify } from '@/lib/confirm';
 import { saveDataExport, shareDataSummaryPdf } from '@/lib/data-export';
 import { reportError } from '@/lib/error-reporting';
@@ -34,6 +35,8 @@ export function DataPrivacyCard() {
       if (kind === 'json') await saveDataExport(data);
       else await shareDataSummaryPdf(data);
     } catch (err) {
+      // While an admin is viewing as someone, the refusal is shown as the calm view-only notice instead.
+      if (flagViewError(err)) return;
       reportError(err, { source: 'manual', route: 'data-export' });
       notify(
         'We could not prepare your data',

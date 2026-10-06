@@ -187,6 +187,8 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       if (!target) throw new Error('That account could not be found.');
       if (target.role === 'admin') throw new Error('You cannot view as another admin.');
       if (target.id === admin.id) throw new Error('You cannot view as yourself.');
+      // As begin_view_as: only a parent, student or tutor can be viewed (not an accountant).
+      if (target.role !== 'parent' && target.role !== 'student' && target.role !== 'tutor') throw new Error('This person cannot be viewed.');
       // The view shares this source's in-memory database and never writes the stored sign-in.
       const view = createDemoSource({ viewer: target, persist: false }, { load, save });
       const profile = await view.restoreSession();
