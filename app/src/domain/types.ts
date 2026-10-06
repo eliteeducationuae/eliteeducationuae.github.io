@@ -1025,6 +1025,9 @@ export interface DeletionSummary {
   upcomingLessonsNeedingTutor?: number;
   invoicesRetained?: number;
   paymentsRetained?: number;
+  /** Kept with the invoices and payments for tax records (families only). */
+  creditNotesRetained?: number;
+  refundsRetained?: number;
 }
 
 export interface DeletionRequest {

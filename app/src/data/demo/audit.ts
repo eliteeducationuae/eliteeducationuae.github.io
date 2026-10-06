@@ -1,5 +1,6 @@
 import {
   diffAuditRows,
+  ERASED,
   type AuditActor,
   type AuditCursor,
   type AuditEvent,
@@ -224,12 +225,71 @@ export function recordAuditChanges(db: DemoDB, before: AuditSnapshot, viewer: Pr
   if (events.length) (db.audit ??= []).push(...events);
 }
 
+// ---------------------------------------------------------------------------
+// Erasure after an account is closed (mirrors public.audit_scrub and public.audit_erase)
+// ---------------------------------------------------------------------------
+
+const PERSONAL_KEY = /(name|email|phone|whatsapp|address|summary|notes?$|comment|details|reason|next_steps|title|pitch|description|school|birth|dob|meeting_url)/i;
+
+/** Personal values blanked, including inside nested objects and arrays of objects (an invoice's customer, its lines). */
+export function auditScrub(row: Row | null): Row | null {
+  if (!row) return row;
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (v !== null && v !== undefined && v !== '[redacted]' && PERSONAL_KEY.test(k)) out[k] = ERASED;
+    else if (Array.isArray(v)) out[k] = v.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? auditScrub(x as Row) : x));
+    else if (v && typeof v === 'object') out[k] = auditScrub(v as Row);
+    else out[k] = v;
+  }
+  return out;
+}
+
+/** Whose events lose their personal values (by family, student or tutor) and whose name leaves the actor column. */
+export interface AuditErasure {
+  familyIds?: string[];
+  studentIds?: string[];
+  tutorIds?: string[];
+  profileIds?: string[];
+}
+
+function applyErasure(db: DemoDB, t: AuditErasure) {
+  const families = new Set(t.familyIds ?? []);
+  const students = new Set(t.studentIds ?? []);
+  const tutors = new Set(t.tutorIds ?? []);
+  const profiles = new Set(t.profileIds ?? []);
+  for (const e of db.audit ?? []) {
+    if (e.familyIds.some((id) => families.has(id)) || e.studentIds.some((id) => students.has(id)) || (e.tutorId && tutors.has(e.tutorId))) {
+      e.before = auditScrub(e.before);
+      e.after = auditScrub(e.after);
+    }
+    if (e.actorId && profiles.has(e.actorId)) e.actorName = null;
+  }
+}
+
+/** Erasures asked for during a write wait until that write's own changes are recorded, as in one transaction. */
+const pendingErasures = new WeakMap<DemoDB, AuditErasure[]>();
+
+/** Mirrors audit_erase: run when an account is closed. Inside a write, it also covers the events that write records. */
+export function eraseAudit(db: DemoDB, t: AuditErasure) {
+  const pending = pendingErasures.get(db);
+  if (pending) pending.push(t);
+  else applyErasure(db, t);
+}
+
 /** Run a demo write, recording what it changed. Nothing is recorded if it throws. */
 export function auditedWrite<T>(db: DemoDB, viewer: Profile, fn: () => T, now = new Date()): T {
   const snap = snapshotAudited(db);
-  const result = fn();
-  recordAuditChanges(db, snap, viewer, now);
-  return result;
+  const outer = pendingErasures.get(db);
+  const erasures: AuditErasure[] = [];
+  if (!outer) pendingErasures.set(db, erasures);
+  try {
+    const result = fn();
+    recordAuditChanges(db, snap, viewer, now);
+    if (!outer) for (const t of erasures) applyErasure(db, t);
+    return result;
+  } finally {
+    if (!outer) pendingErasures.delete(db);
+  }
 }
 
 /** A plausible month of history for a fresh demo, built from the real seed rows. Does nothing if there is already a trail. */

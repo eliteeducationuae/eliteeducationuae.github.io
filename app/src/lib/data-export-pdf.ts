@@ -24,9 +24,20 @@ export const EXPORT_SECTIONS: { key: string; label: string }[] = [
   { key: 'lessonRequests', label: 'Lesson requests' },
   { key: 'availability', label: 'Weekly availability' },
   { key: 'tutorInvoices', label: 'Tutor invoices' },
+  { key: 'familyContacts', label: 'Family contacts' },
+  { key: 'creditNotes', label: 'Credit notes' },
+  { key: 'refunds', label: 'Refunds' },
+  { key: 'agreedPrices', label: 'Agreed prices' },
+  { key: 'admissions', label: 'Admissions advisory' },
+  { key: 'lessonPlans', label: 'Lesson plans' },
+  { key: 'tutorPay', label: 'Pay rates' },
+  { key: 'handovers', label: 'Handover packs' },
+  { key: 'tutorDocuments', label: 'Vetting documents' },
+  { key: 'vettingOverrides', label: 'Vetting permissions' },
+  { key: 'handbookAcknowledgements', label: 'Handbook acknowledgements' },
 ];
 
-const ROLE_NAMES: Record<string, string> = { admin: 'Administrator', tutor: 'Tutor', parent: 'Parent', student: 'Student' };
+const ROLE_NAMES: Record<string, string> = { admin: 'Administrator', tutor: 'Tutor', parent: 'Parent', student: 'Student', accountant: 'Accountant' };
 
 const STATUS_NAMES: Record<string, string> = { draft: 'Draft', sent: 'Awaiting payment', paid: 'Paid', void: 'Cancelled' };
 

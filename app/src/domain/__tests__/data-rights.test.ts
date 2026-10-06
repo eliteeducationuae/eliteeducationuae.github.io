@@ -67,6 +67,14 @@ describe('deletionSummaryText', () => {
     expect(deletionSummaryText({})).toBe('Nothing needed to be kept or cancelled.');
     expect(deletionSummaryText(null)).toBe('');
   });
+  it('names kept credit notes and refunds when there are any', () => {
+    expect(deletionSummaryText({ invoicesRetained: 2, creditNotesRetained: 1, paymentsRetained: 2, refundsRetained: 1 })).toBe(
+      'Kept 2 invoices, 1 credit note, 2 payments and 1 refund',
+    );
+    expect(deletionSummaryText({ invoicesRetained: 2, paymentsRetained: 3, refundsRetained: 2, studentsAnonymised: 1 })).toBe(
+      'Kept 2 invoices, 3 payments and 2 refunds; anonymised 1 student',
+    );
+  });
 });
 
 describe('last4', () => {
