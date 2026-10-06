@@ -1,10 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import type { AuditCursor, AuditFilter, AuditPage } from '@/domain/audit';
 import { assembleHandoverPack, type HandoverPack } from '@/domain/handover';
 import { buildTopicLookup, type TopicLookup } from '@/domain/topics';
-import type { Family, Service, Student, Tutor } from '@/domain/types';
+import type { Family, FamilyContact, Service, Student, Tutor } from '@/domain/types';
 
 import { SYLLABUSES } from './curriculum';
 
@@ -20,6 +20,22 @@ export const useTutors = () => useQuery({ queryKey: ['tutors'], queryFn: () => s
 export const useFamilies = () => useQuery({ queryKey: ['families'], queryFn: () => source.listFamilies() });
 export const useFamilyContacts = (familyId?: string) =>
   useQuery({ queryKey: ['familyContacts', familyId], queryFn: () => source.listFamilyContacts(familyId!), enabled: !!familyId });
+
+const NO_CONTACTS: FamilyContact[] = [];
+// Module-level, so TanStack keeps the combined list until a family's contacts actually change.
+const combineContacts = (results: { data?: FamilyContact[] }[]) => {
+  const all = results.flatMap((r) => r.data ?? []);
+  return all.length ? all : NO_CONTACTS;
+};
+
+/** Every listed family's contacts (the same cache as useFamilyContacts), for search. Admins only. */
+export function useContactsForFamilies(familyIds: readonly string[], enabled = true): FamilyContact[] {
+  const admin = useSession((s) => s.profile?.role) === 'admin';
+  return useQueries({
+    queries: familyIds.map((id) => ({ queryKey: ['familyContacts', id], queryFn: () => source.listFamilyContacts(id), enabled: enabled && admin })),
+    combine: combineContacts,
+  });
+}
 export const useStudents = () => useQuery({ queryKey: ['students'], queryFn: () => source.listStudents() });
 export const useServices = () => useQuery({ queryKey: ['services'], queryFn: () => source.listServices() });
 
@@ -308,7 +324,11 @@ export function useDeletionRequests() {
 }
 
 /** After a deletion request changes, refresh it and every list an anonymised account appears in. */
-const DELETION_AFFECTS = ['deletion-requests', 'families', 'tutors', 'students', 'lessons', 'invoices', 'system-health'];
+const DELETION_AFFECTS = [
+  'deletion-requests', 'families', 'familyContacts', 'tutors', 'students', 'lessons', 'invoices', 'invoice',
+  'credit-notes', 'credit-note', 'enquiries', 'accountants', 'admissions-cases', 'admissions-case',
+  'handovers', 'handover-pack', 'tutor-documents', 'tutor-compliance', 'audit', 'audit-actors', 'system-health',
+];
 const invalidateDeletion = () =>
   Promise.all(DELETION_AFFECTS.map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
 

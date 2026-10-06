@@ -650,7 +650,7 @@ function describeSummary(e: AuditEvent, names: AuditNames): { summary: string; o
       const title = quoted(str('title'));
       if (e.action === 'insert') return done(`${who} opened the admissions case${title}.`);
       if (e.action === 'delete') return done(`${who} removed the admissions case${title}.`);
-      if (changed('status')) return done(`${who} marked the admissions case${title} as ${(CASE_STATUS_LABELS[to('status') as AdmissionsCaseStatus] ?? humanise(to('status') ?? 'updated')).toLowerCase()}.`, ['status']);
+      if (changed('status')) return done(`${who} marked the admissions case${title} as ${(CASE_STATUS_LABELS[to('status') as AdmissionsCaseStatus] ?? humanise(to('status') ?? 'updated').replace(/-/g, ' ')).toLowerCase()}.`, ['status']);
       return done(`${who} updated the admissions case${title}.`);
     }
     case 'tutor_documents': {
