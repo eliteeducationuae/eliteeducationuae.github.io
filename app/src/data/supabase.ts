@@ -959,6 +959,11 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       if (!profile) throw new Error(NOT_LINKED);
       return profile;
     },
+    async resetIcsToken(profileId) {
+      const token = check<string | null>(await client.rpc('reset_ics_token', { p_profile: profileId ?? null }));
+      if (!token) throw new Error('The calendar link could not be reset. Please try again.');
+      return token;
+    },
     async signIn(email, password) {
       check(await client.auth.signInWithPassword({ email: email.trim(), password }));
       const profile = await loadProfile();

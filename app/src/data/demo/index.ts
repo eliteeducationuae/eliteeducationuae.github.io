@@ -21,6 +21,7 @@ import { createSeed } from './seed';
 import { tax } from './tax';
 import * as launch from './launch';
 import { setWhatsAppPrefs } from './whatsapp';
+import { resetIcsToken } from './ics';
 import { vet } from './vetting';
 
 const DB_KEY = 'elite.demo.db';
@@ -161,6 +162,11 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       const updated = await writeOwn((d, v) => setWhatsAppPrefs(d, v, prefs));
       viewer = updated;
       return updated;
+    },
+    async resetIcsToken(profileId) {
+      const token = await writeOwn((d, v) => resetIcsToken(d, v, profileId));
+      if (viewer && (profileId ?? viewer.id) === viewer.id) viewer = { ...viewer, icsToken: token };
+      return token;
     },
     async signOut() {
       viewer = null;

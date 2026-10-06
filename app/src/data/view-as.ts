@@ -107,6 +107,7 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   signInWithProvider: 'write',
   setMyName: 'write',
   setWhatsApp: 'write',
+  resetIcsToken: 'write',
   resetPassword: 'write',
   loginEmails: 'read',
   savePushToken: 'silent',

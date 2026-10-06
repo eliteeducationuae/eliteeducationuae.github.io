@@ -8,6 +8,7 @@ import { LoginHint } from '@/components/login-hint';
 import { TutorChecksSummary } from '@/components/vetting';
 import { TUTOR_COLORS } from '@/lib/tutor-colors';
 import { Banner, Button, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { AdminIcsResetActions } from '@/components/calendar-sync';
 import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -150,6 +151,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
       </Section>
       <ErrorNote error={save.error} />
       {existing ? <ViewAsActions tutorId={existing.id} /> : null}
+      {existing ? <AdminIcsResetActions tutorId={existing.id} /> : null}
       {existing ? <HistorySection filter={{ tutorId: existing.id }} /> : null}
     </Screen>
   );

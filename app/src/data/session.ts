@@ -51,6 +51,8 @@ interface SessionState {
   setMyName(fullName: string): Promise<void>;
   /** Save the signed-in person's WhatsApp opt-in and number; the signed-in profile is refreshed. */
   setWhatsApp(prefs: WhatsAppPrefs): Promise<void>;
+  /** Give the signed-in person a new calendar feed link; the old one stops working. Refused while viewing. */
+  resetMyIcsToken(): Promise<void>;
   /**
    * Admin "View as": while set, `profile` is the person being viewed and every change is refused. Never
    * persisted, so a reload returns the admin to their own account.
@@ -130,6 +132,13 @@ export const useSession = create<SessionState>((set, get) => ({
     if (!source.setWhatsApp) throw new Error('WhatsApp settings are not available.');
     const profile = await source.setWhatsApp(prefs);
     set({ profile });
+  },
+  async resetMyIcsToken() {
+    if (get().viewing) throw new ViewOnlyError();
+    if (!source.resetIcsToken) throw new Error('Resetting the calendar link is not available.');
+    const icsToken = await source.resetIcsToken();
+    const profile = get().profile;
+    if (profile) set({ profile: { ...profile, icsToken } });
   },
   async signIn(email, password) {
     const profile = await source.signIn(email, password);

@@ -132,5 +132,6 @@ npx supabase secrets set TURNSTILE_SECRET_KEY=… TURNSTILE_ALLOWED_HOSTNAMES=el
    lesson appears within 5 minutes; pay a test invoice with `4242 4242 4242 4242` and see it marked paid; in
    Stripe → Webhooks the endpoint shows 2xx deliveries; send yourself a notification and check the email arrives
    from `hello@eliteeducation.me` with SPF/DKIM *pass* (Gmail → *Show original*).
-4. A leaked calendar feed link: the person (or an admin for them) calls `reset_ics_token`; from the SQL editor,
-   `update public.profiles set ics_token = gen_random_uuid() where email = '<their email>';`.
+4. A leaked calendar feed link: the person taps **Reset calendar link** on the calendar card of their Account screen,
+   or an admin taps **Reset calendar link for …** under "Calendar link" on the tutor's or family's page. Both call
+   `reset_ics_token`; the old link stops working at once and the person subscribes again with the new one.

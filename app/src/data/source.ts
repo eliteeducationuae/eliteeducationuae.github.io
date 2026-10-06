@@ -218,6 +218,11 @@ export interface DataSource {
   setMyName?(fullName: string): Promise<Profile>;
   /** Save the signed-in person's WhatsApp opt-in and number (E.164). Returns the refreshed profile. */
   setWhatsApp?(prefs: WhatsAppPrefs): Promise<Profile>;
+  /**
+   * Give the signed-in person (or, for an admin, the profile named) a new secret calendar feed address, so a feed
+   * link that has been shared or leaked stops working at once. Returns the new token.
+   */
+  resetIcsToken?(profileId?: string): Promise<string>;
   /** Email a password-reset link. */
   resetPassword?(email: string): Promise<void>;
   /** Admin: lower-cased emails that have an app login. */
