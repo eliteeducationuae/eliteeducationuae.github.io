@@ -583,8 +583,10 @@ function forgetActorName(db: DemoDB, profile: Profile, inScope: (c: AdmissionsCa
   if (ad) {
     const cases = new Set(ad.cases.filter((c) => inScope(c) || (!!profile.familyId && c.familyId === profile.familyId)).map((c) => c.id));
     for (const d of ad.documents) if (d.uploadedBy === profile.id) d.uploadedByName = former;
-    for (const u of ad.updates) if (cases.has(u.caseId) && u.authorName === name) u.authorName = former;
-    for (const k of ad.tasks) if (cases.has(k.caseId) && k.doneByName === name) k.doneByName = former;
+    // The server matches updates by author_id, so every update they wrote; tasks by who completed them (done_by) or, for
+    // older tasks, by name within the cases they could act on (an administrator's being every case).
+    for (const u of ad.updates) if (u.authorName === name) u.authorName = former;
+    for (const k of ad.tasks) if ((profile.role === 'admin' || cases.has(k.caseId)) && k.doneByName === name) k.doneByName = former;
   }
   if (profile.role === 'admin') {
     for (const d of db.tutorDocuments ?? []) if (d.verifiedByName === name) d.verifiedByName = former;
