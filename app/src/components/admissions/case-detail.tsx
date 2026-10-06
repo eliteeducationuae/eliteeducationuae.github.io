@@ -1,6 +1,6 @@
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import {
@@ -51,6 +51,7 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
   const events = useAdmissionsEvents(id);
   const [tab, setTab] = useState<CaseTab>(initialTab);
   const [now] = useState(() => new Date());
+  const { width } = useWindowDimensions();
 
   if (caseQ.isLoading || !lookup.ready) return <Loading />;
   const c = caseQ.data;
@@ -110,23 +111,33 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
   }[tab];
 
   const overview = tab === 'overview';
+  // On a phone the other tabs get a compact header (one label line, a shorter title) so their content starts high.
+  const compact = !overview && width < 600;
   return (
     <Screen onRefresh={refresh} refreshing={caseQ.isRefetching}>
       <Stack.Screen options={{ title: `${firstName(studentName)} · Admissions` }} />
-      <Card variant="hero" style={{ gap: Spacing.two, padding: Spacing.four }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.two}>
-          <Txt variant="label" style={{ flex: 1 }}>
+      <Card variant="hero" style={{ gap: compact ? Spacing.one : Spacing.two, padding: compact ? Spacing.three : Spacing.four }}>
+        <Row style={{ justifyContent: 'space-between', alignItems: compact ? 'center' : 'flex-start' }} gap={Spacing.two}>
+          <Txt variant="label" style={{ flex: 1 }} numberOfLines={compact ? 1 : undefined}>
             {studentName} · {CASE_KIND_LABELS[c.kind]}
           </Txt>
           <Badge label={CASE_STATUS_LABELS[c.status]} tone={caseStatusTone(c.status)} />
         </Row>
-        <Txt variant="title" style={overview ? { fontSize: 26, lineHeight: 33 } : { fontSize: 21, lineHeight: 27 }} accessibilityRole="header">
+        <Txt
+          variant="title"
+          style={overview ? { fontSize: 26, lineHeight: 33 } : compact ? { fontSize: 19, lineHeight: 25 } : { fontSize: 21, lineHeight: 27 }}
+          numberOfLines={compact ? 2 : undefined}
+          accessibilityRole="header">
           {c.title}
         </Txt>
-        <View style={[styles.rule, { backgroundColor: theme.gold }]} />
-        <Txt variant="muted">
-          {[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}
-        </Txt>
+        {compact ? null : (
+          <>
+            <View style={[styles.rule, { backgroundColor: theme.gold }]} />
+            <Txt variant="muted">
+              {[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}
+            </Txt>
+          </>
+        )}
         {/* The summary and edit button belong to the overview; other tabs keep the header short so their content shows first. */}
         {overview && c.summary ? <Txt>{c.summary}</Txt> : null}
         {overview && manager ? (
