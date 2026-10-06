@@ -87,7 +87,8 @@ export interface PackRowMappers {
 /**
  * Maps the jsonb returned by handover_pack(p_id):
  * { handover, student (+ student_notes), enrolment|null, lessons, notes (+ lesson_private_notes), homework,
- *   plans (+ lesson_start_at), ratings, resources, latest_report|null }.
+ *   plans (+ lesson_start_at), ratings, resources, latest_report|null, closed }.
+ * A closed pack (the tutor no longer teaches the student) carries only the handover and the student's id and name.
  */
 export function handoverSourcesFromRpc(json: unknown, map: PackRowMappers): HandoverSources {
   const j = (json ?? {}) as Row;
@@ -104,6 +105,7 @@ export function handoverSourcesFromRpc(json: unknown, map: PackRowMappers): Hand
     // The pack never says which other children a resource is shared with.
     resources: list(j.resources).map((r) => ({ ...map.resource(r), studentIds: [] })),
   };
+  if (j.closed === true) out.closed = true;
   if (j.enrolment) out.enrolment = map.enrolment(j.enrolment);
   if (j.latest_report) out.latestReport = map.report(j.latest_report);
   return out;

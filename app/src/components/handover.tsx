@@ -319,16 +319,34 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
   const grades = [s.currentGrade ? `Current grade ${s.currentGrade}` : '', s.targetGrade ? `Target grade ${s.targetGrade}` : ''].filter(Boolean).join(' · ');
   const profile = [s.school, s.yearGroup, s.phase].filter(Boolean).join(' · ');
 
+  const noteSection = (
+    <Section title="Handover note">
+      <Card style={{ gap: Spacing.one }}>
+        <Txt variant="label">From {tutorName(lookup, h.fromTutorId)}</Txt>
+        {pack.handoverNote ? <Txt>{pack.handoverNote}</Txt> : <Txt variant="muted">No handover note has been added yet.</Txt>}
+      </Card>
+    </Section>
+  );
+
+  // The tutor no longer teaches the student: only the handover and its note remain.
+  if (pack.closed) {
+    return (
+      <Screen onRefresh={refetch}>
+        <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} canOpenLesson={false} />
+        <Banner icon="alert">
+          {`You no longer teach ${handoverTitle(h, s.fullName)}, so this pack now shows only the handover note. Please contact the office if this is unexpected.`}
+        </Banner>
+        {noteSection}
+        {footer}
+      </Screen>
+    );
+  }
+
   return (
     <Screen onRefresh={refetch}>
       <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} canOpenLesson />
 
-      <Section title="Handover note">
-        <Card style={{ gap: Spacing.one }}>
-          <Txt variant="label">From {tutorName(lookup, h.fromTutorId)}</Txt>
-          {pack.handoverNote ? <Txt>{pack.handoverNote}</Txt> : <Txt variant="muted">No handover note has been added yet.</Txt>}
-        </Card>
-      </Section>
+      {noteSection}
 
       <Section title="Student profile and goals">
         <Card style={{ gap: Spacing.one }}>

@@ -210,6 +210,21 @@ describe('handover_pack mapping', () => {
     expect(() => handoverSourcesFromRpc(null, mappers)).toThrow('Handover pack not found.');
   });
 
+  it('maps a closed pack (the tutor no longer teaches the student)', () => {
+    const out = handoverSourcesFromRpc(
+      {
+        handover: handoverRow, closed: true, student: { id: 's-1', full_name: 'Charlotte Hughes' }, enrolment: null,
+        lessons: [], notes: [], homework: [], plans: [], ratings: [], resources: [], latest_report: null,
+      },
+      mappers,
+    );
+    expect(out.closed).toBe(true);
+    expect(out.student).toMatchObject({ id: 's-1', fullName: 'Charlotte Hughes', notes: undefined });
+    const pack = assembleHandoverPack(out, topics, NOW);
+    expect(pack).toMatchObject({ closed: true, handoverNote: 'Quiz first.', recentLessons: [], openHomework: [] });
+    expect(handoverSourcesFromRpc({ ...fixture, closed: false }, mappers).closed).toBeUndefined();
+  });
+
   it('maps rows and builds the save arguments', () => {
     expect(toHandover({ ...handoverRow, viewed_at: '2026-10-04T08:00:00Z' }).viewedAt).toBe('2026-10-04T08:00:00Z');
     expect(toHandover({ ...handoverRow, student_name: 'Charlotte Hughes' }).studentName).toBe('Charlotte Hughes');

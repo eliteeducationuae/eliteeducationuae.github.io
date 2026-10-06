@@ -6,7 +6,8 @@ import type { Enrolment, Handover, HandoverReason, Lesson, LessonPlan, Profile }
 import type { LessonPlanInput } from '../source';
 import { AccessError, canSeeLesson, newId, visibleStudentIds, type DemoDB } from './db';
 
-// Session plans and tutor handover packs. Mirrors the rules in the 20261110000000_handover migration
+// Session plans and tutor handover packs. Mirrors the rules in the 20261110000000_handover migration (with
+// handover_pack as 20261113001300_handoverac_fix leaves it)
 // (lesson_plans policies, save_lesson_plan, delete_lesson_plan, handovers policies, handover_pack,
 // save_handover_note, mark_handover_viewed and the triggers that create handovers).
 
@@ -25,6 +26,8 @@ export const HANDOVER_LESSON_LIMIT = 10;
 export const HANDOVER_PLAN_LIMIT = 5;
 /** How much open homework a pack lists (handover_pack uses the same limit). */
 export const HANDOVER_HOMEWORK_LIMIT = 20;
+/** A tutor keeps the pack for this many days after their last lesson with the student (a covered lesson). */
+export const HANDOVER_GRACE_DAYS = 7;
 
 const norm = (v?: string) => (v ?? '').trim().toLowerCase();
 
@@ -39,6 +42,31 @@ function canReadPlan(db: DemoDB, viewer: Profile, plan: LessonPlan): boolean {
   if (viewer.role === 'admin') return true;
   if (viewer.role === 'tutor') return !!viewer.tutorId && lesson.tutorId === viewer.tutorId;
   return plan.sharedWithFamily && canSeeLesson(db, viewer, lesson);
+}
+
+/**
+ * Whether the tutor still teaches the handover's student and subject, as handover_is_current: an active enrolment
+ * they teach, or a lesson with the student assigned to them that is still to come or ended within the last 7 days.
+ */
+export function handoverIsCurrent(db: DemoDB, handover: Handover, tutorId: string | undefined, now = new Date()): boolean {
+  if (!tutorId) return false;
+  const teaches = db.enrolments.some(
+    (e) =>
+      e.studentId === handover.studentId &&
+      e.active &&
+      e.tutorId === tutorId &&
+      (!norm(handover.subject) || norm(e.subject) === norm(handover.subject)),
+  );
+  if (teaches) return true;
+  const since = new Date(now.getTime() - HANDOVER_GRACE_DAYS * 86_400_000).toISOString();
+  return db.lessons.some(
+    (l) =>
+      l.tutorId === tutorId &&
+      l.studentIds.includes(handover.studentId) &&
+      (l.status === 'scheduled' || l.status === 'completed' || l.status === 'no-show') &&
+      new Date(l.end).toISOString() > since &&
+      subjectMatches(handover.subject, l.subject),
+  );
 }
 
 const isStaffFor = (db: DemoDB, viewer: Profile, plan: LessonPlan) =>
@@ -135,14 +163,30 @@ export const ho = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  /** The material for a pack: the incoming tutor and admins only. */
-  sources(db: DemoDB, viewer: Profile, id: string): HandoverSources {
+  /**
+   * The material for a pack: the incoming tutor and admins only. Once the incoming tutor no longer teaches the
+   * student the pack is closed: only the handover (with its note) and the student's name.
+   */
+  sources(db: DemoDB, viewer: Profile, id: string, now = new Date()): HandoverSources {
     const handover = handoversOf(db).find((h) => h.id === id);
     const allowed =
       !!handover && (viewer.role === 'admin' || (viewer.role === 'tutor' && !!viewer.tutorId && handover.toTutorId === viewer.tutorId));
     if (!handover || !allowed) throw new Error('Handover pack not found.');
     const student = db.students.find((s) => s.id === handover.studentId);
     if (!student) throw new Error('Handover pack not found.');
+    if (viewer.role !== 'admin' && !handoverIsCurrent(db, handover, viewer.tutorId, now)) {
+      return {
+        handover,
+        student: { id: student.id, familyId: student.familyId, fullName: handover.studentName ?? student.fullName },
+        lessons: [],
+        notes: [],
+        homework: [],
+        plans: [],
+        ratings: [],
+        resources: [],
+        closed: true,
+      };
+    }
 
     const enrolment = handover.enrolmentId
       ? db.enrolments.find((e) => e.id === handover.enrolmentId)
@@ -205,7 +249,19 @@ export const ho = {
       )
       .sort((a, b) => reportDate(b).localeCompare(reportDate(a)))[0];
 
-    const out: HandoverSources = { handover, student, lessons, notes, homework, plans, ratings, resources };
+    // Tutor-only notes follow the student_notes policy: admins, and tutors who can see the student.
+    const notesVisible = viewer.role === 'admin' || (!!viewer.tutorId && visibleStudentIds(db, viewer).has(student.id));
+    const { notes: _staffNotes, ...withoutNotes } = student;
+    const out: HandoverSources = {
+      handover,
+      student: notesVisible ? student : withoutNotes,
+      lessons,
+      notes,
+      homework,
+      plans,
+      ratings,
+      resources,
+    };
     if (enrolment) out.enrolment = enrolment;
     if (latestReport) out.latestReport = latestReport;
     return out;
