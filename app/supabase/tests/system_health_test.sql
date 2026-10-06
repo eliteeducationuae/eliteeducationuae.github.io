@@ -103,9 +103,9 @@ grant select on r0 to authenticated;
 select pg_temp.check((select r->>'status' = 'ok' from r0), 'a clean database is ok');
 select pg_temp.check((select array_agg(c->>'key' order by ord) = '{notifications,whatsapp,calendar,autopay,stripe,server-errors,app-errors,backups}'
                         from r0, jsonb_array_elements(r->'checks') with ordinality as x(c, ord)), 'the checks come in a fixed order');
-select pg_temp.check((select r->'database'->>'latest' = '20261113001100' and r->'database'->>'latestName' = 'copy_fix'
+select pg_temp.check((select r->'database'->>'latest' = '20261113001700' and r->'database'->>'latestName' = 'creditnote_fix'
                              and (r->'database'->>'count')::int = :migration_count
-                             and r->'database'->'migrations'->0->>'version' = '20261113001100'
+                             and r->'database'->'migrations'->0->>'version' = '20261113001700'
                              and exists (select 1 from jsonb_array_elements(r->'database'->'migrations') m where m->>'version' = '20261002000000')
                         from r0), 'the database version is the latest migration and the ledger holds every migration');
 select pg_temp.check((select jsonb_array_length(r->'jobs') = 1 and r->'jobs'->0->>'name' = 'backup-export'

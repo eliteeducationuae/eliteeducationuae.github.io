@@ -38,7 +38,7 @@ export const NOTICE_KIND_LABELS: Record<NoticeKind, string> = {
 /** Which kind of notice a notification link is. Mirrors SQL public.family_notice_kind. */
 export function noticeKindForUrl(url: string | undefined): NoticeKind {
   const u = url ?? '';
-  if (u.startsWith('/invoice/') || u.startsWith('/parent/billing')) return 'invoices';
+  if (u.startsWith('/invoice/') || u.startsWith('/credit-note/') || u.startsWith('/parent/billing')) return 'invoices';
   if (u === '/parent/progress' || u.startsWith('/reports/')) return 'reports';
   if (u.startsWith('/lesson/') || u.startsWith('/homework') || u.startsWith('/parent/progress?tab=homework')) return 'lesson_notes';
   return 'general';
