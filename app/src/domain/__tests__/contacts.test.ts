@@ -64,6 +64,7 @@ describe('labels', () => {
 describe('noticeKindForUrl (mirrors public.family_notice_kind)', () => {
   it.each([
     ['/invoice/abc', 'invoices'],
+    ['/credit-note/cn1', 'invoices'],
     ['/parent/billing', 'invoices'],
     ['/parent/billing?tab=cards', 'invoices'],
     ['/parent/progress', 'reports'],
@@ -100,6 +101,12 @@ describe('who receives what', () => {
     const linkedNoEmail = contact({ id: 'c5', email: undefined, isPrimary: false, hasLogin: true, createdAt: '2026-01-05T00:00:00Z' });
     expect(recipientsFor([linkedNoEmail], 'reports').map((c) => c.id)).toEqual(['c5']);
     expect(recipientsFor([contact({ createdAt: undefined, isPrimary: false, id: 'x' }), contact({ isPrimary: false, id: 'y' })], 'reports').map((c) => c.id)).toEqual(['x', 'y']);
+  });
+
+  it('sends credit notes and cancelled invoices to the billing contacts, not to a login who turned invoices off', () => {
+    const all = [driver, grace, khalid, fatima];
+    const kind = noticeKindForUrl('/credit-note/cn1');
+    expect(recipientsFor(all, kind).map((c) => c.id)).toEqual(['c1', 'c3']);
   });
 
   it('describes recipients the British way', () => {
