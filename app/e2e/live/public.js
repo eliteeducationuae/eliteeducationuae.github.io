@@ -1,9 +1,10 @@
 // Public: signed-out, read-only checks that need no test accounts. The sign-in screen and the website pages load
 // at 390px and 1280px with no console errors or sideways scrolling, a deep link while signed out lands on the
-// sign-in screen, "Continue with Google" goes through the Supabase authorize endpoint to accounts.google.com, and
-// the app talks to the live Supabase project. Nothing is submitted and nobody signs in. Usage: node public.js
+// sign-in screen, Apple and Google buttons appear only for providers the live project has switched on, "Continue
+// with Google" (when switched on) goes through the Supabase authorize endpoint to accounts.google.com, and the app
+// talks to the live Supabase project. Nothing is submitted and nobody signs in. Usage: node public.js
 const { run } = require('./lib');
-const { checkGoogleRedirect } = require('./google');
+const { checkGoogleRedirect, checkProviderButtons, readProviders } = require('./google');
 
 const SITE = (process.env.SITE || process.env.LIVE_SITE || (process.env.DEMO === '1' ? '' : 'https://eliteeducationuae.github.io')).replace(/\/+$/, '');
 const SITE_PAGES = ['/', '/privacy/', '/terms/', '/support/'];
@@ -26,7 +27,8 @@ run('public', { need: [] }, async (h) => {
     const text = await h.bodyText();
     h.ok(/Private tutoring of distinction/.test(text), 'the sign-in screen shows');
     h.ok(config.DEMO ? /Demo mode/.test(text) : !/Demo mode/.test(text), config.DEMO ? 'DEMO: the demo banner shows' : 'this is the live build (no demo banner)');
-    h.ok((await h.button('Continue with Google').count()) > 0 && (await h.button('Continue with Apple').count()) > 0, 'Apple and Google buttons are offered');
+    if (config.DEMO) h.ok((await h.button('Continue with Google').count()) > 0 && (await h.button('Continue with Apple').count()) > 0, 'DEMO: Apple and Google buttons are offered');
+    else await checkProviderButtons(h, await readProviders(h), `@${width}: `);
     if (!config.DEMO) h.ok((await h.box('Email').count()) > 0 && (await h.box('Password').count()) > 0, 'email and password fields are offered');
     const wide = await h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     h.ok(wide <= 1, `no sideways scrolling (${wide}px)`);
@@ -67,19 +69,13 @@ run('public', { need: [] }, async (h) => {
   if (config.DEMO) h.skip('DEMO: the demo build never contacts Supabase.');
   else {
     // The public auth settings say which sign-in methods the live project has switched on (read-only).
-    const settings = await h.page.evaluate(
-      async ({ url, key }) => {
-        const r = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } });
-        return { status: r.status, body: r.ok ? await r.json() : null };
-      },
-      { url: config.supabaseUrl, key: config.supabaseAnonKey },
-    );
+    // The app hides a switched-off provider's button (checked above), so a provider being off is reported, not failed.
+    const settings = await readProviders(h);
     h.ok(settings.status === 200, `auth settings answered HTTP ${settings.status}`);
-    if (settings.body) {
-      const ext = settings.body.external || {};
-      h.ok(ext.email === true, 'email and password sign-in is enabled');
-      h.ok(ext.google === true, `Google sign-in is ${ext.google ? 'enabled' : 'NOT enabled'} in the live Supabase project`);
-      h.ok(ext.apple === true, `Apple sign-in is ${ext.apple ? 'enabled' : 'NOT enabled'} in the live Supabase project`);
+    if (settings.status === 200) {
+      h.ok(settings.email === true, 'email and password sign-in is enabled');
+      h.note(`Google sign-in is ${settings.google ? 'enabled' : 'NOT enabled'} in the live Supabase project`);
+      h.note(`Apple sign-in is ${settings.apple ? 'enabled' : 'NOT enabled'} in the live Supabase project`);
       supabase.push('200 GET /auth/v1/settings');
     }
     const reached = supabase.filter((s) => !/^5/.test(s));

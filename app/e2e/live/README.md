@@ -5,7 +5,7 @@ project (`tzahajbulieoalzuzclv`), as dedicated test logins. Plain Node and Playw
 
 | Script | What it proves | Accounts |
 | --- | --- | --- |
-| `public.js` | Signed out, read-only: the sign-in screen and website pages load at 390px and 1280px with no console errors or sideways scrolling; a deep link lands on sign-in; Continue with Google goes through the Supabase authorize URL to accounts.google.com; which sign-in providers the live project has enabled | none |
+| `public.js` | Signed out, read-only: the sign-in screen and website pages load at 390px and 1280px with no console errors or sideways scrolling; a deep link lands on sign-in; the Apple and Google buttons show only for providers the live project has switched on; Continue with Google (when on) goes through the Supabase authorize URL to accounts.google.com; which sign-in providers are enabled | none |
 | `auth.js` | Email sign-in and sign-out for admin, tutor and parent through the real sign-in screen; a wrong password is refused; the Google button's client id and redirect URI (Google itself is never signed in to) | all three |
 | `lessons.js` | Admin books a lesson for the test student with the test tutor; the tutor records notes and homework; the parent sees both | all three |
 | `calendar.js` | The tutor's Google Calendar status. If connected: a booked lesson gets a Google event id (`lesson_calendar_events`) and a Meet link shown as "Join lesson". If not: reports **NOT CONNECTED** and skips | admin, tutor |
