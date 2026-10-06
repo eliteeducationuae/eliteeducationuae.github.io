@@ -1671,8 +1671,8 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     async withdrawBid(opportunityId) {
       check(await client.rpc('withdraw_bid', { p_opportunity_id: opportunityId }));
     },
-    async awardOpportunity(bidId) {
-      check(await client.rpc('award_opportunity', { p_bid_id: bidId }));
+    async awardOpportunity(bidId, subject) {
+      check(await client.rpc('award_opportunity', { p_bid_id: bidId, p_subject: subject?.trim() || null }));
     },
 
     async submitTutorApplication(a) {
@@ -1972,6 +1972,10 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       );
       const row = check(await client.from('credit_notes').select(CREDIT_NOTE_SELECT).eq('id', created.id).maybeSingle());
       return toCreditNote(row ?? created);
+    },
+    async tutorCostEstimates(from, to) {
+      const rows = check<{ month: string; amount: number | string }[]>(await client.rpc('tutor_cost_estimates', { p_from: from, p_to: to }));
+      return (rows ?? []).map((r) => ({ month: String(r.month).slice(0, 7), amount: Number(r.amount) }));
     },
     async listRefunds(filter = {}) {
       let query = client.from('refunds').select('*');

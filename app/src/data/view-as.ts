@@ -277,6 +277,7 @@ export const SOURCE_ACCESS: Record<keyof DataSource, 'read' | 'write' | 'silent'
   getCreditNote: 'read',
   issueCreditNote: 'write',
   listRefunds: 'read',
+  tutorCostEstimates: 'read',
   refundPayment: 'write',
   listAccountants: 'read',
   inviteAccountant: 'write',

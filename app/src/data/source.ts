@@ -19,6 +19,7 @@ import type {
   AdvisoryUpdateStatus,
 } from '@/domain/admissions';
 import type { EnrolmentDraft } from '@/domain/enrolments';
+import type { TutorCostEstimate } from '@/domain/finance';
 import type { HandoverSources } from '@/domain/handover';
 import type { CancellationOutcome } from '@/domain/scheduling';
 import type {
@@ -358,7 +359,11 @@ export interface DataSource {
   saveOpportunity(o: NewOpportunity & { id?: string; status?: Opportunity['status'] }): Promise<Opportunity>;
   placeBid(opportunityId: string, pitch: string, availability?: string): Promise<void>;
   withdrawBid(opportunityId: string): Promise<void>;
-  awardOpportunity(bidId: string): Promise<void>;
+  /**
+   * Admin: choose a tutor for a role. A role with no subject, for a student with more than one active subject, needs
+   * `subject` (one of the student's active subjects), which is saved on the role.
+   */
+  awardOpportunity(bidId: string, subject?: string): Promise<void>;
 
   // Hiring
   submitTutorApplication(a: NewTutorApplication): Promise<void>;
@@ -442,6 +447,11 @@ export interface DataSource {
   issueCreditNote(input: CreditNoteInput): Promise<CreditNote>;
   /** Admins and accountants see every refund; parents their family's; others none. */
   listRefunds(filter?: { familyId?: string; invoiceId?: string }): Promise<Refund[]>;
+  /**
+   * Admins and accountants: the estimated tutor cost of each month from `from`'s month to `to`'s (dates as YYYY-MM-DD,
+   * at most 36 months), for tutors who have not yet submitted that month's invoice. Monthly totals only.
+   */
+  tutorCostEstimates(from: string, to: string): Promise<TutorCostEstimate[]>;
   /** Admin: return money against a payment. Card payments go back through Stripe; others are recorded. */
   refundPayment(input: RefundInput): Promise<Refund>;
   /** Admin: accountants invited to read the books. */

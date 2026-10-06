@@ -171,6 +171,9 @@ export const useTutorInvoices = () => useQuery({ queryKey: ['tutor-invoices'], q
 export const useReportCycles = () => useQuery({ queryKey: ['report-cycles'], queryFn: () => source.listReportCycles() });
 export const useStudentReports = () => useQuery({ queryKey: ['student-reports'], queryFn: () => source.listStudentReports() });
 export const useExpenses = () => useQuery({ queryKey: ['expenses'], queryFn: () => source.listExpenses() });
+/** Monthly estimated tutor cost totals (admins and the accountant), from `from`'s month to `to`'s. */
+export const useTutorCostEstimates = (from: string, to: string, enabled = true) =>
+  useQuery({ queryKey: ['tutor-cost-estimates', from, to], queryFn: () => source.tutorCostEstimates(from, to), enabled });
 
 // Subjects: enrolments and shared topic lists
 
