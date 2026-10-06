@@ -38,6 +38,8 @@ export default function Money() {
   if (!finance.data || !lookup.ready) return <Loading />;
   const d = finance.data;
   const readOnly = me.role !== 'admin';
+  // The accountant's estimates come from the server; without them, tutor costs are submitted invoices only.
+  const invoicesOnly = me.role === 'accountant' && !d.tutorCostEstimates;
 
   const thisMonth = series[series.length - 1];
   const lastMonth = series[series.length - 2];
@@ -169,10 +171,12 @@ export default function Money() {
         <View style={{ gap: Spacing.one, marginTop: Spacing.two }}>
           <Line label="Lessons delivered" value={shown.revenue} />
           {shown.credits ? <Line label="Credits to families" value={-shown.credits} /> : null}
-          <Line label={`Tutor costs${shown.tutorCostsEstimated ? ' (part estimated)' : ''}`} value={-shown.tutorCosts} />
+          <Line label={`Tutor costs${invoicesOnly ? ' (tutor invoices only)' : shown.tutorCostsEstimated ? ' (part estimated)' : ''}`} value={-shown.tutorCosts} />
           <Line label="Other expenses" value={-shown.expenses} />
         </View>
-        {shown.tutorCostsEstimated ? (
+        {invoicesOnly ? (
+          <Txt variant="small">Estimates for lessons not yet invoiced could not be loaded, so only submitted tutor invoices are counted.</Txt>
+        ) : shown.tutorCostsEstimated ? (
           <Txt variant="small">Estimated from lessons taught until the tutor submits that month’s invoice.</Txt>
         ) : null}
       </Card>

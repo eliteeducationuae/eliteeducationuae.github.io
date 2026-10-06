@@ -1,4 +1,6 @@
-import { formatAED, invoiceTotals } from '@/domain/billing';
+import { formatAED, invoiceTotals, tutorEarnings } from '@/domain/billing';
+import { toDateKey } from '@/domain/dates';
+import type { TutorCostEstimate } from '@/domain/finance';
 import { creditableLines, planCreditFromGross, planCreditNote, refundableAmount, round2 } from '@/domain/tax';
 import type { AccountantInvite, CreditNote, Payment, Profile, Refund } from '@/domain/types';
 
@@ -61,6 +63,31 @@ export const tax = {
 
   creditNote(db: DemoDB, viewer: Profile, id: string): CreditNote | null {
     return tax.creditNotes(db, viewer).find((n) => n.id === id) ?? null;
+  },
+
+  /**
+   * public.tutor_cost_estimates (20261114000100_qa_award.sql): per month, the pay for lessons taught by tutors with no
+   * submitted, approved or paid invoice for that month. Totals only; admins and accountants.
+   */
+  tutorCostEstimates(db: DemoDB, viewer: Profile, from: string, to: string): TutorCostEstimate[] {
+    if (!isFinanceReader(viewer)) throw new AccessError('Not allowed');
+    const start = new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, 1);
+    const end = new Date(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 1, 1);
+    const count = (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth() + 1;
+    if (!/^\d{4}-\d{2}/.test(from) || !/^\d{4}-\d{2}/.test(to) || !(count >= 1)) throw new Error('Please choose a valid range of months.');
+    if (count > 36) throw new Error('Please choose at most 36 months.');
+    return Array.from({ length: count }, (_, i) => {
+      const month = toDateKey(new Date(start.getFullYear(), start.getMonth() + i, 1)).slice(0, 7);
+      const taught = db.lessons.filter((l) => toDateKey(new Date(l.start)).slice(0, 7) === month);
+      let amount = 0;
+      for (const tutor of db.tutors) {
+        const invoiced = db.tutorInvoices.some(
+          (inv) => inv.tutorId === tutor.id && inv.periodStart.slice(0, 7) === month && inv.status !== 'draft' && inv.status !== 'rejected',
+        );
+        if (!invoiced) amount += tutorEarnings(tutor, taught, db.settings, db.enrolments ?? []).amount;
+      }
+      return { month, amount: round2(amount) };
+    });
   },
 
   refunds(db: DemoDB, viewer: Profile, filter: Filter = {}): Refund[] {

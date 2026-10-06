@@ -292,8 +292,8 @@ describe('logAppError and systemHealth', () => {
     const db = createSeed();
     const health = systemHealth(db, who(db, 'admin'), NOW);
     expect(health.checks.map((c) => c.key)).toEqual(['notifications', 'whatsapp', 'calendar', 'autopay', 'stripe', 'server-errors', 'app-errors', 'backups']);
-    expect(health.database.latest).toBe('20261113001700');
-    expect(health.database.latestName).toBe('creditnote_fix');
+    expect(health.database.latest).toBe('20261114000100');
+    expect(health.database.latestName).toBe('qa_award');
     expect(health.database.count).toBe(KNOWN_MIGRATIONS.length);
     expect(health.jobs.length).toBeGreaterThan(0);
     expect(health.checks.every((c) => c.detail.endsWith('.'))).toBe(true);

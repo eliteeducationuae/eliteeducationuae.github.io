@@ -25,6 +25,13 @@ export interface MonthFigures {
   cashIn: number;
 }
 
+/** One month's estimated tutor cost (public.tutor_cost_estimates): totals only. */
+export interface TutorCostEstimate {
+  /** `YYYY-MM` */
+  month: string;
+  amount: number;
+}
+
 export interface FinanceData {
   charges: Charge[];
   packages: LessonPackage[];
@@ -40,6 +47,12 @@ export interface FinanceData {
   creditNotes?: CreditNoteRef[];
   /** Defaults to the refunds attached to the invoices. */
   refunds?: Refund[];
+  /**
+   * Monthly estimated tutor costs from the server, for readers who cannot see lessons (the accountant). When given,
+   * tutor costs are every submitted, approved or paid tutor invoice for the month plus the month's estimate, and
+   * lessons and tutors are not used for them.
+   */
+  tutorCostEstimates?: TutorCostEstimate[];
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -68,7 +81,15 @@ export function monthFigures(month: Date, data: FinanceData): MonthFigures {
   );
   let tutorCosts = 0;
   let estimated = false;
-  for (const tutor of data.tutors) {
+  if (data.tutorCostEstimates) {
+    for (const i of data.tutorInvoices) {
+      if (i.periodStart.slice(0, 7) === key && i.status !== 'draft' && i.status !== 'rejected') tutorCosts += tutorInvoiceTotal(i.items);
+    }
+    const est = data.tutorCostEstimates.find((e) => e.month === key)?.amount ?? 0;
+    if (est > 0) estimated = true;
+    tutorCosts += est;
+  }
+  for (const tutor of data.tutorCostEstimates ? [] : data.tutors) {
     const invoice = data.tutorInvoices.find(
       (i) => i.tutorId === tutor.id && i.periodStart.slice(0, 7) === key && i.status !== 'draft' && i.status !== 'rejected',
     );
