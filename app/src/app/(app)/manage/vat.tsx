@@ -7,6 +7,7 @@ import { Banner, Button, Card, Chip, EmptyState, ListItem, Loading, Row, Screen,
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useCreditNotes, useExpenses, useInvoices, useLookup, useSettings } from '@/data/hooks';
+import { useMe } from '@/data/session';
 import { formatDate } from '@/domain/dates';
 import { recentVatQuarters, vatSummary, vatSummaryCsvRows } from '@/domain/tax';
 import type { Expense } from '@/domain/types';
@@ -22,6 +23,7 @@ export default function VatReturns() {
   const creditNotes = useCreditNotes();
   const expenses = useExpenses();
   const lookup = useLookup();
+  const admin = useMe().role === 'admin';
   const [now] = useState(() => new Date());
   const [picked, setPicked] = useState(0);
 
@@ -57,10 +59,13 @@ export default function VatReturns() {
       refreshing={invoices.isRefetching}>
       {!s.trn ? (
         <Banner tone="warning" icon="alert">
-          No TRN is recorded yet, so invoices print as plain invoices. Add it under Business settings.
+          {/* Only the office can open Business settings: the accountant is asked to request the details instead. */}
+          {admin
+            ? 'No TRN is recorded yet, so invoices print as plain invoices. Add it under Business settings.'
+            : 'No TRN is recorded yet, so invoices print as plain invoices. The business’s tax details have not been entered yet. Please ask the office to add them.'}
         </Banner>
       ) : null}
-      {!s.trn ? (
+      {!s.trn && admin ? (
         <Button title="Open business settings" variant="ghost" size="sm" style={{ alignSelf: 'flex-start' }} onPress={() => router.push('/manage/settings')} />
       ) : null}
 
