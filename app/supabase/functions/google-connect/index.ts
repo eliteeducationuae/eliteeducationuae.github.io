@@ -9,14 +9,19 @@
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { withMonitoring } from '../_shared/monitoring.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
+import { withinRateLimit } from '../_shared/rate-limit.ts';
 import {
+  allowedReturnTo,
   BRAND_FOOTER,
   buildAuthUrl,
+  codeChallengeFor,
   eventUrl,
   GOOGLE_REVOKE_URL,
   GOOGLE_TOKEN_URL,
   GoogleAuthError,
+  grantsCalendar,
   isGoneStatus,
+  newCodeVerifier,
   parseTokenResponse,
   refreshBody,
   tokenExchangeBody,
@@ -30,22 +35,7 @@ const redirectUri = () => `${env('SUPABASE_URL')}/functions/v1/google-connect`;
 
 /** Only our own app may receive the result, so the redirect cannot be used to bounce people elsewhere. */
 function safeReturnTo(value: unknown): string | null {
-  if (typeof value !== 'string' || !value) return null;
-  const allowed = [
-    env('APP_URL'),
-    ...env('CALENDAR_RETURN_URLS').split(','),
-    DEFAULT_RETURN,
-    'eliteeducation://',
-  ]
-    .map((p) => p.trim())
-    .filter(Boolean);
-  // The prefix must end at a path, query or fragment boundary, so https://app.example cannot admit https://app.example.evil.
-  const matches = (prefix: string) => {
-    if (!value.startsWith(prefix)) return false;
-    const next = value.charAt(prefix.length);
-    return prefix.endsWith('/') || next === '' || next === '/' || next === '?' || next === '#';
-  };
-  return allowed.some(matches) ? value : null;
+  return allowedReturnTo(value, [env('APP_URL'), ...env('CALENDAR_RETURN_URLS').split(','), DEFAULT_RETURN, 'eliteeducation://']);
 }
 
 function withResult(returnTo: string, query: string) {
@@ -101,11 +91,13 @@ async function handleCallback(url: URL) {
   const stateId = url.searchParams.get('state');
   let returnTo: string | null = null;
   let profileId: string | null = null;
+  let codeVerifier: string | null = null;
   if (stateId && /^[0-9a-f-]{36}$/i.test(stateId)) {
-    const { data: state } = await db.from('calendar_oauth_states').select('*').eq('state', stateId).maybeSingle();
+    // Taken and deleted in one statement, so a state can be used once only, even by two requests at the same moment.
+    const { data: state } = await db.from('calendar_oauth_states').delete().eq('state', stateId).select('*').maybeSingle();
     if (state) {
-      await db.from('calendar_oauth_states').delete().eq('state', stateId);
       returnTo = safeReturnTo(state.return_to);
+      codeVerifier = typeof state.code_verifier === 'string' ? state.code_verifier : null;
       if (Date.now() - new Date(state.created_at).getTime() <= STATE_TTL_MS) profileId = state.profile_id;
       else return failure(returnTo, 'expired');
     }
@@ -121,13 +113,22 @@ async function handleCallback(url: URL) {
     const res = await fetch(GOOGLE_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: tokenExchangeBody({ code, clientId: env('GOOGLE_CLIENT_ID'), clientSecret: env('GOOGLE_CLIENT_SECRET'), redirectUri: redirectUri() }),
+      body: tokenExchangeBody({
+        code,
+        clientId: env('GOOGLE_CLIENT_ID'),
+        clientSecret: env('GOOGLE_CLIENT_SECRET'),
+        redirectUri: redirectUri(),
+        codeVerifier,
+      }),
     });
     tokens = parseTokenResponse(await res.json(), new Date());
   } catch (e) {
     console.error('google-connect: token exchange failed', e instanceof GoogleAuthError ? e.code : 'network');
     return failure(returnTo, 'exchange', await hasConnection());
   }
+  // Google lets the person untick the Calendar permission. Without it every sync would fail, so treat it as not granted.
+  // Nothing is saved; the existing connection (if any) is left as it was.
+  if (!grantsCalendar(tokens.scope)) return failure(returnTo, 'denied', await hasConnection());
 
   const { data: previous } = await db.from('calendar_connections').select('refresh_token').eq('profile_id', profileId).maybeSingle();
   const refreshToken = tokens.refreshToken ?? previous?.refresh_token ?? null;
@@ -165,14 +166,35 @@ async function startConnect(profile: { id: string; email: string | null }, body:
   const db = adminClient();
   const clientId = env('GOOGLE_CLIENT_ID');
   if (!clientId || !env('GOOGLE_CLIENT_SECRET')) return json({ error: 'Google Calendar is not configured yet.' }, 503);
+  if (!(await withinRateLimit(db, `google-connect:${profile.id}`, 20, 3600))) {
+    return json({ error: 'Too many connection attempts. Please wait a little while and try again.' }, 429);
+  }
   await db.from('calendar_oauth_states').delete().lt('created_at', new Date(Date.now() - STATE_TTL_MS).toISOString());
-  const { data: state, error } = await db
+  const returnTo = safeReturnTo(body.returnTo);
+  // PKCE: the verifier stays on the server with the state; Google only ever sees its hash.
+  const verifier = newCodeVerifier();
+  let { data: state, error } = await db
     .from('calendar_oauth_states')
-    .insert({ profile_id: profile.id, return_to: safeReturnTo(body.returnTo) })
+    .insert({ profile_id: profile.id, return_to: returnTo, code_verifier: verifier })
     .select('state')
     .single();
+  let pkce = true;
+  if (error && /code_verifier/.test(error.message ?? '')) {
+    // The database has not been migrated yet (20261114000300_sec_fn.sql): carry on without PKCE until it is.
+    console.error('google-connect: code_verifier column missing; connecting without PKCE');
+    pkce = false;
+    ({ data: state, error } = await db.from('calendar_oauth_states').insert({ profile_id: profile.id, return_to: returnTo }).select('state').single());
+  }
   if (error || !state) return json({ error: 'We could not start the connection. Please try again.' }, 500);
-  return json({ url: buildAuthUrl({ clientId, redirectUri: redirectUri(), state: state.state, loginHint: profile.email }) });
+  return json({
+    url: buildAuthUrl({
+      clientId,
+      redirectUri: redirectUri(),
+      state: state.state,
+      loginHint: profile.email,
+      codeChallenge: pkce ? await codeChallengeFor(verifier) : null,
+    }),
+  });
 }
 
 async function accessTokenFor(conn: { refresh_token: string | null; access_token: string | null; access_token_expires_at: string | null }) {

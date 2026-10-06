@@ -102,9 +102,13 @@ function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-/** The System health page in the app. */
+/**
+ * The System health page in the app. APP_URL is normally the app itself ('https://eliteeducation.me/app', as every
+ * other function uses it); a bare site address ('https://eliteeducation.me') is also accepted, so '/app' is never doubled.
+ */
 export function systemHealthUrl(appUrl: string) {
-  return `${appUrl.replace(/\/+$/, '')}/app/manage/system-health`;
+  const base = appUrl.replace(/\/+$/, '');
+  return `${/\/app$/.test(base) ? base : `${base}/app`}/manage/system-health`;
 }
 
 /**
