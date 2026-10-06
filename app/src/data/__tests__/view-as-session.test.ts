@@ -89,6 +89,7 @@ describe('startViewAs (demo)', () => {
   it('refuses to view an admin or yourself, or someone unknown', async () => {
     await expect(useSession.getState().startViewAs('u-admin')).rejects.toThrow();
     await expect(useSession.getState().startViewAs('u-nobody')).rejects.toThrow();
+    await expect(useSession.getState().startViewAs('u-accountant')).rejects.toThrow('This person cannot be viewed.');
     expect(useSession.getState().viewing).toBeNull();
     expect(useSession.getState().profile?.id).toBe('u-admin');
   });
