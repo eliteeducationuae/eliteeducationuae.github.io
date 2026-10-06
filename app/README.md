@@ -316,7 +316,7 @@ How it works:
 
 - **Hidden fields (honeypots).** Each form contains a field that people never see. Automated programs tend to fill it in; when they do, they are shown the usual thank-you message, but nothing is sent.
 - **Time to submit.** Each form notes how long it took to complete. Anything sent within three seconds is kept as possible spam.
-- **Limits per email address and per connection.** Enquiries: 3 an hour or 6 a day from one email address, and 5 an hour or 20 a day from one internet connection. Tutor applications: 2 an hour or 3 a day from one email address, and 3 an hour or 10 a day from one connection. Beyond that, the visitor sees a polite message: *Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email craig@craigobrieneducation.com.* These limits replace the earlier check that refused a sixth enquiry in a day with *We already have your enquiry*. Connection addresses are not stored in readable form: only a fingerprint made with a random, private salt (created by the migration) is kept, and it is deleted after 30 days. **Please confirm** on the live project which address headers Supabase passes to the database (in the SQL editor, a request's `request.headers`): the fingerprint uses `cf-connecting-ip`, then `x-real-ip`, and only as a last resort the first `x-forwarded-for` entry, which a visitor can set themselves and so could use to slip past the per-connection limit.
+- **Limits per email address and per connection.** Enquiries: 3 an hour or 6 a day from one email address, and 5 an hour or 20 a day from one internet connection. Tutor applications: 2 an hour or 3 a day from one email address, and 3 an hour or 10 a day from one connection. Beyond that, the visitor sees a polite message: *Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email hello@eliteeducation.me.* These limits replace the earlier check that refused a sixth enquiry in a day with *We already have your enquiry*. Connection addresses are not stored in readable form: only a fingerprint made with a random, private salt (created by the migration) is kept, and it is deleted after 30 days. **Please confirm** on the live project which address headers Supabase passes to the database (in the SQL editor, a request's `request.headers`): the fingerprint uses `cf-connecting-ip`, then `x-real-ip`, and only as a last resort the first `x-forwarded-for` entry, which a visitor can set themselves and so could use to slip past the per-connection limit.
 - **Duplicates.** If the same email address sends a similar message within 24 hours, it is added to the existing enquiry rather than creating a second one, and the family sees the usual thank-you. A repeat only ever fills in blanks: an earlier message is never overwritten (a different new message is added underneath as a dated *Re-sent* paragraph), and an applicant's CV or experience statement is never replaced, since anyone who knows the email address could send the form. For the same reason a repeat never writes a telephone number into the contact details: a new number is recorded in the notes (*Telephone number given in a repeat submission on …*) for the office to confirm before use. A repeat that itself looks automated is never merged; it is kept separately under *Possible spam*. The admin home shows *received N times* beside a new enquiry that has been sent more than once, so a family following up stands out.
 - **Signed-in families.** A parent who is signed in is never flagged, so a consultation request sent with one tap from the pre-filled onboarding form always reaches the team.
 - **Links.** A message with three or more links, or a link in a name, is kept as possible spam.
@@ -365,15 +365,34 @@ Complete these once, in this order. Each feature's section above carries the det
 
 Round 5 adds View as, per-student rates, family contacts, the audit log, UAE tax documents and accountant access, admissions advisory, tutor vetting, launch readiness, spam protection, and session plans with handover packs. Complete these once, in this order, after the *Round 4 setup checklist*. Each feature's section below carries the detail.
 
-1. **Database.** In the Supabase SQL editor, run the round 5 migrations one file at a time in filename order: `20261101000000_viewas.sql`, `20261102000000_rates.sql`, `20261103000000_contacts.sql`, `20261104000000_audit.sql`, `20261105000000_tax.sql`, `20261106000000_admissions.sql`, `20261107000000_vetting.sql`, `20261108000000_launch.sql`, `20261109000000_spam.sql`, `20261110000000_handover.sql`, `20261111000000_round5_merge.sql` and finally `20261112000000_round5_followups.sql`. The merge migration joins the features together: it restores the round 4 follow-up's notification links and readable charge dates where round 5 files had redefined those functions, keeps the office's enquiry notes away from families, stops a family contact's address becoming an accountant login, extends account deletion and *Download my data* to every round 5 record, lets View as read the round 5 screens, audits credit notes, refunds, accountant access, admissions cases and tutor documents, and records every migration in the ledger. The follow-ups migration makes the admissions timeline read *Advisory update sent: October 2026* when a monthly update is sent. As with round 4, do not use `npx supabase db push` unless the migration history has first been repaired (see step 1 of the *Round 4 setup checklist*).
+1. **Database.** In the Supabase SQL editor, run each file below once, one at a time, in this order, skipping any already applied:
+   1. `20261013000000_review_fixes.sql`
+   2. `20261014000000_round4_qa_fixes.sql`
+   3. `20261101000000_viewas.sql`
+   4. `20261102000000_rates.sql`
+   5. `20261103000000_contacts.sql`
+   6. `20261104000000_audit.sql`
+   7. `20261105000000_tax.sql`
+   8. `20261106000000_admissions.sql`
+   9. `20261107000000_vetting.sql`
+   10. `20261108000000_launch.sql`
+   11. `20261109000000_spam.sql`
+   12. `20261110000000_handover.sql`
+   13. `20261111000000_round5_merge.sql`
+   14. `20261112000000_round5_followups.sql`
+   <!-- r6 fix migrations -->
+
+   Later fix migrations, named `20261113…_*_fix.sql`, are listed at the end of this list; run them last, in filename order. This is the one list of migrations to run for round 5: the sections below refer back to it rather than repeating it.
+
+   The merge migration joins the features together: it restores the round 4 follow-up's notification links and readable charge dates where round 5 files had redefined those functions, keeps the office's enquiry notes away from families, stops a family contact's address becoming an accountant login, extends account deletion and *Download my data* to every round 5 record, lets View as read the round 5 screens, audits credit notes, refunds, accountant access, admissions cases and tutor documents, and records every migration in the ledger. The follow-ups migration makes the admissions timeline read *Advisory update sent: October 2026* when a monthly update is sent. As with round 4, do not use `npx supabase db push` unless the migration history has first been repaired (see step 1 of the *Round 4 setup checklist*).
 2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261112000000 round5_followups`, and the ledger should list 26 migrations.
 3. **View as.** In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard` (see *View as* below).
-4. **Deploy the Edge Functions.** Run `npx supabase functions deploy view-as refund-payment invite-accountant delete-account health-check backup-export ai-assist billing-portal charge-invoice create-checkout google-connect stripe-webhook send-notifications send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`. Every function a signed-in person can call to change something now refuses a View as session, and the scheduled ones report to *System health*.
+4. **Deploy the Edge Functions.** Run `npx supabase functions deploy view-as refund-payment invite-accountant delete-account health-check backup-export ai-assist billing-portal charge-invoice create-checkout google-connect calendar-sync stripe-webhook send-notifications send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`. Every function a signed-in person can call to change something now refuses a View as session, and the scheduled ones report to *System health*. Run this from the `app/` folder so that `supabase/config.toml` keeps `stripe-webhook`, `google-connect` and `verify-captcha` open without a login.
 5. **Secrets.** Set `HEALTH_ALERT_EMAIL` (System health alerts), and make sure `APP_URL`, `RESEND_API_KEY` and `EMAIL_FROM` are set (the accountant's invitation and the health alerts use them). `ANTHROPIC_API_KEY` is optional: without it the admissions *AI draft* button uses the built-in template letter.
 6. **Stripe.** Add `refund.created`, `refund.updated`, `refund.failed` and `charge.refund.updated` to the webhook's events (see *UAE tax invoices* below).
 7. **Schedules.** Add `health-check` every 15 minutes and `backup-export` nightly (see *Launch functions: deploy and schedule*). `send-reminders` now also queues admissions reminders and police clearance alerts, so it needs no new schedule.
 8. **Tax details.** Enter the legal name, TRN, registered address and VAT quarter under *More → Business settings*, then invite the accountant from *More → Accountant access*.
-9. **Tutor checks.** Ask tutors to upload their police clearance under *Me → My checks*, verify them under *Manage → Tutor checks*, and only then switch enforcement on.
+9. **Tutor checks.** Ask tutors to upload their police clearance under *Account → My checks and documents*, verify them under *More → Tutor checks*, and only then switch enforcement on.
 10. **Spam protection.** In Supabase, review *Authentication → Rate Limits*, keep **Confirm email** on and leave Auth CAPTCHA off (see *Spam and abuse protection* above). Turnstile on the website is optional: add the site key to `index.html`, set `TURNSTILE_SECRET_KEY`, run `npx supabase functions deploy verify-captcha --no-verify-jwt`, then switch on *Security check on website forms* in Settings.
 11. **Point-in-time recovery** on the Pro plan, and the store submission steps in `LAUNCH.md`.
 12. **Check on a real device.** View a test parent as an administrator and try to send a message (it should be refused); set a custom rate and record a lesson; add a second family contact; issue a credit note; publish an admissions update; upload a police clearance as a tutor; reassign a lesson and open the handover pack; and finally close a test family's account and confirm its invoices remain under *Admin → Billing*.
@@ -399,7 +418,7 @@ The office can see the app exactly as a particular parent, student or tutor sees
 
 **Deploying.**
 
-1. Run `npx supabase db push` (or run `20261101000000_viewas.sql` in the SQL editor). The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
+1. Migration `20261101000000_viewas.sql`. Run it in the Supabase SQL editor as part of the *Round 5 setup checklist*, step 1. The migration also sets `pgrst.db_pre_request = 'public.view_as_guard'` on the `authenticator` role and reloads PostgREST. If the project already uses a different `db_pre_request` function, combine the two into one function before deploying, as PostgREST supports only one.
 2. Run `npx supabase functions deploy view-as`. It keeps the default JWT check, so no `config.toml` change is needed.
 3. Redeploy the functions that now refuse view sessions: `npx supabase functions deploy ai-assist billing-portal charge-invoice create-checkout google-connect delete-account refund-payment invite-accountant`. The read-only RPCs a viewed person needs are listed in `public.view_as_read_rpcs()`; any other RPC, and every write to a table, is refused while viewing.
 
@@ -409,11 +428,11 @@ The office can see the app exactly as a particular parent, student or tutor sees
 2. Sign in as an admin and view a test parent. Their lessons, invoices and messages should appear as they would for the parent.
 3. Try to send a message, book a lesson or upload a file: each should be refused with *Viewing only — changes are disabled.*
 4. Return to your own account, and confirm that `view_as_audit` shows a `start` and an `end` row for the view and that `view_as_sessions` shows an `ended_at` time and a `revoked_at` time. If `revoked_at` is empty, the database could not delete the session from `auth.sessions` in this project; the view is still refused, and the person stays protected for 65 minutes after the view.
-5. On an iPhone or the iOS simulator, view a tutor, open *Record lesson* and a parent's *Book a lesson*: the compact gold strip with *Exit* should appear at the top of each sheet, and tapping save should show the *Viewing only* note inside the sheet.
+5. On an iPhone or the iOS simulator, view a tutor, open *Record lesson* and a parent's *Book a lesson*: the compact Noir strip with its gold rule and *Exit* should appear at the top of each sheet, and tapping save should show the *Viewing only* note inside the sheet.
 
 ## Per-student rates
 
-Tutor pay and family prices may be the same for every student or set individually. Run `supabase/migrations/20261102000000_rates.sql` once in the Supabase SQL editor (or `npx supabase db push`).
+Tutor pay and family prices may be the same for every student or set individually. Migration: `supabase/migrations/20261102000000_rates.sql`. Run it in the Supabase SQL editor as part of the *Round 5 setup checklist*, step 1.
 
 - **Defaults.** Unless an override is set, a tutor is paid their usual hourly rate (set on the tutor) and a family is charged the price of the lesson's service.
 - **Custom overrides.** An admin may set, for one student's subject (an enrolment), a custom hourly pay for that subject's tutor and a custom hourly price for the family. Either may be cleared at any time to return to the default. Tutor pay can only be set once the subject has a tutor. A custom family price is charged per hour, so a 90-minute lesson at AED 600 an hour is charged AED 900. Package credits are still used first, because a package is lessons the family has already paid for.
@@ -449,7 +468,7 @@ Every change to the records that matter is written to a permanent audit log (`pu
 
 Every invoice the app issues is a UAE tax invoice. It carries the business's legal name, Tax Registration Number (TRN) and registered address, the customer's details (with their TRN where they are registered for VAT) and the date of supply. These details are copied onto the invoice when it is issued, so a later change to the settings or to a family's details never alters an invoice that has already been sent. Complete these steps once, in this order.
 
-1. **Database.** Run `supabase/migrations/20261105000000_tax.sql` in the Supabase SQL editor, or run `npx supabase db push`. Invoices issued before this migration take the business and family details as they stand when it runs.
+1. **Database.** Migration `supabase/migrations/20261105000000_tax.sql`. Run it in the Supabase SQL editor as part of the *Round 5 setup checklist*, step 1. Invoices issued before this migration take the business and family details as they stand when it runs.
 2. **Business settings.** In *More → Business settings*, enter the legal name, the 15-digit TRN and the registered address exactly as they appear on the Federal Tax Authority (FTA) certificate, and choose the VAT quarter start month shown on that certificate (January, February or March). Set VAT to 5%.
 3. **Families.** Where a family pays through a company, or is otherwise registered for VAT, add the company's name (*Billed to*), TRN and billing address to the family's billing details; the company's name then appears as the customer on its tax invoices. Tutors never see these details.
 4. **Edge Functions.** Run `npx supabase functions deploy refund-payment invite-accountant`, and deploy `stripe-webhook`, `create-checkout` and `charge-invoice` again, as they now allow for credit notes and refunds. Both new functions are for signed-in admins, so they keep the default JWT check.
@@ -481,14 +500,14 @@ Guidance for families applying to schools, boarding schools and UK or US univers
 
 ## Tutor vetting and onboarding
 
-Every tutor must hold a police clearance certificate, verified by Elite Education, before they teach. Tutors upload their certificate and other documents (passport or ID, qualifications) under *Checks*; an administrator verifies or rejects each one in *Manage → Tutor checks* and records the expiry date. A certificate is valid on its expiry date and expired the day after.
+Every tutor must hold a police clearance certificate, verified by Elite Education, before they teach. Tutors upload their certificate and other documents (passport or ID, qualifications) under *Account → My checks and documents*; an administrator verifies or rejects each one in *More → Tutor checks* and records the expiry date. A certificate is valid on its expiry date and expired the day after.
 
 **Setting it up.**
 
-1. Run the migration `20261107000000_vetting.sql` (or `npx supabase db push`). It creates the private `vetting` storage bucket (PDFs and photos, 10 MB per file); tutors can read only their own folder and administrators can read everything. No other role can read the files.
+1. Migration `20261107000000_vetting.sql`. Run it in the Supabase SQL editor as part of the *Round 5 setup checklist*, step 1. It creates the private `vetting` storage bucket (PDFs and photos, 10 MB per file); tutors can read only their own folder and administrators can read everything. No other role can read the files.
 2. Redeploy `send-reminders` (`npx supabase functions deploy send-reminders`). Its hourly run now also queues police clearance expiry alerts 60, 30 and 7 days before a certificate expires and on the expiry date itself, for the tutor and for the office; `send-notifications` delivers them. A certificate verified late sends a single alert rather than several, and an older certificate that has been replaced sends none. Alerts never include bank details or file names.
 
-**Switching on enforcement.** Enforcement is off when the migration is first run, so that existing tutors are not blocked while they upload their certificates; until then the app warns but blocks nothing. Once your current tutors' certificates have been verified, switch it on in *Manage → Tutor checks*. From then on, a tutor without a verified, unexpired police clearance cannot be:
+**Switching on enforcement.** Enforcement is off when the migration is first run, so that existing tutors are not blocked while they upload their certificates; until then the app warns but blocks nothing. Once your current tutors' certificates have been verified, switch it on in *More → Tutor checks*. From then on, a tutor without a verified, unexpired police clearance cannot be:
 
 - assigned new lessons (including by reassigning a lesson or approving a booking request);
 - given new students (enrolments); or
@@ -496,7 +515,7 @@ Every tutor must hold a police clearance certificate, verified by Elite Educatio
 
 Their existing lessons are not blocked: they can still be rescheduled, completed or cancelled, and the app shows a warning. Where there is good reason (for example, a renewal has been applied for and the receipt has been seen), an administrator can record an override for up to 90 days. Every override requires a reason of at least ten characters, records who granted it and when it ends, and is reported to all administrators. Overrides can be revoked at any time.
 
-**Tutor handbook.** Edit the handbook in *Manage → Tutor handbook*. Each time you publish, a new version is created and every tutor is asked to read and acknowledge it; the *Tutor handbook* screen lists each tutor's acknowledged version, and *Manage → Tutor checks* shows it per tutor. The migration installs version 1, the default Elite Education Tutor Handbook.
+**Tutor handbook.** Edit the handbook in *More → Tutor handbook*. Each time you publish, a new version is created and every tutor is asked to read and acknowledge it; the *Tutor handbook* screen lists each tutor's acknowledged version, and *More → Tutor checks* shows it per tutor. The migration installs version 1, the default Elite Education Tutor Handbook.
 
 **Onboarding checklist.** Marking a tutor application as *Hired*, with the tutor's record linked, starts their onboarding. The checklist shows, for every tutor, their police clearance status, documents awaiting review, bank details, availability, calendar connection, WhatsApp opt-in and handbook acknowledgement.
 
@@ -536,7 +555,7 @@ Both run automatically in GitHub Actions on every push and pull request (see *Co
   select public.record_migration('20261112000000', 'waiting_list');
   ```
 - Add a matching SQL test, `supabase/tests/<name>_test.sql`, and add `<name>` to the list of tests in `supabase/tests/run.sh`. CI then checks it on every push.
-- Apply to production with `npx supabase db push` (it applies only the migrations that are new), or paste the file into the SQL editor.
+- Apply to production by pasting the file into the SQL editor, or with `npx supabase db push` (it applies only the migrations that are new) only once the migration history has been repaired (see *Round 4 setup checklist*, step 1).
 - Check the result in the app: *Admin → More → System health → Database version*. In production it also reads `supabase_migrations.schema_migrations` (the list kept by `supabase db push`), so every applied migration is listed even if it was applied before `record_migration` existed.
 
 ## Backups and restore
@@ -616,11 +635,11 @@ npx supabase secrets set HEALTH_ALERT_EMAIL=<the address that should receive ale
 # Already set for send-notifications, and used by health-check for its emails: RESEND_API_KEY, EMAIL_FROM, APP_URL
 ```
 
-`delete-account` needs no schedule and no extra secret. `health-check` and `backup-export` accept only the service role key, so schedule them the same way as `charge-invoice`: in the Supabase Dashboard under *Integrations → Cron* (switch on Cron and pg_net if asked), create a job that calls the Edge Function with method POST, body `{}` and `Authorization: Bearer <service role key>`, or in the SQL editor with the key kept in Vault:
+`delete-account` needs no schedule and no extra secret. `health-check` and `backup-export` accept only the service role key, so schedule them the same way as `charge-invoice`: in the Supabase Dashboard under *Integrations → Cron* (switch on Cron and pg_net if asked), create a job that calls the Edge Function with method POST, body `{}` and `Authorization: Bearer <legacy service_role key, eyJ…>`, or in the SQL editor with the key kept in Vault:
 
 ```sql
--- Once: keep the service role key (Dashboard → Settings → API keys) in Vault, never in the app or this repository.
-select vault.create_secret('<service role key>', 'service_role_key');
+-- Reuses the 'service_role_key' Vault secret created for charge-invoice (the legacy service_role key, eyJ…, from Project Settings → API Keys → Legacy API keys). Run the next line only if you have not already done so.
+select vault.create_secret('<legacy service_role key, eyJ…>', 'service_role_key');
 
 select cron.schedule('health-check', '*/15 * * * *', $$
   select net.http_post(

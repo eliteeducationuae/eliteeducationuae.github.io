@@ -718,15 +718,15 @@ function shortlistSentences(student: string, targets: AdmissionsTarget[]): strin
   if (applying.length) {
     const apps = count('applying') === 1 ? 'application' : 'applications';
     out.push(
-      `We are preparing ${student}'s ${apps} to ${listJoin(applying)}` +
+      `We are preparing ${student}’s ${apps} to ${listJoin(applying)}` +
         (researching.length ? `, and continue to research ${listJoin(researching)}.` : '.'),
     );
   } else if (researching.length) {
-    out.push(`We continue to research ${listJoin(researching)} on ${student}'s behalf.`);
+    out.push(`We continue to research ${listJoin(researching)} on ${student}’s behalf.`);
   }
   if (names('submitted').length) {
     const apps = count('submitted') === 1 ? 'application' : 'applications';
-    out.push(`${student}'s ${apps} to ${listJoin(names('submitted'))} ${count('submitted') === 1 ? 'has' : 'have'} been submitted.`);
+    out.push(`${student}’s ${apps} to ${listJoin(names('submitted'))} ${count('submitted') === 1 ? 'has' : 'have'} been submitted.`);
   }
   if (names('interview').length) out.push(`${student} has been invited to interview at ${listJoin(names('interview'))}.`);
   if (names('offer').length) {
@@ -772,8 +772,8 @@ export function templateAdvisoryUpdate(input: AdvisoryTemplateInput): { title: s
   paragraphs.push(letterSalutation(input.addressee));
   paragraphs.push(
     kind === 'monthly'
-      ? `We are pleased to share our advisory update on ${student}'s admissions for ${period}.`
-      : `We are writing with an update on ${student}'s admissions plan.`,
+      ? `We are pleased to share our advisory update on ${student}’s admissions for ${period}.`
+      : `We are writing with an update on ${student}’s admissions plan.`,
   );
 
   // Shortlist and status.

@@ -239,7 +239,7 @@ describe('validateContactDraft', () => {
 
   it('needs a name', () => {
     expect(validateContactDraft(draft({ name: '   ' }), family, 'admin')).toBe(CONTACT_ERRORS.name);
-    expect(CONTACT_ERRORS.name).toBe("Please enter the contact's name.");
+    expect(CONTACT_ERRORS.name).toBe("Please enter the contact’s name.");
   });
 
   it('needs a valid email when one is given', () => {

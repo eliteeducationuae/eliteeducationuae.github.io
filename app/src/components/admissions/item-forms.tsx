@@ -289,7 +289,7 @@ export function KeyDateForm({
             <Field label="Time (optional)" value={time} onChangeText={setTime} placeholder="HH:MM" maxLength={5} autoCapitalize="none" />
           </View>
         </Row>
-        <Txt variant="small">Times are UAE time. The family and adviser are reminded 14, 7 and 1 days before, and on the day.</Txt>
+        <Txt variant="small">Times are UAE time. The family and adviser are reminded 14 days, 7 days and 1 day before, and on the day.</Txt>
       </Card>
       <TargetChips targets={targets} value={targetId} onChange={setTargetId} />
       {prep ? (

@@ -105,6 +105,6 @@ export function dataExportHTML(data: DataExport): string {
   ${upcoming ? `<h2>Upcoming lessons</h2><table><tr><th>Date</th><th>Time</th><th>Subject</th><th>Where</th></tr>${upcoming}</table>` : ''}
   ${invoices ? `<h2>Invoices</h2><table><tr><th>Number</th><th>Issued</th><th class="r">Total</th><th>Status</th></tr>${invoices}</table>` : ''}
   ${bank}
-  <div class="panel"><p>This summary accompanies the full download of your data in JSON format. To ask a question about your data, please contact hello@eliteeducation.me.</p></div>`;
+  <div class="panel"><p>This summary accompanies the complete copy of your data, which opens in any text editor. To ask a question about your data, please contact hello@eliteeducation.me.</p></div>`;
   return pdfDocument({ title: 'Your data with Elite Education', body });
 }

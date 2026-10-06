@@ -3,6 +3,7 @@
  * controls that start a view from a family, tutor or student page.
  */
 import { router, type Href } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -185,7 +186,7 @@ function ViewAsModalStrip({ name }: { name: string }) {
   return (
     <View accessibilityRole="summary" style={[styles.strip, { paddingTop: Spacing.two }]}>
       <View style={styles.row}>
-        <Icon name="eye" size={16} color={Brand.noir} />
+        <Icon name="eye" size={16} color={Brand.gold} />
         <Text style={[styles.label, { flex: 1 }]} numberOfLines={1}>
           Viewing as {name} · read only
         </Text>
@@ -212,7 +213,7 @@ function ExitButton({ exiting, onPress }: { exiting: boolean; onPress: () => voi
 
 /**
  * The calm notice: a small Noir (or ivory, in dark mode) note that floats just below the screen's header for a few
- * seconds, so the gold strip itself never grows and the title and back button stay visible. It never blocks a tap.
+ * seconds, so the strip itself never grows and the title and back button stay visible. It never blocks a tap.
  */
 function ViewAsToast({ top }: { top: number }) {
   const palette = useTheme();
@@ -231,7 +232,7 @@ function ViewAsToast({ top }: { top: number }) {
 }
 
 /**
- * A slim champagne-gold strip, shown only while an admin is viewing as someone else: who is being viewed,
+ * A slim Noir strip with a gold rule beneath it, shown only while an admin is viewing as someone else: who is being viewed,
  * how long is left and an Exit button. A refused change shows a calm note under it for a few seconds.
  */
 export function ViewAsBanner() {
@@ -290,8 +291,10 @@ export function ViewAsBanner() {
 
   return (
     <View accessibilityRole="summary" style={[styles.strip, { paddingTop: insets.top + Spacing.two }]}>
+      {/* The strip sits under the status bar, so its text is light in both themes. */}
+      <StatusBar style="light" />
       <View style={styles.row}>
-        <Icon name="eye" size={18} color={Brand.noir} />
+        <Icon name="eye" size={18} color={Brand.gold} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.label} numberOfLines={1}>
             Viewing as {viewing.profile.fullName}
@@ -344,20 +347,27 @@ export function ViewAsActions({ title = 'View the app as', ...ref }: ViewAsRef &
 }
 
 const styles = StyleSheet.create({
-  // Gold is only ever a slim strip; text on it is Noir for contrast.
-  strip: { backgroundColor: Brand.gold, paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, gap: Spacing.one },
+  // A Noir band in both themes, marked by a slim gold rule (never a gold fill); its text is Ivory.
+  strip: {
+    backgroundColor: Brand.noir,
+    borderBottomWidth: 2,
+    borderBottomColor: Brand.gold,
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
+    gap: Spacing.one,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  label: { ...font('sans', 'bold'), color: Brand.noir, fontSize: 12, lineHeight: 16, letterSpacing: 1.2, textTransform: 'uppercase' },
-  hint: { ...font('sans'), color: Brand.noir, fontSize: 12.5, lineHeight: 16 },
+  label: { ...font('sans', 'bold'), color: Brand.ivory, fontSize: 12, lineHeight: 16, letterSpacing: 1.2, textTransform: 'uppercase' },
+  hint: { ...font('sans'), color: Brand.ivory, fontSize: 12.5, lineHeight: 16 },
   exit: {
     borderWidth: 1,
-    borderColor: Brand.noir,
+    borderColor: Brand.gold,
     borderRadius: 999,
     paddingHorizontal: Spacing.three,
     minHeight: 32,
     justifyContent: 'center',
   },
-  exitText: { ...font('sans', 'bold'), color: Brand.noir, fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase' },
+  exitText: { ...font('sans', 'bold'), color: Brand.gold, fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase' },
   toast: {
     position: 'absolute',
     left: Spacing.three,

@@ -86,7 +86,7 @@ export function tutorPayPlaceholder(tutor?: Pick<Tutor, 'fullName' | 'hourlyPay'
 
 /** "Default: AED 350 — IGCSE and GCSE 1:1 price" (per hour via serviceHourly); with no service: "Default: the lesson's service price". */
 export function familyPricePlaceholder(service?: Pick<Service, 'name' | 'rate' | 'durationMin'>): string {
-  if (!service) return "Default: the lesson's service price";
+  if (!service) return "Default: the lesson’s service price";
   return `Default: ${formatAED(serviceHourly(service))} — ${service.name} price`;
 }
 

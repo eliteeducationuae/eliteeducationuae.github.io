@@ -218,13 +218,13 @@ export function validateDocumentDates(
 ): string | null {
   const issue = input.issueDate?.trim() || undefined;
   const expiry = input.expiryDate?.trim() || undefined;
-  if ((issue && !isDateKey(issue)) || (expiry && !isDateKey(expiry))) return 'Please enter dates as YYYY-MM-DD';
-  if (input.type === 'police_clearance' && !expiry) return 'Please enter the expiry date of the police clearance certificate';
+  if ((issue && !isDateKey(issue)) || (expiry && !isDateKey(expiry))) return 'Please enter each date as year-month-day, for example 2026-10-06.';
+  if (input.type === 'police_clearance' && !expiry) return 'Please enter the expiry date of the police clearance certificate.';
   const todayKey = toDateKey(today);
-  if (issue && issue > todayKey) return 'The issue date cannot be in the future';
-  if (issue && expiry && expiry < issue) return 'The expiry date cannot be before the issue date';
+  if (issue && issue > todayKey) return 'The issue date cannot be in the future.';
+  if (issue && expiry && expiry < issue) return 'The expiry date cannot be before the issue date.';
   // As on the server, only an expired police clearance is refused; other documents keep their history.
-  if (input.type === 'police_clearance' && expiry && expiry < todayKey) return 'This certificate has already expired';
+  if (input.type === 'police_clearance' && expiry && expiry < todayKey) return 'This certificate has already expired.';
   return null;
 }
 

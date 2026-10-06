@@ -296,7 +296,7 @@ export function ContactEditor({
       <Card style={{ gap: Spacing.three }}>
         <SwitchRow
           label="Can sign in to the app"
-          explanation="They sign in with this email address and see the family's lessons, progress, invoices and messages."
+          explanation="They sign in with this email address and see the family’s lessons, progress, invoices and messages."
           value={draft.canLogIn}
           onChange={(v) => set('canLogIn', v)}
         />
@@ -339,7 +339,7 @@ export function ContactEditor({
           label="Main contact"
           explanation={
             firstContact
-              ? "The family's first contact becomes the main contact, so they need an email address. Invoices are addressed to them."
+              ? "The family’s first contact becomes the main contact, so they need an email address. Invoices are addressed to them."
               : 'Invoices are addressed to the main contact. Making this the main contact replaces the current one.'
           }
           value={alreadyPrimary || draft.isPrimary}

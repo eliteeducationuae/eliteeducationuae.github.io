@@ -193,7 +193,7 @@ function ReviewPanel({ doc, today }: { doc: TutorDocument; today: Date }) {
         {rejecting ? (
           <>
             <Button
-              title="Confirm not accepted"
+              title="Return to tutor"
               variant="danger"
               size="sm"
               disabled={note.trim().length < 3}

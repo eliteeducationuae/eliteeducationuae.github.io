@@ -116,7 +116,7 @@ describe('spam helpers', () => {
   });
   it('uses the agreed rate-limit wording and code', () => {
     expect(RATE_LIMIT_MESSAGE).toBe(
-      'Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email craig@craigobrieneducation.com.',
+      'Thank you. We have received several messages from you in a short time, so we have paused further submissions for now. We will be in touch shortly; if your enquiry is urgent, please email hello@eliteeducation.me.',
     );
     const err = new RateLimitError();
     expect(err.message).toBe(RATE_LIMIT_MESSAGE);
@@ -186,11 +186,11 @@ describe('payload limits', () => {
   it('checks enquiries', () => {
     expect(enquiryPayloadProblem({ parentName: 'Layla', message: long(4000) })).toBeNull();
     expect(enquiryPayloadProblem({ parentName: long(201) })).toBe(PAYLOAD_MESSAGES.name);
-    expect(enquiryPayloadProblem({ parentName: 'Layla', studentName: long(201) })).toBe('Please shorten the name to 200 characters or fewer');
-    expect(enquiryPayloadProblem({ parentName: 'Layla', phone: long(51) })).toBe('Please check the email address or telephone number');
+    expect(enquiryPayloadProblem({ parentName: 'Layla', studentName: long(201) })).toBe('Please shorten the name to 200 characters or fewer.');
+    expect(enquiryPayloadProblem({ parentName: 'Layla', phone: long(51) })).toBe('Please check the email address or telephone number.');
     expect(enquiryPayloadProblem({ parentName: 'Layla', email: long(201) })).toBe(PAYLOAD_MESSAGES.contact);
-    expect(enquiryPayloadProblem({ parentName: 'Layla', message: long(4001) })).toBe('Please shorten your message to 4,000 characters or fewer');
-    expect(enquiryPayloadProblem({ parentName: 'Layla', preferredTimes: long(1001) })).toBe('Please shorten your answers a little');
+    expect(enquiryPayloadProblem({ parentName: 'Layla', message: long(4001) })).toBe('Please shorten your message to 4,000 characters or fewer.');
+    expect(enquiryPayloadProblem({ parentName: 'Layla', preferredTimes: long(1001) })).toBe('Please shorten your answers a little.');
     expect(enquiryPayloadProblem({ parentName: 'Layla', yearGroup: long(101) })).toBe(PAYLOAD_MESSAGES.other);
   });
   it('checks applications', () => {
