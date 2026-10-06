@@ -68,6 +68,7 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261113001500', name: 'secminor_fix' },
   { version: '20261113001600', name: 'deletion_fix' },
   { version: '20261113001700', name: 'creditnote_fix' },
+  { version: '20261114000300', name: 'sec_fn' },
 ];
 
 const appErrorsOf = (db: DemoDB) => (db.appErrors ??= []);

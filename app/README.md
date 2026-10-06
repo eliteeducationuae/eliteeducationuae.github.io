@@ -63,7 +63,7 @@ app/
 2. **Stripe** (UAE account, for card payments in AED).
    - `npx supabase secrets set STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_… APP_URL=https://eliteeducation.me/app`
    - `npx supabase functions deploy create-checkout stripe-webhook charge-invoice billing-portal ics send-reminders send-notifications`
-   - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for these six events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached` and `customer.updated`.
+   - In Stripe, add a webhook to `https://<project>.supabase.co/functions/v1/stripe-webhook` for these ten events: `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_method.attached`, `payment_method.detached`, `customer.updated`, `refund.created`, `refund.updated`, `refund.failed` and `charge.refund.updated` (step-by-step: `docs/INTEGRATIONS.md`).
    - Saved cards, autopay, Apple Pay, Google Pay and lesson top-ups need a few more steps: see *Card payments: saved cards, autopay and top-ups* below.
    - Schedule `send-reminders` to run hourly (Supabase → Integrations → Cron, or the pg_cron SQL in step 9 of the *Round 4 setup checklist*).
 3. **App Store.** This needs an Apple Developer account ($99/yr). No Mac is required.
@@ -388,11 +388,12 @@ Round 5 adds View as, per-student rates, family contacts, the audit log, UAE tax
    20. `20261113001500_secminor_fix.sql`
    21. `20261113001600_deletion_fix.sql`
    22. `20261113001700_creditnote_fix.sql`
+   23. `20261114000300_sec_fn.sql` (Google Calendar PKCE, rate limits for AI drafts and invitations, revocable calendar feed links)
 
    The fix migrations (`20261113…_*_fix.sql`) come last, in filename order. This is the one list of migrations to run for round 5: the sections below refer back to it rather than repeating it.
 
    The merge migration joins the features together: it restores the round 4 follow-up's notification links and readable charge dates where round 5 files had redefined those functions, keeps the office's enquiry notes away from families, stops a family contact's address becoming an accountant login, extends account deletion and *Download my data* to every round 5 record, lets View as read the round 5 screens, audits credit notes, refunds, accountant access, admissions cases and tutor documents, and records every migration in the ledger. The follow-ups migration makes the admissions timeline read *Advisory update sent: October 2026* when a monthly update is sent. As with round 4, do not use `npx supabase db push` unless the migration history has first been repaired (see step 1 of the *Round 4 setup checklist*).
-2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261113001700 creditnote_fix`, and the ledger should list 34 migrations.
+2. **Check the database version.** Sign in as an administrator and open *Admin → More → System health*. The database version should read `20261114000300 sec_fn`, and the ledger should list 35 migrations.
 3. **View as.** In the SQL editor, `select rolconfig from pg_roles where rolname = 'authenticator';` should include `pgrst.db_pre_request=public.view_as_guard` (see *View as* below).
 4. **Deploy the Edge Functions.** Run `npx supabase functions deploy view-as refund-payment invite-accountant delete-account health-check backup-export ai-assist billing-portal charge-invoice create-checkout google-connect calendar-sync stripe-webhook send-notifications send-reminders` and `npx supabase functions deploy ics --no-verify-jwt`. Every function a signed-in person can call to change something now refuses a View as session, and the scheduled ones report to *System health*. Run this from the `app/` folder so that `supabase/config.toml` keeps `stripe-webhook`, `google-connect` and `verify-captcha` open without a login.
 5. **Secrets.** Set `HEALTH_ALERT_EMAIL` (System health alerts), and make sure `APP_URL`, `RESEND_API_KEY` and `EMAIL_FROM` are set (the accountant's invitation and the health alerts use them). `ANTHROPIC_API_KEY` is optional: without it the admissions *AI draft* button uses the built-in template letter.
