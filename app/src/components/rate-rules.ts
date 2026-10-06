@@ -60,7 +60,7 @@ export function rateSummary(input: {
     const pay: RateLine = hasPay
       ? { key: 'tutor-pay', label: 'Tutor pay per hour', value: formatAED(e.tutorPay!), badge: customBadgeLabel(e.tutorPaySource) }
       : tutor
-        ? { key: 'tutor-pay', label: 'Tutor pay per hour', value: formatAED(tutor.hourlyPay), note: `Default — ${firstName(tutor.fullName)}’s usual rate` }
+        ? { key: 'tutor-pay', label: 'Tutor pay per hour', value: formatAED(tutor.hourlyPay ?? 0), note: `Default — ${firstName(tutor.fullName)}’s usual rate` }
         : { key: 'tutor-pay', label: 'Tutor pay per hour', value: 'Not yet set', note: 'Default — the tutor’s usual rate, once a tutor is chosen' };
     const price: RateLine = hasPrice
       ? { key: 'family-price', label: 'Family price per hour', value: formatAED(e.familyPrice!), badge: 'Custom' }
@@ -74,7 +74,7 @@ export function rateSummary(input: {
     if (!viewer.tutorId || e.tutorId !== viewer.tutorId) return [];
     if (hasPay) return [{ key: 'tutor-pay', label: 'Your pay for this subject', value: `${formatAED(e.tutorPay!)} per hour`, badge: customBadgeLabel(e.tutorPaySource) }];
     if (!tutor) return [];
-    return [{ key: 'tutor-pay', label: 'Your pay for this subject', value: `${formatAED(tutor.hourlyPay)} per hour`, note: 'Your usual rate' }];
+    return [{ key: 'tutor-pay', label: 'Your pay for this subject', value: `${formatAED(tutor.hourlyPay ?? 0)} per hour`, note: 'Your usual rate' }];
   }
 
   if (viewer.role === 'parent' && hasPrice) {

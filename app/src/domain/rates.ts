@@ -24,7 +24,7 @@ export function studentTutorRate(
   if (enrolment && enrolment.tutorId === tutor.id && typeof enrolment.tutorPay === 'number') {
     return { rate: enrolment.tutorPay, source: 'custom' };
   }
-  return { rate: tutor.hourlyPay, source: 'usual' };
+  return { rate: tutor.hourlyPay ?? 0, source: 'usual' };
 }
 
 /** Group rule: the highest effective rate among the lesson's students (custom wins ties); no students → usual. Mirrors public.lesson_tutor_rate. */
@@ -34,7 +34,7 @@ export function lessonTutorRate(
   enrolments: Enrolment[],
 ): { rate: number; source: TutorRateSource; group: boolean } {
   const group = lesson.studentIds.length > 1;
-  let best: { rate: number; source: TutorRateSource } = { rate: tutor.hourlyPay, source: 'usual' };
+  let best: { rate: number; source: TutorRateSource } = { rate: tutor.hourlyPay ?? 0, source: 'usual' };
   for (const studentId of lesson.studentIds) {
     const r = studentTutorRate(tutor, lessonEnrolment(lesson, studentId, enrolments));
     if (r.rate > best.rate || (r.rate === best.rate && r.source === 'custom')) best = r;
@@ -81,7 +81,7 @@ export function serviceForEnrolment(
 export function tutorPayPlaceholder(tutor?: Pick<Tutor, 'fullName' | 'hourlyPay'>): string {
   if (!tutor) return 'Choose a tutor first';
   const first = tutor.fullName.trim().split(/\s+/)[0] || 'Tutor';
-  return `Default: ${formatAED(tutor.hourlyPay)} — ${first}’s usual rate`;
+  return `Default: ${formatAED(tutor.hourlyPay ?? 0)} — ${first}’s usual rate`;
 }
 
 /** "Default: AED 350 — IGCSE and GCSE 1:1 price" (per hour via serviceHourly); with no service: "Default: the lesson's service price". */

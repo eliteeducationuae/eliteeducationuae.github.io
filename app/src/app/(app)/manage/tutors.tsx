@@ -32,7 +32,7 @@ export default function Tutors() {
                 subtitle={
                   isClosed(t)
                     ? 'Kept for past lessons and pay records'
-                    : [t.subjects.join(', ') || 'No subjects yet', (t.phases ?? []).join(', '), `${formatAED(t.hourlyPay)} an hour`].filter(Boolean).join(' · ')
+                    : [t.subjects.join(', ') || 'No subjects yet', (t.phases ?? []).join(', '), `${formatAED(t.hourlyPay ?? 0)} an hour`].filter(Boolean).join(' · ')
                 }
                 left={<Avatar name={t.fullName} color={t.color} />}
                 below={

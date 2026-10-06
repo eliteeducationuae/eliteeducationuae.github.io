@@ -115,10 +115,11 @@ export interface Student {
 export interface Tutor {
   id: string;
   fullName: string;
+  /** Blank, like phone and hourlyPay, unless the viewer is an admin or this tutor (see 20261113001200_tutorpay_fix.sql). */
   email: string;
   phone?: string;
-  /** Pay to the tutor in AED per hour taught. */
-  hourlyPay: number;
+  /** Pay to the tutor in AED per hour taught. Only admins and the tutor themself may read it. */
+  hourlyPay?: number;
   /** Subjects taught, e.g. 'Chemistry'. */
   subjects: string[];
   /** Curricula taught, e.g. 'IGCSE'. */
