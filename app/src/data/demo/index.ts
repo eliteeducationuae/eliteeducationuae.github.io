@@ -90,16 +90,23 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     return structuredClone(fn(d, me()));
   };
 
-  const write = async <T>(fn: (db: DemoDB, viewer: Profile) => T): Promise<T> => {
+  const commit = async <T>(fn: (db: DemoDB, viewer: Profile) => T, business: boolean): Promise<T> => {
     const d = await load();
     const v = me();
-    // Tax: accountants have read-only access.
-    tax.requireWriter(v);
+    // Tax: accountants have read-only access to the business's records.
+    if (business) tax.requireWriter(v);
     // Record what the write changed, as the database's audit triggers do.
     const result = auditedWrite(d, v, () => fn(d, v));
     await save();
     return structuredClone(result);
   };
+  /** A write to the business's records: refused for accountants. */
+  const write = <T>(fn: (db: DemoDB, viewer: Profile) => T) => commit(fn, true);
+  /**
+   * A change to the caller's own login (name, WhatsApp settings, deleting the account). Production's set_my_name,
+   * set_whatsapp and delete-account allow every role these, accountants included; each command keeps its own checks.
+   */
+  const writeOwn = <T>(fn: (db: DemoDB, viewer: Profile) => T) => commit(fn, false);
 
   return {
     kind: 'demo',
@@ -146,12 +153,12 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
       return { status: 'signed-in' as const, profile: found };
     },
     async setMyName(fullName) {
-      const updated = await write((d, v) => eq.setMyName(d, v, fullName));
+      const updated = await writeOwn((d, v) => eq.setMyName(d, v, fullName));
       viewer = updated;
       return updated;
     },
     async setWhatsApp(prefs) {
-      const updated = await write((d, v) => setWhatsAppPrefs(d, v, prefs));
+      const updated = await writeOwn((d, v) => setWhatsAppPrefs(d, v, prefs));
       viewer = updated;
       return updated;
     },
@@ -511,7 +518,7 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     listFunctionErrors: (limit) => read((d, v) => launch.functionErrors(d, v, limit)),
     exportMyData: () => read((d, v) => launch.exportMyData(d, v)),
     async deleteMyAccount() {
-      const summary = await write((d, v) => launch.deleteMyAccount(d, v));
+      const summary = await writeOwn((d, v) => launch.deleteMyAccount(d, v));
       // The login no longer exists: forget the demo session, as production signs out locally.
       viewer = null;
       await AsyncStorage.removeItem(SESSION_KEY).catch(() => undefined);
