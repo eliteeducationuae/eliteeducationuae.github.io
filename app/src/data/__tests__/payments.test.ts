@@ -41,13 +41,14 @@ describe('seeded card payments', () => {
 });
 
 describe('package offers (mirror package_offers RLS)', () => {
-  it('shows parents active offers only, in order, and admins every offer', () => {
+  it('shows parents active offers only, in order, admins every offer and tutors none', () => {
     const db = createSeed(NOW);
     const parentView = pay.offers(db, who(db, 'parent'));
     expect(parentView.every((o) => o.active)).toBe(true);
     expect(parentView.map((o) => o.sort)).toEqual([...parentView.map((o) => o.sort)].sort((a, b) => a - b));
     expect(pay.offers(db, who(db, 'admin'))).toHaveLength(db.packageOffers!.length);
-    expect(pay.offers(db, who(db, 'tutor')).every((o) => o.active)).toBe(true);
+    expect(parentView.length).toBeGreaterThan(0);
+    expect(pay.offers(db, who(db, 'tutor'))).toEqual([]);
   });
   it('copes with a saved database from before offers existed', () => {
     const db = createSeed(NOW);

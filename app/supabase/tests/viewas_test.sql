@@ -223,7 +223,7 @@ select pg_temp.check(pg_temp.err($q$update auth.users set encrypted_password = '
   is not null, 'the password cannot change during a view');
 select pg_temp.check(pg_temp.err($q$update auth.users set phone = '+971500000000' where id = 'a0000000-0000-0000-0000-000000000004'$q$)
   is not null, 'the phone cannot change during a view');
-select pg_temp.check(pg_temp.err($q$update auth.users set raw_user_meta_data = '{"a":1}' where id = 'a0000000-0000-0000-0000-000000000004'$q$)
+select pg_temp.check(pg_temp.err($q$update auth.users set raw_app_meta_data = '{"a":1}' where id = 'a0000000-0000-0000-0000-000000000004'$q$)
   is null, 'other sign-in bookkeeping still updates during a view');
 select pg_temp.check(pg_temp.err($q$update auth.users set email = 'new-bea@x' where id = 'a0000000-0000-0000-0000-000000000002'$q$)
   is null, 'people who are not being viewed can change their email');
@@ -272,9 +272,13 @@ select pg_temp.check(pg_temp.err($q$insert into auth.refresh_tokens (token, user
     values ('t1c', 'a0000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001')$q$) like '42501:%',
   'an ended view cannot refresh its session');
 
--- (k, continued) Once the view has ended, the person can change their details again.
+-- (k, continued) A revoked view protects the person for 24 hours (the life of an email-change link), then they can
+-- change their details again.
+select pg_temp.check(pg_temp.err($q$update auth.users set email = 'new@x' where id = 'a0000000-0000-0000-0000-000000000004'$q$)
+  like '42501:%', 'the email stays protected for 24 hours after the view was revoked');
+update public.view_as_sessions set revoked_at = now() - interval '25 hours' where id = current_setting('test.view1')::uuid;
 select pg_temp.check(pg_temp.err($q$update auth.users set email = 'new@x' where id = 'a0000000-0000-0000-0000-000000000004'$q$) is null,
-  'the email can change once the view has ended');
+  'the email can change once the view has ended and 24 hours have passed');
 
 -- (g) Ended and expired views are refused outright -------------------------------------------------------------------
 update public.view_as_sessions set expires_at = now() - interval '1 minute' where session_id = 'e0000000-0000-0000-0000-000000000002';

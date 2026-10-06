@@ -40,10 +40,11 @@ function payBalance(db: DemoDB, invoice: Invoice, reference: string | undefined,
 }
 
 export const pay = {
-  /** package_offers RLS: admins see every offer, everyone else only active ones. */
+  /** package_offers RLS: admins see every offer, parents and the accountant only active ones, tutors and students none. */
   offers(db: DemoDB, viewer: Profile): PackageOffer[] {
     const all = offersOf(db);
-    return sortOffers(viewer.role === 'admin' ? all : all.filter((o) => o.active));
+    if (viewer.role === 'admin') return sortOffers(all);
+    return viewer.role === 'parent' || viewer.role === 'accountant' ? sortOffers(all.filter((o) => o.active)) : [];
   },
 
   saveOffer(db: DemoDB, viewer: Profile, offer: Omit<PackageOffer, 'id'> & { id?: string }): PackageOffer {

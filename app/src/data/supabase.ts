@@ -1045,7 +1045,14 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
       return check(await client.from('students').select('*, student_notes(notes)').order('full_name')).map(toStudent);
     },
     async listServices() {
-      return check(await client.from('services').select('*').order('name')).map(toService);
+      // Everyone reads the catalogue; the family price (rate) reaches only admins, parents and the accountant, so
+      // tutors and students get 0, which their screens never show.
+      const [catalogue, priced] = await Promise.all([
+        client.from('service_catalogue').select('*').order('name'),
+        client.from('services').select('id, rate'),
+      ]);
+      const rates = new Map(check<Row[]>(priced).map((r) => [r.id, r.rate]));
+      return check<Row[]>(catalogue).map((r) => toService({ ...r, rate: rates.get(r.id) ?? 0 }));
     },
     async listLessons({ from, to }) {
       return check(
@@ -1834,7 +1841,7 @@ export function createSupabaseSource(url: string, anonKey: string, options?: { c
     },
     // Card payments: saved cards, autopay and top-ups
     async listPackageOffers() {
-      // RLS returns only active offers to everyone but admins.
+      // RLS returns every offer to admins, active ones to parents and the accountant, and none to tutors or students.
       return check(await client.from('package_offers').select('*').order('sort').order('lessons')).map(toOffer);
     },
     async savePackageOffer(o) {
