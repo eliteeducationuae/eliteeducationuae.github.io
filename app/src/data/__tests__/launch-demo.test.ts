@@ -185,11 +185,25 @@ describe('logAppError and systemHealth', () => {
     const db = createSeed();
     const health = systemHealth(db, who(db, 'admin'), NOW);
     expect(health.checks.map((c) => c.key)).toEqual(['notifications', 'whatsapp', 'calendar', 'autopay', 'stripe', 'server-errors', 'app-errors', 'backups']);
-    expect(health.database.latest).toBe('20261020000000');
-    expect(health.database.latestName).toBe('launch');
+    expect(health.database.latest).toBe('20261112000000');
+    expect(health.database.latestName).toBe('round5_followups');
     expect(health.database.count).toBe(KNOWN_MIGRATIONS.length);
     expect(health.jobs.length).toBeGreaterThan(0);
     expect(health.checks.every((c) => c.detail.endsWith('.'))).toBe(true);
+  });
+
+  it('lists every migration file in supabase/migrations, in order', () => {
+    // The app has no Node types, so the two calls the test needs are typed here.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as { readdirSync: (dir: string) => string[] };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as { resolve: (...parts: string[]) => string };
+    const files = fs
+      .readdirSync(path.resolve('supabase/migrations'))
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .map((f) => ({ version: f.slice(0, 14), name: f.slice(15, -4) }));
+    expect(KNOWN_MIGRATIONS).toEqual(files);
   });
 
   it('flags recent app errors', () => {

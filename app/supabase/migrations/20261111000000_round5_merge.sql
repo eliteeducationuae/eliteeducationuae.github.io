@@ -3,7 +3,6 @@
 --  1. Round 4 follow-up wording restored. Round 5 migrations (rates, contacts, spam) redefined functions that the round 4
 --     follow-up (20261014000000_round4_qa_fixes.sql) had corrected, bringing back '/admin/enquiries' links and
 --     '2026-08-17' dates on charges. The corrections are applied again to whatever the functions now hold.
---     The admissions timeline also names the month of a monthly update when it is sent.
 --  2. Roles: profiles_role_check is the union of every branch's roles (round 5 adds only 'accountant').
 --  3. Enquiries: families can no longer read their own enquiry rows, which carry the office's staff-only notes
 --     (including spam-protection notes). Only administrators read enquiries; the app never showed them to families.
@@ -63,13 +62,6 @@ end $$;
 
 -- Charges read '17 Aug 2026', including the agreed-price lines added by the rates migration.
 select pg_temp.swap_literal('public.apply_charges(uuid, jsonb)', '''YYYY-MM-DD''', '''FMDD Mon YYYY''');
-
--- Admissions follow-up: the timeline reads 'Advisory update sent: October 2026' (or the update's title), not
--- 'Advisory update: October 2026 advisory update'. Mirrors advisoryUpdateSentTitle() in src/domain/admissions.ts.
-select pg_temp.swap_literal('public.set_advisory_update_status(uuid, text)',
-  '''Advisory update: '' || u.title',
-  '''Advisory update sent: '' || case when u.kind = ''monthly'' and nullif(trim(u.period), '''') is not null
-                                          then trim(u.period) else trim(u.title) end');
 
 -- ---------------------------------------------------------------------------
 -- 2. Roles

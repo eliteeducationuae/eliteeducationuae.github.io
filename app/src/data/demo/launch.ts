@@ -44,7 +44,20 @@ export const KNOWN_MIGRATIONS: MigrationRecord[] = [
   { version: '20261011000000', name: 'whatsapp' },
   { version: '20261012000000', name: 'invoice_notifications' },
   { version: '20261012010000', name: 'classwork_security' },
-  { version: '20261020000000', name: 'launch' },
+  { version: '20261013000000', name: 'review_fixes' },
+  { version: '20261014000000', name: 'round4_qa_fixes' },
+  { version: '20261101000000', name: 'viewas' },
+  { version: '20261102000000', name: 'rates' },
+  { version: '20261103000000', name: 'contacts' },
+  { version: '20261104000000', name: 'audit' },
+  { version: '20261105000000', name: 'tax' },
+  { version: '20261106000000', name: 'admissions' },
+  { version: '20261107000000', name: 'vetting' },
+  { version: '20261108000000', name: 'launch' },
+  { version: '20261109000000', name: 'spam' },
+  { version: '20261110000000', name: 'handover' },
+  { version: '20261111000000', name: 'round5_merge' },
+  { version: '20261112000000', name: 'round5_followups' },
 ];
 
 const appErrorsOf = (db: DemoDB) => (db.appErrors ??= []);
