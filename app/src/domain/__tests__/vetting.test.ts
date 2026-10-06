@@ -1,6 +1,9 @@
 import type { TutorCompliance, TutorDocument, VettingOverride } from '../types';
 import {
   activeOverride,
+  blockedEnrolmentTutors,
+  enrolmentGivesNewStudent,
+  enrolmentVettingMessage,
   blockedReasonPhrase,
   describeDateInput,
   maskDateInput,
@@ -278,5 +281,59 @@ describe('sentence-safe vetting copy and date entry', () => {
     expect(describeDateInput('2027-10-05')).toBe('5 October 2027');
     expect(describeDateInput('2027-10-0')).toBeNull();
     expect(describeDateInput('2027-02-30')).toBeNull();
+  });
+});
+
+describe('checking subject tutors before the student editor saves anything', () => {
+  const saved = [
+    { id: 'e1', tutorId: 't-sarah', active: true },
+    { id: 'e2', tutorId: 't-james', active: true },
+  ];
+  const vetting: Record<string, TutorCompliance> = {
+    't-sarah': comp({ tutorId: 't-sarah' }),
+    't-james': comp({ tutorId: 't-james', vettingStatus: 'missing', clearanceExpiry: undefined }),
+    't-omar': comp({ tutorId: 't-omar', vettingStatus: 'pending', clearanceExpiry: undefined }),
+  };
+  const lookup = (id: string) => vetting[id];
+
+  it('counts new subjects, changed tutors and reactivated subjects as new students', () => {
+    expect(enrolmentGivesNewStudent({ active: true, tutorId: 't-james' }, saved)).toBe(true);
+    expect(enrolmentGivesNewStudent({ id: 'e1', active: true, tutorId: 't-james' }, saved)).toBe(true);
+    expect(enrolmentGivesNewStudent({ id: 'e3', active: true, tutorId: 't-james' }, [{ id: 'e3', tutorId: 't-james', active: false }])).toBe(true);
+  });
+  it('leaves unchanged, removed and unassigned subjects alone', () => {
+    expect(enrolmentGivesNewStudent({ id: 'e2', active: true, tutorId: 't-james' }, saved)).toBe(false);
+    expect(enrolmentGivesNewStudent({ id: 'e1', active: false, tutorId: 't-james' }, saved)).toBe(false);
+    expect(enrolmentGivesNewStudent({ active: true }, saved)).toBe(false);
+  });
+  it('names each uncleared tutor once, and only for changed subjects', () => {
+    const drafts = [
+      { id: 'e1', active: true, tutorId: 't-james' },
+      { id: 'e2', active: true, tutorId: 't-james' },
+      { active: true, tutorId: 't-james' },
+      { active: true, tutorId: 't-omar' },
+      { active: true, tutorId: 't-sarah' },
+    ];
+    expect(blockedEnrolmentTutors(drafts, saved, lookup, TODAY)).toEqual(['t-james', 't-omar']);
+    expect(blockedEnrolmentTutors([{ id: 'e2', active: true, tutorId: 't-james' }], saved, lookup, TODAY)).toEqual([]);
+  });
+  it('allows uncleared tutors with an override in force, or when clearance is not enforced', () => {
+    const drafts = [{ active: true, tutorId: 't-james' }];
+    const overridden = comp({ tutorId: 't-james', vettingStatus: 'missing', override: { id: 'o1', reason: 'Seen in person', until: '2026-10-20T00:00:00Z' } });
+    expect(blockedEnrolmentTutors(drafts, saved, () => overridden, TODAY)).toEqual([]);
+    const lapsed = { ...overridden, override: { id: 'o1', reason: 'Seen in person', until: '2026-10-01T00:00:00Z' } };
+    expect(blockedEnrolmentTutors(drafts, saved, () => lapsed, TODAY)).toEqual(['t-james']);
+    expect(blockedEnrolmentTutors(drafts, saved, () => ({ ...vetting['t-james'], enforced: false }), TODAY)).toEqual([]);
+  });
+  it('says plainly that nothing has been saved, and is recognised as a vetting block', () => {
+    const one = enrolmentVettingMessage(['James Wilson']);
+    expect(one).toBe(
+      'Police clearance required: James Wilson cannot be given new students until their police clearance has been verified, so nothing has been saved. Please record their checks or an override, or choose another tutor, and then save again.',
+    );
+    expect(isVettingBlock(new Error(one))).toBe(true);
+    expect(enrolmentVettingMessage(['James Wilson', 'Omar Haddad', 'Lina Saeed'])).toContain(
+      'James Wilson, Omar Haddad and Lina Saeed cannot be given new students',
+    );
+    expect(enrolmentVettingMessage(['A', 'B'])).toContain('or choose other tutors,');
   });
 });
