@@ -236,7 +236,9 @@ export function createDemoSource(session: DemoSession = { viewer: null, persist:
     listTutors: () => read((d) => d.tutors),
     listFamilies: () => read((d, v) => pay.stripBilling(q.families(d, v), v)),
     listStudents: () => read((d, v) => q.students(d, v)),
-    listServices: () => read((d) => d.services),
+    // services RLS: the family price reaches only admins, parents and the accountant (others read the catalogue).
+    listServices: () =>
+      read((d, v) => (['admin', 'parent', 'accountant'].includes(v.role) ? d.services : d.services.map((s) => ({ ...s, rate: 0 })))),
     listLessons: ({ from, to }) => read((d, v) => q.lessons(d, v, from, to)),
     getLesson: (id) => read((d, v) => q.lessons(d, v, '0000', '9999').find((l) => l.id === id) ?? null),
     listNotes: (filter) => read((d, v) => q.notes(d, v, filter)),

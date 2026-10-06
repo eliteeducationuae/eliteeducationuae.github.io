@@ -65,6 +65,7 @@ Complete these on the production project before the first TestFlight build reach
 - [ ] **3.7 Stripe live mode.** Live webhook with the six events in README *Going live*; Apple Pay domain `eliteeducation.me` verified; customer billing portal configured.
 - [ ] **3.8 Authentication emails** use the sign-up code template and come from `hello@eliteeducation.me` (custom SMTP through Resend), so codes do not land in spam.
 - [ ] **3.9 System health is green** for 48 hours before submission, and a test alert has reached `HEALTH_ALERT_EMAIL`.
+- [ ] **3.10 Secure email change stays on** (Supabase → Authentication → Providers → Email → *Secure email change*), so an email change must be confirmed from both the old and the new address. With *View as*, it is one of the guards that stop an email change being completed on a viewed account; never turn it off.
 
 ## 4. App Store Connect listing
 
