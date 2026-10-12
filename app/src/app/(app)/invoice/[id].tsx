@@ -5,6 +5,7 @@ import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
 import { HistorySection } from '@/components/history';
+import { AdminInvoice } from '@/components/money/admin-invoice';
 import {
   AUTOPAY_MAY_HAVE_CHARGED,
   AutopayBadge,
@@ -27,8 +28,13 @@ import type { PaymentMethod } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 import { aed, shareInvoice } from '@/lib/invoice-pdf';
 
+/** The office's invoice (components/money/admin-invoice), or the family's and the accountant's below. */
 export default function InvoicePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return useMe().role === 'admin' ? <AdminInvoice id={id} /> : <InvoiceView id={id} />;
+}
+
+function InvoiceView({ id }: { id: string }) {
   const me = useMe();
   const lookup = useLookup();
   const invoice = useInvoice(id);

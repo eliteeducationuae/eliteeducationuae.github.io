@@ -1,19 +1,22 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
+import { View } from 'react-native';
 
-import { AmountLine, parseAmount, SwitchRow } from '@/components/tax';
-import { Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Ledger, SideCard, Split } from '@/components/money/blocks';
+import { parseAmount } from '@/components/tax';
+import { Button, ChipField, EmptyState, ErrorNote, Field, Loading, Notice, PageHeader, Screen, Toggle, Txt, useToast } from '@/components/ui';
 import { source } from '@/data';
-import { useAction, useCreditNotes, useInvoice, useRefunds } from '@/data/hooks';
+import { useAction, useCreditNotes, useInvoice, useLookup, useRefunds } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { formatDate } from '@/domain/dates';
 import { paymentLabel } from '@/domain/payments';
 import { creditRemaining, overpaid, refundableAmount, refundNeedsCreditNote } from '@/domain/tax';
 import type { CreditNote, Invoice, Payment, Refund } from '@/domain/types';
-import { confirm, notify } from '@/lib/confirm';
+import { confirm } from '@/lib/confirm';
 import { uuid } from '@/lib/id';
 import { aed } from '@/lib/invoice-pdf';
+
+const head = <Stack.Screen options={{ headerShown: false }} />;
 
 /** Admin: return money against a payment, by card through Stripe or recorded after a bank transfer or cash. */
 export default function RefundScreen() {
@@ -24,16 +27,27 @@ export default function RefundScreen() {
   const notes = useCreditNotes({ invoiceId });
   if (me.role !== 'admin') {
     return (
-      <Screen>
+      <Screen topInset>
+        {head}
+        <PageHeader back kicker="Refund" title="Not available" />
         <EmptyState icon="alert" title="Not available" message="Only the office can refund payments." />
       </Screen>
     );
   }
-  if (invoice.isLoading || refunds.isLoading || notes.isLoading) return <Loading />;
+  if (invoice.isLoading || refunds.isLoading || notes.isLoading) {
+    return (
+      <Screen topInset>
+        {head}
+        <Loading />
+      </Screen>
+    );
+  }
   const payment = invoice.data?.payments.find((p) => p.id === paymentId);
   if (!invoice.data || !payment) {
     return (
-      <Screen>
+      <Screen topInset>
+        {head}
+        <PageHeader back kicker="Refund" title="Payment not found" />
         <EmptyState title="Payment not found" />
       </Screen>
     );
@@ -42,6 +56,8 @@ export default function RefundScreen() {
 }
 
 function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; payment: Payment; refunds: Refund[]; notes: CreditNote[] }) {
+  const toast = useToast();
+  const lookup = useLookup();
   const refund = useAction(source.refundPayment);
   const inv = { ...invoice, refunds: invoice.refunds ?? refunds };
   const refundable = refundableAmount(payment, refunds);
@@ -56,8 +72,10 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
   const [requestKey, setRequestKey] = useState(() => uuid());
   const [failed, setFailed] = useState<string | null>(null);
 
+  const family = lookup.family(invoice.familyId);
   const value = parseAmount(amount);
   const card = !!payment.viaStripe;
+  // Refunding more than the family overpaid lowers the price of the invoice, so a credit note must go with it.
   const forced = !Number.isNaN(value) && refundNeedsCreditNote(inv, value) && value > over;
   const credit = forced || withCredit;
   const tooMuch = !Number.isNaN(value) && value > refundable;
@@ -82,99 +100,108 @@ function RefundForm({ invoice, payment, refunds, notes }: { invoice: Invoice; pa
       setRequestKey(uuid());
       return;
     }
-    if (result.status === 'pending') notify('Refund requested', 'The refund is being processed by Stripe.');
-    else notify('Refund recorded', `${aed(result.amount)} has been refunded.`);
     router.back();
+    if (result.status === 'pending') toast(`Refund of ${aed(result.amount)} requested through Stripe.`);
+    else toast(`Refund of ${aed(result.amount)} recorded${credit ? ' with a credit note' : ''}.`);
+  }
+
+  function confirmRefund() {
+    confirm(
+      `Refund ${aed(value)}?`,
+      [
+        card
+          ? `${aed(value)} will be returned to the card used for this payment.`
+          : `This records a refund of ${aed(value)} made by ${method === 'cash' ? 'cash' : 'bank transfer'}.`,
+        credit ? `A credit note for ${aed(value)} will be issued against ${invoice.number}.` : 'No credit note will be issued.',
+        'This cannot be undone.',
+      ].join(' '),
+      () => void submit().catch(() => undefined),
+      'Refund',
+    );
   }
 
   return (
-    <Screen
-      footer={
-        <Button
-          title={!Number.isNaN(value) && value > 0 ? `Refund ${aed(value)}` : 'Refund'}
-          variant="gold"
-          icon="repeat"
-          style={{ flex: 1 }}
-          disabled={!ready}
-          loading={refund.isPending}
-          onPress={() =>
-            confirm(
-              `Refund ${aed(value)}?`,
-              [
-                card
-                  ? `${aed(value)} will be returned to the card used for this payment.`
-                  : `This records a refund of ${aed(value)} made by ${method === 'cash' ? 'cash' : 'bank transfer'}.`,
-                credit
-                  ? `A credit note for ${aed(value)} will be issued against ${invoice.number}.`
-                  : 'No credit note will be issued.',
-                'This cannot be undone.',
-              ].join(' '),
-              () => void submit().catch(() => undefined),
-              'Refund',
-            )
-          }
-        />
-      }>
-      <Card style={{ gap: Spacing.one }}>
-        <Txt variant="label">Payment on {invoice.number}</Txt>
-        <Txt variant="h3">
-          {formatDate(payment.paidAt)} · {paymentLabel(payment)}
-        </Txt>
-        <AmountLine label="Amount paid" value={aed(payment.amount)} />
-        <AmountLine label="Already refunded" value={aed(payment.amount - refundable)} />
-        <AmountLine label="Can be refunded" value={aed(refundable)} strong />
-        {over > 0 ? <AmountLine label="Paid beyond what the invoice asks" value={aed(over)} /> : null}
-      </Card>
+    <Screen topInset>
+      {head}
+      <PageHeader back kicker={`Refund · ${invoice.number}`} title="Refund a payment" sub={family ? `${family.name} family` : undefined} />
+      <Split>
+        <View style={{ gap: 20 }}>
+          <Notice tone="info" icon={card ? 'credit_card' : 'payments'}>
+            {card
+              ? 'The money goes back to the same card through Stripe. It usually arrives within 5 to 10 working days.'
+              : 'Record a refund you have already made by bank transfer or cash.'}
+          </Notice>
+          <Field
+            label="Amount to refund (AED)"
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            error={tooMuch ? `Only ${aed(refundable)} of this payment can be refunded.` : undefined}
+            hint={tooMuch ? undefined : `Up to ${aed(refundable)}.`}
+          />
+          <Field
+            label="Reason"
+            value={reason}
+            onChangeText={setReason}
+            multiline
+            placeholder="For example, package cancelled at the family’s request."
+            hint={reason.trim() ? 'Printed on the refund record.' : 'Required.'}
+          />
+          {!card ? (
+            <>
+              <ChipField
+                label="Refunded by"
+                options={[
+                  { value: 'bank-transfer', label: 'Bank transfer' },
+                  { value: 'cash', label: 'Cash' },
+                ]}
+                value={method}
+                onChange={setMethod}
+              />
+              {method === 'bank-transfer' ? <Field label="Bank transfer reference" value={reference} onChangeText={setReference} hint="Optional." /> : null}
+            </>
+          ) : null}
+          <View style={{ gap: 6 }}>
+            <Toggle title="Also issue a credit note" value={credit} onValueChange={setWithCredit} disabled={forced || creditLeft <= 0} />
+            <Txt variant="note">
+              {forced
+                ? 'This refund is more than the family overpaid, so it lowers the price of the invoice. A credit note must be issued with it.'
+                : creditLeft <= 0
+                  ? 'Nothing is left to credit on this invoice.'
+                  : over > 0
+                    ? 'Not needed when you are only returning an overpayment.'
+                    : 'Issue one when the refund lowers what the family is charged.'}
+            </Txt>
+          </View>
+          {credit && creditLeft <= 0 ? (
+            <Notice tone="warn">Nothing is left to credit on this invoice, so this refund cannot carry a credit note.</Notice>
+          ) : null}
+        </View>
 
-      <Banner icon={card ? 'card' : 'money'}>
-        {card
-          ? 'The money goes back to the same card. It usually arrives within 5 to 10 working days.'
-          : 'Record a refund you have already made by bank transfer or cash.'}
-      </Banner>
-
-      <Field
-        label="Amount to refund (AED)"
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="decimal-pad"
-        placeholder="0.00"
-        hint={tooMuch ? `Only ${aed(refundable)} of this payment can be refunded.` : `Up to ${aed(refundable)}.`}
-      />
-      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: package cancelled at the family's request." hint={reason.trim() ? 'Printed on the refund record.' : 'Required.'} />
-      {!card ? (
-        <Section title="Refunded by">
-          <Segmented
-            value={method}
-            onChange={setMethod}
-            options={[
-              { value: 'bank-transfer', label: 'Bank transfer' },
-              { value: 'cash', label: 'Cash' },
+        <SideCard label={`Payment on ${invoice.number}`}>
+          <Txt variant="groupTitle" style={{ fontSize: 19 }}>
+            {`${formatDate(payment.paidAt)} · ${paymentLabel(payment)}`}
+          </Txt>
+          <Ledger
+            lines={[
+              { label: 'Amount paid', value: aed(payment.amount) },
+              { label: 'Already refunded', value: aed(payment.amount - refundable) },
+              ...(over > 0 ? [{ label: 'Paid beyond what the invoice asks', value: aed(over) }] : []),
+              { label: 'Can be refunded', value: aed(refundable), strong: true },
             ]}
           />
-          {method === 'bank-transfer' ? (
-            <Field label="Bank transfer reference" value={reference} onChangeText={setReference} hint="Optional." />
-          ) : null}
-        </Section>
-      ) : null}
-
-      <SwitchRow
-        label="Also issue a credit note"
-        value={credit}
-        onChange={setWithCredit}
-        disabled={forced || creditLeft <= 0}
-        hint={
-          forced
-            ? 'This refund is more than the family overpaid, so it lowers the price of the invoice. A credit note must be issued with it.'
-            : creditLeft <= 0
-              ? 'Nothing is left to credit on this invoice.'
-              : over > 0
-                ? 'Not needed when you are only returning an overpayment.'
-                : 'Issue one when the refund reduces what the family is charged.'
-        }
-      />
-      {credit && creditLeft <= 0 ? <Banner tone="warning" icon="alert">Nothing is left to credit on this invoice, so this refund cannot carry a credit note.</Banner> : null}
-      {failed ? <Banner tone="danger" icon="alert">{failed}</Banner> : null}
-      <ErrorNote error={refund.error} />
+          {failed ? <Notice tone="danger">{failed}</Notice> : null}
+          <ErrorNote error={refund.error} />
+          <Button
+            title={!Number.isNaN(value) && value > 0 ? `Refund ${aed(value)}` : 'Refund'}
+            icon="undo"
+            disabled={!ready}
+            loading={refund.isPending}
+            onPress={confirmRefund}
+          />
+        </SideCard>
+      </Split>
     </Screen>
   );
 }

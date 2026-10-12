@@ -1,21 +1,32 @@
+import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 
-import { RiskRow, useAtRisk } from '@/components/insights';
-import { Bars, ShareBars, useFinanceData } from '@/components/money';
-import { Banner, Button, Card, Loading, ProgressBar, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { useAtRisk } from '@/components/insights';
+import { useFinanceData } from '@/components/money';
+import { BarList, NoirPanel, useStackBack } from '@/components/money/blocks';
+import { monthName } from '@/components/money/format';
+import { HeaderActions } from '@/components/role-tabs';
+import { Button, Columns, Figure, Figures, Group, GroupRow, Loading, Notice, PageHeader, Screen, Txt, useWide } from '@/components/ui';
+import { font } from '@/constants/theme';
 import { source } from '@/data';
 import { useAvailability, useEnquiries, useStudents } from '@/data/hooks';
 import { formatAED, formatPercent } from '@/domain/billing';
 import { addDays, startOfDay } from '@/domain/dates';
 import { monthSeries, receivables, revenueBySubject } from '@/domain/finance';
-import { enquiryConversion, familyActivity, tutorUtilisation } from '@/domain/insights';
+import { enquiryConversion, familyActivity, tutorUtilisation, type StudentRisk } from '@/domain/insights';
+import type { Student } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
+import { plural } from '@/lib/id';
 
-/** Admin: how the business is doing, in a few simple charts, plus who needs attention. */
+/** Nearly fully booked: drawn in gold, and not suggested for new students. */
+const NEARLY_FULL = 0.85;
+
+/** Admin: how the business is doing in a few plain figures and bars, plus the students worth checking on. */
 export default function Insights() {
   const theme = useTheme();
+  const wide = useWide();
+  const stack = useStackBack();
   const finance = useFinanceData();
   const students = useStudents();
   const enquiries = useEnquiries();
@@ -35,7 +46,8 @@ export default function Insights() {
     const weekFrom = addDays(startOfDay(now), -28);
     const utilisation = d.tutors
       .map((t) => ({ tutor: t, ...tutorUtilisation(t.id, d.lessons, availability.data, weekFrom, startOfDay(now)) }))
-      .filter((u) => u.availableHours > 0 || u.taughtHours > 0);
+      .filter((u) => u.availableHours > 0 || u.taughtHours > 0)
+      .sort((a, b) => b.rate - a.rate);
     return {
       series,
       // d.lessons spans the last 13 months, so it covers every charge from the last 90 days.
@@ -47,21 +59,44 @@ export default function Insights() {
     };
   }, [finance.data, students.data, enquiries.data, availability.data, now]);
 
-  if (!computed) return <Loading />;
+  const header = (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back={stack} kicker="Business" title="Insights" right={stack ? undefined : <HeaderActions search inbox />} />
+    </>
+  );
+  if (!computed) {
+    return (
+      <Screen topInset>
+        {header}
+        <Loading />
+      </Screen>
+    );
+  }
   const { series, bySubject, utilisation, families, conversion } = computed;
   const thisMonth = series[series.length - 1];
   const lastMonth = series[series.length - 2];
   const change = lastMonth.revenue ? (thisMonth.revenue - lastMonth.revenue) / lastMonth.revenue : 0;
+  const subjectTotal = bySubject.reduce((s, c) => s + c.revenue, 0);
+  const subjectMax = Math.max(1, ...bySubject.map((c) => c.revenue));
+  // Tutors with room for more: under 60% booked, with availability set.
+  const spare = utilisation.filter((u) => u.availableHours > 0 && u.rate < 0.6).map((u) => u.tutor.fullName.split(' ')[0]);
 
   async function summarise() {
     setSummarising(true);
     setSummaryFailed(false);
     const figures = {
       today: now.toISOString().slice(0, 10),
-      months: series.slice(-6).map((m) => ({ month: m.month, revenue: m.revenue, tutorCosts: m.tutorCosts, expenses: m.expenses, profit: m.profit, cashIn: m.cashIn })),
+      months: series
+        .slice(-6)
+        .map((m) => ({ month: m.month, revenue: m.revenue, tutorCosts: m.tutorCosts, expenses: m.expenses, profit: m.profit, cashIn: m.cashIn })),
       owedByFamilies: computed!.owed,
       revenueBySubjectLast90Days: bySubject,
-      tutorUtilisationLast4Weeks: utilisation.map((u) => ({ tutor: u.tutor.fullName.split(' ')[0], taughtHours: u.taughtHours, availableHours: u.availableHours })),
+      tutorUtilisationLast4Weeks: utilisation.map((u) => ({
+        tutor: u.tutor.fullName.split(' ')[0],
+        taughtHours: u.taughtHours,
+        availableHours: u.availableHours,
+      })),
       families,
       enquiriesLast90Days: conversion,
       studentsAtRisk: atRisk.list.length,
@@ -73,61 +108,118 @@ export default function Insights() {
   }
 
   return (
-    <Screen onRefresh={finance.refetch} refreshing={finance.refreshing}>
+    <Screen topInset onRefresh={finance.refetch} refreshing={finance.refreshing}>
+      {header}
       {source.aiAssist ? (
-        <Card style={{ gap: Spacing.two }}>
-          {summary ? <Txt>{summary}</Txt> : <Txt variant="muted">Request a plain-English summary of the figures below.</Txt>}
+        <NoirPanel kicker="In plain English" icon="auto_awesome">
+          {summary ? (
+            <Text style={[font('serif'), { fontSize: wide ? 21 : 18, lineHeight: wide ? 30 : 26, color: theme.onHero }]} accessibilityLiveRegion="polite">
+              {summary}
+            </Text>
+          ) : (
+            <Text style={[font('sans'), { fontSize: 16, lineHeight: 23, color: theme.onHeroMuted }]}>A short written summary of the figures below.</Text>
+          )}
           {summaryFailed ? <Txt variant="small">Summaries are not available at the moment. Please try again later.</Txt> : null}
-          <Button title={summary ? 'Refresh summary' : 'Summarise the figures'} icon="sparkle" variant="gold" size="sm" loading={summarising} onPress={summarise} />
-        </Card>
+          <View style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+            <Button title={summary ? 'Refresh summary' : 'Summarise the figures'} size="sm" loading={summarising} onPress={summarise} />
+          </View>
+        </NoirPanel>
       ) : null}
 
-      <StatGrid>
-        <Stat label={`Revenue ${thisMonth.label}`} value={formatAED(thisMonth.revenue)} hint={lastMonth.revenue ? `${change >= 0 ? '+' : ''}${formatPercent(change)} vs ${lastMonth.label} (month to date)` : undefined} />
-        <Stat label="Active families" value={String(families.active)} hint={`${families.new} new in 60 days`} tone="success" />
-        <Stat label="Lapsed families" value={String(families.lapsed)} hint="no lessons in 30 days, none booked" tone={families.lapsed ? 'warning' : undefined} />
-        <Stat
+      <Figures>
+        <Figure
+          label={`Revenue ${monthName(thisMonth.month)}`}
+          value={formatAED(thisMonth.revenue)}
+          hint={lastMonth.revenue ? `${change >= 0 ? '+' : ''}${formatPercent(change)} on ${monthName(lastMonth.month)} (month to date)` : undefined}
+        />
+        <Figure label="Active families" value={String(families.active)} hint={`${families.new} new in the last 60 days`} tone="good" />
+        <Figure label="Lapsed families" value={String(families.lapsed)} hint="no lessons in 30 days, none booked" tone={families.lapsed ? 'warn' : undefined} />
+        <Figure
           label="Enquiry conversion"
           value={conversion.enrolled + conversion.lost ? `${Math.round(conversion.rate * 100)}%` : '–'}
           hint={`${conversion.total} enquiries in 90 days · ${conversion.open} open`}
         />
-      </StatGrid>
+      </Figures>
 
-      <Section title="Revenue by month">
-        <Card>
-          <Bars items={series.map((m) => ({ label: m.label.slice(0, 3), value: m.revenue }))} />
-        </Card>
-      </Section>
+      <Columns>
+        <View style={{ gap: 12 }}>
+          <Txt variant="groupTitle" accessibilityRole="header">
+            Revenue by subject · 90 days
+          </Txt>
+          {bySubject.length ? (
+            <BarList
+              items={bySubject.map((c) => ({
+                label: c.subject,
+                value: `${formatAED(c.revenue)} · ${subjectTotal ? Math.round((c.revenue / subjectTotal) * 100) : 0}%`,
+                share: c.revenue / subjectMax,
+              }))}
+            />
+          ) : (
+            <Group note="Revenue will appear here once lessons have been taught." />
+          )}
+        </View>
+        <View style={{ gap: 12 }}>
+          <Txt variant="groupTitle" accessibilityRole="header">
+            Tutor capacity · 4 weeks
+          </Txt>
+          {utilisation.length ? (
+            <BarList
+              items={utilisation.map((u) => ({
+                label: u.tutor.fullName,
+                value: `${u.taughtHours}h of ${u.availableHours}h${u.availableHours ? ` · ${Math.round(u.rate * 100)}%` : ''}`,
+                share: u.rate,
+                gold: u.rate > NEARLY_FULL,
+              }))}
+              footnote={
+                [
+                  utilisation.some((u) => u.rate > NEARLY_FULL) ? 'Gold marks tutors who are nearly fully booked.' : '',
+                  spare.length && utilisation.some((u) => u.rate > NEARLY_FULL)
+                    ? `New students are better offered to ${spare.length === 1 ? spare[0] : `${spare.slice(0, -1).join(', ')} or ${spare[spare.length - 1]}`}.`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ') || undefined
+              }
+            />
+          ) : (
+            <Group note="Capacity will appear here once tutors have set their availability." />
+          )}
+        </View>
+      </Columns>
 
-      <Section title="Revenue by subject (90 days)">
-        <Card>{bySubject.length ? <ShareBars items={bySubject.map((c) => ({ label: c.subject, value: c.revenue }))} /> : <Txt variant="muted">Revenue will appear here once lessons have been taught.</Txt>}</Card>
-      </Section>
-
-      <Section title="Tutor utilisation (4 weeks)">
-        <Card style={{ gap: Spacing.three }}>
-          {utilisation.length === 0 ? <Txt variant="muted">Utilisation will appear here once tutors have set their availability.</Txt> : null}
-          {utilisation.map((u) => (
-            <View key={u.tutorId} style={{ gap: 4 }}>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Txt>{u.tutor.fullName}</Txt>
-                <Txt variant="muted">
-                  {u.taughtHours}h of {u.availableHours}h{u.availableHours ? ` · ${Math.round(u.rate * 100)}%` : ''}
-                </Txt>
-              </Row>
-              <ProgressBar value={u.rate * 100} color={u.rate > 0.85 ? theme.gold : undefined} />
-            </View>
-          ))}
-          {utilisation.some((u) => u.rate > 0.85) ? <Txt variant="small">Gold bars mark tutors who are nearly fully booked. Consider offering new students to tutors with spare hours.</Txt> : null}
-        </Card>
-      </Section>
-
-      <Section title={`Students to check on (${atRisk.list.length})`}>
+      <Group title="Students to check on" meta={atRisk.ready && atRisk.list.length ? plural(atRisk.list.length, 'student') : undefined}>
         {!atRisk.ready ? <Loading /> : null}
-        {atRisk.ready && atRisk.list.length === 0 ? <Banner tone="success" icon="check">No students are flagged. Every student is attending, completing homework and booked in.</Banner> : null}
         {atRisk.list.map((r) => (
           <RiskRow key={r.studentId} risk={r} />
         ))}
-      </Section>
+      </Group>
+      {atRisk.ready && atRisk.list.length === 0 ? (
+        <Notice tone="good">No students are flagged. Every student is attending, completing homework and booked in.</Notice>
+      ) : null}
     </Screen>
+  );
+}
+
+/** One student to check on: why, and the action that helps most (book lessons, or message the family). */
+function RiskRow({ risk }: { risk: StudentRisk & { student: Student } }) {
+  const s = risk.student;
+  const top = [...risk.signals].sort((a, b) => b.weight - a.weight)[0];
+  const familyId = s.familyId;
+  const action =
+    top?.key === 'no-lessons'
+      ? { label: 'Book lessons', onPress: () => router.push({ pathname: '/lesson/new', params: { studentId: s.id } }) }
+      : familyId
+        ? { label: 'Message family', onPress: () => router.push({ pathname: '/messages/[familyId]', params: { familyId } }) }
+        : undefined;
+  return (
+    <GroupRow
+      icon={risk.score >= 60 ? 'report' : 'flag'}
+      tone={risk.score >= 60 ? 'bad' : 'warn'}
+      title={s.fullName}
+      note={risk.signals.map((x) => x.label).join(' · ')}
+      onPress={() => router.push({ pathname: '/students/[id]', params: { id: s.id } })}
+      accessibilityHint="Opens the student"
+      action={action ? { ...action, accessibilityLabel: `${action.label}: ${s.fullName}` } : undefined}
+    />
   );
 }

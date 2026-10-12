@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 
+import { AdminVat } from '@/components/money/admin-vat';
 import { AmountLine, CreditNoteCard, Rule } from '@/components/tax';
 import { Banner, Button, Card, Chip, EmptyState, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -16,8 +17,13 @@ import { plural } from '@/lib/id';
 import { aed } from '@/lib/invoice-pdf';
 import { netVatLabel, shareVatSummary } from '@/lib/vat-pdf';
 
-/** Admin and accountant: the figures for a quarter's VAT return, with CSV and PDF exports. */
+/** The office's VAT returns (components/money/admin-vat) or the accountant's read-only one. */
 export default function VatReturns() {
+  return useMe().role === 'admin' ? <AdminVat /> : <AccountantVat />;
+}
+
+/** The accountant: the figures for a quarter's VAT return, with CSV and PDF exports. */
+function AccountantVat() {
   const settings = useSettings();
   const invoices = useInvoices();
   const creditNotes = useCreditNotes();

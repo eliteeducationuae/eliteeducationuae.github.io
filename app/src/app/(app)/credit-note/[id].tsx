@@ -1,19 +1,25 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
+import { AdminCreditNote } from '@/components/money/admin-credit-note';
 import { AmountLine, creditNoteKind, creditNoteLineViews, LineTaxTable, rebilledSentence, TaxPartyBlock, vatPercent } from '@/components/tax';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useCreditNote, useInvoice, useLookup, useSettings } from '@/data/hooks';
+import { useMe } from '@/data/session';
 import { invoiceTotals } from '@/domain/billing';
 import { formatDate } from '@/domain/dates';
 import { creditNoteDocumentTitle, invoiceCustomer, invoiceDocumentTitle, invoiceSupplier } from '@/domain/tax';
 import { shareCreditNote } from '@/lib/credit-note-pdf';
 import { aed } from '@/lib/invoice-pdf';
 
-/** A credit note against a tax invoice. Read by the office, the accountant and the family. */
+/** A credit note against a tax invoice: the office's view (components/money/admin-credit-note), or the accountant's and the family's below. */
 export default function CreditNotePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return useMe().role === 'admin' ? <AdminCreditNote id={id} /> : <CreditNoteView id={id} />;
+}
+
+function CreditNoteView({ id }: { id: string }) {
   const note = useCreditNote(id);
   const invoice = useInvoice(note.data?.invoiceId);
   const settings = useSettings();
