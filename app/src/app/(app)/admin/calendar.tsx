@@ -1,5 +1,5 @@
-import { CalendarScreen } from '@/components/calendar-screen';
+import { AdminDiary } from '@/components/admin/diary';
 
 export default function AdminCalendar() {
-  return <CalendarScreen canSchedule perspective="admin" />;
+  return <AdminDiary />;
 }
