@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { ParentAnnouncements } from '@/components/parent/announcements-view';
 import { Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -11,7 +12,13 @@ import type { Audience } from '@/domain/types';
 
 const AUDIENCE_LABEL: Record<Audience, string> = { everyone: 'Everyone', parents: 'Parents', tutors: 'Tutors' };
 
+/** Families read announcements on their own redesigned page (components/parent/announcements-view). */
 export default function Announcements() {
+  const me = useMe();
+  return me.role === 'parent' ? <ParentAnnouncements /> : <StaffAnnouncements />;
+}
+
+function StaffAnnouncements() {
   const me = useMe();
   const list = useAnnouncements();
   return (

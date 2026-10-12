@@ -125,8 +125,11 @@ export function AdminIcsResetActions(ref: ViewAsRef) {
   );
 }
 
-/** Add lessons to Apple / Google Calendar. Production uses a live subscription feed; the demo exports a file. */
-export function CalendarSyncCard() {
+/**
+ * The signed-in person's calendar feed: the live subscription address (production), or a file export of the next
+ * 120 days of lessons (the demo). `subscribe` opens the feed in the device's calendar.
+ */
+export function useCalendarFeed() {
   const me = useMe();
   const lookup = useLookup();
   const feedUrl = source.kind === 'supabase' && me.icsToken ? `${SUPABASE_URL}/functions/v1/ics?token=${me.icsToken}` : null;
@@ -149,6 +152,19 @@ export function CalendarSyncCard() {
       await Share.share({ message: ics, title: 'Elite Education lessons' });
     }
   }
+
+  const subscribe = () => {
+    if (!feedUrl) return;
+    Linking.openURL(feedUrl.replace(/^https?:/, 'webcal:')).catch(() => notify('Calendar feed', feedUrl));
+  };
+
+  return { feedUrl, exportFile, subscribe };
+}
+
+/** Add lessons to Apple / Google Calendar. Production uses a live subscription feed; the demo exports a file. */
+export function CalendarSyncCard() {
+  const me = useMe();
+  const { feedUrl, exportFile } = useCalendarFeed();
 
   const staff = me.role === 'admin' || me.role === 'tutor';
   const title = staff ? 'Calendar subscription' : 'Add lessons to your calendar';

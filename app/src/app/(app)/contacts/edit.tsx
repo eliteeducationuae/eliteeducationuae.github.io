@@ -1,7 +1,7 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { ContactEditor } from '@/components/family-contacts';
-import { EmptyState, Loading, Screen } from '@/components/ui';
+import { EmptyState, Loading, PageHeader, Screen } from '@/components/ui';
 import { useFamilyContacts } from '@/data/hooks';
 import { useMe } from '@/data/session';
 
@@ -13,7 +13,9 @@ export default function EditContact() {
 
   if (!allowed) {
     return (
-      <Screen>
+      <Screen topInset>
+        <Stack.Screen options={{ headerShown: false }} />
+        <PageHeader back kicker="Family contacts" title="Not available" />
         <EmptyState icon="alert" title="This page is not available." />
       </Screen>
     );
@@ -23,8 +25,9 @@ export default function EditContact() {
   const existing = id ? all.find((c) => c.id === id) : undefined;
   if (id && !existing) {
     return (
-      <Screen>
-        <Stack.Screen options={{ title: 'Contact' }} />
+      <Screen topInset>
+        <Stack.Screen options={{ title: 'Contact', headerShown: false }} />
+        <PageHeader back kicker="Family contacts" title="Contact not found" />
         <EmptyState icon="people" title="Contact not found" message="This contact may have been removed." />
       </Screen>
     );
@@ -32,7 +35,7 @@ export default function EditContact() {
 
   return (
     <>
-      <Stack.Screen options={{ title: existing ? existing.name : 'New contact' }} />
+      <Stack.Screen options={{ title: existing ? existing.name : 'New contact', headerShown: false }} />
       <ContactEditor key={existing?.id ?? 'new'} familyId={familyId} existing={existing} all={all} onDone={() => router.back()} />
     </>
   );

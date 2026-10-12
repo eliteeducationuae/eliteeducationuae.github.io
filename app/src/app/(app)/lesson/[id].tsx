@@ -7,6 +7,7 @@ import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
 import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
+import { ParentLesson } from '@/components/parent/lesson-view';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
 import { LessonPlanSection } from '@/components/plans';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
@@ -39,7 +40,14 @@ import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 import { safeMeetingUrl } from '@/lib/safe-url';
 
+/** Families get their own redesigned lesson page (components/parent/lesson-view); staff keep this one. */
 export default function LessonDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  return me.role === 'parent' ? <ParentLesson id={id} /> : <StaffLessonDetail />;
+}
+
+function StaffLessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const me = useMe();

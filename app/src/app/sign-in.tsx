@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-na
 import { Icon, type IconName } from '@/components/icon';
 import { Logo } from '@/components/logo';
 import { SocialSignIn, useSocialProviders } from '@/components/social-sign-in';
-import { Banner, Button, Card, ErrorNote, Field, ListItem, Screen, Txt } from '@/components/ui';
+import { Banner, Button, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Screen, Txt } from '@/components/ui';
 import { Radius, Spacing, elevation, font } from '@/constants/theme';
 import { source } from '@/data';
 import { useSession } from '@/data/session';
@@ -114,7 +114,7 @@ export default function SignIn() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen topInset>
+      <Screen topInset narrow>
         <View style={styles.column}>
           <View
             style={[
@@ -167,8 +167,8 @@ export default function SignIn() {
               <ErrorNote error={error} />
             </View>
           ) : (
-            <Card style={{ gap: Spacing.three }}>
-              <Txt variant="h2">{titles[mode]}</Txt>
+            <>
+            <FieldsCard title={titles[mode]}>
               {mode === 'sign-up' ? (
                 <Txt variant="muted">
                   Create an account to arrange a complimentary consultation, message us and follow your child’s progress. If you are already
@@ -249,25 +249,26 @@ export default function SignIn() {
               ) : null}
 
               <ErrorNote error={error} />
-              <Button
-                title={actions[mode]}
-                variant={mode === 'sign-up' ? 'gold' : 'primary'}
-                onPress={submit}
-                loading={busy}
-                disabled={!ready}
-              />
-
+            </FieldsCard>
+            <Button
+              title={actions[mode]}
+              icon={mode === 'sign-in' ? 'login' : mode === 'sign-up' ? 'person_add' : mode === 'verify' ? 'check' : 'send'}
+              onPress={submit}
+              loading={busy}
+              disabled={!ready}
+            />
+            <Group>
               {mode === 'sign-in' ? (
                 <>
-                  <Button title="New to Elite Education? Create an account" variant="ghost" onPress={() => switchMode('sign-up')} />
-                  <Button title="Forgotten your password?" variant="ghost" size="sm" onPress={() => switchMode('reset')} />
+                  <GroupRow icon="person_add" title="New to Elite Education? Create an account" accessibilityLabel="New to Elite Education? Create an account" onPress={() => switchMode('sign-up')} />
+                  <GroupRow icon="key" title="Forgotten your password?" accessibilityLabel="Forgotten your password?" onPress={() => switchMode('reset')} />
                 </>
               ) : mode === 'verify' ? (
                 <>
-                  <Button
+                  <GroupRow
+                    icon="refresh"
                     title="Send the code again"
-                    variant="ghost"
-                    size="sm"
+                    accessibilityLabel="Send the code again"
                     onPress={() =>
                       run(async () => {
                         await source.resendSignUpCode?.(email);
@@ -275,20 +276,21 @@ export default function SignIn() {
                       })
                     }
                   />
-                  <Button title="Already confirmed? Sign in" variant="ghost" size="sm" onPress={() => switchMode('sign-in')} />
+                  <GroupRow icon="arrow_back" title="Already confirmed? Sign in" accessibilityLabel="Already confirmed? Sign in" onPress={() => switchMode('sign-in')} />
                 </>
               ) : (
-                <Button title="Back to sign in" variant="ghost" onPress={() => switchMode('sign-in')} />
+                <GroupRow icon="arrow_back" title="Back to sign in" accessibilityLabel="Back to sign in" onPress={() => switchMode('sign-in')} />
               )}
-            </Card>
+            </Group>
+            </>
           )}
 
-          <Card style={{ gap: Spacing.two }}>
-            <Txt variant="h3">Would you like to ask a question first?</Txt>
-            <Txt variant="muted">Send us an enquiry and we will be in touch within one working day. No account is needed.</Txt>
-            <Button title="Send an enquiry" icon="doc" variant="secondary" onPress={() => router.push('/enquire')} />
-            <Button title="Are you an experienced tutor? Teach with us" variant="ghost" size="sm" onPress={() => router.push('/teach')} />
-          </Card>
+          <Group
+            title="Would you like to ask a question first?"
+            note="Send us an enquiry and we will be in touch within one working day.">
+            <GroupRow icon="description" title="Send an enquiry" note="No account is needed" accessibilityLabel="Send an enquiry" onPress={() => router.push('/enquire')} />
+            <GroupRow icon="school" title="Are you an experienced tutor? Teach with us" accessibilityLabel="Are you an experienced tutor? Teach with us" onPress={() => router.push('/teach')} />
+          </Group>
         </View>
       </Screen>
     </KeyboardAvoidingView>

@@ -51,8 +51,11 @@ export function ThreadList() {
   );
 }
 
-/** A family conversation with a composer. */
-export function Conversation({ familyId }: { familyId: string }) {
+/**
+ * A family conversation with a composer. `initialDraft` pre-fills the composer (nothing is sent until Send is
+ * pressed); `header` sits above the messages, inside the scrolling column (e.g. a page header).
+ */
+export function Conversation({ familyId, initialDraft, header }: { familyId: string; initialDraft?: string; header?: ReactNode }) {
   const theme = useTheme();
   const me = useMe();
   const insets = useSafeAreaInsets();
@@ -60,7 +63,7 @@ export function Conversation({ familyId }: { familyId: string }) {
   const contacts = useFamilyContacts(familyId);
   // A parent sender's relationship (Mother, Father…), by login. Tutors never see profile ids, so they see the name alone.
   const relationshipBySender = new Map((contacts.data ?? []).filter((c) => c.profileId).map((c) => [c.profileId!, RELATIONSHIP_LABELS[c.relationship]]));
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const scroll = useRef<ScrollView>(null);
@@ -100,6 +103,7 @@ export function Conversation({ familyId }: { familyId: string }) {
         contentContainerStyle={styles.list}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
         <View style={styles.inner}>
+          {header}
           {messages.isLoading ? (
             <Loading />
           ) : list.length === 0 ? (

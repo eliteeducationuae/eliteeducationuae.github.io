@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { INVOICE_STATUS } from '@/components/billing';
+import { ParentInvoice } from '@/components/parent/invoice-view';
 import { HistorySection } from '@/components/history';
 import {
   AUTOPAY_MAY_HAVE_CHARGED,
@@ -27,7 +28,14 @@ import type { PaymentMethod } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 import { aed, shareInvoice } from '@/lib/invoice-pdf';
 
+/** Families get their own redesigned invoice page (components/parent/invoice-view); staff keep this one. */
 export default function InvoicePage() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  return me.role === 'parent' ? <ParentInvoice id={id} /> : <StaffInvoicePage />;
+}
+
+function StaffInvoicePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
   const lookup = useLookup();
