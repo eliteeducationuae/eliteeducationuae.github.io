@@ -1,23 +1,28 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { TextInput, View } from 'react-native';
 
-import { AmountLine, balanceLine, parseAmount, Rule, SwitchRow } from '@/components/tax';
-import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Ledger, SideCard, Split } from '@/components/money/blocks';
+import { balanceLine, parseAmount } from '@/components/tax';
+import { Button, Chip, EmptyState, ErrorNote, Field, Loading, Notice, PageHeader, Screen, Segmented, Toggle, Txt, useToast } from '@/components/ui';
+import { font, Radius } from '@/constants/theme';
 import { source } from '@/data';
-import { useAction, useCreditNotes, useInvoice } from '@/data/hooks';
+import { useAction, useCreditNotes, useInvoice, useLookup } from '@/data/hooks';
 import type { CreditNoteInput } from '@/data/source';
 import { useMe } from '@/data/session';
 import { invoiceTotals } from '@/domain/billing';
+import { formatLineDescription } from '@/domain/dates';
 import { creditableLines, creditRemaining, planCreditFromGross, planCreditNote, round2, type CreditNotePlan } from '@/domain/tax';
 import type { CreditNote, Invoice } from '@/domain/types';
+import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { aed } from '@/lib/invoice-pdf';
 
 type Mode = 'lines' | 'amount';
 
-/** Admin: credit all or part of an issued invoice. */
+const head = <Stack.Screen options={{ headerShown: false }} />;
+
+/** Admin: credit all or part of an issued invoice. A credit note is a numbered tax record and cannot be undone. */
 export default function NewCreditNote() {
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
   const me = useMe();
@@ -25,15 +30,26 @@ export default function NewCreditNote() {
   const notes = useCreditNotes({ invoiceId });
   if (me.role !== 'admin') {
     return (
-      <Screen>
+      <Screen topInset>
+        {head}
+        <PageHeader back kicker="Credit note" title="Not available" />
         <EmptyState icon="alert" title="Not available" message="Only the office can issue credit notes." />
       </Screen>
     );
   }
-  if (invoice.isLoading || notes.isLoading) return <Loading />;
+  if (invoice.isLoading || notes.isLoading) {
+    return (
+      <Screen topInset>
+        {head}
+        <Loading />
+      </Screen>
+    );
+  }
   if (!invoice.data) {
     return (
-      <Screen>
+      <Screen topInset>
+        {head}
+        <PageHeader back kicker="Credit note" title="Invoice not found" />
         <EmptyState title="Invoice not found" />
       </Screen>
     );
@@ -42,6 +58,9 @@ export default function NewCreditNote() {
 }
 
 function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: CreditNote[] }) {
+  const theme = useTheme();
+  const toast = useToast();
+  const lookup = useLookup();
   const issue = useAction(source.issueCreditNote);
   const [mode, setMode] = useState<Mode>('lines');
   const [amounts, setAmounts] = useState<Record<number, string>>({});
@@ -52,6 +71,7 @@ function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: Cre
   const lines = creditableLines(invoice, existing);
   const remaining = creditRemaining(invoice, existing);
   const issued = invoice.status === 'sent' || invoice.status === 'paid';
+  const family = lookup.family(invoice.familyId);
 
   // Per line: what was typed, and whether it credits the rest of the line (only those lessons can be invoiced again).
   const typed = lines.map((l) => {
@@ -88,22 +108,23 @@ function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: Cre
   })();
 
   const totals = invoiceTotals(invoice);
-  const balanceAfter = preview.plan ? balanceLine(round2(totals.balance - preview.plan.total)) : undefined;
-  const ready = !!preview.plan && !!reason.trim() && issued;
+  const plan = preview.plan;
+  const after = balanceLine(round2(totals.balance - (plan?.total ?? 0)));
+  const ready = !!plan && !!reason.trim() && issued;
 
   async function submit() {
-    if (!preview.input) return;
+    if (!preview.input || !plan) return;
     const note = await issue.mutateAsync([{ invoiceId: invoice.id, reason: reason.trim(), ...preview.input, releaseCharges: releasing }]);
     router.replace({ pathname: '/credit-note/[id]', params: { id: note.id } });
+    toast(`Credit note for ${aed(plan.total)} issued.${releasing ? ' Those lessons are ready to invoice again.' : ''}`);
   }
 
   function confirmIssue() {
-    const plan = preview.plan;
     if (!plan) return;
     confirm(
       `Issue a credit note for ${aed(plan.total)}?`,
       [
-        `${aed(plan.subtotal)} plus ${aed(plan.vat)} VAT will be credited against ${invoice.number}, and the family will be told.`,
+        `${aed(plan.subtotal)} plus ${aed(plan.vat)} VAT will be credited against ${invoice.number}, and it will show in the family’s billing.`,
         releasing ? 'The lessons on the lines credited in full will return to the unbilled list to be invoiced again.' : '',
         plan.full ? 'This credits everything left, so the invoice will be marked as credited.' : '',
         'A credit note is a permanent tax record and cannot be undone.',
@@ -116,111 +137,144 @@ function CreditNoteForm({ invoice, existing }: { invoice: Invoice; existing: Cre
   }
 
   return (
-    <Screen
-      footer={
-        <Button
-          title={preview.plan ? `Issue credit note for ${aed(preview.plan.total)}` : 'Issue credit note'}
-          variant="gold"
-          icon="doc"
-          style={{ flex: 1 }}
-          disabled={!ready}
-          loading={issue.isPending}
-          onPress={confirmIssue}
-        />
-      }>
-      <Card style={{ gap: Spacing.one }}>
-        <Txt variant="label">Against {invoice.number}</Txt>
-        <Txt variant="h2">{aed(remaining.gross)} left to credit</Txt>
-        <Txt variant="muted">
-          Invoice total {aed(totals.total)}
-          {totals.credited > 0 ? `, of which ${aed(totals.credited)} has already been credited` : ''}.
-        </Txt>
-      </Card>
-      {!issued ? <Banner tone="warning" icon="alert">Only sent or paid invoices can take a credit note.</Banner> : null}
-
-      <Segmented
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: 'lines', label: 'By line' },
-          { value: 'amount', label: 'An amount' },
-        ]}
+    <Screen topInset>
+      {head}
+      <PageHeader
+        back
+        kicker={`Credit note · against ${invoice.number}`}
+        title={`${aed(remaining.gross)} left to credit`}
+        sub={`${family ? `${family.name} family. ` : ''}Invoice total ${aed(totals.total)}${totals.credited > 0 ? `, of which ${aed(totals.credited)} is already credited` : ''}.`}
       />
+      {!issued ? <Notice tone="warn">Only sent or paid invoices can take a credit note.</Notice> : null}
 
-      {mode === 'lines' ? (
-        <Section title="Lines to credit (excluding VAT)">
-          {lines.map((l) => (
-            <Card key={l.index} style={{ gap: Spacing.two }}>
-              <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
-                <Txt style={{ flex: 1 }}>{l.description}</Txt>
-                <Txt variant="muted">{aed(l.net)}</Txt>
-              </Row>
-              {l.remaining > 0 ? (
-                <Row gap={Spacing.two} style={{ alignItems: 'flex-end' }}>
-                  <View style={{ flex: 1 }}>
-                    <Field
-                      label="Net to credit (AED)"
-                      value={amounts[l.index] ?? ''}
-                      onChangeText={(v) => setAmounts((a) => ({ ...a, [l.index]: v }))}
-                      keyboardType="decimal-pad"
-                      placeholder="0.00"
-                      hint={l.credited > 0 ? `${aed(l.credited)} already credited; ${aed(l.remaining)} left.` : undefined}
-                    />
-                  </View>
-                  <Chip label="Full" selected={parseAmount(amounts[l.index] ?? '') === l.remaining} onPress={() => setAmounts((a) => ({ ...a, [l.index]: l.remaining.toFixed(2) }))} />
-                </Row>
-              ) : (
-                <Txt variant="small">This line has been credited in full.</Txt>
-              )}
-              {typed[l.index]?.error ? (
-                <Txt variant="small" color="danger" accessibilityRole="alert">
-                  {typed[l.index].error}
+      <Split>
+        <View style={{ gap: 22 }}>
+          <View style={{ width: '100%', maxWidth: 320 }}>
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'lines', label: 'By line' },
+                { value: 'amount', label: 'An amount' },
+              ]}
+            />
+          </View>
+
+          {mode === 'lines' ? (
+            <View style={{ gap: 14 }}>
+              <Txt variant="label">Lines to credit, excluding VAT</Txt>
+              <View style={{ borderTopWidth: 1, borderTopColor: theme.text }}>
+                {lines.map((l) => {
+                  const t = typed[l.index];
+                  const full = parseAmount(amounts[l.index] ?? '') === l.remaining && l.remaining > 0;
+                  return (
+                    <View key={l.index} style={{ paddingVertical: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 180, gap: 2 }}>
+                          <Txt style={{ fontSize: 15 }}>{formatLineDescription(l.description)}</Txt>
+                          <Txt variant="small">
+                            {l.remaining <= 0
+                              ? `${aed(l.net)} net · credited in full`
+                              : l.credited > 0
+                                ? `${aed(l.net)} net · ${aed(l.credited)} already credited, ${aed(l.remaining)} left`
+                                : `${aed(l.net)} net`}
+                          </Txt>
+                        </View>
+                        {l.remaining > 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <TextInput
+                              value={amounts[l.index] ?? ''}
+                              onChangeText={(v) => setAmounts((a) => ({ ...a, [l.index]: v }))}
+                              keyboardType="decimal-pad"
+                              placeholder="0.00"
+                              placeholderTextColor={theme.textMuted}
+                              accessibilityLabel="Net to credit (AED)"
+                              accessibilityHint={formatLineDescription(l.description)}
+                              aria-invalid={t?.error ? true : undefined}
+                              style={[
+                                font('sans'),
+                                {
+                                  width: 110,
+                                  height: 44,
+                                  borderWidth: 1,
+                                  borderRadius: Radius.input,
+                                  paddingHorizontal: 10,
+                                  fontSize: 15.5,
+                                  textAlign: 'right',
+                                  color: theme.text,
+                                  backgroundColor: theme.inputFill,
+                                  borderColor: t?.error ? theme.errorBorder : theme.border,
+                                  fontVariant: ['tabular-nums'],
+                                },
+                              ]}
+                            />
+                            <Chip label="Full" selected={full} onPress={() => setAmounts((a) => ({ ...a, [l.index]: l.remaining.toFixed(2) }))} />
+                          </View>
+                        ) : null}
+                      </View>
+                      {t?.error ? (
+                        <Txt variant="small" color="danger" accessibilityRole="alert" style={{ fontWeight: '700' }}>
+                          {t.error}
+                        </Txt>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+              <View style={{ gap: 6 }}>
+                <Toggle title="Invoice these lessons again" value={releasing} onValueChange={setRelease} disabled={!anyInFull} />
+                <Txt variant="note">
+                  {anyInFull
+                    ? 'For correcting an invoice. Only the lessons on lines credited in full return to the family’s unbilled list and are marked re-invoiced; any other line on this note stays a credit.'
+                    : 'Available when a lesson line is credited in full. A partial credit lowers the price and is not invoiced again.'}
                 </Txt>
-              ) : null}
-            </Card>
-          ))}
-        </Section>
-      ) : (
-        <Card style={{ gap: Spacing.two }}>
-          <Field
-            label="Amount to credit, including VAT (AED)"
-            value={gross}
-            onChangeText={setGross}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            hint={`Up to ${aed(remaining.gross)}. The VAT is worked out for you.`}
-          />
-        </Card>
-      )}
-      {preview.error && !typed.some((t) => t.error) ? <Banner tone="danger" icon="alert">{preview.error}</Banner> : null}
+              </View>
+            </View>
+          ) : (
+            <Field
+              label="Amount to credit, including VAT (AED)"
+              value={gross}
+              onChangeText={setGross}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              hint={`Up to ${aed(remaining.gross)}. The VAT is worked out for you.`}
+            />
+          )}
+          {preview.error && !typed.some((t) => t.error) ? <Notice tone="danger">{preview.error}</Notice> : null}
 
-      <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="For example: lesson on 12 September cancelled by the tutor." hint={reason.trim() ? 'Printed on the credit note.' : 'Printed on the credit note. Required.'} />
-      {mode === 'lines' ? (
-        <SwitchRow
-          label="Invoice these lessons again"
-          value={releasing}
-          onChange={setRelease}
-          disabled={!anyInFull}
-          hint={
-            anyInFull
-              ? 'Use this when correcting an invoice. Only the lessons on lines credited in full return to the family’s unbilled list and are marked re-invoiced; any other line on this note stays a credit.'
-              : 'Available when a lesson line is credited in full. A partial credit lowers the price and is not invoiced again.'
-          }
-        />
-      ) : null}
-      {preview.plan ? (
-        <Section title="Preview">
-          <Card style={{ gap: Spacing.one }}>
-            <AmountLine label="Credit excluding VAT" value={aed(preview.plan.subtotal)} />
-            <AmountLine label="VAT" value={aed(preview.plan.vat)} />
-            <AmountLine label="Total credit" value={aed(preview.plan.total)} strong />
-            <Rule />
-            {balanceAfter ? <AmountLine label={`${balanceAfter.label} afterwards`} value={balanceAfter.value} /> : null}
-            {preview.plan.full ? <Txt variant="small">This credits everything left on the invoice, so it will be marked as credited.</Txt> : null}
-          </Card>
-        </Section>
-      ) : null}
-      <ErrorNote error={issue.error} />
+          <Field
+            label="Reason"
+            value={reason}
+            onChangeText={setReason}
+            multiline
+            placeholder="For example, lesson on 16 September cancelled by the tutor."
+            hint={reason.trim() ? 'Printed on the credit note.' : 'Printed on the credit note. Required.'}
+          />
+        </View>
+
+        <SideCard label="Preview">
+          <Ledger
+            lines={[
+              { label: 'Credit excluding VAT', value: aed(plan?.subtotal ?? 0) },
+              { label: 'VAT', value: aed(plan?.vat ?? 0) },
+              { label: 'Total credit', value: aed(plan?.total ?? 0), strong: true },
+              { label: `${after.label} afterwards`, value: after.value },
+            ]}
+          />
+          {plan?.full ? <Txt variant="small">This credits everything left on the invoice, so it will be marked as credited.</Txt> : null}
+          <Txt variant="small" style={{ lineHeight: 19 }}>
+            A credit note is a permanent tax record and cannot be undone. It shows in the family’s billing once issued.
+          </Txt>
+          <ErrorNote error={issue.error} />
+          <Button
+            title={plan ? `Issue credit note for ${aed(plan.total)}` : 'Issue credit note'}
+            icon="receipt_long"
+            disabled={!ready}
+            loading={issue.isPending}
+            onPress={confirmIssue}
+          />
+        </SideCard>
+      </Split>
     </Screen>
   );
 }

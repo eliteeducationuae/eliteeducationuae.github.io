@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { AccountantInvoiceDetail } from '@/components/accountant/invoice-detail';
 import { INVOICE_STATUS } from '@/components/billing';
 import { HistorySection } from '@/components/history';
+import { AdminInvoice } from '@/components/money/admin-invoice';
 import {
   AUTOPAY_MAY_HAVE_CHARGED,
   AutopayBadge,
@@ -28,16 +29,16 @@ import type { PaymentMethod } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 import { aed, shareInvoice } from '@/lib/invoice-pdf';
 
-/** The accountant has their own read-only layout; everyone else sees the invoice page below. */
-export default function InvoiceRoute() {
+/** The office's invoice (components/money/admin-invoice), the accountant's read-only layout, or the family's below. */
+export default function InvoicePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const role = useMe().role;
+  if (role === 'admin') return <AdminInvoice id={id} />;
   if (role === 'accountant') return <AccountantInvoiceDetail id={id} />;
-  return <InvoicePage />;
+  return <InvoiceView id={id} />;
 }
 
-function InvoicePage() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+function InvoiceView({ id }: { id: string }) {
   const me = useMe();
   const lookup = useLookup();
   const invoice = useInvoice(id);
