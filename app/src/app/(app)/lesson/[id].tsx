@@ -7,6 +7,7 @@ import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
 import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
+import { ParentLesson } from '@/components/parent/lesson-view';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
 import { AdminLesson } from '@/components/ops/admin-lesson';
 import { LessonPlanSection } from '@/components/plans';
@@ -40,15 +41,16 @@ import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 import { safeMeetingUrl } from '@/lib/safe-url';
 
-/** The admin has the redesigned operations page; tutors, families and students keep theirs below. */
+/** The admin has the redesigned operations page, families their own (components/parent/lesson-view); tutors and students keep theirs below. */
 export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
   if (me.role === 'admin') return <AdminLesson id={id} />;
-  return <LessonDetail />;
+  if (me.role === 'parent') return <ParentLesson id={id} />;
+  return <StaffLessonDetail />;
 }
 
-function LessonDetail() {
+function StaffLessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const me = useMe();

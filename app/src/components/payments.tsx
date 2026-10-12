@@ -46,13 +46,13 @@ export function lessonsCount(n: number): string {
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Open a Stripe page, then refetch everything so new cards, credits and payments show straight away. */
-async function openAndRefresh(url: string) {
+export async function openAndRefresh(url: string) {
   await WebBrowser.openBrowserAsync(url);
   await queryClient.invalidateQueries();
 }
 
 /** A parent opens their own family's cards; an admin passes the family. */
-async function openBillingPortal(familyId?: string) {
+export async function openBillingPortal(familyId?: string) {
   if (!source.openBillingPortal) throw new Error('Managing cards is not available here.');
   const { url } = await source.openBillingPortal(familyId);
   await openAndRefresh(url);

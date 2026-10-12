@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { NoHeader } from '@/components/admin-people/kit';
+import { ParentAnnouncements } from '@/components/parent/announcements-view';
 import { Actions, Button, ChipField, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, Loading, PageHeader, Screen, Txt, useToast } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useAnnouncements, useFamilies, useTutors } from '@/data/hooks';
@@ -11,7 +12,13 @@ import type { Audience } from '@/domain/types';
 
 const AUDIENCE_LABEL: Record<Audience, string> = { everyone: 'Everyone', parents: 'Parents', tutors: 'Tutors' };
 
+/** Families read announcements on their own redesigned page (components/parent/announcements-view). */
 export default function Announcements() {
+  const me = useMe();
+  return me.role === 'parent' ? <ParentAnnouncements /> : <StaffAnnouncements />;
+}
+
+function StaffAnnouncements() {
   const me = useMe();
   const viewing = useViewing();
   const list = useAnnouncements();

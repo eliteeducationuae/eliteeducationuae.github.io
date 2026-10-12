@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import { ParentReport } from '@/components/parent/report-view';
 import { REPORT_STATUS, reportSubject } from '@/components/reports';
 import { Actions, Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Group, Loading, Row, Screen, Section, Stat, StatGrid, Txt, useToast } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -30,7 +31,14 @@ import { shareStudentReport } from '@/lib/student-report-pdf';
 
 const LESSONS_TO = addDays(new Date(), 60);
 
+/** Families read a published report on their own redesigned page (components/parent/report-view). */
 export default function ReportScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  return me.role === 'parent' ? <ParentReport id={id} /> : <StaffReportScreen />;
+}
+
+function StaffReportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const reports = useStudentReports();
   const cycles = useReportCycles();
