@@ -19,11 +19,11 @@ export default function TutorLayout() {
           : { title: 'Set homework', icon: 'assignment', href: '/homework/new' }
       }
       tabs={[
-        { name: 'index', title: 'Today', icon: 'home', headerShown: false, badge: useToRecordCount },
+        { name: 'index', title: 'Today', icon: 'home', headerShown: false, badge: useToRecordCount, badgeNoun: 'to record' },
         { name: 'calendar', title: 'Calendar', icon: 'calendar_month', headerShown: false },
         { name: 'students', title: 'Students', icon: 'group', headerShown: false },
         { name: 'messages', title: 'Messages', icon: 'forum', unreadBadge: true, headerShown: false },
-        { name: 'account', title: 'Account', icon: 'person', headerShown: false, badge: useAccountBadge },
+        { name: 'account', title: 'Account', icon: 'person', headerShown: false, badge: useAccountBadge, badgeNoun: 'to do' },
       ]}
     />
   );

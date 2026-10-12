@@ -58,7 +58,9 @@ export const Colors = {
     rowHover: '#FBF8F2',
     // Text inputs: a barely-warm fill, and the border shown with an error message.
     inputFill: '#FDFCFA',
-    errorBorder: '#C99A93',
+    // Field borders reach 3:1 against the fill (WCAG 1.4.11): warm grey, and a deep red with an error.
+    inputBorder: '#8F8A80',
+    errorBorder: '#8E3A33',
     // Toggle track: green when on, a warm grey (3:1 against white, so the off state is still visible) when off.
     toggleOn: '#3D6B4F',
     toggleOff: '#8F8A80',
@@ -118,7 +120,8 @@ export const Colors = {
     rowDivider: '#22201C',
     rowHover: '#1B1A18',
     inputFill: '#101010',
-    errorBorder: '#9A5F58',
+    inputBorder: '#6B665E',
+    errorBorder: '#C0665C',
     toggleOn: '#4E8462',
     toggleOff: '#77726A',
     textWarm: '#D6D1C7',

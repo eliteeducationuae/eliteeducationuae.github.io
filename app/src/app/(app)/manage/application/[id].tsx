@@ -115,7 +115,7 @@ function Detail({ a }: { a: TutorApplication }) {
         </>
       ) : (
         <FieldsCard title={`Hire ${first}`}>
-          <Txt variant="muted">This creates their tutor profile. They then create their login in the app with {a.email}, add bank details and set their availability.</Txt>
+          <Txt variant="muted">This creates their tutor profile. They then create their account in the app with {a.email}, add bank details and set their availability.</Txt>
           <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" hint="What the tutor is paid. You can change it later on their profile." />
           <View style={{ flexDirection: 'row' }}>
             <Button

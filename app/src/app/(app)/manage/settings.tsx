@@ -199,7 +199,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
           onChangeText={setNotifyEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          hint="New enquiries and lesson requests. Leave blank to use each admin’s login email."
+          hint="New enquiries and lesson requests. Leave blank to use each admin’s sign-in email."
         />
       </SettingsBlock>
 

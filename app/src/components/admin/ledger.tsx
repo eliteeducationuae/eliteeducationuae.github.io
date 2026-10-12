@@ -142,7 +142,7 @@ export function Ledger() {
               {Math.round(owed).toLocaleString('en-US')}
             </Text>
           </View>
-          <View style={l.bar} accessibilityLabel={`${formatAED(current)} not yet due, ${formatAED(late)} overdue`}>
+          <View style={l.bar} role="img" accessibilityLabel={`${formatAED(current)} not yet due, ${formatAED(late)} overdue`}>
             {owed > 0 ? (
               <>
                 {current > 0 ? <View style={{ flexGrow: current, backgroundColor: theme.text }} /> : null}

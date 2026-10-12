@@ -305,8 +305,9 @@ export function HomeworkList({
                   onPress={() => toggle.mutate([h.id, !h.done])}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: h.done }}
+                  aria-checked={h.done}
                   accessibilityLabel={h.done ? `Mark ${h.title} as not done` : `Mark ${h.title} as done`}
-                  hitSlop={12}>
+                  style={{ width: 44, height: 44, margin: -10, alignItems: 'center', justifyContent: 'center' }}>
                   {tick}
                 </Pressable>
               ) : (

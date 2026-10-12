@@ -50,7 +50,7 @@ type HitRef = { id: string; title: string };
 
 /**
  * The "View as" rows for search hits: one per login linked to each family, tutor or student found, and a
- * "No login yet" row for a family or tutor without one. Students without a login are left out, since most
+ * "Not signed up yet" row for a family or tutor without one. Students without a login are left out, since most
  * children never sign in and their family's row already covers them. Each login appears once.
  */
 export function viewAsRows(targets: ViewTarget[], hits: { families?: HitRef[]; tutors?: HitRef[]; students?: HitRef[] }): ViewAsRow[] {
@@ -59,7 +59,7 @@ export function viewAsRows(targets: ViewTarget[], hits: { families?: HitRef[]; t
   const add = (kind: 'family' | 'tutor' | 'student', hit: HitRef, found: ViewTarget[]) => {
     if (!found.length) {
       if (kind === 'student') return;
-      rows.push({ key: `none-${kind}-${hit.id}`, title: hit.title, subtitle: 'No login yet' });
+      rows.push({ key: `none-${kind}-${hit.id}`, title: hit.title, subtitle: 'Not signed up yet' });
       return;
     }
     for (const t of found) {
@@ -336,7 +336,7 @@ export function ViewAsActions({ title = 'View the app as', ...ref }: ViewAsRef &
         ) : (
           <>
             <Button title="View as" icon="eye" variant="secondary" disabled loading={targets.isLoading} onPress={() => undefined} />
-            {targets.isLoading ? null : <Txt variant="small">No login yet</Txt>}
+            {targets.isLoading ? null : <Txt variant="small">Not signed up yet</Txt>}
           </>
         )}
         <Txt variant="small">See the app exactly as they do. Nothing can be changed.</Txt>

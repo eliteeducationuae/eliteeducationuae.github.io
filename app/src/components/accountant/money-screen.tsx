@@ -217,6 +217,7 @@ export function AccountantMoneyScreen() {
                 titleWeight="regular"
                 note={`Profit ${formatAED(m.profit)}`}
                 progress={Math.round((m.revenue / max) * 100)}
+                progressLabel={`${m.label} revenue, against the highest month`}
                 progressColor={m.profit < 0 ? theme.warning : undefined}
               />
             ))}

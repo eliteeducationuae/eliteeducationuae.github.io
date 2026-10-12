@@ -37,6 +37,8 @@ export interface TabSpec {
    * every render of the tab, so it must be a real hook with no conditions of its own.
    */
   badge?: () => number;
+  /** What the badge counts, read after the number by screen readers, e.g. "to do" ("Today, 3 to do"). */
+  badgeNoun?: string;
   /** Only in the desktop sidebar; on phones the screen is reached from elsewhere (e.g. More). */
   wideOnly?: boolean;
   /** A route in this tab group that never gets a tab (reached from elsewhere, e.g. the admin Directory). */
@@ -66,6 +68,13 @@ export interface CentreAction {
   /** Read by screen readers, e.g. "Open the concierge". */
   label: string;
   onPress: () => void;
+}
+
+/** "Messages, 3 unread": the tab label plus its badge count and what the count means. */
+function badgeLabel(label: string, badge: number, spec: TabSpec | undefined): string {
+  if (!badge) return label;
+  const noun = spec?.badgeNoun ?? (spec?.unreadBadge ? 'unread' : '');
+  return noun ? `${label}, ${badge} ${noun}` : `${label}, ${badge}`;
 }
 
 /** Screens at least this wide get a left rail instead of bottom tabs. */
@@ -184,7 +193,7 @@ function RailItem({
       accessibilityRole={link ? 'link' : 'tab'}
       accessibilityState={link ? undefined : { selected: focused }}
       aria-selected={link ? undefined : focused}
-      accessibilityLabel={badge ? `${label}, ${badge}${spec?.unreadBadge ? ' unread' : ''}` : label}
+      accessibilityLabel={badgeLabel(label, badge, spec)}
       style={[
         rail.item,
         {
@@ -384,7 +393,7 @@ function BarItem({
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
       aria-selected={focused}
-      accessibilityLabel={badge ? `${label}, ${badge}${spec?.unreadBadge ? ' unread' : ''}` : label}
+      accessibilityLabel={badgeLabel(label, badge, spec)}
       style={[bar.item, webStyle({ cursor: 'pointer' })]}>
       {spec ? (
         <View style={noir && { opacity: focused ? 1 : 0.55 }}>
@@ -393,11 +402,10 @@ function BarItem({
       ) : null}
       {noir ? (
         <>
-          <View style={[bar.dot, { backgroundColor: focused ? Brand.gold : 'transparent' }]} />
-          {/* Icon-only on screen; the label stays in the tab's text for find-in-page and tooling. */}
-          <Text style={bar.hiddenLabel} importantForAccessibility="no" aria-hidden>
+          <Text style={[font('sans', 'bold'), bar.label, { color, opacity: focused ? 1 : 0.7 }]} numberOfLines={1}>
             {label}
           </Text>
+          <View style={[bar.dot, { backgroundColor: focused ? Brand.gold : 'transparent' }]} />
         </>
       ) : (
         <Text style={[font('sans', 'bold'), bar.label, { color }]} numberOfLines={1}>
@@ -449,9 +457,21 @@ function PhoneBar(props: BarProps) {
       />
     );
   });
-  // The centre action sits between the two halves of the tabs.
+  // The centre action sits between the two halves of the tabs. Each half is its own tablist, so the button is never
+  // a child of a tablist (only tabs may be).
   const half = Math.ceil(items.length / 2);
-  const row = centreAction ? [...items.slice(0, half), <CentreButton key="centre" action={centreAction} noir={noir} />, ...items.slice(half)] : items;
+  const row = centreAction
+    ? [
+        <View key="left" style={bar.half} accessibilityRole="tablist">
+          {items.slice(0, half)}
+        </View>,
+        <CentreButton key="centre" action={centreAction} noir={noir} />,
+        <View key="right" style={bar.half} accessibilityRole="tablist">
+          {items.slice(half)}
+        </View>,
+      ]
+    : items;
+  const listRole = centreAction ? undefined : ('tablist' as const);
 
   if (noir) {
     return (
@@ -462,7 +482,7 @@ function PhoneBar(props: BarProps) {
             { backgroundColor: Brand.noir, borderColor: theme.heroBorder },
             web ? webStyle({ boxShadow: '0 12px 30px rgba(10,10,10,.28)' }) : bar.pillShadow,
           ]}
-          accessibilityRole="tablist">
+          accessibilityRole={listRole}>
           {row}
         </View>
       </View>
@@ -475,7 +495,7 @@ function PhoneBar(props: BarProps) {
         { backgroundColor: theme.tabBarPaper, borderTopColor: theme.hairline, paddingBottom: Math.max(insets.bottom, 24) },
         webStyle({ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }),
       ]}
-      accessibilityRole="tablist">
+      accessibilityRole={listRole}>
       {row}
     </View>
   );
@@ -487,7 +507,7 @@ const bar = StyleSheet.create({
   label: { fontSize: 11.5, lineHeight: 14 },
   badge: { position: 'absolute', top: 2, left: '50%', marginLeft: 6, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   dot: { width: 4, height: 4, borderRadius: 2 },
-  hiddenLabel: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
+  half: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   centre: { width: 52, height: 52, borderRadius: 26, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginHorizontal: 6 },
   pill: { height: 64, borderRadius: 32, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   pillShadow: { shadowColor: '#0A0A0A', shadowOpacity: 0.28, shadowRadius: 15, shadowOffset: { width: 0, height: 12 }, elevation: 10 },

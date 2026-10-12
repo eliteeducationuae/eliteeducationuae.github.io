@@ -48,14 +48,14 @@ export function ProgressSummary({ syllabus, mastery, hideTitle }: { syllabus: Sy
           <Txt variant="muted">Topics covered</Txt>
           <Txt variant="h3">{summary.coveragePercent}%</Txt>
         </Row>
-        <ProgressBar value={summary.coveragePercent} color={theme.accent} />
+        <ProgressBar label="Topics covered" value={summary.coveragePercent} color={theme.accent} />
       </View>
       <View style={{ gap: Spacing.one }}>
         <Row style={{ justifyContent: 'space-between' }}>
           <Txt variant="muted">Average mastery of covered topics</Txt>
           <Txt variant="h3">{summary.masteryPercent}%</Txt>
         </Row>
-        <ProgressBar value={summary.masteryPercent} color={masteryColor(1 + (summary.masteryPercent / 100) * 4, theme.border)} />
+        <ProgressBar label="Average mastery of covered topics" value={summary.masteryPercent} color={masteryColor(1 + (summary.masteryPercent / 100) * 4, theme.border)} />
       </View>
       {focus.length > 0 ? (
         <View style={{ gap: Spacing.one }}>

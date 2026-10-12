@@ -63,6 +63,7 @@ export default function Payroll() {
             avatarColor={r.tutor.color}
             title={r.tutor.fullName}
             note={payrollSubtitle(r, r.tutor.hourlyPay ?? 0)}
+            progressLabel="Hours taught of hours booked"
             progress={r.booked ? Math.min(100, Math.round((r.hours / r.booked) * 100)) : 0}
             progressColor={r.tutor.color}
             value={formatAED(r.amount)}

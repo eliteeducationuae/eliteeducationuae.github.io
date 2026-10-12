@@ -43,7 +43,7 @@ export default function Tutors() {
                     ? 'Kept for past lessons and pay records'
                     : [t.subjects.join(', ') || 'No subjects yet', (t.phases ?? []).join(', '), `${formatAED(t.hourlyPay ?? 0)} an hour`].filter(Boolean).join(' · ')
                 }
-                right={isClosed(t) ? <RowMeta tag={CLOSED_LABEL} /> : <RowMeta {...(vetting ? VETTING_TAG[vetting] : {})} meta={canLogIn ? 'Can sign in' : 'No login yet'} />}
+                right={isClosed(t) ? <RowMeta tag={CLOSED_LABEL} /> : <RowMeta {...(vetting ? VETTING_TAG[vetting] : {})} meta={canLogIn ? 'Can sign in' : 'Not signed up yet'} />}
                 onPress={() => router.push({ pathname: '/manage/tutor/[id]', params: { id: t.id } })}
               />
             );

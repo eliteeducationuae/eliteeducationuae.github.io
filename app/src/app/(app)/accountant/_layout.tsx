@@ -13,7 +13,7 @@ export default function AccountantLayout() {
       tabs={[
         { name: 'index', title: 'Money', icon: 'payments', headerShown: false },
         { name: 'invoices', title: 'Invoices', icon: 'receipt_long', headerShown: false },
-        { name: 'vat', title: 'VAT', icon: 'account_balance', headerShown: false, badge: useVatReturnDueCount },
+        { name: 'vat', title: 'VAT', icon: 'account_balance', headerShown: false, badge: useVatReturnDueCount, badgeNoun: 'due' },
         { name: 'account', title: 'Account', icon: 'person', headerShown: false },
       ]}
     />

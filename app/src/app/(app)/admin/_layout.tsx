@@ -26,7 +26,7 @@ export default function AdminLayout() {
         centreAction={{ icon: 'add', label: 'Open the concierge', onPress: () => show() }}
         railLinks={[{ title: 'Messages', icon: 'forum', href: '/messages', unreadBadge: true }]}
         tabs={[
-          { name: 'index', title: 'Today', icon: 'wb_sunny', header: 'Today', headerShown: false, badge: useDecisionCount },
+          { name: 'index', title: 'Today', icon: 'wb_sunny', header: 'Today', headerShown: false, badge: useDecisionCount, badgeNoun: 'waiting' },
           { name: 'calendar', title: 'Diary', icon: 'calendar_month', headerShown: false },
           { name: 'billing', title: 'Ledger', icon: 'account_balance_wallet', headerShown: false },
           { name: 'more', title: 'Directory', icon: 'apps', headerShown: false },
