@@ -174,7 +174,8 @@ export function notifyTutor(db: DemoDB, tutorId: string, subject: string, body: 
   }
 }
 
-export const DEMO_DB_VERSION = 10;
+// 11: Layla is in Year 11, so her Sixth Form (16+) boarding case for September 2027 entry lines up.
+export const DEMO_DB_VERSION = 11;
 
 let counter = 0;
 export function newId(prefix: string): string {

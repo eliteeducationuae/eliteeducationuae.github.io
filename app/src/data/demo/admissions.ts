@@ -613,7 +613,7 @@ export function seedAdmissions(db: Pick<DemoDB, 'enrolments'>, now: Date): Admis
       entryYear: 'September 2027',
       status: 'active',
       summary:
-        'Layla is applying for Sixth Form places at a small number of leading UK boarding schools. ' +
+        'Layla is in Year 11 and applying for Sixth Form (16+) places at a small number of leading UK boarding schools. ' +
         'The office is coordinating registrations, entrance assessments and interview preparation.',
       createdAt: at(-90),
       updatedAt: at(-2),

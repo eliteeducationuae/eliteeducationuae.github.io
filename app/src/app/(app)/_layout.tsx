@@ -105,6 +105,8 @@ export default function SignedInLayout() {
       <Stack.Screen name="plan/[id]" options={{ title: 'Lesson plan', presentation: 'modal' }} />
       <Stack.Screen name="handover/index" options={{ title: 'Handover packs' }} />
       <Stack.Screen name="handover/[id]" options={{ title: 'Handover pack' }} />
+      {/* Design-system kit (admin only, not linked from any menu). */}
+      <Stack.Screen name="kit" options={{ headerShown: false }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

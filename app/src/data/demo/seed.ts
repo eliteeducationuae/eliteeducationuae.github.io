@@ -165,7 +165,7 @@ export function createSeed(now: Date = new Date()): DemoDB {
     ],
     students: [
       { id: 's-omar', familyId: 'f-mansoori', fullName: 'Omar Al Mansoori', curriculum: 'IB', syllabusId: 'ib-aa-hl', phase: 'Sixth Form and IB Diploma', school: 'Dubai College', yearGroup: 'Year 12', currentGrade: '5', targetGrade: '7', examDate: '2027-05-04', notes: 'Strong algebra; rushes calculus. Prefers worked examples first.' },
-      { id: 's-layla', familyId: 'f-mansoori', fullName: 'Layla Al Mansoori', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1', phase: 'GCSE and IGCSE', school: 'Dubai College', yearGroup: 'Year 10', currentGrade: '7', targetGrade: '9' },
+      { id: 's-layla', familyId: 'f-mansoori', fullName: 'Layla Al Mansoori', curriculum: 'IGCSE', syllabusId: 'igcse-4ma1', phase: 'GCSE and IGCSE', school: 'Dubai College', yearGroup: 'Year 11', currentGrade: '7', targetGrade: '9' },
       { id: 's-arjun', familyId: 'f-sharma', fullName: 'Arjun Sharma', curriculum: 'A-Level', syllabusId: 'alevel-maths', phase: 'Sixth Form and IB Diploma', school: 'GEMS Wellington', yearGroup: 'Year 13', currentGrade: 'A', targetGrade: 'A*', examDate: '2027-06-03' },
       { id: 's-charlotte', familyId: 'f-hughes', fullName: 'Charlotte Hughes', curriculum: 'IB', syllabusId: 'ib-ai-sl', phase: 'Sixth Form and IB Diploma', school: 'Jumeirah English Speaking School', yearGroup: 'Year 12', currentGrade: '4', targetGrade: '6' },
       { id: 's-yasmin', familyId: 'f-haddad', fullName: 'Yasmin Haddad', curriculum: 'IGCSE', syllabusId: 'igcse-0580', phase: 'GCSE and IGCSE', school: 'Repton Dubai', yearGroup: 'Year 11', currentGrade: '6', targetGrade: '8' },
@@ -690,6 +690,13 @@ function seedOperations(db: DemoDB, now: Date) {
   ];
   for (const [tutorId, month, steps] of plan) {
     const id = ops.createTutorInvoice(db, as(tutorId), tutorId, toDateKey(month), month);
+    // The lesson series only reach six weeks back, so later in the month the month before last can be empty:
+    // leave that month without an invoice rather than fail to build the demo.
+    const created = db.tutorInvoices.find((i) => i.id === id)!;
+    if (created.items.length === 0) {
+      db.tutorInvoices = db.tutorInvoices.filter((i) => i.id !== id);
+      continue;
+    }
     if (tutorId === 't-sarah' && month === lastMonth) {
       ops.updateTutorInvoice(db, as(tutorId), id, [{ description: 'Mock exam marking (Layla)', quantity: 2, unitPrice: 150 }], 'Includes marking Layla’s mock paper.');
     }

@@ -7,6 +7,7 @@ export default function AdminLayout() {
   return (
     <RoleTabs
       role="admin"
+      variant="noir"
       inboxButton
       search
       tabs={[

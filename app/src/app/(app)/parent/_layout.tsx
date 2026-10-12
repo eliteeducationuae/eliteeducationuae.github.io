@@ -7,6 +7,7 @@ export default function ParentLayout() {
   return (
     <RoleTabs
       role="parent"
+      railAction={{ title: 'Book a lesson', icon: 'event_available', href: '/book' }}
       tabs={[
         { name: 'index', title: 'Home', icon: 'home' },
         { name: 'progress', title: 'Progress', icon: 'chart' },
