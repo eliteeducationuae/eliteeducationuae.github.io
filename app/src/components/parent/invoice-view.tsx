@@ -5,6 +5,7 @@ import { source } from '@/data';
 import { useAction, useCreditNotes, useInvoice, useLookup, useRefunds, useSettings } from '@/data/hooks';
 import { useViewing } from '@/data/session';
 import { displayStatus, invoiceTotals, type DisplayInvoiceStatus } from '@/domain/billing';
+import { formatDate } from '@/domain/dates';
 import { autopayFailureReason, autopayHoldsInvoice, autopayStatusText, paymentLabel } from '@/domain/payments';
 import { invoiceCustomer, invoiceDocumentTitle, invoiceSupplier } from '@/domain/tax';
 import { confirm } from '@/lib/confirm';
@@ -217,6 +218,8 @@ export function ParentInvoice({ id }: { id: string }) {
               note={[customer.address, customer.trn ? `TRN ${customer.trn}` : ''].filter(Boolean).join(' · ') || undefined}
             />
           ) : null}
+          {/* A tax invoice states its date of supply (as the office's view and the PDF do). */}
+          <GroupRow icon="event" title="Date of supply" value={formatDate(inv.supplyDate ?? inv.issueDate)} valueTone="text" />
         </Group>
       </Columns>
 
