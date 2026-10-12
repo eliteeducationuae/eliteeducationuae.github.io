@@ -162,7 +162,7 @@ export function ParentAccount() {
               icon="refresh"
               title={RESET_ICS_TITLE}
               note="Use this if your calendar link has been shared by mistake. The old link stops working at once."
-              action={{ label: 'Reset', onPress: resetCalendar, disabled: busy === 'reset' }}
+              action={{ label: 'Reset', onPress: resetCalendar, disabled: busy === 'reset', accessibilityLabel: RESET_ICS_TITLE }}
             />
           ) : null}
         </Group>
@@ -200,6 +200,7 @@ export function ParentAccount() {
               note="Restores the original sample lessons, notes and invoices"
               action={{
                 label: 'Reset',
+                accessibilityLabel: 'Reset demo data',
                 disabled: busy === 'demo',
                 onPress: () =>
                   confirm('Reset demo data?', 'This restores the original sample lessons, notes and invoices.', async () => {
