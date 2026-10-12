@@ -652,7 +652,7 @@ export function GroupRow({
       {icon && !date ? <IconCircle icon={icon} tone={tone} /> : null}
       {avatar && !icon && !date ? <Avatar name={avatar} color={avatarFill ?? avatarColor(avatar)} size={38} /> : null}
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <Text style={[styles.rowTitle, titleWeight === 'regular' && font('sans'), { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.rowTitle, titleWeight === 'regular' && { ...font('sans'), fontWeight: '400' }, { color: theme.text }]}>{title}</Text>
         {note ? typeof note === 'string' ? <Txt variant="note">{note}</Txt> : note : null}
         {progress != null ? (
           <View style={{ marginTop: 6 }}>
