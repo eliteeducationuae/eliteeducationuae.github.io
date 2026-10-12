@@ -1246,11 +1246,34 @@ export function Tabs<T extends string>({
 }) {
   const theme = useTheme();
   const { wide, padX } = useScreenMetrics();
+  // When the strip scrolls, keep the chosen tab fully in view and never leave a tab cut at the left edge: the strip
+  // snaps so that it starts on a whole tab (the earliest one that still leaves the chosen tab visible).
+  const scroller = useRef<ScrollView>(null);
+  const spans = useRef<Record<string, { x: number; w: number }>>({});
+  const [stripWidth, setStripWidth] = useState(0);
+  const pad = wide ? 0 : padX;
+  const order = tabs.map((t) => t.value).join('|');
+  useEffect(() => {
+    const values = order.split('|');
+    const at = values.indexOf(value);
+    const sel = spans.current[value];
+    if (at < 0 || !sel || !stripWidth) return;
+    let first = at;
+    while (first > 0) {
+      const prev = spans.current[values[first - 1]];
+      if (!prev || sel.x + sel.w - prev.x + 2 * pad > stripWidth) break;
+      first -= 1;
+    }
+    const start = spans.current[values[first]];
+    scroller.current?.scrollTo({ x: first === 0 || !start ? 0 : Math.max(0, start.x - pad), animated: false });
+  }, [value, order, stripWidth, pad]);
   return (
     <View style={[{ borderBottomWidth: 1, borderBottomColor: theme.border }, !wide && { marginHorizontal: -padX }]}>
       <ScrollView
+        ref={scroller}
         horizontal
         showsHorizontalScrollIndicator={false}
+        onLayout={(e) => setStripWidth(e.nativeEvent.layout.width)}
         contentContainerStyle={[{ gap: 22 }, !wide && { paddingHorizontal: padX }]}
         accessibilityRole="tablist"
         accessibilityLabel={accessibilityLabel}>
@@ -1259,6 +1282,9 @@ export function Tabs<T extends string>({
           return (
             <Pressable
               key={t.value}
+              onLayout={(e) => {
+                spans.current[t.value] = { x: e.nativeEvent.layout.x, w: e.nativeEvent.layout.width };
+              }}
               onPress={() => onChange(t.value)}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
