@@ -3,6 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { AccountantInvoiceDetail } from '@/components/accountant/invoice-detail';
 import { INVOICE_STATUS } from '@/components/billing';
 import { HistorySection } from '@/components/history';
 import {
@@ -27,7 +28,15 @@ import type { PaymentMethod } from '@/domain/types';
 import { confirm, notify } from '@/lib/confirm';
 import { aed, shareInvoice } from '@/lib/invoice-pdf';
 
-export default function InvoicePage() {
+/** The accountant has their own read-only layout; everyone else sees the invoice page below. */
+export default function InvoiceRoute() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const role = useMe().role;
+  if (role === 'accountant') return <AccountantInvoiceDetail id={id} />;
+  return <InvoicePage />;
+}
+
+function InvoicePage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
   const lookup = useLookup();

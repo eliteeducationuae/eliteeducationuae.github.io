@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 
@@ -17,7 +17,14 @@ import { aed } from '@/lib/invoice-pdf';
 import { netVatLabel, shareVatSummary } from '@/lib/vat-pdf';
 
 /** Admin and accountant: the figures for a quarter's VAT return, with CSV and PDF exports. */
-export default function VatReturns() {
+/** The accountant has their own screen for this (kept at this path for old links and lib/accountant-routes.ts). */
+export default function VatReturnsRoute() {
+  const role = useMe().role;
+  if (role === 'accountant') return <Redirect href="/accountant/vat" />;
+  return <VatReturns />;
+}
+
+function VatReturns() {
   const settings = useSettings();
   const invoices = useInvoices();
   const creditNotes = useCreditNotes();

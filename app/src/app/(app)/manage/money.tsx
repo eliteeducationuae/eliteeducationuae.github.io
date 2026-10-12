@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, View } from 'react-native';
 
@@ -25,7 +25,14 @@ const TUTOR_INVOICE_STATUS: Record<TutorInvoiceStatus, string> = {
 };
 
 /** Admin (and the accountant, read only): profit and loss, expenses, the pay run and exports. */
-export default function Money() {
+/** The accountant has their own screen for this (kept at this path for old links and lib/accountant-routes.ts). */
+export default function MoneyRoute() {
+  const role = useMe().role;
+  if (role === 'accountant') return <Redirect href="/accountant" />;
+  return <Money />;
+}
+
+function Money() {
   const theme = useTheme();
   const me = useMe();
   const lookup = useLookup();

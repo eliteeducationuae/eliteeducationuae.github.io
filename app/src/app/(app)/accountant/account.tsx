@@ -1,3 +1,3 @@
-import { AccountScreen } from '@/components/account';
+import { AccountantAccountScreen } from '@/components/accountant/account-screen';
 
-export default AccountScreen;
+export default AccountantAccountScreen;
