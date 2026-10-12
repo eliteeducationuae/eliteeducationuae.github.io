@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { REPORT_STATUS, reportSubject } from '@/components/reports';
-import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Stat, StatGrid, Txt } from '@/components/ui';
+import { Actions, Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Group, Loading, Row, Screen, Section, Stat, StatGrid, Txt, useToast } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import {
@@ -19,7 +19,7 @@ import {
   useStudentReports,
   useTopicLookup,
 } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { addDays, formatDate } from '@/domain/dates';
 import { enrolmentTitle } from '@/domain/enrolments';
 import { RATING_LABELS, type Syllabus } from '@/domain/progress';
@@ -47,6 +47,8 @@ export default function ReportScreen() {
 
 function Writer({ report, student, cycle }: { report: StudentReport; student: Student; cycle?: ReportCycle }) {
   const me = useMe();
+  const viewing = useViewing();
+  const toast = useToast();
   const lookup = useLookup();
   const settings = useSettings();
   const since = cycle?.startsOn ?? report.updatedAt.slice(0, 10);
@@ -237,39 +239,59 @@ function Writer({ report, student, cycle }: { report: StudentReport; student: St
       )}
 
       {isAdmin ? (
-        <Section title="Review">
-          <Card style={{ gap: Spacing.two }}>
-            {report.status === 'submitted' ? (
-              <>
-                <Button
-                  title="Approve & send to family"
-                  variant="gold"
-                  icon="check"
-                  loading={setStatus.isPending}
-                  onPress={async () => {
-                    await save.mutateAsync([report.id, fields]);
-                    await setStatus.mutateAsync([report.id, 'published']);
-                  }}
-                />
-                <Button title="Approve (send later)" variant="secondary" onPress={async () => {
+        <Group
+          title="Review"
+          note={
+            report.status === 'submitted'
+              ? 'Approve it to send now, or approve it and send it later with the rest of the round.'
+              : report.status === 'approved'
+                ? 'Approved. It reaches the family when you send it.'
+                : report.status === 'draft'
+                  ? 'The tutor has not yet submitted this report.'
+                  : `Sent to the family ${report.publishedAt ? formatDate(report.publishedAt) : ''}.`
+          }
+        />
+      ) : null}
+      {isAdmin && (report.status === 'submitted' || report.status === 'approved') && !viewing ? (
+        <Actions>
+          {report.status === 'submitted' ? (
+            <>
+              <Button
+                title="Approve & send to family"
+                icon="send"
+                loading={setStatus.isPending}
+                onPress={async () => {
+                  await save.mutateAsync([report.id, fields]);
+                  await setStatus.mutateAsync([report.id, 'published']);
+                  toast(`${student.fullName.split(' ')[0]}’s report is sent. The family has been notified.`);
+                }}
+              />
+              <Button
+                title="Approve (send later)"
+                icon="check"
+                variant="secondary"
+                onPress={async () => {
                   await save.mutateAsync([report.id, fields]);
                   await setStatus.mutateAsync([report.id, 'approved']);
-                }} />
-              </>
-            ) : report.status === 'approved' ? (
-              <Button title="Send to family" variant="gold" icon="check" loading={setStatus.isPending} onPress={() => setStatus.mutateAsync([report.id, 'published'])} />
-            ) : report.status === 'draft' ? (
-              <Txt variant="muted">The tutor has not yet submitted this report.</Txt>
-            ) : (
-              <Txt variant="muted">Sent to the family {report.publishedAt ? formatDate(report.publishedAt) : ''}.</Txt>
-            )}
-            {report.status === 'submitted' || report.status === 'approved' ? (
-              <Button title="Send back to tutor" variant="ghost" onPress={() => setStatus.mutateAsync([report.id, 'draft'])} />
-            ) : null}
-            <ErrorNote error={setStatus.error} />
-          </Card>
-        </Section>
+                  toast(`${student.fullName.split(' ')[0]}’s report is approved.`);
+                }}
+              />
+            </>
+          ) : (
+            <Button
+              title="Send to family"
+              icon="send"
+              loading={setStatus.isPending}
+              onPress={async () => {
+                await setStatus.mutateAsync([report.id, 'published']);
+                toast(`${student.fullName.split(' ')[0]}’s report is sent. The family has been notified.`);
+              }}
+            />
+          )}
+          <Button title="Send back to tutor" variant="secondary" onPress={() => setStatus.mutateAsync([report.id, 'draft'])} />
+        </Actions>
       ) : null}
+      {isAdmin ? <ErrorNote error={setStatus.error} /> : null}
 
       {report.status !== 'draft' ? (
         <Button

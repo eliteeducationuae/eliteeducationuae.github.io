@@ -2,13 +2,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { NoHeader, RowMeta, type TagTone } from '@/components/admin-people/kit';
 import { APPLICATION_STATUS } from '@/components/hiring';
 import { RepeatNote, SpamActions, SpamFilterChip, SpamNote } from '@/components/spam';
-import { Badge, Card, EmptyState, Loading, Row, Screen, Segmented, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { EmptyState, Group, GroupRow, Loading, PageHeader, Screen, Tabs } from '@/components/ui';
 import { useApplications } from '@/data/hooks';
 import { relativeDay } from '@/domain/dates';
 import { isPossibleSpam, withoutSpam } from '@/domain/spam';
+import type { ApplicationStatus } from '@/domain/types';
+
+const STAGE_TONE: Record<ApplicationStatus, TagTone> = { applied: 'accent', interview: 'warn', offer: 'good', hired: 'good', rejected: 'muted' };
 
 /** People who applied to teach with Elite Education. */
 export default function Applications() {
@@ -24,51 +27,52 @@ export default function Applications() {
   const open = all.filter((a) => a.status === 'applied' || a.status === 'interview' || a.status === 'offer');
   const list = filter === 'spam' ? spam : (filter === 'open' ? open : all.filter((a) => !open.includes(a))).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
-    <Screen onRefresh={() => applications.refetch()} refreshing={applications.isRefetching}>
-      <Txt variant="muted">Applications from the “Teach with us” form on the website and in the app.</Txt>
-      <Segmented
+    <Screen topInset onRefresh={() => applications.refetch()} refreshing={applications.isRefetching}>
+      <NoHeader title="Hiring" />
+      <PageHeader
+        back={{ fallback: '/admin' }}
+        kicker="Team"
+        title="Hiring"
+        sub="Applications from the “Teach with us” form on the website and in the app. Open an applicant to review, move them on and hire."
+      />
+      <Tabs
+        accessibilityLabel="Applications"
         value={filter}
         onChange={setFilter}
-        options={[
+        tabs={[
           { value: 'open', label: `In progress (${open.length})` },
           { value: 'done', label: 'Hired & closed' },
         ]}
       />
-      <SpamFilterChip count={spam.length} selected={filter === 'spam'} onPress={() => setFilter(filter === 'spam' ? 'open' : 'spam')} />
+      <View style={{ flexDirection: 'row' }}>
+        <SpamFilterChip count={spam.length} selected={filter === 'spam'} onPress={() => setFilter(filter === 'spam' ? 'open' : 'spam')} />
+      </View>
       {list.length === 0 && filter === 'spam' ? (
         <EmptyState icon="school" title="No possible spam" message="Applications that look automated are kept here so that nothing genuine is lost." />
       ) : list.length === 0 ? (
         <EmptyState icon="school" title="No applications here" message="Applications from the website and the app will appear here." />
       ) : (
-        <View style={{ gap: Spacing.two }}>
+        <Group title={filter === 'spam' ? 'Possible spam' : undefined}>
           {list.map((a) => (
-            <Card key={a.id} onPress={() => router.push({ pathname: '/manage/application/[id]', params: { id: a.id } })} accessibilityLabel={a.fullName}>
-              <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Txt variant="h3">{a.fullName}</Txt>
-                  <Txt variant="muted" numberOfLines={2}>{[a.subjects, a.curricula.join(', '), (a.phases ?? []).join(', '), a.qualifications].filter(Boolean).join(' · ')}</Txt>
-                  {a.experience ? (
-                    <Txt variant="small" numberOfLines={2}>
-                      {a.experience}
-                    </Txt>
-                  ) : null}
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <Badge label={APPLICATION_STATUS[a.status].label} tone={APPLICATION_STATUS[a.status].tone} />
-                  <Txt variant="small">{relativeDay(a.createdAt)}</Txt>
-                </View>
-              </Row>
+            <GroupRow
+              key={a.id}
+              avatar={a.fullName}
+              title={a.fullName}
+              accessibilityLabel={a.fullName}
+              note={[a.subjects, a.curricula.join(', '), (a.phases ?? []).join(', '), a.qualifications].filter(Boolean).join(' · ')}
+              right={<RowMeta tag={APPLICATION_STATUS[a.status].label} tone={STAGE_TONE[a.status]} meta={relativeDay(a.createdAt)} />}
+              onPress={() => router.push({ pathname: '/manage/application/[id]', params: { id: a.id } })}>
               {filter === 'spam' ? (
-                <>
+                <View style={{ gap: 8, marginTop: 6 }}>
                   <SpamNote item={a} />
                   <SpamActions kind="application" id={a.id} status={a.spamStatus} />
-                </>
+                </View>
               ) : (
                 <RepeatNote repeatCount={a.repeatCount} />
               )}
-            </Card>
+            </GroupRow>
           ))}
-        </View>
+        </Group>
       )}
     </Screen>
   );

@@ -1,12 +1,12 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
 import { draftRatesInvalid, EnrolmentEditor } from '@/components/enrolment-editor';
 import { useComplianceMap } from '@/components/vetting';
-import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { FormWithSummary, NoHeader, SummaryCard } from '@/components/admin-people/kit';
+import { Actions, Button, ChipField, ErrorNote, Field, FieldsCard, Loading, Notice, PageHeader, Screen } from '@/components/ui';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
 import { useEnrolments, useFamilies, useServices, useStudents, useTutors } from '@/data/hooks';
@@ -39,6 +39,7 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
   const services = useServices();
   const vetting = useComplianceMap();
   const [saving, setSaving] = useState(false);
+  const [tried, setTried] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [fullName, setFullName] = useState(existing?.fullName ?? '');
   const [familyId, setFamilyId] = useState(existing?.familyId ?? defaultFamilyId ?? '');
@@ -120,59 +121,97 @@ function StudentForm({ existing, enrolments, defaultFamilyId }: { existing?: Stu
     }
   };
 
+  const family = families.data?.find((f) => f.id === familyId);
+  const first = fullName.trim().split(' ')[0] || 'the student';
+  const active = drafts.filter((d) => d.active && d.subject.trim());
+  const examInvalid = !!examDate && !/^\d{4}-\d{2}-\d{2}$/.test(examDate);
+
   return (
-    <Screen
-      footer={
+    <Screen topInset>
+      <NoHeader title={existing ? 'Edit student' : 'New student'} />
+      <PageHeader
+        back={{ label: 'Cancel', fallback: '/admin/students' }}
+        kicker={existing ? 'People · Edit' : 'People · New'}
+        title={existing ? existing.fullName : 'Add a student'}
+        sub={
+          existing
+            ? 'Details, subjects and tutors. Changes are recorded in the activity log.'
+            : 'Create the student and link them to a family. You can schedule their first lesson straight after.'
+        }
+      />
+      {tried && !valid ? <Notice tone="danger" title="Not saved yet">A few details are missing. They are marked below.</Notice> : null}
+      <FormWithSummary
+        summary={
+          <SummaryCard
+            kicker={existing ? 'Summary' : 'When you add the student'}
+            title={fullName.trim() || 'New student'}
+            lines={[
+              { k: 'Studying', v: active.length ? active.map((d) => d.subject.trim()).join(', ') : '–' },
+              { k: 'Level', v: [yearGroup.trim(), phase].filter(Boolean).join(' · ') || '–' },
+              { k: 'Family', v: family ? `${family.name} family` : 'Not chosen yet' },
+            ]}
+            note={
+              family
+                ? `The ${family.name} family will see ${first}’s lessons, notes and reports in their app.`
+                : 'Choose the family, or add a new one first.'
+            }
+          />
+        }>
+        <FieldsCard title="Student">
+          <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" placeholder="For example, Sara Al Hashimi" error={tried && !fullName.trim()} />
+          <Field label="School" value={school} onChangeText={setSchool} placeholder="For example, Dubai College" />
+          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="Year 12" />
+          <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+        </FieldsCard>
+        <FieldsCard title="Subjects">
+          <EnrolmentEditor
+            value={drafts}
+            onChange={setDrafts}
+            tutors={withoutClosed(tutors.data)}
+            rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }}
+            vetting={vetting}
+          />
+        </FieldsCard>
+        <FieldsCard title="Family">
+          {(families.data ?? []).length === 0 ? <Notice tone="info">Add the family first, then come back to add the student.</Notice> : null}
+          <ChipField
+            label="Link to"
+            options={withoutClosed(families.data).map((f) => ({ value: f.id, label: `${f.name} (${f.parentName})` }))}
+            value={familyId}
+            onChange={setFamilyId}
+            error={tried && !familyId}
+          />
+          <View style={{ flexDirection: 'row' }}>
+            <Button title="New family" size="sm" variant="secondary" icon="add" onPress={() => router.push('/manage/family-edit')} />
+          </View>
+        </FieldsCard>
+        <FieldsCard title="Grades and notes">
+          <Field label="Current grade" value={currentGrade} onChangeText={setCurrentGrade} placeholder="5" />
+          <Field label="Target grade" value={targetGrade} onChangeText={setTargetGrade} placeholder="7" />
+          <Field
+            label="Exam date"
+            value={examDate}
+            onChangeText={setExamDate}
+            placeholder="For example, 2027-05-14"
+            error={tried && examInvalid ? 'Please write the date as YYYY-MM-DD.' : undefined}
+          />
+          <Field label="Tutor notes (staff only)" value={notes} onChangeText={setNotes} multiline placeholder="For example, learning style, goals, or anything tutors should know" />
+        </FieldsCard>
+      </FormWithSummary>
+      <ErrorNote error={error} />
+      <Actions>
         <Button
           title={existing ? 'Save changes' : 'Add student'}
-          variant="gold"
-          style={{ flex: 1 }}
-          disabled={!valid || saving}
+          icon="check"
+          disabled={saving}
           loading={saving}
-          onPress={submit}
+          onPress={() => {
+            setTried(true);
+            if (valid) void submit();
+          }}
         />
-      }>
-      <Stack.Screen options={{ title: existing ? 'Edit student' : 'New student' }} />
-      <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-      <Section
-        title="Family"
-        action={<Button title="New family" size="sm" variant="ghost" icon="plus" onPress={() => router.push('/manage/family-edit')} />}>
-        {(families.data ?? []).length === 0 ? <Banner>Add the family first, then come back to add the student.</Banner> : null}
-        <Row gap={Spacing.one} wrap>
-          {withoutClosed(families.data).map((f) => (
-            <Chip key={f.id} label={`${f.name} (${f.parentName})`} selected={familyId === f.id} onPress={() => setFamilyId(f.id)} />
-          ))}
-        </Row>
-      </Section>
-      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
-      <Section title="Subjects">
-        <EnrolmentEditor
-          value={drafts}
-          onChange={setDrafts}
-          tutors={withoutClosed(tutors.data)}
-          rates={{ services: services.data ?? [], student: { phase }, saved: enrolments }}
-          vetting={vetting}
-        />
-      </Section>
-      <Field label="School" value={school} onChangeText={setSchool} />
-      <Row gap={Spacing.two}>
-        <View style={{ flex: 1 }}>
-          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="Year 12" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Field label="Exam date" value={examDate} onChangeText={setExamDate} placeholder="For example, 2027-05-14" />
-        </View>
-      </Row>
-      <Row gap={Spacing.two}>
-        <View style={{ flex: 1 }}>
-          <Field label="Current grade" value={currentGrade} onChangeText={setCurrentGrade} placeholder="5" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Field label="Target grade" value={targetGrade} onChangeText={setTargetGrade} placeholder="7" />
-        </View>
-      </Row>
-      <Field label="Tutor notes (staff only)" value={notes} onChangeText={setNotes} multiline placeholder="For example, learning style, goals, or anything tutors should know" />
-      <ErrorNote error={error} />
+        <Button title="Cancel" variant="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/admin/students'))} />
+      </Actions>
     </Screen>
   );
 }

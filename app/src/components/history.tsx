@@ -1,5 +1,5 @@
-import { router, type Href } from 'expo-router';
-import { Fragment, useMemo, useState } from 'react';
+import { router, Stack, type Href } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { font, Spacing } from '@/constants/theme';
@@ -17,8 +17,8 @@ import {
 import { addDays, formatDate, formatTime, relativeDay, startOfDay } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
-import { Icon } from './icon';
-import { Button, Card, Chip, EmptyState, Field, Loading, Row, Screen, Section, Segmented, Txt } from './ui';
+import { Icon, type IconName } from './icon';
+import { Actions, Button, Card, Chip, EmptyState, Field, Group, IconCircle, Loading, PageHeader, Row, Screen, Segmented, Txt } from './ui';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,7 +54,7 @@ function rowValue(e: AuditEvent, key: string): string | undefined {
   return typeof v === 'string' && v ? v : undefined;
 }
 
-type AuditTarget = { pathname: '/lesson/[id]' | '/invoice/[id]' | '/students/[id]' | '/manage/family-edit' | '/manage/tutor-edit'; id: string };
+type AuditTarget = { pathname: '/lesson/[id]' | '/invoice/[id]' | '/students/[id]' | '/manage/family/[id]' | '/manage/tutor/[id]'; id: string };
 
 /** The record whose screen shows an event, if there is one. */
 function auditTarget(e: AuditEvent): AuditTarget | null {
@@ -76,9 +76,9 @@ function auditTarget(e: AuditEvent): AuditTarget | null {
     case 'students':
       return at('/students/[id]', own);
     case 'families':
-      return at('/manage/family-edit', own);
+      return at('/manage/family/[id]', own);
     case 'tutors':
-      return at('/manage/tutor-edit', own);
+      return at('/manage/tutor/[id]', own);
     default:
       return null;
   }
@@ -88,6 +88,18 @@ function auditTarget(e: AuditEvent): AuditTarget | null {
 export function auditHref(e: AuditEvent): Href | null {
   const t = auditTarget(e);
   return t ? ({ pathname: t.pathname, params: { id: t.id } } as Href) : null;
+}
+
+/** The icon for an event's kind of record. */
+function auditIcon(table: string): IconName {
+  if (table.startsWith('lesson') || table === 'homework') return 'event';
+  if (['invoices', 'payments', 'charges', 'packages', 'credit_notes', 'refunds'].includes(table)) return 'receipt_long';
+  if (['families', 'family_contacts', 'students', 'enrolments'].includes(table)) return 'group';
+  if (table.startsWith('tutor') || table === 'opportunities') return 'person';
+  if (table === 'settings' || table === 'services') return 'settings';
+  if (table === 'student_reports') return 'description';
+  if (table === 'admissions_cases') return 'travel_explore';
+  return 'history';
 }
 
 /** Everything a row says, for screen readers: the sentence, the record, each change, when and who. */
@@ -135,7 +147,7 @@ export function AuditEventRow({
   const context = showContext ? d.context : undefined;
   const href = showLink ? auditHref(event) : null;
   const body = (
-    <Row gap={Spacing.two} style={{ alignItems: 'flex-start' }}>
+    <Row gap={14} style={{ alignItems: 'flex-start', flex: 1 }}>
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="body">{d.summary}</Txt>
         {context ? <Txt variant="small">{context}</Txt> : null}
@@ -150,48 +162,62 @@ export function AuditEventRow({
         </Row>
       </View>
       {href ? (
-        <View style={{ paddingTop: 4 }}>
-          <Icon name="chevron" size={16} color={theme.textMuted} />
+        <View style={{ paddingTop: 9 }}>
+          <Icon name="chevron_right" size={20} color={theme.chevron} />
         </View>
       ) : null}
     </Row>
   );
-  if (!href) return <View style={styles.row}>{body}</View>;
+  // The icon sits outside the link, so the link's text (and its accessible name) starts with the sentence.
+  const icon = <IconCircle icon={auditIcon(event.table)} tone={event.actorId || event.actorRole ? 'gold' : 'neutral'} />;
+  if (!href) {
+    return (
+      <View style={[styles.row, styles.withIcon]}>
+        {icon}
+        {body}
+      </View>
+    );
+  }
   return (
-    <Pressable
-      onPress={() => router.push(href)}
-      accessibilityRole="link"
-      accessibilityLabel={auditA11yLabel(event, { ...d, context })}
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.75 }]}>
-      {body}
-    </Pressable>
+    <View style={[styles.withIcon, { paddingLeft: 18 }]}>
+      <View style={{ paddingTop: 14 }}>{icon}</View>
+      <Pressable
+        onPress={() => router.push(href)}
+        accessibilityRole="link"
+        accessibilityLabel={auditA11yLabel(event, { ...d, context })}
+        style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+          styles.row,
+          { flex: 1, paddingLeft: 0 },
+          (pressed || hovered) && { backgroundColor: theme.rowHover },
+        ]}>
+        {body}
+      </Pressable>
+    </View>
   );
 }
 
-/** Events stacked in one card, separated by hairlines. */
+/** Events in one list card (a Group), separated by row dividers, under an optional day heading. */
 function EventList({
   events,
   names,
   showLink,
   showContext,
   timeOnly,
+  title,
 }: {
   events: AuditEvent[];
   names: AuditNames;
   showLink: (e: AuditEvent) => boolean;
   showContext: (e: AuditEvent) => boolean;
   timeOnly?: boolean;
+  title?: string;
 }) {
-  const theme = useTheme();
   return (
-    <Card style={{ gap: 0, paddingVertical: Spacing.one }}>
-      {events.map((e, i) => (
-        <Fragment key={e.id}>
-          {i > 0 ? <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border }} /> : null}
-          <AuditEventRow event={e} names={names} showLink={showLink(e)} showContext={showContext(e)} timeOnly={timeOnly} />
-        </Fragment>
+    <Group title={title}>
+      {events.map((e) => (
+        <AuditEventRow key={e.id} event={e} names={names} showLink={showLink(e)} showContext={showContext(e)} timeOnly={timeOnly} />
       ))}
-    </Card>
+    </Group>
   );
 }
 
@@ -219,28 +245,24 @@ export function HistorySection({ filter, title = 'History' }: { filter: AuditFil
   };
   const showContext = (e: AuditEvent) => !entity || (e.rowId !== entity && !e.relatedIds.includes(entity));
   return (
-    <Section title={title}>
+    <View style={{ gap: 12 }}>
       {history.isLoading ? (
         <Loading />
       ) : history.isError ? (
-        <Txt variant="muted">The history could not be loaded just now.</Txt>
+        <Group title={title} note="The history could not be loaded just now." />
       ) : events.length === 0 ? (
-        <Txt variant="muted">No changes have been recorded yet.</Txt>
+        <Group title={title} note="No changes have been recorded yet." />
       ) : (
-        <View style={{ gap: Spacing.two }}>
-          <EventList events={events} names={names} showLink={showLink} showContext={showContext} />
+        <>
+          <EventList title={title} events={events} names={names} showLink={showLink} showContext={showContext} />
           {history.hasNextPage ? (
-            <Button
-              title="Show earlier changes"
-              variant="ghost"
-              size="sm"
-              loading={history.isFetchingNextPage}
-              onPress={() => history.fetchNextPage()}
-            />
+            <View style={{ flexDirection: 'row' }}>
+              <Button title="Show earlier changes" variant="secondary" size="sm" loading={history.isFetchingNextPage} onPress={() => history.fetchNextPage()} />
+            </View>
           ) : null}
-        </View>
+        </>
       )}
-    </Section>
+    </View>
   );
 }
 
@@ -404,7 +426,9 @@ export function ActivityLog() {
 
   if (!isAdmin) {
     return (
-      <Screen>
+      <Screen topInset>
+        <Stack.Screen options={{ headerShown: false }} />
+        <PageHeader back={{ fallback: '/' }} kicker="Business" title="Activity log" />
         <EmptyState icon="alert" title="Administrators only" message="The activity log is available to administrators of Elite Education." />
       </Screen>
     );
@@ -448,11 +472,14 @@ export function ActivityLog() {
   );
 
   return (
-    <Screen onRefresh={() => history.refetch()} refreshing={history.isRefetching && !history.isFetchingNextPage}>
-      <View style={{ gap: Spacing.one }}>
-        <Txt variant="h2">Who changed what, and when</Txt>
-        <Txt variant="muted">Every change to lessons, billing, families and tutors, newest first.</Txt>
-      </View>
+    <Screen topInset onRefresh={() => history.refetch()} refreshing={history.isRefetching && !history.isFetchingNextPage}>
+      <Stack.Screen options={{ headerShown: false, title: 'Activity log' }} />
+      <PageHeader
+        back={{ fallback: '/admin' }}
+        kicker="Business"
+        title="Activity log"
+        sub="Who changed what, and when: every change to lessons, billing, families and tutors, newest first."
+      />
 
       <View style={{ gap: Spacing.two }}>
         <PersonPicker value={person} onChange={setPerson} actors={actors.data ?? []} />
@@ -478,16 +505,15 @@ export function ActivityLog() {
       ) : events.length === 0 ? (
         <EmptyState icon="clock" title="Nothing matches these filters" message="Try a wider date range or another person." />
       ) : (
-        <View style={{ gap: Spacing.four }}>
-          <Txt variant="small">{pluralChanges(events.length, !!history.hasNextPage)}</Txt>
+        <View style={{ gap: 26 }}>
+          <Txt variant="note">{pluralChanges(events.length, !!history.hasNextPage)}</Txt>
           {days.map((d) => (
-            <View key={d.key} style={{ gap: Spacing.two }}>
-              <Txt variant="h3">{d.label}</Txt>
-              <EventList events={d.events} names={names} showLink={always} showContext={always} timeOnly />
-            </View>
+            <EventList key={d.key} title={d.label} events={d.events} names={names} showLink={always} showContext={always} timeOnly />
           ))}
           {history.hasNextPage ? (
-            <Button title="Load more" variant="outline" loading={history.isFetchingNextPage} onPress={() => history.fetchNextPage()} />
+            <Actions>
+              <Button title="Load more" variant="secondary" loading={history.isFetchingNextPage} onPress={() => history.fetchNextPage()} />
+            </Actions>
           ) : null}
         </View>
       )}
@@ -496,7 +522,8 @@ export function ActivityLog() {
 }
 
 const styles = StyleSheet.create({
-  row: { paddingVertical: Spacing.two + Spacing.one },
+  row: { paddingVertical: 14, paddingHorizontal: 18 },
+  withIcon: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   option: {
     flexDirection: 'row',
     alignItems: 'center',

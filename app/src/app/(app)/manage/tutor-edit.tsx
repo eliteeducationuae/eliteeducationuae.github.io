@@ -1,84 +1,42 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
+import { FormWithSummary, NoHeader, SummaryCard } from '@/components/admin-people/kit';
 import { CatalogueMultiPicker } from '@/components/catalogue-picker';
-import { HistorySection } from '@/components/history';
 import { LoginHint } from '@/components/login-hint';
-import { TutorChecksSummary } from '@/components/vetting';
-import { TUTOR_COLORS } from '@/lib/tutor-colors';
-import { Banner, Button, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
-import { AdminIcsResetActions } from '@/components/calendar-sync';
-import { ViewAsActions } from '@/components/view-as';
-import { Spacing } from '@/constants/theme';
+import { Actions, Button, ErrorNote, Field, FieldsCard, Loading, Notice, PageHeader, Screen, Txt, useToast } from '@/components/ui';
 import { source } from '@/data';
-import { useAction, useLessons, useLookup, useTutors } from '@/data/hooks';
+import { useAction, useTutors, useVettingEnforced } from '@/data/hooks';
+import { formatAED } from '@/domain/billing';
 import { CURRICULA, inCatalogue, PHASES, SUBJECTS } from '@/domain/catalogue';
 import { isClosed } from '@/domain/closed-accounts';
-import { addDays, formatDate, formatDay, formatTime } from '@/domain/dates';
 import type { Tutor } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
-
-export default function EditTutor() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const tutors = useTutors();
-  if (tutors.isLoading) return <Loading />;
-  const existing = id ? tutors.data?.find((t) => t.id === id) : undefined;
-  if (existing && isClosed(existing)) return <ClosedTutor tutor={existing} />;
-  return <TutorForm key={existing?.id ?? 'new'} existing={existing} />;
-}
+import { TUTOR_COLORS } from '@/lib/tutor-colors';
 
 /**
- * A closed tutor is kept only for past lessons and pay records: nothing to edit and no login to send. Their upcoming
- * lessons are listed so the office can open each one and reassign it.
+ * Add a tutor, or edit one tutor's profile, subjects, pay and colour (`?id=…&edit=1`). Everything else about a tutor
+ * (checks, availability, View as, calendar link, history) is on their page, `/manage/tutor/[id]`; an old link to this
+ * form without `edit` opens that page.
  */
-function ClosedTutor({ tutor }: { tutor: Tutor }) {
-  const [range] = useState(() => {
-    const from = new Date();
-    return { from, to: addDays(from, 366) };
-  });
-  const lessons = useLessons(range.from, range.to);
-  const lookup = useLookup();
-  const upcoming = (lessons.data ?? [])
-    .filter((l) => l.tutorId === tutor.id && l.status === 'scheduled')
-    .sort((a, b) => a.start.localeCompare(b.start));
-  const count = upcoming.length;
-  return (
-    <Screen>
-      <Stack.Screen options={{ title: tutor.fullName }} />
-      <Banner icon="person">
-        {`This tutor’s account was closed on ${formatDate(tutor.deletedAt!)}. Their name, contact details, availability and bank details have been removed. Past lessons and pay records are kept.`}
-      </Banner>
-      {lessons.isLoading ? (
-        <Loading />
-      ) : (
-        <Section title="Upcoming lessons">
-          {count ? (
-            <View style={{ gap: Spacing.two }}>
-              <Banner tone="warning" icon="calendar">
-                {`${count} upcoming ${count === 1 ? 'lesson needs' : 'lessons need'} another tutor. Open each lesson to reassign it.`}
-              </Banner>
-              {upcoming.map((l) => (
-                <ListItem
-                  key={l.id}
-                  title={`${formatDay(l.start)} at ${formatTime(l.start)}`}
-                  subtitle={[l.subject, l.studentIds.map((id) => lookup.student(id)?.fullName).filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
-                  onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: l.id } })}
-                />
-              ))}
-            </View>
-          ) : (
-            <Txt variant="muted">No upcoming lessons need another tutor.</Txt>
-          )}
-        </Section>
-      )}
-    </Screen>
-  );
+export default function EditTutor() {
+  const { id, edit } = useLocalSearchParams<{ id?: string; edit?: string }>();
+  const tutors = useTutors();
+  if (id && !edit) return <Redirect href={{ pathname: '/manage/tutor/[id]', params: { id } }} />;
+  if (tutors.isLoading) return <Loading />;
+  const existing = id ? tutors.data?.find((t) => t.id === id) : undefined;
+  // A closed tutor has nothing to edit; their page lists the lessons to reassign.
+  if (existing && isClosed(existing)) return <Redirect href={{ pathname: '/manage/tutor/[id]', params: { id: existing.id } }} />;
+  return <TutorForm key={existing?.id ?? 'new'} existing={existing} />;
 }
 
 function TutorForm({ existing }: { existing?: Tutor }) {
   const theme = useTheme();
+  const toast = useToast();
   const save = useAction(source.saveTutor);
+  const enforced = useVettingEnforced();
+  const [tried, setTried] = useState(false);
   const [fullName, setFullName] = useState(existing?.fullName ?? '');
   const [email, setEmail] = useState(existing?.email ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
@@ -89,70 +47,133 @@ function TutorForm({ existing }: { existing?: Tutor }) {
   const [curricula, setCurricula] = useState<string[]>(existing?.curricula?.length ? existing.curricula : legacy.map((v) => (v === 'IB' ? 'IB DP' : v)));
   const [phases, setPhases] = useState<string[]>(existing?.phases ?? []);
   const [color, setColor] = useState(existing?.color ?? TUTOR_COLORS[0]);
-  const valid = fullName.trim() && /\S+@\S+/.test(email) && Number(pay) >= 0 && pay !== '';
+  const emailInvalid = !/\S+@\S+/.test(email);
+  const payInvalid = pay.trim() === '' || !(Number(pay) >= 0);
+  const valid = !!fullName.trim() && !emailInvalid && !payInvalid;
+  const newPay = Number(pay) || 0;
+  const back = () => (router.canGoBack() ? router.back() : router.replace(existing ? { pathname: '/manage/tutor/[id]', params: { id: existing.id } } : '/manage/tutors'));
+
+  async function submit() {
+    setTried(true);
+    if (!valid) return;
+    const saved = await save.mutateAsync([
+      {
+        id: existing?.id,
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        hourlyPay: Number(pay),
+        subjects,
+        curricula,
+        phases,
+        color,
+      },
+    ]);
+    if (existing) {
+      back();
+      toast(`${saved.fullName.split(' ')[0]}’s profile is saved.`);
+    } else {
+      router.replace({ pathname: '/manage/tutor/[id]', params: { id: saved.id } });
+      toast(`${saved.fullName} is added. Their onboarding checks have started.`);
+    }
+  }
+
+  const summary = existing ? (
+    <SummaryCard
+      kicker="Change summary"
+      title={existing.fullName}
+      lines={[
+        { k: 'Hourly pay', v: !payInvalid && newPay !== existing.hourlyPay ? `${formatAED(existing.hourlyPay ?? 0)} → ${formatAED(newPay)}` : formatAED(existing.hourlyPay ?? 0) },
+        { k: 'Subjects', v: subjects.join(', ') || '–' },
+      ]}
+      note={
+        !payInvalid && newPay !== existing.hourlyPay
+          ? 'The change is recorded in the tutor’s history and the activity log.'
+          : 'Families are charged from Services and rates; this is what the tutor is paid.'
+      }
+    />
+  ) : (
+    <SummaryCard
+      kicker="Before a first lesson"
+      lines={[
+        { k: 'Police clearance', v: enforced.data ? 'Required' : 'Not enforced' },
+        { k: 'Bank details', v: 'Added by the tutor' },
+        { k: 'Availability', v: 'Set by the tutor' },
+        { k: 'Tutor handbook', v: 'To acknowledge' },
+      ]}
+      note="Track progress in Tutor checks. They sign up in the app with this email address."
+    />
+  );
 
   return (
-    <Screen
-      footer={
-        <Button
-          title={existing ? 'Save changes' : 'Add tutor'}
-          variant="gold"
-          style={{ flex: 1 }}
-          disabled={!valid}
-          loading={save.isPending}
-          onPress={async () => {
-            await save.mutateAsync([
-              {
-                id: existing?.id,
-                fullName: fullName.trim(),
-                email: email.trim(),
-                phone: phone.trim() || undefined,
-                hourlyPay: Number(pay),
-                subjects,
-                curricula,
-                phases,
-                color,
-              },
-            ]);
-            router.back();
-          }}
-        />
-      }>
-      <Stack.Screen options={{ title: existing ? 'Edit tutor' : 'New tutor' }} />
-      <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-      <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-      <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <LoginHint email={email} who="tutor" name={fullName} />
-      {existing ? (
-        <Button
-          title="Availability and time off"
-          icon="clock"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/availability', params: { tutorId: existing.id } })}
-        />
+    <Screen topInset>
+      <NoHeader title={existing ? 'Edit tutor' : 'New tutor'} />
+      <PageHeader
+        back={{ label: 'Cancel', onPress: back }}
+        kicker={existing ? 'Team · Edit' : 'Team · New'}
+        title={existing ? existing.fullName : 'Add a tutor'}
+        sub={existing ? 'Profile, subjects and pay. Changes to pay are recorded in the activity log.' : 'They create their login in the app and are asked to complete onboarding.'}
+      />
+      {tried && !valid ? (
+        <Notice tone="danger" title="Not saved yet">
+          A few details are missing. They are marked below.
+        </Notice>
       ) : null}
-      {existing ? <TutorChecksSummary tutorId={existing.id} /> : null}
-      <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
-      <Section title="Teaches">
-        <View style={{ gap: Spacing.three }}>
+      <FormWithSummary summary={summary}>
+        <FieldsCard title="Profile">
+          <Field label="Full name" value={fullName} onChangeText={setFullName} autoCapitalize="words" placeholder="For example, Leila Karimi" error={tried && !fullName.trim()} />
+          <Field
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholder="name@example.com"
+            error={tried && emailInvalid ? (email.trim() ? 'Please enter a full email address.' : true) : undefined}
+          />
+          <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+971 50 000 0000" />
+          <LoginHint email={email} who="tutor" name={fullName} />
+        </FieldsCard>
+        <FieldsCard title="Teaching">
           <CatalogueMultiPicker label="Subjects" options={SUBJECTS} values={subjects} onChange={setSubjects} collapsed={12} otherPlaceholder="For example, Latin" />
           <CatalogueMultiPicker label="Curricula" options={CURRICULA} values={curricula} onChange={setCurricula} />
           <CatalogueMultiPicker label="Phases" options={PHASES} values={phases} onChange={setPhases} />
-        </View>
-      </Section>
-      <Section title="Calendar colour">
-        <Row gap={Spacing.two} wrap>
-          {TUTOR_COLORS.map((c) => (
-            <Pressable key={c} onPress={() => setColor(c)} accessibilityLabel={`Colour ${c}`} accessibilityState={{ selected: color === c }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c, borderWidth: 3, borderColor: color === c ? theme.text : 'transparent' }} />
-            </Pressable>
-          ))}
-        </Row>
-      </Section>
+        </FieldsCard>
+        <FieldsCard title="Pay and colour">
+          <Field
+            label="Pay per hour (AED)"
+            value={pay}
+            onChangeText={setPay}
+            keyboardType="decimal-pad"
+            placeholder="For example, 175"
+            hint="Families are charged from Services and rates; this is what the tutor is paid."
+            error={tried && payInvalid}
+          />
+          <View style={{ gap: 8 }}>
+            <Txt variant="label">Calendar colour</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {TUTOR_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => setColor(c)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Colour ${c}`}
+                  accessibilityState={{ selected: color === c }}
+                  hitSlop={4}
+                  style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c, borderWidth: 3, borderColor: color === c ? theme.gold : 'transparent' }} />
+                </Pressable>
+              ))}
+            </View>
+            <Txt variant="small">Used in the calendar and on lesson cards.</Txt>
+          </View>
+        </FieldsCard>
+      </FormWithSummary>
       <ErrorNote error={save.error} />
-      {existing ? <ViewAsActions tutorId={existing.id} /> : null}
-      {existing ? <AdminIcsResetActions tutorId={existing.id} /> : null}
-      {existing ? <HistorySection filter={{ tutorId: existing.id }} /> : null}
+      <Actions>
+        <Button title={existing ? 'Save changes' : 'Add tutor'} icon="check" loading={save.isPending} onPress={() => void submit().catch(() => undefined)} />
+        <Button title="Cancel" variant="secondary" onPress={back} />
+      </Actions>
     </Screen>
   );
 }

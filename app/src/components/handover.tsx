@@ -5,8 +5,9 @@ import { View } from 'react-native';
 
 import { Icon } from '@/components/icon';
 import { openAttachment } from '@/components/resources';
-import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, ProgressBar, Row, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { NoHeader, RowMeta } from '@/components/admin-people/kit';
+import { Actions, Badge, Banner, Button, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Loading, Notice, PageHeader, Screen, Section, Txt, useToast } from '@/components/ui';
+import { MasteryColors } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandoverPack, useHandovers, useLesson, useLookup, type Lookup } from '@/data/hooks';
 import { useMe } from '@/data/session';
@@ -16,7 +17,6 @@ import { dueLabel, resourceAttachment, resourceMeta } from '@/domain/homework';
 import { RATING_LABELS } from '@/domain/progress';
 import type { Handover } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
-import { notify } from '@/lib/confirm';
 
 const handoverPath = (id: string) => ({ pathname: '/handover/[id]' as const, params: { id } });
 
@@ -115,14 +115,35 @@ export function HandoverList() {
 
   if (me.role === 'admin') {
     return (
-      <Screen onRefresh={() => handovers.refetch()} refreshing={handovers.isRefetching}>
+      <Screen topInset onRefresh={() => handovers.refetch()} refreshing={handovers.isRefetching}>
+        <NoHeader title="Handover packs" />
+        <PageHeader
+          back={{ fallback: '/admin' }}
+          kicker="Team"
+          title="Handover packs"
+          sub="Prepared automatically when a lesson is covered or a student changes tutor: goals, recent notes, open homework, plans and topic ratings. Only the incoming tutor and the office can open a pack."
+        />
         <ErrorNote error={handovers.error} />
         {list.length ? (
-          <Section title={`Handover packs (${list.length})`}>
+          <Group meta={`${list.length} ${list.length === 1 ? 'pack' : 'packs'}`}>
             {list.map((h) => (
-              <HandoverItem key={h.id} h={h} lookup={lookup} incoming={false} />
+              <GroupRow
+                key={h.id}
+                avatar={studentName(lookup, h)}
+                title={handoverTitle(h, studentName(lookup, h))}
+                accessibilityLabel={handoverTitle(h, studentName(lookup, h))}
+                note={`${tutorName(lookup, h.fromTutorId)} to ${tutorName(lookup, h.toTutorId, 'the new tutor')} · ${HANDOVER_REASON_LABEL[h.reason]}`}
+                right={
+                  <RowMeta
+                    tag={h.note?.trim() ? (h.viewedAt ? 'Read' : 'Ready') : 'Awaiting note'}
+                    tone={h.note?.trim() ? 'good' : 'warn'}
+                    meta={`Created ${formatDate(h.createdAt)}`}
+                  />
+                }
+                onPress={() => router.push(handoverPath(h.id))}
+              />
             ))}
-          </Section>
+          </Group>
         ) : (
           empty
         )}
@@ -179,7 +200,9 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
   const outgoing = !!h && me.role === 'tutor' && !!me.tutorId && h.fromTutorId === me.tutorId;
   if (!h || (!admin && !incoming && !outgoing)) {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/handover' }} kicker="Handover pack" title="Handover pack not found" />
         <EmptyState icon="book" title="Handover pack not found" message="It may have been removed, or it may be for another tutor." />
       </Screen>
     );
@@ -188,9 +211,9 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
 
   if (!admin && !incoming) {
     return (
-      <Screen>
+      <Screen topInset>
         <HandoverHeader handover={h} studentName={studentName(lookup, h)} lookup={lookup} canOpenLesson={false} />
-        <Banner icon="alert">Only the incoming tutor and the office can see the full handover pack.</Banner>
+        <Notice tone="info">Only the incoming tutor and the office can see the full handover pack.</Notice>
         <HandoverNoteEditor key={h.noteUpdatedAt ?? 'none'} handover={h} label={`Your handover note for ${toName}`} />
       </Screen>
     );
@@ -218,15 +241,16 @@ function HandoverHeader({
   canOpenLesson: boolean;
 }) {
   return (
-    <Card style={{ gap: Spacing.two }}>
-      <Txt variant="h2">{name}</Txt>
-      <Row gap={Spacing.two} wrap>
-        <Badge label={HANDOVER_REASON_LABEL[h.reason]} tone="gold" />
-        {h.subject ? <Badge label={h.subject} /> : null}
-      </Row>
-      <Txt variant="muted">{fromTo(lookup, h)}</Txt>
-      {h.lessonId ? <CoveredLessonLink lessonId={h.lessonId} canOpen={canOpenLesson} /> : null}
-    </Card>
+    <>
+      <NoHeader title={name} />
+      <PageHeader
+        back={{ fallback: '/handover' }}
+        kicker={['Handover pack', h.subject].filter(Boolean).join(' · ')}
+        title={name}
+        sub={`${fromTo(lookup, h)}. ${HANDOVER_REASON_LABEL[h.reason]}.`}>
+        {h.lessonId ? <CoveredLessonLink lessonId={h.lessonId} canOpen={canOpenLesson} /> : null}
+      </PageHeader>
+    </>
   );
 }
 
@@ -245,40 +269,40 @@ function HandoverNoteEditor({ handover, label }: { handover: Handover; label: st
   const [note, setNote] = useState(() => handover.note ?? '');
   const [problem, setProblem] = useState<string | null>(null);
   const save = useAction(source.saveHandoverNote);
+  const toast = useToast();
   return (
-    <Section title="Write the handover note">
-      <Field
-        label={label}
-        multiline
-        value={note}
-        onChangeText={setNote}
-        maxLength={HANDOVER_NOTE_LIMIT}
-        placeholder="For example: what works well in lessons, where you are in the course, and what to set next."
-      />
-      {problem ? (
-        <Banner tone="danger" icon="alert">
-          {problem}
-        </Banner>
-      ) : null}
-      <ErrorNote error={save.error} />
-      <Button
-        title="Save handover note"
-        icon="check"
-        variant="gold"
-        loading={save.isPending}
-        onPress={async () => {
-          const message = validateHandoverNote(note);
-          setProblem(message);
-          if (message) return;
-          try {
-            await save.mutateAsync([handover.id, note.trim()]);
-            notify('Handover note saved', 'Thank you. The incoming tutor can now read your note.');
-          } catch {
-            // Shown by ErrorNote.
-          }
-        }}
-      />
-    </Section>
+    <>
+      <FieldsCard title="Write the handover note">
+        <Field
+          label={label}
+          multiline
+          value={note}
+          onChangeText={setNote}
+          maxLength={HANDOVER_NOTE_LIMIT}
+          placeholder="For example: what works well in lessons, where you are in the course, and what to set next."
+          error={problem ?? undefined}
+        />
+        <ErrorNote error={save.error} />
+      </FieldsCard>
+      <Actions>
+        <Button
+          title="Save handover note"
+          icon="check"
+          loading={save.isPending}
+          onPress={async () => {
+            const message = validateHandoverNote(note);
+            setProblem(message);
+            if (message) return;
+            try {
+              await save.mutateAsync([handover.id, note.trim()]);
+              toast('Handover note saved. The incoming tutor can now read it.');
+            } catch {
+              // Shown by ErrorNote.
+            }
+          }}
+        />
+      </Actions>
+    </>
   );
 }
 
@@ -308,7 +332,9 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
   if (isLoading) return <Loading />;
   if (!pack) {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/handover' }} kicker="Handover pack" title="Handover pack not found" />
         <ErrorNote error={error} />
         <EmptyState icon="book" title="Handover pack not found" />
       </Screen>
@@ -320,22 +346,30 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
   const profile = [s.school, s.yearGroup, s.phase].filter(Boolean).join(' · ');
 
   const noteSection = (
-    <Section title="Handover note">
-      <Card style={{ gap: Spacing.one }}>
-        <Txt variant="label">From {tutorName(lookup, h.fromTutorId)}</Txt>
-        {pack.handoverNote ? <Txt>{pack.handoverNote}</Txt> : <Txt variant="muted">No handover note has been added yet.</Txt>}
-      </Card>
-    </Section>
+    <Group title="Handover note" note={pack.handoverNote || 'No handover note has been added yet.'}>
+      <GroupRow icon="edit_note" title={`From ${tutorName(lookup, h.fromTutorId)}`} note={h.noteUpdatedAt ? `Written ${formatDate(h.noteUpdatedAt)}` : undefined} />
+    </Group>
+  );
+  const status = pack.handoverNote ? (
+    <Notice tone="good" title={h.viewedAt ? 'Read' : 'Ready'}>
+      {h.viewedAt
+        ? `${tutorName(lookup, h.toTutorId, 'The new tutor')} opened this pack on ${formatDate(h.viewedAt)}.`
+        : 'Everything is in place. The incoming tutor can open the pack from the lesson or their Today screen.'}
+    </Notice>
+  ) : (
+    <Notice tone="warn" title="Awaiting note">
+      {`${tutorName(lookup, h.fromTutorId)} has not added a handover note yet. The rest was gathered from lesson records.`}
+    </Notice>
   );
 
   // The tutor no longer teaches the student: only the handover and its note remain.
   if (pack.closed) {
     return (
-      <Screen onRefresh={refetch}>
+      <Screen topInset onRefresh={refetch}>
         <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} canOpenLesson={false} />
-        <Banner icon="alert">
+        <Notice tone="info">
           {`You no longer teach ${handoverTitle(h, s.fullName)}, so this pack now shows only the handover note. Please contact the office if this is unexpected.`}
-        </Banner>
+        </Notice>
         {noteSection}
         {footer}
       </Screen>
@@ -343,154 +377,117 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
   }
 
   return (
-    <Screen onRefresh={refetch}>
+    <Screen topInset onRefresh={refetch}>
       <HandoverHeader handover={h} studentName={s.fullName} lookup={lookup} canOpenLesson />
+      {me.role === 'admin' ? status : null}
 
-      {noteSection}
-
-      <Section title="Student profile and goals">
-        <Card style={{ gap: Spacing.one }}>
-          {profile ? <Txt>{profile}</Txt> : null}
-          {pack.subject ? <Txt variant="muted">Subject: {pack.subject}</Txt> : null}
-          {grades ? <Txt>{grades}</Txt> : null}
+      <Columns>
+        {noteSection}
+        <Group
+          title="Student profile and goals"
+          note={!profile && !grades && !pack.examDate && !pack.goals.length ? 'No profile details have been recorded yet.' : undefined}>
+          {profile || pack.subject ? <GroupRow icon="school" title={profile || (pack.subject ?? '')} note={profile && pack.subject ? `Subject: ${pack.subject}` : undefined} /> : null}
+          {grades ? <GroupRow icon="trending_up" title={grades} /> : null}
           {pack.examDate ? (
-            <Txt>
-              Exam on {formatDate(`${pack.examDate.slice(0, 10)}T12:00:00`)}
-              {pack.daysToExam !== undefined && pack.daysToExam >= 0 ? ` · ${pack.daysToExam} ${pack.daysToExam === 1 ? 'day' : 'days'} to go` : ''}
-            </Txt>
+            <GroupRow
+              icon="event"
+              title={`Exam on ${formatDate(`${pack.examDate.slice(0, 10)}T12:00:00`)}`}
+              note={pack.daysToExam !== undefined && pack.daysToExam >= 0 ? `${pack.daysToExam} ${pack.daysToExam === 1 ? 'day' : 'days'} to go` : undefined}
+            />
           ) : null}
-          {pack.goals.length ? (
-            <View style={{ gap: 2 }}>
-              <Txt variant="label">Goals</Txt>
-              {pack.goals.map((g, i) => (
-                <Txt key={i}>• {g}</Txt>
-              ))}
-            </View>
-          ) : null}
-          {!profile && !grades && !pack.examDate && !pack.goals.length ? <Txt variant="muted">No profile details have been recorded yet.</Txt> : null}
-        </Card>
-      </Section>
+          {pack.goals.map((g, i) => (
+            <GroupRow key={i} icon="flag" title={g} />
+          ))}
+        </Group>
+      </Columns>
 
-      <Section title="Tutor notes">
-        <Card style={{ gap: Spacing.one }}>
-          {pack.tutorNotes ? <Txt>{pack.tutorNotes}</Txt> : <Txt variant="muted">No tutor notes have been recorded.</Txt>}
-          <Txt variant="small">Visible to tutors and the office only.</Txt>
-        </Card>
-      </Section>
+      <Columns>
+        <Group title="Tutor notes" note={pack.tutorNotes || 'No tutor notes have been recorded.'}>
+          <GroupRow icon="lock" tone="neutral" title="Visible to tutors and the office only." titleWeight="regular" />
+        </Group>
+        <View style={{ gap: 26 }}>
+          <Group title="Progress" note={pack.mastery ? undefined : 'No topic ratings have been recorded for this subject yet.'}>
+            {pack.mastery ? (
+              <>
+                <GroupRow title={`Mastery ${pack.mastery.masteryPercent}%`} progress={pack.mastery.masteryPercent} titleWeight="regular" />
+                <GroupRow
+                  title={`Coverage ${pack.mastery.coveragePercent}% (${pack.mastery.covered} of ${pack.mastery.total} topics)`}
+                  progress={pack.mastery.coveragePercent}
+                  titleWeight="regular"
+                  note={pack.mastery.weakUnits.length ? `Units to strengthen: ${pack.mastery.weakUnits.join(', ')}` : undefined}
+                />
+              </>
+            ) : null}
+          </Group>
+          <Group title="Focus topics" note={pack.focusTopics.length ? undefined : 'No topics need particular attention yet.'}>
+            {pack.focusTopics.map((t) => {
+              const r = Math.max(1, Math.min(5, Math.round(t.rating)));
+              return (
+                <GroupRow
+                  key={t.topicId}
+                  title={t.name}
+                  titleWeight="regular"
+                  progress={r * 20}
+                  progressColor={MasteryColors[r - 1]}
+                  value={RATING_LABELS[r] ?? `${t.rating}`}
+                  valueTone={t.rating < 3 ? 'warn' : 'muted'}
+                />
+              );
+            })}
+          </Group>
+        </View>
+      </Columns>
 
-      <Section title="Progress">
-        {pack.mastery ? (
-          <Card style={{ gap: Spacing.two }}>
-            <View style={{ gap: 4 }}>
-              <Txt>Mastery {pack.mastery.masteryPercent}%</Txt>
-              <ProgressBar value={pack.mastery.masteryPercent} />
-            </View>
-            <View style={{ gap: 4 }}>
-              <Txt>
-                Coverage {pack.mastery.coveragePercent}% ({pack.mastery.covered} of {pack.mastery.total} topics)
-              </Txt>
-              <ProgressBar value={pack.mastery.coveragePercent} />
-            </View>
-            {pack.mastery.weakUnits.length ? <Txt variant="muted">Units to strengthen: {pack.mastery.weakUnits.join(', ')}</Txt> : null}
-          </Card>
-        ) : (
-          <Txt variant="muted">No topic ratings have been recorded for this subject yet.</Txt>
-        )}
-      </Section>
-
-      <Section title="Focus topics">
-        {pack.focusTopics.length ? (
-          <Card style={{ gap: Spacing.one }}>
-            {pack.focusTopics.map((t) => (
-              <Row key={t.topicId} style={{ justifyContent: 'space-between' }} gap={Spacing.two}>
-                <Txt style={{ flex: 1 }}>{t.name}</Txt>
-                <Badge label={RATING_LABELS[Math.round(t.rating)] ?? `${t.rating}`} tone={t.rating < 3 ? 'warning' : 'neutral'} />
-              </Row>
-            ))}
-          </Card>
-        ) : (
-          <Txt variant="muted">No topics need particular attention yet.</Txt>
-        )}
-      </Section>
-
-      <Section title="Last five lessons">
-        {pack.recentLessons.length ? (
-          pack.recentLessons.map((l) => (
-            <Card
+      <Columns>
+        <Group title="Last five lessons" note={pack.recentLessons.length ? undefined : 'No lessons have been recorded yet.'}>
+          {pack.recentLessons.map((l) => (
+            <GroupRow
               key={l.lessonId}
-              style={{ gap: Spacing.one }}
+              icon="edit_note"
+              title={`${formatDay(l.start)} · ${tutorName(lookup, l.tutorId, 'Tutor')}`}
+              note={l.summary || (l.status === 'no-show' ? 'The student did not attend.' : 'No summary was written.')}
               onPress={canOpenLesson(l.tutorId) ? () => router.push({ pathname: '/lesson/[id]', params: { id: l.lessonId } }) : undefined}>
-              <Txt variant="h3">
-                {formatDay(l.start)} · {tutorName(lookup, l.tutorId, 'Tutor')}
-              </Txt>
-              <Txt>{l.summary || (l.status === 'no-show' ? 'The student did not attend.' : 'No summary was written.')}</Txt>
-              {l.topicNames.length ? (
-                <Row gap={4} wrap>
-                  {l.topicNames.map((t, i) => (
-                    <Badge key={`${t}-${i}`} label={t} />
-                  ))}
-                </Row>
-              ) : null}
+              {l.topicNames.length ? <Txt variant="small">{`Topics: ${l.topicNames.join(', ')}`}</Txt> : null}
               {l.privateNote ? (
                 <Txt variant="small" style={{ color: theme.warning }}>
                   Private: {l.privateNote}
                 </Txt>
               ) : null}
-            </Card>
-          ))
-        ) : (
-          <Txt variant="muted">No lessons have been recorded yet.</Txt>
-        )}
-      </Section>
+            </GroupRow>
+          ))}
+        </Group>
+        <View style={{ gap: 26 }}>
+          <Group title="Open homework" note={pack.openHomework.length ? undefined : 'There is no open homework.'}>
+            {pack.openHomework.map((hw) => (
+              <GroupRow
+                key={hw.id}
+                icon="assignment"
+                tone={hw.dueDate.slice(0, 10) < today ? 'warn' : 'gold'}
+                title={hw.title}
+                note={dueLabel(hw.dueDate, now)}
+                value={hw.dueDate.slice(0, 10) < today ? 'Overdue' : undefined}
+                valueTone="warn"
+                // A newly awarded tutor cannot open the student's homework until the office moves the enrolment.
+                onPress={canOpenHomework(hw.studentId) ? () => router.push({ pathname: '/homework/[id]', params: { id: hw.id } }) : undefined}
+              />
+            ))}
+          </Group>
+          <Group title="Resources used" note={pack.resources.length ? undefined : 'No resources have been used yet.'}>
+            {pack.resources.map((r) => (
+              <GroupRow key={r.id} icon="description" title={r.title} note={resourceMeta(r) || undefined} onPress={() => openAttachment(resourceAttachment(r))} />
+            ))}
+          </Group>
+        </View>
+      </Columns>
 
-      <Section title="Open homework">
-        {pack.openHomework.length ? (
-          pack.openHomework.map((hw) => (
-            <ListItem
-              key={hw.id}
-              title={hw.title}
-              subtitle={dueLabel(hw.dueDate, now)}
-              // Below the subtitle, so the title keeps the full width (and two lines) on a phone.
-              below={hw.dueDate.slice(0, 10) < today ? <Badge label="Overdue" tone="warning" /> : undefined}
-              // A newly awarded tutor cannot open the student's homework until the office moves the enrolment.
-              onPress={canOpenHomework(hw.studentId) ? () => router.push({ pathname: '/homework/[id]', params: { id: hw.id } }) : undefined}
-            />
-          ))
-        ) : (
-          <Txt variant="muted">There is no open homework.</Txt>
-        )}
-      </Section>
-
-      <Section title="Recent lesson plans">
-        {pack.recentPlans.length ? (
-          pack.recentPlans.map((p) => (
-            <Card key={p.lessonId} style={{ gap: Spacing.one }}>
-              <Txt variant="h3">{formatDay(p.lessonStart)}</Txt>
-              {p.objectives ? <Txt>{p.objectives}</Txt> : null}
-              {p.topicNames.length ? (
-                <Row gap={4} wrap>
-                  {p.topicNames.map((t, i) => (
-                    <Badge key={`${t}-${i}`} label={t} />
-                  ))}
-                </Row>
-              ) : null}
-              {p.homeworkTitles.length ? <Txt variant="muted">Planned homework: {p.homeworkTitles.join('; ')}</Txt> : null}
-            </Card>
-          ))
-        ) : (
-          <Txt variant="muted">No lesson plans have been written yet.</Txt>
-        )}
-      </Section>
-
-      <Section title="Resources used">
-        {pack.resources.length ? (
-          pack.resources.map((r) => (
-            <ListItem key={r.id} title={r.title} subtitle={resourceMeta(r) || undefined} onPress={() => openAttachment(resourceAttachment(r))} />
-          ))
-        ) : (
-          <Txt variant="muted">No resources have been used yet.</Txt>
-        )}
-      </Section>
+      <Group title="Recent lesson plans" note={pack.recentPlans.length ? undefined : 'No lesson plans have been written yet.'}>
+        {pack.recentPlans.map((p) => (
+          <GroupRow key={p.lessonId} icon="event_available" title={formatDay(p.lessonStart)} note={p.objectives || undefined}>
+            {p.topicNames.length ? <Txt variant="small">{`Topics: ${p.topicNames.join(', ')}`}</Txt> : null}
+            {p.homeworkTitles.length ? <Txt variant="small">Planned homework: {p.homeworkTitles.join('; ')}</Txt> : null}
+          </GroupRow>
+        ))}
+      </Group>
 
       {footer}
     </Screen>
