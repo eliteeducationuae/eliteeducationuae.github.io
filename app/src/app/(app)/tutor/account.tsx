@@ -1,52 +1,145 @@
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
+import { useState } from 'react';
 
-import { AccountScreen } from '@/components/account';
-import { AdmissionsAccountLink } from '@/components/admissions/entry-links';
-import { Icon } from '@/components/icon';
-import { Badge, ListItem, Section } from '@/components/ui';
-import { OnboardingCard, useComplianceFor } from '@/components/vetting';
-import { useReportCycles, useStudentReports } from '@/data/hooks';
-import { useMe } from '@/data/session';
-import { useTheme } from '@/hooks/use-theme';
+import { CalendarSyncCard } from '@/components/calendar-sync';
+import { DataPrivacyCard } from '@/components/data-privacy';
+import { GoogleCalendarCard } from '@/components/google-calendar';
+import type { IconName } from '@/components/icon';
+import { HeaderActions } from '@/components/role-tabs';
+import { useHandbookDue, useMyTutor, useReportsToWrite } from '@/components/tutor/common';
+import { Actions, Button, Columns, Group, GroupRow, PageHeader, Screen } from '@/components/ui';
+import { OnboardingCard, useComplianceFor, useToday } from '@/components/vetting';
+import { WhatsAppCard } from '@/components/whatsapp-card';
+import { source } from '@/data';
+import { useAdmissionsCases, useHandovers } from '@/data/hooks';
+import { queryClient } from '@/data/query';
+import { useMe, useSession } from '@/data/session';
+import { vettingSummary } from '@/domain/vetting';
+import { confirm } from '@/lib/confirm';
 
+type Item = { title: string; note: string; icon: IconName; href: Href; count?: number };
+
+/** The tutor's Account tab: my work, pay, Elite Education, settings and sign-out. */
 export default function TutorAccount() {
-  const theme = useTheme();
   const me = useMe();
-  const cycles = useReportCycles();
-  const reports = useStudentReports();
-  const openCycles = new Set((cycles.data ?? []).filter((c) => c.status === 'open').map((c) => c.id));
+  const tutor = useMyTutor();
+  const today = useToday();
+  const viewing = useSession((s) => !!s.viewing);
+  const signOut = useSession((s) => s.signOut);
+  const exitViewAs = useSession((s) => s.exitViewAs);
   const { compliance } = useComplianceFor(me.tutorId);
-  const checksBadge = compliance && compliance.vettingStatus !== 'cleared' ? 1 : 0;
-  const handbookBadge = compliance?.handbookVersion && (compliance.handbookAcknowledgedVersion ?? 0) < compliance.handbookVersion ? 1 : 0;
-  const toWrite = (reports.data ?? []).filter((r) => r.tutorId === me.tutorId && r.status === 'draft' && openCycles.has(r.cycleId)).length;
-  const work = [
-    { title: 'Reports to write', subtitle: toWrite ? `${toWrite} to write. We prepare a draft for you.` : 'End-of-term reports for your students', icon: 'book', href: '/reports', badge: toWrite },
-    { title: 'Availability and time off', subtitle: 'When families can book you, and the days you are away', icon: 'clock', href: '/availability', badge: 0 },
-    { title: 'Opportunities', subtitle: 'New students for whom you can put yourself forward', icon: 'school', href: '/opportunities', badge: 0 },
-    { title: 'Resource library', subtitle: 'Worksheets, past papers and links to share with students', icon: 'folder', href: '/resources', badge: 0 },
-  ] as const;
-  const pay = [
-    { title: 'My invoices', subtitle: 'Submit your monthly invoice and follow its payment', icon: 'doc', href: '/tutor-invoices', badge: 0 },
-    { title: 'My pay', subtitle: 'Hours taught and earnings by month', icon: 'money', href: '/pay', badge: 0 },
-    { title: 'Payment details', subtitle: 'Where we pay you (kept private)', icon: 'card', href: '/payment-details', badge: 0 },
-  ] as const;
-  const office = [
-    { title: 'Announcements', subtitle: 'News from Elite Education', icon: 'megaphone', href: '/announcements', badge: 0 },
-    { title: 'Tutor handbook', subtitle: 'Our standards and policies', icon: 'book', href: '/handbook', badge: handbookBadge },
-    { title: 'My checks and documents', subtitle: 'Police clearance and onboarding', icon: 'check', href: '/checks', badge: checksBadge },
-  ] as const;
-  const row = (l: (typeof work)[number] | (typeof pay)[number] | (typeof office)[number]) => (
-    <ListItem key={l.href} title={l.title} subtitle={l.subtitle} left={<Icon name={l.icon} size={22} color={theme.accent} />} right={l.badge ? <Badge label={String(l.badge)} tone="gold" /> : undefined} onPress={() => router.push(l.href)} />
-  );
+  const handbook = useHandbookDue();
+  const toWrite = useReportsToWrite();
+  const handovers = useHandovers();
+  const cases = useAdmissionsCases();
+  const [resetting, setResetting] = useState(false);
+
+  const notesToWrite = (handovers.data ?? []).filter((h) => h.fromTutorId === me.tutorId && !h.note?.trim()).length;
+  const advised = new Set((cases.data ?? []).map((c) => c.familyId)).size;
+  const subjects = tutor?.subjects.length ? tutor.subjects.join(', ') : undefined;
+
+  const work: Item[] = [
+    {
+      title: 'Reports to write',
+      note: toWrite ? `${toWrite} to write. We prepare a draft for you.` : 'End-of-term reports for your students',
+      icon: 'description',
+      href: '/reports',
+      count: toWrite,
+    },
+    { title: 'Availability and time off', note: 'When families can book you, and the days you are away', icon: 'schedule', href: '/availability' },
+    { title: 'Opportunities', note: 'New students for whom you can put yourself forward', icon: 'school', href: '/opportunities' },
+    { title: 'Resource library', note: 'Worksheets, past papers and links to share', icon: 'folder', href: '/resources' },
+    {
+      title: 'Handover notes',
+      note: notesToWrite ? `${notesToWrite} to write for the next tutor` : 'Handover packs and the notes you have written',
+      icon: 'swap_horiz',
+      href: '/handover',
+      count: notesToWrite,
+    },
+    ...(advised ? [{ title: 'Admissions advisory', note: `${advised === 1 ? '1 family' : `${advised} families`} you advise`, icon: 'school' as IconName, href: '/admissions' as Href }] : []),
+  ];
+  const pay: Item[] = [
+    { title: 'My invoices', note: 'Submit your monthly invoice and follow its payment', icon: 'receipt_long', href: '/tutor-invoices' },
+    { title: 'My pay', note: 'Hours taught and earnings by month', icon: 'payments', href: '/pay' },
+    { title: 'Payment details', note: 'Where we pay you (kept private)', icon: 'account_balance', href: '/payment-details' },
+  ];
+  const office: Item[] = [
+    { title: 'Announcements', note: 'News from Elite Education', icon: 'campaign', href: '/announcements' },
+    {
+      title: 'Tutor handbook',
+      note: handbook.version ? `Version ${handbook.version} · ${handbook.due ? 'please acknowledge' : 'acknowledged'}` : 'Our standards and policies',
+      icon: 'menu_book',
+      href: '/handbook',
+      count: handbook.due ? 1 : 0,
+    },
+    {
+      title: 'My checks and documents',
+      note: compliance ? vettingSummary(compliance, today) : 'Police clearance and onboarding',
+      icon: 'verified_user',
+      href: '/checks',
+      count: compliance && compliance.vettingStatus !== 'cleared' ? 1 : 0,
+    },
+  ];
+  const rows = (items: Item[]) =>
+    items.map((i) => (
+      <GroupRow
+        key={i.title}
+        icon={i.icon}
+        title={i.title}
+        note={i.note}
+        value={i.count ? String(i.count) : undefined}
+        valueTone="accent"
+        onPress={() => router.push(i.href)}
+      />
+    ));
+
   return (
-    <AccountScreen>
+    <Screen topInset>
+      <PageHeader kicker="Account" title={me.fullName} sub={[me.email, subjects].filter(Boolean).join(' · ')} right={<HeaderActions search />} />
       <OnboardingCard compliance={compliance} />
-      <Section title="My work">
-        {work.map(row)}
-        <AdmissionsAccountLink />
-      </Section>
-      <Section title="Pay">{pay.map(row)}</Section>
-      <Section title="Elite Education">{office.map(row)}</Section>
-    </AccountScreen>
+      <Columns>
+        <Group title="My work">{rows(work)}</Group>
+        <Group title="Pay">{rows(pay)}</Group>
+        <Group title="Elite Education">{rows(office)}</Group>
+      </Columns>
+      <Group title="Settings" />
+      <GoogleCalendarCard />
+      <CalendarSyncCard />
+      <WhatsAppCard />
+      <DataPrivacyCard />
+      {source.kind === 'demo' && source.resetDemo && !viewing ? (
+        <Actions>
+          <Button
+            title="Reset demo data"
+            variant="secondary"
+            icon="repeat"
+            loading={resetting}
+            onPress={() =>
+              confirm('Reset demo data?', 'This restores the original sample lessons, notes and invoices.', async () => {
+                setResetting(true);
+                await source.resetDemo!();
+                await queryClient.invalidateQueries();
+                setResetting(false);
+              })
+            }
+          />
+        </Actions>
+      ) : null}
+      <Actions>
+        {viewing ? (
+          <Button
+            title="Exit view"
+            variant="secondary"
+            icon="visibility"
+            onPress={async () => {
+              await exitViewAs();
+              router.replace('/admin');
+            }}
+          />
+        ) : (
+          <Button title="Sign out" variant="secondary" icon="logout" onPress={() => signOut()} />
+        )}
+      </Actions>
+    </Screen>
   );
 }

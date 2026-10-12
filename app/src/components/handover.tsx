@@ -1,22 +1,24 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 
 import { Icon } from '@/components/icon';
 import { openAttachment } from '@/components/resources';
 import { NoHeader, RowMeta } from '@/components/admin-people/kit';
-import { Actions, Badge, Banner, Button, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Loading, Notice, PageHeader, Screen, Section, Txt, useToast } from '@/components/ui';
-import { MasteryColors } from '@/constants/theme';
+import { Actions, Badge, Banner, Button, Card, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Loading, Notice, PageHeader, ProgressBar, Row, Screen, Section, Txt, useToast } from '@/components/ui';
+import { MasteryColors, Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandoverPack, useHandovers, useLesson, useLookup, type Lookup } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { formatDate, formatDay, formatTime, toDateKey } from '@/domain/dates';
 import { HANDOVER_NOTE_LIMIT, HANDOVER_REASON_LABEL, handoverTitle, validateHandoverNote } from '@/domain/handover';
 import { dueLabel, resourceAttachment, resourceMeta } from '@/domain/homework';
 import { RATING_LABELS } from '@/domain/progress';
 import type { Handover } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
+import { HANDOVER_PROMPTS as PROMPTS, joinHandoverNote, splitHandoverNote } from '@/components/tutor/handover-note';
+import { notify } from '@/lib/confirm';
 
 const handoverPath = (id: string) => ({ pathname: '/handover/[id]' as const, params: { id } });
 
@@ -68,21 +70,18 @@ export function HandoverBanners() {
   return (
     <>
       {toRead.map((h) => (
-        <Banner key={`read-${h.id}`} icon="book">
-          Handover pack ready: {handoverTitle(h, studentName(lookup, h))}.{' '}
-          <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
-            Open handover pack
-          </Txt>
-        </Banner>
+        <Notice key={`read-${h.id}`} tone="info" icon="menu_book" title="Handover pack ready" link={{ label: 'Open handover pack', onPress: () => router.push(handoverPath(h.id)) }}>
+          {`${handoverTitle(h, studentName(lookup, h))}, from ${tutorName(lookup, h.fromTutorId)}. Read it before your first lesson.`}
+        </Notice>
       ))}
-      {toWrite.map((h) => (
-        <Banner key={`write-${h.id}`} icon="chat">
-          Please leave a handover note for {tutorName(lookup, h.toTutorId, 'the new tutor')} about {studentName(lookup, h)}.{' '}
-          <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push(handoverPath(h.id))}>
-            Write handover note
-          </Txt>
-        </Banner>
-      ))}
+      {toWrite.map((h) => {
+        const student = studentName(lookup, h);
+        return (
+          <Notice key={`write-${h.id}`} tone="warn" icon="swap_horiz" title={`Handover note for ${student.split(' ')[0]}`} link={{ label: 'Write handover note', onPress: () => router.push(handoverPath(h.id)) }}>
+            {`${student} is moving to ${tutorName(lookup, h.toTutorId, 'a new tutor')}. Please leave a short handover note.`}
+          </Notice>
+        );
+      })}
     </>
   );
 }
@@ -155,31 +154,27 @@ export function HandoverList() {
   const fromMe = list.filter((h) => !!me.tutorId && h.fromTutorId === me.tutorId);
   const toWrite = fromMe.filter((h) => !h.note?.trim());
   const written = fromMe.filter((h) => !!h.note?.trim());
+  const row = (h: Handover, incoming: boolean) => (
+    <GroupRow
+      key={h.id}
+      icon={incoming ? 'menu_book' : 'swap_horiz'}
+      title={handoverTitle(h, studentName(lookup, h))}
+      note={`${HANDOVER_REASON_LABEL[h.reason]} · ${incoming ? `from ${tutorName(lookup, h.fromTutorId)}` : `to ${tutorName(lookup, h.toTutorId, 'the new tutor')}`} · ${formatDate(h.createdAt)}`}
+      value={incoming && !h.viewedAt ? 'New' : !incoming && !h.note?.trim() ? 'To write' : undefined}
+      valueTone="accent"
+      valueSize={12.5}
+      onPress={() => router.push(handoverPath(h.id))}
+    />
+  );
   return (
-    <Screen onRefresh={() => handovers.refetch()} refreshing={handovers.isRefetching}>
+    <Screen topInset onRefresh={() => handovers.refetch()} refreshing={handovers.isRefetching}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back kicker="Handover" title="Handover notes" sub="Packs from tutors whose students you take on, and the notes you leave when a student moves on." />
       <ErrorNote error={handovers.error} />
       {!forMe.length && !fromMe.length ? empty : null}
-      {forMe.length ? (
-        <Section title="Handover packs for you">
-          {forMe.map((h) => (
-            <HandoverItem key={h.id} h={h} lookup={lookup} incoming />
-          ))}
-        </Section>
-      ) : null}
-      {toWrite.length ? (
-        <Section title="Notes to write">
-          {toWrite.map((h) => (
-            <HandoverItem key={h.id} h={h} lookup={lookup} incoming={false} />
-          ))}
-        </Section>
-      ) : null}
-      {written.length ? (
-        <Section title="Handover notes you have written">
-          {written.map((h) => (
-            <HandoverItem key={h.id} h={h} lookup={lookup} incoming={false} />
-          ))}
-        </Section>
-      ) : null}
+      {toWrite.length ? <Group title="Notes to write">{toWrite.map((h) => row(h, false))}</Group> : null}
+      {forMe.length ? <Group title="Handover packs for you">{forMe.map((h) => row(h, true))}</Group> : null}
+      {written.length ? <Group title="Handover notes you have written">{written.map((h) => row(h, false))}</Group> : null}
     </Screen>
   );
 }
@@ -210,13 +205,7 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
   const toName = tutorName(lookup, h.toTutorId, 'the new tutor');
 
   if (!admin && !incoming) {
-    return (
-      <Screen topInset>
-        <HandoverHeader handover={h} studentName={studentName(lookup, h)} lookup={lookup} canOpenLesson={false} />
-        <Notice tone="info">Only the incoming tutor and the office can see the full handover pack.</Notice>
-        <HandoverNoteEditor key={h.noteUpdatedAt ?? 'none'} handover={h} label={`Your handover note for ${toName}`} />
-      </Screen>
-    );
+    return <HandoverWriter key={h.noteUpdatedAt ?? 'none'} handover={h} studentName={studentName(lookup, h)} toName={toName} />;
   }
 
   return (
@@ -225,6 +214,75 @@ export function HandoverScreen({ id }: { id: string | undefined }) {
       markViewed={incoming && !h.viewedAt}
       footer={admin ? <HandoverNoteEditor key={h.noteUpdatedAt ?? 'none'} handover={h} label={`Handover note for ${toName}`} /> : null}
     />
+  );
+}
+
+/** The outgoing tutor's handover note: three short prompts, joined into the one note the incoming tutor reads. */
+function HandoverWriter({ handover: h, studentName: name, toName }: { handover: Handover; studentName: string; toName: string }) {
+  const viewing = !!useViewing();
+  const toast = useToast();
+  const first = name.split(' ')[0];
+  const [parts, setParts] = useState<[string, string, string]>(() => splitHandoverNote(h.note ?? '', first));
+  const [tried, setTried] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const save = useAction(source.saveHandoverNote);
+  const set = (i: 0 | 1 | 2) => (v: string) => setParts((p) => (i === 0 ? [v, p[1], p[2]] : i === 1 ? [p[0], v, p[2]] : [p[0], p[1], v]));
+  const missing = !parts[0].trim() || !parts[1].trim();
+  return (
+    <Screen topInset>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader
+        back
+        kicker="Handover"
+        title={`${name} to ${toName}`}
+        sub={`${HANDOVER_REASON_LABEL[h.reason]}${h.subject ? ` · ${h.subject}` : ''}. Only ${toName} and the office can read this note.`}
+      />
+      {h.note?.trim() ? (
+        <Notice tone="good" title={`Sent to ${toName}`}>
+          Thank you. You can still change the note below; {toName} always sees the latest version.
+        </Notice>
+      ) : (
+        <Notice tone="info" icon="edit_note">
+          A few lines are enough. {toName} also receives the recent lesson notes, open homework and topic ratings automatically.
+        </Notice>
+      )}
+      <FieldsCard>
+        <Field label={PROMPTS[0].replace('{first}', first)} multiline value={parts[0]} onChangeText={set(0)} error={tried && !parts[0].trim()} placeholder="For example, what works well in lessons" />
+        <Field label={PROMPTS[1].replace('{first}', first)} multiline value={parts[1]} onChangeText={set(1)} error={tried && !parts[1].trim()} placeholder="Where you are in the course, what is secure and what is not" />
+        <Field label={PROMPTS[2]} multiline value={parts[2]} onChangeText={set(2)} placeholder="Optional: what to set or revisit next" />
+      </FieldsCard>
+      <Group title="Included automatically">
+        <GroupRow icon="notes" title="Recent lesson notes" titleWeight="regular" />
+        <GroupRow icon="assignment" title="Open homework" titleWeight="regular" />
+        <GroupRow icon="bar_chart" title="Topic ratings" titleWeight="regular" />
+        <GroupRow icon="target" title="Target and current grades" titleWeight="regular" />
+      </Group>
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <ErrorNote error={save.error} />
+      {!viewing ? (
+        <Actions>
+          <Button
+            title={h.note?.trim() ? 'Save changes' : `Send to ${toName.split(' ')[0]}`}
+            icon="send"
+            loading={save.isPending}
+            onPress={async () => {
+              setTried(true);
+              if (missing) return;
+              const note = joinHandoverNote(parts, first);
+              const message = validateHandoverNote(note);
+              setProblem(message);
+              if (message) return;
+              try {
+                await save.mutateAsync([h.id, note]);
+                toast(`Handover note sent to ${toName.split(' ')[0]}`);
+              } catch {
+                // Shown by ErrorNote.
+              }
+            }}
+          />
+        </Actions>
+      ) : null}
+    </Screen>
   );
 }
 

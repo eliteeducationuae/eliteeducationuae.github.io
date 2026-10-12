@@ -52,8 +52,8 @@ export function ThreadList() {
 }
 
 /**
- * A family conversation with a composer. `initialDraft` pre-fills the composer (nothing is sent until Send is
- * pressed); `header` sits above the messages, inside the scrolling column (e.g. a page header).
+ * A family conversation with a composer. `initialDraft` pre-fills the composer (e.g. a tutor's "I can't make it"; nothing is
+ * sent until Send is pressed); `header` sits above the messages, inside the scrolling column (e.g. a page header).
  */
 export function Conversation({ familyId, initialDraft, header }: { familyId: string; initialDraft?: string; header?: ReactNode }) {
   const theme = useTheme();

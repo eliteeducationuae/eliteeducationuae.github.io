@@ -12,7 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 /** One family conversation (office and tutors): a compact page header above the thread and its composer. */
 export default function ConversationScreen() {
-  const { familyId } = useLocalSearchParams<{ familyId: string }>();
+  const { familyId, draft } = useLocalSearchParams<{ familyId: string; draft?: string }>();
   const me = useMe();
   const theme = useTheme();
   const wide = useWide();
@@ -41,7 +41,7 @@ export default function ConversationScreen() {
           right={me.role === 'admin' && family ? <TextLink label="Open the family" onPress={() => router.push({ pathname: '/manage/family/[id]', params: { id: family.id } })} /> : undefined}
         />
       </View>
-      <Conversation familyId={familyId} />
+      <Conversation familyId={familyId} initialDraft={draft} />
     </View>
   );
 }

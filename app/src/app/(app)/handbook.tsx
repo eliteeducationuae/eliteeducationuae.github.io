@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Markdown } from '@/components/markdown';
 import { NoHeader, Tag } from '@/components/admin-people/kit';
-import { Actions, Button, EmptyState, ErrorNote, Group, GroupRow, Loading, Notice, PageHeader, Screen, Txt } from '@/components/ui';
+import { Actions, Button, EmptyState, ErrorNote, Group, GroupRow, Loading, Notice, PageHeader, Screen, Txt, useToast } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useHandbookAcks, useHandbookVersions, useTutors } from '@/data/hooks';
 import { useMe, useViewing } from '@/data/session';
@@ -22,6 +22,7 @@ export default function Handbook() {
   const [viewingVersion, setViewingVersion] = useState<number | null>(null);
   const viewing = useViewing();
   const theme = useTheme();
+  const toast = useToast();
 
   if (versions.isLoading || acks.isLoading) return <Loading />;
   const list = versions.data ?? [];
@@ -95,10 +96,18 @@ export default function Handbook() {
         ) : null}
       </View>
 
-      {needsAck || (me.role === 'admin' && !viewing) ? (
+      {(needsAck || me.role === 'admin') && !viewing ? (
         <Actions>
           {needsAck ? (
-            <Button title="I have read and agree to the handbook" icon="check" loading={acknowledge.isPending} onPress={() => acknowledge.mutate([latest.version])} />
+            <Button
+              title="I have read and agree to the handbook"
+              icon="check"
+              loading={acknowledge.isPending}
+              onPress={async () => {
+                await acknowledge.mutateAsync([latest.version]);
+                toast('Thank you. Handbook acknowledged.');
+              }}
+            />
           ) : null}
           {me.role === 'admin' && !viewing ? <Button title="Edit handbook" icon="edit" variant="secondary" onPress={() => router.push('/handbook-edit')} /> : null}
         </Actions>

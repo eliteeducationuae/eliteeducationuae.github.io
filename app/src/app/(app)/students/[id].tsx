@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
 import { NoHeader } from '@/components/admin-people/kit';
@@ -6,6 +6,7 @@ import { HistorySection } from '@/components/history';
 import { StudentAdmissionsLinks } from '@/components/admissions/entry-links';
 import { useAtRisk } from '@/components/insights';
 import { StudentOverview } from '@/components/student-overview';
+import { TutorStudentPage } from '@/components/tutor/student';
 import { Actions, Button, Columns, EmptyState, Figure, Figures, Group, GroupRow, Loading, Notice, PageHeader, Screen } from '@/components/ui';
 import { ViewAsActions } from '@/components/view-as';
 import { formatPhoneForDisplay, RELATIONSHIP_LABELS } from '@/domain/contacts';
@@ -19,6 +20,7 @@ export default function StudentPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const students = useStudents();
   const lookup = useLookup();
+  const me = useMe();
   if (students.isLoading || !lookup.ready) return <Loading />;
   const student = students.data?.find((s) => s.id === id);
   if (!student) {
@@ -28,6 +30,15 @@ export default function StudentPage() {
         <PageHeader back={{ fallback: '/' }} title="Student not found" />
         <EmptyState title="Student not found" message="They may have been removed, or they may not be one of your students." />
       </Screen>
+    );
+  }
+  // Tutors get the redesigned page (Overview, Notes, Homework, Topics), without the family's email or phone.
+  if (me.role === 'tutor') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <TutorStudentPage student={student} />
+      </>
     );
   }
   return <StudentProfile student={student} />;

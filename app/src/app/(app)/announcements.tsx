@@ -9,13 +9,16 @@ import { useMe, useViewing } from '@/data/session';
 import { withoutClosed } from '@/domain/closed-accounts';
 import { relativeDay } from '@/domain/dates';
 import type { Audience } from '@/domain/types';
+import { TutorAnnouncements } from '@/components/tutor/announcements';
 
 const AUDIENCE_LABEL: Record<Audience, string> = { everyone: 'Everyone', parents: 'Parents', tutors: 'Tutors' };
 
-/** Families read announcements on their own redesigned page (components/parent/announcements-view). */
-export default function Announcements() {
+/** Families and tutors read announcements on their own redesigned pages; the office composes here. */
+export default function AnnouncementsScreen() {
   const me = useMe();
-  return me.role === 'parent' ? <ParentAnnouncements /> : <StaffAnnouncements />;
+  if (me.role === 'parent') return <ParentAnnouncements />;
+  if (me.role === 'tutor') return <TutorAnnouncements />;
+  return <StaffAnnouncements />;
 }
 
 function StaffAnnouncements() {
