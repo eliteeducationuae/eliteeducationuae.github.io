@@ -358,7 +358,13 @@ function BarItem({
         </View>
       ) : null}
       {noir ? (
-        <View style={[bar.dot, { backgroundColor: focused ? Brand.gold : 'transparent' }]} />
+        <>
+          <View style={[bar.dot, { backgroundColor: focused ? Brand.gold : 'transparent' }]} />
+          {/* Icon-only on screen; the label stays in the tab's text for find-in-page and tooling. */}
+          <Text style={bar.hiddenLabel} importantForAccessibility="no" aria-hidden>
+            {label}
+          </Text>
+        </>
       ) : (
         <Text style={[font('sans', 'bold'), bar.label, { color }]} numberOfLines={1}>
           {label}
@@ -447,6 +453,7 @@ const bar = StyleSheet.create({
   label: { fontSize: 11.5, lineHeight: 14 },
   badge: { position: 'absolute', top: 2, left: '50%', marginLeft: 6, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   dot: { width: 4, height: 4, borderRadius: 2 },
+  hiddenLabel: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
   centre: { width: 52, height: 52, borderRadius: 26, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginHorizontal: 6 },
   pill: { height: 64, borderRadius: 32, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
   pillShadow: { shadowColor: '#0A0A0A', shadowOpacity: 0.28, shadowRadius: 15, shadowOffset: { width: 0, height: 12 }, elevation: 10 },

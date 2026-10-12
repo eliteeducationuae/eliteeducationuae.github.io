@@ -1404,12 +1404,14 @@ export function Toggle({
   );
 }
 
-/** Colours for a React Native Switch, matching Toggle (green on, warm grey off, white thumb). */
+/** Colours for a React Native Switch, matching Toggle's green and warm-grey tracks. */
 export function useSwitchColors(on: boolean) {
   const theme = useTheme();
   return {
     trackColor: { true: theme.toggleOn, false: theme.toggleOff },
-    thumbColor: on ? Brand.white : Brand.white,
+    // React Native's Switch draws no knob shadow on the web, so an off knob is dark (text colour) to stand out from
+    // the card; the on knob is white on the green track.
+    thumbColor: on ? Brand.white : theme.text,
     // react-native-web paints the "on" thumb teal unless told otherwise.
     ...({ activeThumbColor: Brand.white, activeTrackColor: theme.toggleOn } as object),
   };

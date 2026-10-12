@@ -118,6 +118,10 @@ const REDESIGN_TEXT: [keyof Palette, keyof Palette][] = [
   ['textMuted', 'rail'],
   // The solid danger button.
   ['onDangerSolid', 'dangerSolid'],
+  // Chevrons and other icons are font glyphs on the web, so they meet text contrast too.
+  ['chevron', 'surface'],
+  ['chevron', 'rowHover'],
+  ['chevron', 'background'],
 ];
 
 // Non-text parts that carry meaning (WCAG 1.4.11, 3:1): chevrons, the toggle track in both states.

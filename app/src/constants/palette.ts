@@ -66,8 +66,9 @@ export const Colors = {
     textWarm: '#4A463F',
     textBody: '#3F3B35',
     textProse: '#2E2B26',
-    // Row chevrons (non-text, 3:1), inactive tab labels and message timestamps (text, 4.5:1).
-    chevron: '#8A857B',
+    // Row chevrons, inactive tab labels and message timestamps. Icons are font glyphs on the web, so the chevron is
+    // held to text contrast (4.5:1) too: a little deeper than the prototypes' #8A857B.
+    chevron: '#726D64',
     navInactive: '#6B6B6B',
     timestamp: '#6E6A62',
     // Phone tab bar: translucent paper with a hairline; desktop rail: sand with a gold-tinted active row.
