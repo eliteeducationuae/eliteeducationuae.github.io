@@ -11,6 +11,7 @@ import { admissionsFacts, admissionsLetterInstructions } from '../_shared/admiss
 import { withMonitoring } from '../_shared/monitoring.ts';
 import { adminClient, corsHeaders, json, userClient } from '../_shared/supabase.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
+import { withinRateLimit } from '../_shared/rate-limit.ts';
 
 const MODEL = 'claude-opus-5-5';
 
@@ -41,6 +42,12 @@ const ADMISSIONS_SCHEMA = schema({
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
+/** Drafts per person per hour: generous for real use, but a stuck loop or a misused login cannot run up the bill. */
+const DRAFTS_PER_HOUR = 60;
+
+/** A failure the person can act on; shown as it is. Anything else is logged and answered with a generic message. */
+class AiUnavailable extends Error {}
+
 async function ask(system: string, prompt: string, format: Schema): Promise<Record<string, string>> {
   const client = new Anthropic();
   // Server-side fallbacks: if the model declines, the API retries on a recommended fallback model in the same call.
@@ -53,8 +60,8 @@ async function ask(system: string, prompt: string, format: Schema): Promise<Reco
     messages: [{ role: 'user', content: prompt }],
     output_config: { effort: 'low', format: { type: 'json_schema', schema: format } },
   } as unknown as Anthropic.Beta.MessageCreateParamsNonStreaming);
-  if (response.stop_reason === 'refusal') throw new Error('The AI declined this request');
-  if (response.stop_reason === 'max_tokens') throw new Error('The AI response was cut short');
+  if (response.stop_reason === 'refusal') throw new AiUnavailable('The AI declined this request. Please write this one yourself.');
+  if (response.stop_reason === 'max_tokens') throw new AiUnavailable('The AI response was cut short. Please try again.');
   const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   return JSON.parse(text);
 }
@@ -62,8 +69,8 @@ async function ask(system: string, prompt: string, format: Schema): Promise<Reco
 async function role(supabase: ReturnType<typeof userClient>) {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return null;
-  const { data } = await supabase.from('profiles').select('role, full_name').eq('id', auth.user.id).single();
-  return data as { role: string; full_name: string } | null;
+  const { data } = await supabase.from('profiles').select('id, role, full_name').eq('id', auth.user.id).single();
+  return data as { id: string; role: string; full_name: string } | null;
 }
 
 Deno.serve(withMonitoring('ai-assist', adminClient, async (req) => {
@@ -77,6 +84,9 @@ Deno.serve(withMonitoring('ai-assist', adminClient, async (req) => {
     // A View as session (read only) cannot use the AI.
     const refused = await refuseViewAs(req);
     if (refused) return refused;
+    if (!(await withinRateLimit(adminClient(), `ai-assist:${me.id}`, DRAFTS_PER_HOUR, 3600))) {
+      return json({ error: 'You have asked for a lot of drafts in the last hour. Please try again a little later.' }, 429);
+    }
 
     if (body.task === 'report-draft') {
       // Only proceed if the caller can see this report (their own, or any for admins).
@@ -104,7 +114,7 @@ Deno.serve(withMonitoring('ai-assist', adminClient, async (req) => {
       const notes = (lesson as { lesson_notes?: { summary: string } | null } | null)?.lesson_notes?.summary;
       if (!lesson || !notes) return json({ error: 'No lesson notes to work from' }, 404);
       const { data: students } = await supabase.from('students').select('full_name').in('id', lesson.student_ids);
-      const tutor = (lesson as { tutors?: { full_name: string } | null }).tutors?.full_name ?? me.full_name;
+      const tutor = (lesson as unknown as { tutors?: { full_name: string } | null }).tutors?.full_name ?? me.full_name;
       const out = await ask(
         `${STYLE}\nYou turn a tutor's lesson notes into a short update for the student's family.`,
         `Student(s): ${(students ?? []).map((s) => s.full_name).join(', ')}\nTutor: ${tutor}\nSubject: ${(lesson as { subject?: string | null }).subject ?? 'not recorded'}\nLesson date: ${lesson.start_at.slice(0, 10)}\nNotes:\n${notes.slice(0, 4000)}`,
@@ -201,6 +211,8 @@ Deno.serve(withMonitoring('ai-assist', adminClient, async (req) => {
 
     return json({ error: 'Unknown task' }, 400);
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    if (err instanceof AiUnavailable) return json({ error: err.message }, 502);
+    // withMonitoring logs the detail (scrubbed) and answers with a courteous generic message.
+    throw err;
   }
 }));

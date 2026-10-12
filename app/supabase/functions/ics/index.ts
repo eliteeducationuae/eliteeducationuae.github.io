@@ -1,13 +1,15 @@
 // Personal calendar feed: GET /functions/v1/ics?token=<profiles.ics_token>
 // Subscribed to from Apple/Google Calendar, so it authenticates by the secret token, not a session.
+// The token is a random UUID; public.reset_ics_token() replaces it, so a leaked feed address can be revoked at once.
+// Only an admin's feed lists every lesson; the accountant's (and any unlinked profile's) lists none.
 // Deploy with --no-verify-jwt. Each event is titled with the lesson's subject (lessons.subject), e.g. 'Chemistry: Zara'.
 // Open admissions key dates appear too, as all-day events (or 30-minute events when a UAE time is set):
 // parents see their children's cases, students their own, tutors the cases they advise and admins every case.
 // Each is titled with the student's first name, e.g. 'Admissions · Omar: Oxford interview (University of Oxford)'.
 import { adminClient } from '../_shared/supabase.ts';
 import { withMonitoring } from '../_shared/monitoring.ts';
+import { feedScope, icsEscape as esc, isFeedToken } from '../_shared/ics.ts';
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 const stamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 const day = (date: string) => date.replace(/-/g, '');
 const nextDay = (date: string) => day(new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10));
@@ -23,21 +25,23 @@ type AdmissionsDate = {
 
 Deno.serve(withMonitoring('ics', adminClient, async (req) => {
   const token = new URL(req.url).searchParams.get('token');
-  if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return new Response('Not found', { status: 404 });
+  if (!isFeedToken(token)) return new Response('Not found', { status: 404 });
   const db = adminClient();
-  const { data: me } = await db.from('profiles').select('*').eq('ics_token', token).maybeSingle();
+  const { data: me } = await db.from('profiles').select('id, role, tutor_id, family_id, student_id').eq('ics_token', token).maybeSingle();
   if (!me) return new Response('Not found', { status: 404 });
+  const feed = feedScope(me);
 
   const from = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const to = new Date(Date.now() + 180 * 86_400_000).toISOString();
+  // Only an admin's feed holds every lesson; the accountant (who never sees lessons) and unlinked profiles get none.
   let query = db.from('lessons').select('*').gte('start_at', from).lte('start_at', to).in('status', ['scheduled', 'completed']);
-  if (me.role === 'tutor') query = query.eq('tutor_id', me.tutor_id);
-  if (me.role === 'student') query = query.contains('student_ids', [me.student_id]);
-  if (me.role === 'parent') {
+  if (feed === 'tutor') query = query.eq('tutor_id', me.tutor_id);
+  if (feed === 'student') query = query.contains('student_ids', [me.student_id]);
+  if (feed === 'parent') {
     const { data: kids } = await db.from('students').select('id').eq('family_id', me.family_id);
     query = query.overlaps('student_ids', (kids ?? []).map((k) => k.id));
   }
-  const { data: lessons } = await query;
+  const { data: lessons } = feed === 'none' ? { data: [] as Record<string, unknown>[] } : await query;
   const [{ data: students }, { data: tutors }, { data: services }] = await Promise.all([
     db.from('students').select('id, full_name'),
     db.from('tutors').select('id, full_name'),
@@ -108,5 +112,5 @@ Deno.serve(withMonitoring('ics', adminClient, async (req) => {
     );
   }
   lines.push('END:VCALENDAR');
-  return new Response(lines.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8' } });
+  return new Response(lines.join('\r\n'), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'private, no-store' } });
 }));

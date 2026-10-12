@@ -8,6 +8,7 @@ import { HistorySection } from '@/components/history';
 import { FamilyCardAdmin } from '@/components/payments';
 import { LoginHint } from '@/components/login-hint';
 import { Banner, Button, Card, ErrorNote, Field, ListItem, Loading, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { AdminIcsResetActions } from '@/components/calendar-sync';
 import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -159,6 +160,7 @@ function FamilyForm({ existing }: { existing?: Family }) {
             <FamilyCardAdmin family={existing} />
           </Section>
           <ViewAsActions familyId={existing.id} />
+          <AdminIcsResetActions familyId={existing.id} />
           <HistorySection filter={{ familyId: existing.id }} />
         </>
       ) : null}

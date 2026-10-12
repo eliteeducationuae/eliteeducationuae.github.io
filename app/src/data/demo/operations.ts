@@ -1,5 +1,5 @@
 import { toDateKey } from '@/domain/dates';
-import { enrolmentFor } from '@/domain/enrolments';
+import { awardSubject, enrolmentFor } from '@/domain/enrolments';
 import { applicationPayloadProblem, findDuplicateApplication, RateLimitError, rateLimited, repeatPhoneNote, SPAM_LIMITS, spamReasons } from '@/domain/spam';
 import { monthBounds, normaliseIban, isValidIban, tutorInvoiceLines, tutorInvoiceNumber } from '@/domain/tutor-pay';
 import type { Expense, Lesson, Opportunity, PaymentDetails, Profile, ReportStatus, StudentReport, TutorInvoiceItem } from '@/domain/types';
@@ -68,13 +68,19 @@ export const ops = {
     if (!b) throw new Error('Nothing to withdraw');
     b.status = 'withdrawn';
   },
-  awardOpportunity(db: DemoDB, viewer: Profile, bidId: string, now = new Date()) {
+  /**
+   * Mirrors public.award_opportunity (20261114000700_qa_award.sql): a role with no subject, for a student with more
+   * than one active subject, needs `chosenSubject` (one of the student's active subjects), which is saved on the role.
+   */
+  awardOpportunity(db: DemoDB, viewer: Profile, bidId: string, now = new Date(), chosenSubject?: string) {
     requireAdmin(viewer);
     const b = db.bids.find((x) => x.id === bidId);
     if (!b || b.status !== 'pending') throw new Error('That bid is no longer available');
     const o = db.opportunities.find((x) => x.id === b.opportunityId)!;
     if (o.status !== 'open') throw new Error('This opportunity has already been awarded or closed');
+    const chosen = awardSubject(db.enrolments, o, chosenSubject, db.students.find((s) => s.id === o.studentId)?.fullName);
     assertCleared(db, b.tutorId, 'role', now);
+    if (chosen) o.subject = chosen;
     Object.assign(o, { status: 'awarded', awardedTutorId: b.tutorId, awardedAt: now.toISOString() });
     b.status = 'awarded';
     for (const other of db.bids) if (other.opportunityId === o.id && other.id !== b.id && other.status === 'pending') other.status = 'declined';

@@ -12,12 +12,19 @@ import { filterResources, resourceAttachment, resourceFacets, resourceMeta } fro
 import type { Attachment, Resource } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
+import { safeWebUrl } from '@/lib/safe-url';
 
 import { Icon } from './icon';
 import { Badge, Button, Card, Chip, EmptyState, Field, Loading, Row, Section, Txt } from './ui';
 
 /** Open a web address: in an in-app browser on phones, in a new tab on the web. */
-async function openUrl(url: string) {
+async function openUrl(address: string) {
+  // Links are typed by people, so only ordinary web addresses are opened (never javascript: or data: links).
+  const url = safeWebUrl(address);
+  if (!url) {
+    notify('This link cannot be opened', 'It is not a web address. Please ask your tutor to share it again.');
+    return;
+  }
   if (Platform.OS === 'web') await Linking.openURL(url);
   else await WebBrowser.openBrowserAsync(url);
 }

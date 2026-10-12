@@ -188,16 +188,33 @@ export class AccessError extends Error {}
 // Visibility — mirrors the Supabase row-level security policies.
 // ---------------------------------------------------------------------------
 
+/** A tutor keeps a student for this many days after their last lesson together (visible_student_ids uses the same window). */
+export const TUTOR_RECENT_DAYS = 7;
+
 export function visibleStudentIds(db: DemoDB, viewer: Profile): Set<string> {
   switch (viewer.role) {
     case 'admin':
       return new Set(db.students.map((s) => s.id));
-    case 'tutor':
-      // Students they have taught, plus those assigned to them for a subject (before the first lesson).
+    case 'tutor': {
+      // Mirrors visible_student_ids (20261114000200_sec_db.sql): the students a tutor currently teaches. An active
+      // enrolment taught by them, a lesson with them still scheduled (including one not yet recorded), a lesson with
+      // them that took place within the last 7 days, or a report assigned to them that is still being written.
+      const tutorId = viewer.tutorId;
+      if (!tutorId) return new Set();
+      const since = Date.now() - TUTOR_RECENT_DAYS * 86_400_000;
       return new Set([
-        ...db.lessons.filter((l) => l.tutorId === viewer.tutorId).flatMap((l) => l.studentIds),
-        ...db.enrolments.filter((e) => e.active && !!viewer.tutorId && e.tutorId === viewer.tutorId).map((e) => e.studentId),
+        ...db.enrolments.filter((e) => e.active && e.tutorId === tutorId).map((e) => e.studentId),
+        ...db.lessons
+          .filter(
+            (l) =>
+              l.tutorId === tutorId &&
+              (l.status === 'scheduled' ||
+                ((l.status === 'completed' || l.status === 'no-show' || l.status === 'late-cancel') && new Date(l.end).getTime() > since)),
+          )
+          .flatMap((l) => l.studentIds),
+        ...(db.reports ?? []).filter((r) => r.tutorId === tutorId && (r.status === 'draft' || r.status === 'submitted')).map((r) => r.studentId),
       ]);
+    }
     case 'parent':
       return new Set(db.students.filter((s) => s.familyId === viewer.familyId).map((s) => s.id));
     case 'student':
@@ -241,6 +258,11 @@ function stripPrivate(note: LessonNote, viewer: Profile): LessonNote {
   return rest;
 }
 
+/** The columns of public.family_directory: a family's name and status, without the main contact's email or telephone. */
+export function familyDirectoryRow(f: Family): Family {
+  return { id: f.id, name: f.name, parentName: f.parentName, email: '', status: f.status, createdAt: f.createdAt, deletedAt: f.deletedAt };
+}
+
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
@@ -266,7 +288,11 @@ export const q = {
     const familyIds = new Set(q.students(db, viewer).map((s) => s.familyId));
     // Mirrors the "see families" policy: a parent always sees their own family, even before a child is added.
     if (viewer.familyId) familyIds.add(viewer.familyId);
-    return db.families.filter((f) => familyIds.has(f.id));
+    const seen = db.families.filter((f) => familyIds.has(f.id));
+    // Mirrors 20261114000600_sec_db_families.sql: a tutor reads family_directory (names only), never the main contact's
+    // email or telephone number.
+    if (viewer.role === 'tutor') return seen.map(familyDirectoryRow);
+    return seen;
   },
   lessons(db: DemoDB, viewer: Profile, from: string, to: string): Lesson[] {
     return db.lessons.filter((l) => l.start < to && l.end > from && canSeeLesson(db, viewer, l));

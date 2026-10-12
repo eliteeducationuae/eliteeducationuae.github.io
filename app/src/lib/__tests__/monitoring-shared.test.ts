@@ -108,6 +108,9 @@ describe('healthEmail', () => {
       expect(part).not.toMatch(/123 4567/);
     }
     expect(email.html).toContain('#0A0A0A');
+    // APP_URL is normally the app address itself; '/app' is never doubled.
+    expect(healthEmail(r, 'https://eliteeducation.me/app').text).toContain('https://eliteeducation.me/app/manage/system-health');
+    expect(healthEmail(r, 'https://eliteeducationuae.github.io/app/').html).toContain('https://eliteeducationuae.github.io/app/manage/system-health');
     expect(email.html).toContain('#C9A84C');
   });
 

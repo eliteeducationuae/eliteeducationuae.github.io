@@ -20,6 +20,7 @@ import {
 } from '../_shared/stripe.ts';
 import { stripe, type StripeResult } from '../_shared/stripe-api.ts';
 import { refuseViewAs } from '../_shared/view-as.ts';
+import { withMonitoring } from '../_shared/monitoring.ts';
 
 const NO_KEY = 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).';
 const UNREACHABLE = 'Stripe could not be reached. The refund will update automatically, or try again in a moment.';
@@ -36,95 +37,92 @@ function refundErrorMessage(res: StripeResult): string {
   return 'Stripe could not make this refund.';
 }
 
-Deno.serve(async (req) => {
+// Unexpected errors are thrown to withMonitoring, which logs them and answers with a courteous generic message.
+Deno.serve(withMonitoring('refund-payment', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  try {
-    const refused = await refuseViewAs(req);
-    if (refused) return refused;
-    if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: NO_KEY }, 500);
-    const body = await req.json().catch(() => ({}));
-    const paymentId = typeof body?.paymentId === 'string' ? body.paymentId : '';
-    const requestKey = typeof body?.requestKey === 'string' ? body.requestKey.trim() : '';
-    const amount = Number(body?.amount);
-    if (!paymentId || !requestKey) return json({ error: 'Choose a payment to refund.' }, 400);
-    if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'Enter an amount to refund.' }, 400);
+  const refused = await refuseViewAs(req);
+  if (refused) return refused;
+  if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: NO_KEY }, 500);
+  const body = await req.json().catch(() => ({}));
+  const paymentId = typeof body?.paymentId === 'string' ? body.paymentId : '';
+  const requestKey = typeof body?.requestKey === 'string' ? body.requestKey.trim() : '';
+  const amount = Number(body?.amount);
+  if (!paymentId || !requestKey) return json({ error: 'Choose a payment to refund.' }, 400);
+  if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'Enter an amount to refund.' }, 400);
 
-    // Admin check, limits and the pending refund row, all in the database as the signed-in user.
-    const { data, error } = await userClient(req).rpc('begin_card_refund', {
-      p_payment_id: paymentId,
-      p_amount: amount,
-      p_reason: typeof body?.reason === 'string' ? body.reason : '',
-      p_with_credit_note: body?.withCreditNote === true,
-      p_request_key: requestKey,
-    });
-    if (error) return json({ error: error.message }, error.code === '42501' ? 403 : 400);
-    const row = (Array.isArray(data) ? data[0] : data) as RefundRow | null;
-    if (!row?.id) return json({ error: 'The refund could not be started.' }, 500);
-    // A retry of a refund Stripe has already answered.
-    if (row.status === 'succeeded' || row.status === 'failed') return json({ refundId: row.id, status: row.status });
+  // Admin check, limits and the pending refund row, all in the database as the signed-in user.
+  const { data, error } = await userClient(req).rpc('begin_card_refund', {
+    p_payment_id: paymentId,
+    p_amount: amount,
+    p_reason: typeof body?.reason === 'string' ? body.reason : '',
+    p_with_credit_note: body?.withCreditNote === true,
+    p_request_key: requestKey,
+  });
+  if (error) return json({ error: error.message }, error.code === '42501' ? 403 : 400);
+  const row = (Array.isArray(data) ? data[0] : data) as RefundRow | null;
+  if (!row?.id) return json({ error: 'The refund could not be started.' }, 500);
+  // A retry of a refund Stripe has already answered.
+  if (row.status === 'succeeded' || row.status === 'failed') return json({ refundId: row.id, status: row.status });
 
-    const admin = adminClient();
-    const { data: payment, error: payError } = await admin.from('payments').select('stripe_payment_intent').eq('id', row.payment_id).single();
-    if (payError || !payment?.stripe_payment_intent) return json({ error: 'This payment was not taken by card through Stripe.' }, 400);
+  const admin = adminClient();
+  const { data: payment, error: payError } = await admin.from('payments').select('stripe_payment_intent').eq('id', row.payment_id).single();
+  if (payError || !payment?.stripe_payment_intent) return json({ error: 'This payment was not taken by card through Stripe.' }, 400);
 
-    let res: StripeResult | null = null;
-    // A retry long after the first attempt: the idempotency key may have expired, so look for the refund first.
-    if (refundNeedsLookup(row.created_at, Date.now())) {
-      let list: StripeResult | null = null;
-      try {
-        list = await stripe(refundListPath(payment.stripe_payment_intent as string));
-      } catch {
-        list = null;
-      }
-      if (!list?.ok) return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
-      const found = findAppRefund(list.body, row.id);
-      if (found) res = { ok: true, status: 200, body: found };
-    }
+  let res: StripeResult | null = null;
+  // A retry long after the first attempt: the idempotency key may have expired, so look for the refund first.
+  if (refundNeedsLookup(row.created_at, Date.now())) {
+    let list: StripeResult | null = null;
     try {
-      if (!res) res = await stripe('/refunds', {
-        form: refundForm({
-          paymentIntent: payment.stripe_payment_intent as string,
-          amountFils: refundAmountFils(row.amount),
-          refundId: row.id,
-          invoiceId: row.invoice_id,
-        }),
-        idempotencyKey: refundIdempotencyKey(row.id),
-      });
+      list = await stripe(refundListPath(payment.stripe_payment_intent as string));
     } catch {
-      res = null;
+      list = null;
     }
-    // No answer at all: the refund may or may not have reached Stripe. It stays pending; the webhook (or a retry with
-    // the same requestKey, which resends the same request with the same idempotency key, or after 23 hours looks the
-    // refund up first) settles it.
-    if (!res || (!res.ok && (res.status >= 500 || res.status === 429 || res.status === 409))) {
-      return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
-    }
+    if (!list?.ok) return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
+    const found = findAppRefund(list.body, row.id);
+    if (found) res = { ok: true, status: 200, body: found };
+  }
+  try {
+    if (!res) res = await stripe('/refunds', {
+      form: refundForm({
+        paymentIntent: payment.stripe_payment_intent as string,
+        amountFils: refundAmountFils(row.amount),
+        refundId: row.id,
+        invoiceId: row.invoice_id,
+      }),
+      idempotencyKey: refundIdempotencyKey(row.id),
+    });
+  } catch {
+    res = null;
+  }
+  // No answer at all: the refund may or may not have reached Stripe. It stays pending; the webhook (or a retry with
+  // the same requestKey, which resends the same request with the same idempotency key, or after 23 hours looks the
+  // refund up first) settles it.
+  if (!res || (!res.ok && (res.status >= 500 || res.status === 429 || res.status === 409))) {
+    return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
+  }
 
-    if (!res.ok) {
-      const message = refundErrorMessage(res);
-      const { error: settleError } = await admin.rpc('settle_card_refund', {
-        p_refund_id: row.id,
-        p_stripe_refund_id: null,
-        p_status: 'failed',
-        p_failure: message,
-      });
-      if (settleError) return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
-      return json({ refundId: row.id, status: 'failed', message });
-    }
-
-    const status = mapRefundStatus(res.body?.status);
-    const failure = status === 'failed' ? describeRefundFailure(res.body?.failure_reason) : null;
+  if (!res.ok) {
+    const message = refundErrorMessage(res);
     const { error: settleError } = await admin.rpc('settle_card_refund', {
       p_refund_id: row.id,
-      p_stripe_refund_id: typeof res.body?.id === 'string' ? res.body.id : null,
-      p_status: typeof res.body?.status === 'string' ? res.body.status : 'pending',
-      p_failure: failure,
+      p_stripe_refund_id: null,
+      p_status: 'failed',
+      p_failure: message,
     });
-    // Stripe has the refund; the webhook records the outcome if the database could not be updated just now.
-    if (settleError) return json({ refundId: row.id, status: 'pending', message: 'The refund was sent to Stripe and will update shortly.' });
-    return json({ refundId: row.id, status, ...(failure ? { message: failure } : {}) });
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    if (settleError) return json({ refundId: row.id, status: 'pending', message: UNREACHABLE });
+    return json({ refundId: row.id, status: 'failed', message });
   }
-});
+
+  const status = mapRefundStatus(res.body?.status);
+  const failure = status === 'failed' ? describeRefundFailure(res.body?.failure_reason) : null;
+  const { error: settleError } = await admin.rpc('settle_card_refund', {
+    p_refund_id: row.id,
+    p_stripe_refund_id: typeof res.body?.id === 'string' ? res.body.id : null,
+    p_status: typeof res.body?.status === 'string' ? res.body.status : 'pending',
+    p_failure: failure,
+  });
+  // Stripe has the refund; the webhook records the outcome if the database could not be updated just now.
+  if (settleError) return json({ refundId: row.id, status: 'pending', message: 'The refund was sent to Stripe and will update shortly.' });
+  return json({ refundId: row.id, status, ...(failure ? { message: failure } : {}) });
+}));

@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, View, type ImageSourcePropType, type TextStyle } from 'react-native';
 
+import { DEMO_MODE, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '@/config';
 import { Spacing } from '@/constants/theme';
 import { useSession, type SocialProvider } from '@/data/session';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ALL_PROVIDERS, cachedProviders, loadProviders, type ProviderAvailability } from '@/lib/auth-providers';
 
 import { AppleNativeButton, HAS_NATIVE_APPLE_BUTTON } from './apple-native-button';
 import { SOCIAL_BUTTON_HEIGHT, SOCIAL_BUTTON_RADIUS, socialButtonColors, type SocialButtonColours } from './social-colors';
@@ -23,14 +25,34 @@ const PROVIDER_LABEL: TextStyle = {
 };
 
 /**
+ * Which provider buttons to offer: null while the live project's settings are being read (a moment at most),
+ * then only the switched-on providers, or both if the settings could not be read. Demo mode offers both.
+ */
+export function useSocialProviders(): ProviderAvailability | null {
+  const [state, setState] = useState<ProviderAvailability | null>(() => (DEMO_MODE ? ALL_PROVIDERS : (cachedProviders(SUPABASE_URL) ?? null)));
+  useEffect(() => {
+    if (state) return;
+    let live = true;
+    loadProviders(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY).then((s) => live && setState(s));
+    return () => {
+      live = false;
+    };
+  }, [state]);
+  return state;
+}
+
+/**
  * "Continue with Apple" and "Continue with Google", equal in size, Apple first.
  * Each follows its provider's own branding, so neither is restyled in the Elite palette.
  */
 export function SocialSignIn({
+  providers = ALL_PROVIDERS,
   disabled,
   onError,
   onStart,
 }: {
+  /** Only these buttons are drawn (see useSocialProviders). */
+  providers?: Pick<ProviderAvailability, 'apple' | 'google'>;
   disabled?: boolean;
   onError(err: unknown): void;
   onStart?(): void;
@@ -58,7 +80,7 @@ export function SocialSignIn({
 
   return (
     <View style={styles.column}>
-      {HAS_NATIVE_APPLE_BUTTON ? (
+      {!providers.apple ? null : HAS_NATIVE_APPLE_BUTTON ? (
         <View
           pointerEvents={inactive ? 'none' : 'auto'}
           accessibilityState={{ disabled: inactive, busy: busy === 'apple' }}
@@ -82,15 +104,17 @@ export function SocialSignIn({
           onPress={() => start('apple')}
         />
       )}
-      <ProviderButton
-        title="Continue with Google"
-        logo={GOOGLE_G}
-        colours={colours.google}
-        textStyle={PROVIDER_LABEL}
-        busy={busy === 'google'}
-        disabled={inactive}
-        onPress={() => start('google')}
-      />
+      {providers.google ? (
+        <ProviderButton
+          title="Continue with Google"
+          logo={GOOGLE_G}
+          colours={colours.google}
+          textStyle={PROVIDER_LABEL}
+          busy={busy === 'google'}
+          disabled={inactive}
+          onPress={() => start('google')}
+        />
+      ) : null}
     </View>
   );
 }

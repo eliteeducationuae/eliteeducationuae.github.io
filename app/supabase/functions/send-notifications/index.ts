@@ -10,32 +10,12 @@
 import { adminClient } from '../_shared/supabase.ts';
 import { isAuthorisedCronCall, refuseCronCall } from '../_shared/cron.ts';
 import { withMonitoring } from '../_shared/monitoring.ts';
+import { appLink, emailHtml, emailSubject, isSingleEmail } from '../_shared/email.ts';
 import { buildTwilioMessage, readTwilioResult, twilioConfigFromEnv, whatsappRecipient } from '../_shared/whatsapp.ts';
 
 const MAX_ATTEMPTS = 5;
 /** Written to a WhatsApp row while it is claimed for sending (see below). */
 const WHATSAPP_CLAIM_NOTE = 'WhatsApp send in progress';
-
-function esc(s: string) {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
-
-function emailHtml(subject: string, body: string, link?: string) {
-  const paragraphs = esc(body).split(/\n{2,}/).map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, '<br>')}</p>`).join('');
-  // Brand palette (matches src/lib/pdf-brand.ts): Noir Black, Champagne Gold as a hairline only, Ivory Cream, Georgia and Calibri.
-  const serif = "Georgia,'Times New Roman',serif";
-  const sans = "Calibri,Carlito,'Segoe UI',Arial,sans-serif";
-  return `<!doctype html><html><body style="margin:0;background:#F9F8F5;font-family:${sans};color:#0A0A0A">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#0A0A0A;color:#FFFFFF;padding:20px 24px;border-bottom:2px solid #C9A84C;font-family:${serif};font-size:20px;letter-spacing:0.5px">Elite Education</div>
-    <div style="background:#FFFFFF;border:1px solid #E5E0D4;border-top:0;padding:24px;font-size:15px;line-height:1.6">
-      <h2 style="margin:0 0 16px;font-family:${serif};font-weight:700;font-size:19px;color:#0A0A0A">${esc(subject)}</h2>
-      ${paragraphs}
-      ${link ? `<p style="margin:20px 0 0"><a href="${link}" style="background:#0A0A0A;color:#FFFFFF;border:1px solid #C9A84C;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:700">Open in the app</a></p>` : ''}
-    </div>
-    <p style="color:#6B6B6B;font-size:12px;text-align:center;letter-spacing:0.5px">Elite Education | eliteeducation.me</p>
-  </div></body></html>`;
-}
 
 const monitored = withMonitoring('send-notifications', adminClient, async () => {
   const db = adminClient();
@@ -62,6 +42,8 @@ const monitored = withMonitoring('send-notifications', adminClient, async () => 
     // Belt and braces: never send a held WhatsApp early, and leave the row untouched (still pending, no attempt counted).
     if (n.whatsapp && n.whatsapp_status === 'pending' && n.whatsapp_not_before && n.whatsapp_not_before > now) continue;
     const problems: string[] = [];
+    /** Recorded on the row without counting a failed attempt (nothing would come of retrying). */
+    const notes: string[] = [];
     const token = n.profiles?.push_token as string | null;
     if (n.push_title && token) {
       const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -72,7 +54,13 @@ const monitored = withMonitoring('send-notifications', adminClient, async () => 
       if (!res.ok) problems.push(`push ${res.status}`);
     }
     if (n.send_email && n.email) {
-      if (!resendKey) {
+      // Subject, body and link are escaped and kept to one line where they must be (see _shared/email.ts).
+      const subject = emailSubject(n.subject);
+      const link = appLink(appUrl, n.url);
+      if (!isSingleEmail(n.email)) {
+        // Never retried: an address list or malformed value would only fail (or reach strangers) again.
+        notes.push('Email skipped: the address is not a single valid email address');
+      } else if (!resendKey) {
         problems.push('RESEND_API_KEY not set');
       } else {
         const res = await fetch('https://api.resend.com/emails', {
@@ -81,9 +69,9 @@ const monitored = withMonitoring('send-notifications', adminClient, async () => 
           body: JSON.stringify({
             from,
             to: n.email,
-            subject: n.subject,
-            text: n.body + (n.url ? `\n\n${appUrl}${n.url}` : ''),
-            html: emailHtml(n.subject, n.body, n.url ? `${appUrl}${n.url}` : undefined),
+            subject,
+            text: (n.body ?? '') + (link ? `\n\n${link}` : ''),
+            html: emailHtml(subject, n.body ?? '', link),
           }),
         });
         if (!res.ok) problems.push(`email ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -91,7 +79,6 @@ const monitored = withMonitoring('send-notifications', adminClient, async () => 
     }
     // WhatsApp: only rows still pending, so a retry for another channel never sends the message twice.
     const wa: Record<string, unknown> = {};
-    const notes: string[] = [];
     if (n.whatsapp && n.whatsapp_status === 'failed' && n.error === WHATSAPP_CLAIM_NOTE) {
       // An earlier run claimed this row and stopped before recording Twilio's answer. Keep a trace for the office.
       notes.push('WhatsApp outcome unknown: the send was interrupted, so it was not retried');

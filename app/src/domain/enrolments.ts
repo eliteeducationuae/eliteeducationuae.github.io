@@ -148,3 +148,35 @@ export function tutorChoicePatch(
   if (saved && (saved.tutorId ?? undefined) === tutorId) return { tutorId, tutorPay: saved.tutorPay };
   return { tutorId, tutorPay: undefined };
 }
+
+/**
+ * The subjects an admin must choose from when awarding a role: the student's active subjects when the role names a
+ * student but no subject and the student has more than one, otherwise none (the role's subject, or the student's only
+ * enrolment, decides). Mirrors public.award_opportunity (20261114000700_qa_award.sql).
+ */
+export function awardSubjectChoices(all: Enrolment[], role: { studentId?: string; subject?: string }): string[] {
+  if (!role.studentId || role.subject?.trim()) return [];
+  return activeEnrolments(all, role.studentId).length > 1 ? subjectsFor(all, [role.studentId]) : [];
+}
+
+/**
+ * The subject to save on a role as it is awarded, or undefined when nothing changes. Throws the server's messages: a
+ * different subject for a role that has one, a subject the student does not study, or no subject when one is needed.
+ */
+export function awardSubject(all: Enrolment[], role: { studentId?: string; subject?: string }, chosen: string | undefined, studentName?: string): string | undefined {
+  const pick = chosen?.trim();
+  if (role.subject?.trim()) {
+    if (pick && !sameSubject(pick, role.subject)) throw new Error(`This role is already for ${role.subject.trim()}.`);
+    return undefined;
+  }
+  if (!role.studentId) return undefined;
+  if (pick) {
+    const match = activeEnrolments(all, role.studentId).find((e) => sameSubject(e.subject, pick));
+    if (!match) throw new Error("Please choose one of the student's current subjects.");
+    return match.subject.trim().slice(0, 80);
+  }
+  if (activeEnrolments(all, role.studentId).length > 1) {
+    throw new Error(`Please choose which subject this role is for: ${studentName?.trim().split(' ')[0] || 'the student'} has more than one subject.`);
+  }
+  return undefined;
+}

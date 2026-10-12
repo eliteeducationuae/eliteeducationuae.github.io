@@ -296,52 +296,48 @@ async function resolve(db: Db, inv: any): Promise<Result> {
 
 Deno.serve(withMonitoring('charge-invoice', adminClient, async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  try {
-    const who = await caller(req);
-    if (!who) return json({ error: 'Only the schedule or an admin can run autopay.' }, 403);
-    if (who === 'admin') {
-      // A View as session (read only) cannot charge cards. The schedule's service key is not a user session.
-      const refused = await refuseViewAs(req);
-      if (refused) return refused;
-    }
-    if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).' }, 500);
-    const body = await req.json().catch(() => ({}));
-    const invoiceId = typeof body?.invoiceId === 'string' ? body.invoiceId : null;
-    if (who === 'admin' && !invoiceId) return json({ error: 'Choose an invoice to charge.' }, 400);
-
-    const db = adminClient();
-    let query = db
-      .from('invoices')
-      .select(
-        `id, number, status, family_id, items, vat_rate, autopay_status, autopay_attempts, autopay_claimed_at, payments(amount), ${ADJUSTMENTS}`,
-      );
-    if (who === 'admin') query = query.eq('id', invoiceId!).in('autopay_status', ['pending', 'failed', 'unknown', 'processing']);
-    else {
-      const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
-      query = query.or(
-        `autopay_status.in.(pending,unknown),and(autopay_status.eq.processing,autopay_claimed_at.lt.${stale}),` +
-          'and(autopay_status.eq.processing,autopay_claimed_at.is.null)',
-      );
-      if (invoiceId) query = query.eq('id', invoiceId);
-    }
-    const { data: invoices, error } = await query.order('issue_date').limit(BATCH);
-    if (error) return json({ error: error.message }, 500);
-    if (who === 'admin' && !invoices?.length) return json({ error: 'This invoice is not waiting for autopay.' }, 400);
-
-    const results: Result[] = [];
-    const started = Date.now();
-    for (const inv of invoices ?? []) {
-      // Whatever is left waits for the next run (every 15 minutes) rather than risk the function being stopped mid-charge.
-      if (Date.now() - started > TIME_BUDGET_MS) break;
-      try {
-        const open = inv.autopay_status === 'unknown' || inv.autopay_status === 'processing';
-        results.push(await (open ? resolve(db, inv) : charge(db, inv)));
-      } catch (e) {
-        results.push({ invoiceId: inv.id, status: 'failed', error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-    return json({ results });
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  const who = await caller(req);
+  if (!who) return json({ error: 'Only the schedule or an admin can run autopay.' }, 403);
+  if (who === 'admin') {
+    // A View as session (read only) cannot charge cards. The schedule's service key is not a user session.
+    const refused = await refuseViewAs(req);
+    if (refused) return refused;
   }
+  if (!Deno.env.get('STRIPE_SECRET_KEY')) return json({ error: 'Card payments are not set up yet (STRIPE_SECRET_KEY is missing).' }, 500);
+  const body = await req.json().catch(() => ({}));
+  const invoiceId = typeof body?.invoiceId === 'string' ? body.invoiceId : null;
+  if (who === 'admin' && !invoiceId) return json({ error: 'Choose an invoice to charge.' }, 400);
+
+  const db = adminClient();
+  let query = db
+    .from('invoices')
+    .select(
+      `id, number, status, family_id, items, vat_rate, autopay_status, autopay_attempts, autopay_claimed_at, payments(amount), ${ADJUSTMENTS}`,
+    );
+  if (who === 'admin') query = query.eq('id', invoiceId!).in('autopay_status', ['pending', 'failed', 'unknown', 'processing']);
+  else {
+    const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
+    query = query.or(
+      `autopay_status.in.(pending,unknown),and(autopay_status.eq.processing,autopay_claimed_at.lt.${stale}),` +
+        'and(autopay_status.eq.processing,autopay_claimed_at.is.null)',
+    );
+    if (invoiceId) query = query.eq('id', invoiceId);
+  }
+  const { data: invoices, error } = await query.order('issue_date').limit(BATCH);
+  if (error) return json({ error: error.message }, 500);
+  if (who === 'admin' && !invoices?.length) return json({ error: 'This invoice is not waiting for autopay.' }, 400);
+
+  const results: Result[] = [];
+  const started = Date.now();
+  for (const inv of invoices ?? []) {
+    // Whatever is left waits for the next run (every 15 minutes) rather than risk the function being stopped mid-charge.
+    if (Date.now() - started > TIME_BUDGET_MS) break;
+    try {
+      const open = inv.autopay_status === 'unknown' || inv.autopay_status === 'processing';
+      results.push(await (open ? resolve(db, inv) : charge(db, inv)));
+    } catch (e) {
+      results.push({ invoiceId: inv.id, status: 'failed', error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return json({ results });
 }));

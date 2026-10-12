@@ -24,7 +24,7 @@ if ! psql -h "$dir" -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d t_single_ses
   exit 1
 fi
 echo "ok - every migration applies in a single session"
-for t in rls engagement operations social_auth subjects homework calendar whatsapp payments invoice_notifications round4_qa_fixes viewas rates contacts audit tax admissions vetting data_rights system_health spam handover round5_merge creditnote_fix launch_fix handoverac contactdel secminor deletion_fix tutorpay_fix; do
+for t in rls engagement operations social_auth subjects homework calendar whatsapp payments invoice_notifications round4_qa_fixes viewas rates contacts audit tax admissions vetting data_rights system_health spam handover round5_merge creditnote_fix launch_fix handoverac contactdel secminor deletion_fix tutorpay_fix sec_db sec_fn sec_db_families qa qa_award; do
   # Each test file starts from a freshly migrated database.
   "${psql[@]}" -c "drop database if exists t_$t" -c "create database t_$t" >/dev/null 2>&1
   db=(psql -h "$dir" -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d "t_$t")

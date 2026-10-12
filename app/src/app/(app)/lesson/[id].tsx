@@ -37,6 +37,7 @@ import { canAssignTutor } from '@/domain/vetting';
 import { withoutClosed } from '@/domain/closed-accounts';
 import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
+import { safeMeetingUrl } from '@/lib/safe-url';
 
 export default function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -88,8 +89,8 @@ export default function LessonDetail() {
         <Row gap={Spacing.two}>
           <Icon name={l.location === 'online' ? 'video' : 'pin'} size={18} color={theme.textMuted} />
           <Txt style={{ flex: 1 }}>{l.location === 'online' ? 'Online lesson' : (l.address ?? 'In person')}</Txt>
-          {l.location === 'online' && l.meetingUrl && scheduled ? (
-            <Button title="Join lesson" size="sm" icon="video" onPress={() => Linking.openURL(l.meetingUrl!)} />
+          {l.location === 'online' && safeMeetingUrl(l.meetingUrl) && scheduled ? (
+            <Button title="Join lesson" size="sm" icon="video" onPress={() => Linking.openURL(safeMeetingUrl(l.meetingUrl)!)} />
           ) : null}
         </Row>
         {l.cancelReason ? <Txt variant="muted">Cancelled: {l.cancelReason}</Txt> : null}

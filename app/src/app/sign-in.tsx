@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-na
 
 import { Icon, type IconName } from '@/components/icon';
 import { Logo } from '@/components/logo';
-import { SocialSignIn } from '@/components/social-sign-in';
+import { SocialSignIn, useSocialProviders } from '@/components/social-sign-in';
 import { Banner, Button, Card, ErrorNote, Field, ListItem, Screen, Txt } from '@/components/ui';
 import { Radius, Spacing, elevation, font } from '@/constants/theme';
 import { source } from '@/data';
@@ -34,6 +34,8 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const providers = useSocialProviders();
+  const anySocial = !!providers && (providers.apple || providers.google);
 
   if (status === 'signed-in') return <Redirect href="/" />;
 
@@ -49,9 +51,10 @@ export default function SignIn() {
     setMessage(null);
   };
 
-  const social = (
+  // Apple and Google appear only once the live project confirms they are switched on (see useSocialProviders).
+  const social = !anySocial ? null : (
     <>
-      <SocialSignIn disabled={busy} onStart={clearFeedback} onError={setError} />
+      <SocialSignIn providers={providers ?? undefined} disabled={busy} onStart={clearFeedback} onError={setError} />
       <Txt variant="small" style={{ textAlign: 'center' }}>
         We use only your name and email address.
       </Txt>
@@ -172,7 +175,7 @@ export default function SignIn() {
                   a client or one of our tutors, please use the email address we hold for you.
                 </Txt>
               ) : null}
-              {mode === 'sign-in' || mode === 'sign-up' ? (
+              {(mode === 'sign-in' || mode === 'sign-up') && social ? (
                 <>
                   {social}
                   <View style={styles.divider}>
