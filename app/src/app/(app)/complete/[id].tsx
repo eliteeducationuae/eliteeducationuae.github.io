@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { AttachmentEditor } from '@/components/attachments';
+import { AdminRecordForm } from '@/components/ops/admin-record';
 import { RatingPicker } from '@/components/progress';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -32,9 +33,12 @@ export default function CompleteLesson() {
   const topics = useTopicLookup();
   const plan = useLessonPlan(id);
   const resources = useResources();
+  const me = useMe();
   if (lesson.isLoading || !lookup.ready || enrolments.isLoading || !topics.ready || plan.isLoading || resources.isLoading) return <Loading />;
   // Start from the lesson plan, when there is one.
   const prefill = prefillFromPlan(plan.data, lesson.data?.studentIds ?? [], resources.data ?? []);
+  // The admin has the redesigned record page; tutors keep theirs below. Both save the same way.
+  if (me.role === 'admin') return <AdminRecordForm key={plan.data?.updatedAt ?? 'none'} id={id} prefill={prefill} planned={!isPlanEmpty(plan.data)} />;
   return <RecordForm key={plan.data?.updatedAt ?? 'none'} id={id} prefill={prefill} planned={!isPlanEmpty(plan.data)} />;
 }
 

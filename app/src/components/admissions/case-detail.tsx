@@ -1,8 +1,8 @@
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { font } from '@/constants/theme';
 import {
   useAdmissionsCase,
   useAdmissionsDocuments,
@@ -18,12 +18,17 @@ import {
   canManageCase,
   CASE_KIND_LABELS,
   CASE_STATUS_LABELS,
+  daysLeftLabel,
   openTasks,
   overdueKeyDates,
+  targetSummaryLine,
+  upcomingKeyDates,
 } from '@/domain/admissions';
+import { toDateKey } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
-import { Badge, Button, Card, EmptyState, ErrorNote, Loading, Row, Screen, Txt } from '../ui';
+import { Actions, Button, EmptyState, ErrorNote, Figure, Figures, Loading, Notice, PageHeader, Prose, Screen, Txt } from '../ui';
+import { caseStatusColor } from './case-card';
 import {
   DatesPanel,
   DocumentsPanel,
@@ -35,7 +40,7 @@ import {
   type CaseData,
 } from './case-panels';
 import { CaseTabs } from './case-tabs';
-import { adviserLine, adviserName, caseStatusTone, firstName, type CaseTab } from './format';
+import { adviserLine, adviserName, firstName, formatDateKey, type CaseTab } from './format';
 
 /** The whole case page: a noir header, then seven tabs. `initialTab` comes from `?tab=` in deep links. */
 export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab }) {
@@ -57,7 +62,9 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
   const c = caseQ.data;
   if (!c) {
     return (
-      <Screen>
+      <Screen topInset>
+        <Stack.Screen options={{ headerShown: false }} />
+        <PageHeader back={{ fallback: '/admissions' }} kicker="Admissions" title="Case not found" />
         <ErrorNote error={caseQ.error} />
         <EmptyState icon="school" title="Case not found" message="This admissions case may have been closed, or it is not shared with you." />
       </Screen>
@@ -111,46 +118,64 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
   }[tab];
 
   const overview = tab === 'overview';
-  // On a phone the other tabs get a compact header (one label line, a shorter title) so their content starts high.
+  // On a phone the other tabs get a compact header (no sub-line or figures) so their content starts high.
   const compact = !overview && width < 600;
+  const next = [...overdueKeyDates(data.dates, now), ...upcomingKeyDates(data.dates, now, 3650)][0];
+  const open = openTasks(data.tasks, manager ? undefined : 'family');
+  const statusColor = caseStatusColor(c.status, theme);
   return (
-    <Screen onRefresh={refresh} refreshing={caseQ.isRefetching}>
-      <Stack.Screen options={{ title: `${firstName(studentName)} · Admissions` }} />
-      <Card variant="hero" style={{ gap: compact ? Spacing.one : Spacing.two, padding: compact ? Spacing.three : Spacing.four }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: compact ? 'center' : 'flex-start' }} gap={Spacing.two}>
-          <Txt variant="label" style={{ flex: 1 }} numberOfLines={compact ? 1 : undefined}>
-            {studentName} · {CASE_KIND_LABELS[c.kind]}
-          </Txt>
-          <Badge label={CASE_STATUS_LABELS[c.status]} tone={caseStatusTone(c.status)} />
-        </Row>
-        <Txt
-          variant="title"
-          style={overview ? { fontSize: 26, lineHeight: 33 } : compact ? { fontSize: 19, lineHeight: 25 } : { fontSize: 21, lineHeight: 27 }}
-          numberOfLines={compact ? 2 : undefined}
-          accessibilityRole="header">
-          {c.title}
-        </Txt>
-        {compact ? null : (
-          <>
-            <View style={[styles.rule, { backgroundColor: theme.gold }]} />
-            <Txt variant="muted">
-              {[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}
-            </Txt>
-          </>
-        )}
-        {/* The summary and edit button belong to the overview; other tabs keep the header short so their content shows first. */}
-        {overview && c.summary ? <Txt>{c.summary}</Txt> : null}
-        {overview && manager ? (
-          <Row gap={Spacing.two} style={{ marginTop: Spacing.one }}>
-            <Button
-              title={me.role === 'admin' ? 'Edit case' : 'Edit summary and status'}
-              size="sm"
-              variant="outline"
-              onPress={() => router.push({ pathname: '/admissions/edit', params: { id: c.id } })}
-            />
-          </Row>
-        ) : null}
-      </Card>
+    <Screen topInset onRefresh={refresh} refreshing={caseQ.isRefetching}>
+      <Stack.Screen options={{ headerShown: false, title: `${firstName(studentName)} · Admissions` }} />
+      <PageHeader
+        back={{ fallback: '/admissions' }}
+        kicker={`Admissions · ${CASE_KIND_LABELS[c.kind]}`}
+        title={studentName}
+        right={
+          <Text style={[font('sans', 'bold'), styles.status, { color: statusColor }]} accessibilityLabel={`Status: ${CASE_STATUS_LABELS[c.status]}`}>
+            {CASE_STATUS_LABELS[c.status]}
+          </Text>
+        }
+        sub={
+          compact ? undefined : (
+            <View style={{ gap: 4 }}>
+              <Txt style={[font('serif'), { fontSize: 19, lineHeight: 26 }]}>
+                {c.title}
+              </Txt>
+              <Txt variant="muted">{[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}</Txt>
+            </View>
+          )
+        }
+      />
+      {/* The summary, figures and edit button belong to the overview; other tabs keep the header short. */}
+      {overview && (c.status === 'on-hold' || c.status === 'closed') ? (
+        <Notice tone={c.status === 'on-hold' ? 'warn' : 'info'} title={CASE_STATUS_LABELS[c.status]}>
+          {c.status === 'on-hold' ? 'This case is paused for now.' : 'This case is closed.'}
+        </Notice>
+      ) : null}
+      {overview ? (
+        <Figures>
+          <Figure
+            label="Next date"
+            value={next ? formatDateKey(next.dueOn).replace(/ \d{4}$/, '') : '—'}
+            hint={next ? daysLeftLabel(next.dueOn, now) : 'None set'}
+            tone={next && next.dueOn < toDateKey(now) ? 'bad' : undefined}
+          />
+          <Figure label={manager ? 'Tasks open' : 'Family tasks'} value={String(open.length)} hint={open.length ? 'to do' : 'All done'} tone={open.length ? 'warn' : 'good'} />
+          <Figure label={c.kind.endsWith('university') ? 'Choices' : 'Shortlist'} value={String(data.targets.length)} hint={targetSummaryLine(data.targets, c.kind)} />
+          {me.role === 'admin' && awaiting ? <Figure label="To review" value={String(awaiting)} hint="update awaiting approval" tone="highlight" onPress={() => setTab('updates')} /> : null}
+        </Figures>
+      ) : null}
+      {overview && c.summary ? <Prose paragraphs={[c.summary]} /> : null}
+      {overview && manager ? (
+        <Actions>
+          <Button
+            title={me.role === 'admin' ? 'Edit case' : 'Edit summary and status'}
+            icon="edit"
+            variant="secondary"
+            onPress={() => router.push({ pathname: '/admissions/edit', params: { id: c.id } })}
+          />
+        </Actions>
+      ) : null}
 
       <CaseTabs value={tab} onChange={setTab} counts={counts} />
       <Panel {...data} />
@@ -159,5 +184,5 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
 }
 
 const styles = StyleSheet.create({
-  rule: { width: 28, height: 2 },
+  status: { fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' },
 });
