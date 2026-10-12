@@ -38,7 +38,8 @@ export function ratingsForSubject(
 /** Everything about one student's learning — shared by admin, tutor, parent and student views. */
 export type OverviewTab = 'progress' | 'notes' | 'homework';
 
-export function StudentOverview({ student, initialTab = 'progress' }: { student: Student; initialTab?: OverviewTab }) {
+/** `hideSummary` leaves out the name card (the admin student page shows the name, grades and next lesson in its own header). */
+export function StudentOverview({ student, initialTab = 'progress', hideSummary = false }: { student: Student; initialTab?: OverviewTab; hideSummary?: boolean }) {
   const theme = useTheme();
   const me = useMe();
   const lookup = useLookup();
@@ -114,6 +115,7 @@ export function StudentOverview({ student, initialTab = 'progress' }: { student:
 
   return (
     <View style={{ gap: Spacing.four }}>
+      {hideSummary ? null : (
       <Card style={{ gap: Spacing.two }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
@@ -147,6 +149,7 @@ export function StudentOverview({ student, initialTab = 'progress' }: { student:
           </View>
         ) : null}
       </Card>
+      )}
 
       <StatGrid>
         <Stat label="Attendance" value={attendance === null ? '–' : `${attendance}%`} hint={`${taught.length} lessons`} />

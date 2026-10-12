@@ -1,14 +1,15 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Avatar, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, SectionLabel, Txt } from '@/components/ui';
-import { DateKeyField, DocumentRow, DocumentUploadCard, OnboardingChecklist, OverrideForm, useToday, VettingBadge } from '@/components/vetting';
+import { NoHeader, Tag, VETTING_TAG } from '@/components/admin-people/kit';
+import { Actions, Banner, Button, Columns, EmptyState, ErrorNote, Field, Group, GroupRow, Loading, Notice, PageHeader, Row, Screen, Section, Txt } from '@/components/ui';
+import { DateKeyField, DocumentRow, DocumentUploadCard, OverrideForm, useToday } from '@/components/vetting';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandbookAcks, useTutorCompliance, useTutorDocuments, useTutors, useVettingOverrides } from '@/data/hooks';
 import type { TutorDocument } from '@/domain/types';
-import { activeOverride, formatLongDate, isCleared, validateDocumentDates, vettingSummary } from '@/domain/vetting';
+import { activeOverride, formatLongDate, isCleared, onboardingChecklist, onboardingProgress, validateDocumentDates, vettingSummary } from '@/domain/vetting';
 import { useMe } from '@/data/session';
 import { confirm } from '@/lib/confirm';
 
@@ -26,7 +27,9 @@ export default function TutorChecksDetail() {
 
   if (me.role !== 'admin') {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/' }} kicker="Team" title="Tutor checks" />
         <EmptyState icon="people" title="Administrators only" message="Tutor checks are available to the Elite Education office only." />
       </Screen>
     );
@@ -35,7 +38,9 @@ export default function TutorChecksDetail() {
   const tutor = tutors.data?.find((t) => t.id === tutorId);
   if (!tutor) {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/manage/vetting' }} kicker="Tutor checks" title="Tutor not found" />
         <EmptyState title="Tutor not found" />
       </Screen>
     );
@@ -44,108 +49,113 @@ export default function TutorChecksDetail() {
   const active = activeOverride(overrides.data ?? [], tutorId, today);
   const lastAck = (acks.data ?? []).filter((a) => a.tutorId === tutorId).sort((a, b) => b.version - a.version)[0];
   const first = tutor.fullName.split(' ')[0];
+  const items = c ? onboardingChecklist(c, today) : [];
+  const progress = c ? onboardingProgress(items) : undefined;
+  const vet = c ? VETTING_TAG[c.vettingStatus] : undefined;
 
   return (
-    <Screen onRefresh={() => docs.refetch()} refreshing={docs.isRefetching}>
-      <Stack.Screen options={{ title: tutor.fullName }} />
-      <Card style={{ gap: Spacing.two }}>
-        <Row gap={Spacing.three}>
-          <Avatar name={tutor.fullName} color={tutor.color} size={48} />
-          <View style={{ flex: 1, gap: 2 }}>
-            <Txt variant="h2">{tutor.fullName}</Txt>
-            {c ? <Txt variant="muted">{vettingSummary(c, today)}</Txt> : null}
-          </View>
-        </Row>
-        {c ? <VettingBadge status={c.vettingStatus} /> : null}
-        {c && !c.enforced ? <Txt variant="small">Police clearance is not currently enforced, so assignments are not blocked.</Txt> : null}
-      </Card>
+    <Screen topInset onRefresh={() => docs.refetch()} refreshing={docs.isRefetching}>
+      <NoHeader title={tutor.fullName} />
+      <PageHeader
+        back={{ fallback: '/manage/vetting' }}
+        kicker="Tutor checks"
+        title={tutor.fullName}
+        sub={c ? vettingSummary(c, today) : undefined}
+        right={vet ? <Tag label={vet.tag} tone={vet.tone} /> : undefined}
+      />
+      {c && !c.enforced ? <Notice tone="info">Police clearance is not currently enforced, so assignments are not blocked.</Notice> : null}
 
-      {c ? (
-        <Section title="Onboarding">
-          <Card>
-            <OnboardingChecklist compliance={c} today={today} />
-          </Card>
-        </Section>
-      ) : null}
+      <Columns>
+        <Group title="Onboarding" meta={progress ? `${progress.done} of ${progress.total} complete` : undefined} note={c ? undefined : 'No checks recorded yet.'}>
+          {items.map((i) => (
+            <GroupRow
+              key={i.key}
+              icon={i.done ? 'check_circle' : 'radio_button_unchecked'}
+              tone={i.done ? 'good' : 'neutral'}
+              title={i.label}
+              note={[i.optional ? 'Optional' : null, i.detail].filter(Boolean).join(' · ') || undefined}
+              value={i.done ? 'Done' : 'Outstanding'}
+              valueTone={i.done ? 'good' : i.optional ? 'muted' : 'warn'}
+            />
+          ))}
+        </Group>
+        <View style={{ gap: 26 }}>
+          <Group title="Handbook">
+            <GroupRow
+              icon="menu_book"
+              tone={lastAck && !(c?.handbookVersion && lastAck.version < c.handbookVersion) ? 'good' : 'warn'}
+              title={lastAck ? `Version ${lastAck.version} acknowledged` : 'Not yet acknowledged'}
+              note={
+                (lastAck ? `On ${formatLongDate(lastAck.acknowledgedAt)}.` : `${first} has not yet acknowledged the tutor handbook.`) +
+                (lastAck && c?.handbookVersion && lastAck.version < c.handbookVersion ? ` Version ${c.handbookVersion} is awaiting acknowledgement.` : '')
+              }
+              onPress={() => router.push('/handbook')}
+            />
+          </Group>
+          <Group title="Profile">
+            <GroupRow avatar={tutor.fullName} avatarColor={tutor.color} title={tutor.fullName} note="Teaching, pay and history" onPress={() => router.push({ pathname: '/manage/tutor/[id]', params: { id: tutor.id } })} />
+          </Group>
+        </View>
+      </Columns>
 
       <Section title="Documents">
-        {(docs.data ?? []).length === 0 ? (
-          <Txt variant="muted">{first} has not uploaded any documents yet.</Txt>
-        ) : (
-          <View style={{ gap: Spacing.two }}>
-            {(docs.data ?? []).map((d) => (
+        <View style={{ gap: 12 }}>
+          {(docs.data ?? []).length === 0 ? (
+            <Txt variant="muted">{first} has not uploaded any documents yet.</Txt>
+          ) : (
+            (docs.data ?? []).map((d) => (
               <DocumentRow key={d.id} doc={d} today={today} canRemove>
                 {d.status === 'pending' ? <ReviewPanel doc={d} today={today} /> : null}
               </DocumentRow>
-            ))}
-          </View>
-        )}
-        <DocumentUploadCard tutorId={tutorId} onBehalf />
+            ))
+          )}
+          <DocumentUploadCard tutorId={tutorId} onBehalf />
+        </View>
       </Section>
 
       <Section title="Override">
-        {active ? (
-          <Card style={{ gap: Spacing.two }}>
-            <Banner tone="info" icon="alert">
-              Override in place until {formatLongDate(active.expiresAt)}: {active.reason}
-            </Banner>
-            <Txt variant="small">
-              Recorded {formatLongDate(active.createdAt)}
-              {active.createdByName ? ` by ${active.createdByName}` : ''}
-            </Txt>
-            <Row>
+        <View style={{ gap: 12 }}>
+          {active ? (
+            <Notice tone="info" title={`Override in place until ${formatLongDate(active.expiresAt)}`}>
+              {`${active.reason}. Recorded ${formatLongDate(active.createdAt)}${active.createdByName ? ` by ${active.createdByName}` : ''}.`}
+            </Notice>
+          ) : null}
+          {active ? (
+            <Actions>
               <Button
                 title="Revoke override"
-                size="sm"
                 variant="danger"
                 loading={revoke.isPending}
                 onPress={() =>
                   confirm('Revoke this override?', `${tutor.fullName} will not be able to be assigned new work until their police clearance is verified.`, () => revoke.mutate([active.id]), 'Revoke')
                 }
               />
-            </Row>
-            <ErrorNote error={revoke.error} />
-          </Card>
-        ) : null}
-        {c && isCleared(c.vettingStatus) ? (
-          <Txt variant="muted">{first} is cleared, so no override is needed.</Txt>
-        ) : !active ? (
-          <OverrideForm tutorId={tutorId} tutorName={tutor.fullName} />
-        ) : null}
-        {(overrides.data ?? []).length ? (
-          <View style={{ gap: Spacing.two }}>
-            <SectionLabel>Override history</SectionLabel>
-            {(overrides.data ?? []).map((o) => (
-              <Card key={o.id} style={{ gap: 2 }}>
-                <Txt>{o.reason}</Txt>
-                <Txt variant="small">
-                  Recorded {formatLongDate(o.createdAt)}
-                  {o.createdByName ? ` by ${o.createdByName}` : ''} · until {formatLongDate(o.expiresAt)}
-                </Txt>
-                {o.revokedAt ? (
-                  <Txt variant="small" color="danger">
-                    Revoked {formatLongDate(o.revokedAt)}
-                    {o.revokedByName ? ` by ${o.revokedByName}` : ''}
-                  </Txt>
-                ) : new Date(o.expiresAt) <= today ? (
-                  <Txt variant="small">Expired</Txt>
-                ) : null}
-              </Card>
-            ))}
-          </View>
-        ) : null}
+            </Actions>
+          ) : null}
+          <ErrorNote error={revoke.error} />
+          {c && isCleared(c.vettingStatus) ? (
+            <Txt variant="muted">{first} is cleared, so no override is needed.</Txt>
+          ) : !active ? (
+            <OverrideForm tutorId={tutorId} tutorName={tutor.fullName} />
+          ) : null}
+        </View>
       </Section>
-
-      <Section title="Handbook">
-        <Card>
-          <Txt>
-            {lastAck
-              ? `Version ${lastAck.version} acknowledged on ${formatLongDate(lastAck.acknowledgedAt)}.`
-              : `${first} has not yet acknowledged the tutor handbook.`}
-            {lastAck && c?.handbookVersion && lastAck.version < c.handbookVersion ? ` Version ${c.handbookVersion} is awaiting acknowledgement.` : ''}
-          </Txt>
-        </Card>
-      </Section>
+      {(overrides.data ?? []).length ? (
+        <Group title="Override history">
+          {(overrides.data ?? []).map((o) => (
+            <GroupRow
+              key={o.id}
+              icon="history"
+              tone={o.revokedAt ? 'bad' : 'neutral'}
+              title={o.reason}
+              note={`Recorded ${formatLongDate(o.createdAt)}${o.createdByName ? ` by ${o.createdByName}` : ''} · until ${formatLongDate(o.expiresAt)}`}
+              value={o.revokedAt ? `Revoked ${formatLongDate(o.revokedAt)}${o.revokedByName ? ` by ${o.revokedByName}` : ''}` : new Date(o.expiresAt) <= today ? 'Expired' : 'In place'}
+              valueTone={o.revokedAt ? 'bad' : 'muted'}
+              valueSize={12.5}
+            />
+          ))}
+        </Group>
+      ) : null}
     </Screen>
   );
 }

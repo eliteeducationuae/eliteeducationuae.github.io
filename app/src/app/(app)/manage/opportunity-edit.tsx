@@ -1,12 +1,11 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
 
 import { modernCurriculum } from '@/components/catalogue-choice';
 import { CataloguePicker } from '@/components/catalogue-picker';
-import { opportunityTitle } from '@/components/opportunities';
-import { Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { FormWithSummary, NoHeader, SummaryCard } from '@/components/admin-people/kit';
+import { opportunityTitle, tutorFits } from '@/components/opportunities';
+import { Actions, Button, ChipField, ErrorNote, Field, FieldsCard, Loading, Notice, PageHeader, Screen, Txt, useToast } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useEnquiries, useEnrolments, useOpportunities, useStudents, useTutors } from '@/data/hooks';
 import { CURRICULA, PHASES, SUBJECTS, cleanChoice } from '@/domain/catalogue';
@@ -65,86 +64,109 @@ function OpportunityForm({ existing, defaults }: { existing?: Opportunity; defau
   const [invited, setInvited] = useState<string[]>(defaults.invitedTutorIds ?? []);
   const valid = title.trim() && Number(pay) > 0 && (!closesOn || /^\d{4}-\d{2}-\d{2}$/.test(closesOn)) && (visibility === 'all' || invited.length > 0);
 
+  const [tried, setTried] = useState(false);
+  const toast = useToast();
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/manage/opportunities'));
+  const payInvalid = !(Number(pay) > 0);
+  const closesInvalid = !!closesOn && !/^\d{4}-\d{2}-\d{2}$/.test(closesOn);
+  const fitting = withoutClosed(tutors.data).filter((t) => !subject || tutorFits(t, { subject, curriculum }));
+
+  async function submit() {
+    setTried(true);
+    if (!valid) return;
+    const o = await save.mutateAsync([
+      {
+        id: existing?.id,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        subject: cleanChoice(subject),
+        phase: cleanChoice(phase),
+        curriculum: cleanChoice(curriculum),
+        syllabusId: defaults.syllabusId,
+        studentId: defaults.studentId,
+        enquiryId: defaults.enquiryId,
+        schedule: schedule.trim() || undefined,
+        location: location.trim() || undefined,
+        payRate: Number(pay),
+        closesOn: closesOn || undefined,
+        visibility,
+        invitedTutorIds: visibility === 'invited' ? invited : [],
+      },
+    ]);
+    router.replace({ pathname: '/manage/opportunity/[id]', params: { id: o.id } });
+    toast(existing ? 'Role saved.' : 'Role posted to tutors.');
+  }
+
   return (
-    <Screen
-      footer={
-        <Button
-          title={existing ? 'Save changes' : 'Post role to tutors'}
-          variant="gold"
-          style={{ flex: 1 }}
-          disabled={!valid}
-          loading={save.isPending}
-          onPress={async () => {
-            const o = await save.mutateAsync([
-              {
-                id: existing?.id,
-                title: title.trim(),
-                description: description.trim() || undefined,
-                subject: cleanChoice(subject),
-                phase: cleanChoice(phase),
-                curriculum: cleanChoice(curriculum),
-                syllabusId: defaults.syllabusId,
-                studentId: defaults.studentId,
-                enquiryId: defaults.enquiryId,
-                schedule: schedule.trim() || undefined,
-                location: location.trim() || undefined,
-                payRate: Number(pay),
-                closesOn: closesOn || undefined,
-                visibility,
-                invitedTutorIds: visibility === 'invited' ? invited : [],
-              },
-            ]);
-            router.replace({ pathname: '/manage/opportunity/[id]', params: { id: o.id } });
-          }}
-        />
-      }>
-      <Stack.Screen options={{ title: existing ? 'Edit role' : 'Post a role' }} />
-      <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Year 10 IGCSE Chemistry — Tuesdays" />
-      <Field
-        label="About the student (shared with tutors)"
-        value={description}
-        onChangeText={setDescription}
-        multiline
-        placeholder="Level, goals, what they find hard. Please do not include family contact details."
+    <Screen topInset>
+      <NoHeader title={existing ? 'Edit role' : 'Post a role'} />
+      <PageHeader
+        back={{ label: 'Cancel', onPress: back }}
+        kicker={existing ? 'Roles · Edit' : 'Roles · New'}
+        title={existing ? 'Edit role' : 'Post a role'}
+        sub="Tutors who can see the role get a notification and an email, and can register interest. You choose who takes it."
       />
-      <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} optional collapsed={10} />
-      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
-      <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
-      <Row gap={Spacing.two}>
-        <View style={{ flex: 1 }}>
+      {tried && !valid ? (
+        <Notice tone="danger" title="Not saved yet">
+          A few details are missing. They are marked below.
+        </Notice>
+      ) : null}
+      <FormWithSummary
+        summary={
+          <SummaryCard
+            kicker={visibility === 'all' ? 'Who can see it' : 'Invited'}
+            lines={(visibility === 'all' ? fitting : withoutClosed(tutors.data).filter((t) => invited.includes(t.id))).map((t) => ({
+              k: t.fullName,
+              v: t.subjects.slice(0, 3).join(', ') || '–',
+            }))}
+            note={visibility === 'all' ? 'Tutors who teach the subject are listed. Every tutor can see the role.' : 'Only the tutors you invite can see the role.'}
+          />
+        }>
+        <FieldsCard title="The role">
+          <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Year 10 IGCSE Chemistry — Tuesdays" error={tried && !title.trim()} />
+          <Field
+            label="About the student (shared with tutors)"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            placeholder="Level, goals, what they find hard. Please do not include family contact details."
+          />
+          <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} optional collapsed={10} />
+          <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+          <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
+        </FieldsCard>
+        <FieldsCard title="Times, place and pay">
           <Field label="When" value={schedule} onChangeText={setSchedule} placeholder="Tuesdays 5pm" />
-        </View>
-        <View style={{ flex: 1 }}>
           <Field label="Where" value={location} onChangeText={setLocation} placeholder="Online / Al Barsha" />
-        </View>
-      </Row>
-      <Row gap={Spacing.two}>
-        <View style={{ flex: 1 }}>
-          <Field label="Tutor pay (AED/hour)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Field label="Closes on" value={closesOn} onChangeText={setClosesOn} placeholder="YYYY-MM-DD" />
-        </View>
-      </Row>
-      <Section title="Who can see it">
-        <Segmented
-          value={visibility}
-          onChange={setVisibility}
-          options={[
-            { value: 'all', label: 'All tutors' },
-            { value: 'invited', label: 'Selected tutors' },
-          ]}
-        />
-        {visibility === 'invited' ? (
-          <Row gap={Spacing.one} wrap>
-            {withoutClosed(tutors.data).map((t) => (
-              <Chip key={t.id} label={t.fullName} selected={invited.includes(t.id)} onPress={() => setInvited((x) => (x.includes(t.id) ? x.filter((y) => y !== t.id) : [...x, t.id]))} />
-            ))}
-          </Row>
-        ) : null}
-        <Txt variant="small">Tutors get a notification and an email when you post.</Txt>
-      </Section>
+          <Field label="Tutor pay (AED/hour)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" error={tried && payInvalid ? 'Please enter the hourly pay.' : undefined} />
+          <Field label="Closes on" value={closesOn} onChangeText={setClosesOn} placeholder="YYYY-MM-DD" error={tried && closesInvalid ? 'Please write the date as YYYY-MM-DD.' : undefined} />
+        </FieldsCard>
+        <FieldsCard title="Who can see it">
+          <ChipField
+            options={[
+              { value: 'all', label: 'All tutors' },
+              { value: 'invited', label: 'Selected tutors' },
+            ]}
+            value={visibility}
+            onChange={setVisibility}
+          />
+          {visibility === 'invited' ? (
+            <ChipField
+              label="Invite"
+              options={withoutClosed(tutors.data).map((t) => ({ value: t.id, label: t.fullName }))}
+              value={invited}
+              onChange={(id) => setInvited((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]))}
+              error={tried && invited.length === 0 ? 'Please choose at least one tutor.' : undefined}
+            />
+          ) : null}
+          <Txt variant="small">Tutors get a notification and an email when you post.</Txt>
+        </FieldsCard>
+      </FormWithSummary>
       <ErrorNote error={save.error} />
+      <Actions>
+        <Button title={existing ? 'Save changes' : 'Post role to tutors'} icon="send" loading={save.isPending} onPress={() => void submit().catch(() => undefined)} />
+        <Button title="Cancel" variant="secondary" onPress={back} />
+      </Actions>
     </Screen>
   );
 }
