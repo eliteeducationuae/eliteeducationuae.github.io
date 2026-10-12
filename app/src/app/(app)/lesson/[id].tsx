@@ -8,6 +8,7 @@ import { Icon } from '@/components/icon';
 import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
+import { AdminLesson } from '@/components/ops/admin-lesson';
 import { LessonPlanSection } from '@/components/plans';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -39,7 +40,15 @@ import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 import { safeMeetingUrl } from '@/lib/safe-url';
 
-export default function LessonDetail() {
+/** The admin has the redesigned operations page; tutors, families and students keep theirs below. */
+export default function LessonScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  if (me.role === 'admin') return <AdminLesson id={id} />;
+  return <LessonDetail />;
+}
+
+function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const me = useMe();

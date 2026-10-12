@@ -4,6 +4,7 @@ import { type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEve
 import { font, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+import { CountBadge } from '../ui';
 import { CASE_TAB_LABELS, CASE_TABS, type CaseTab } from './format';
 
 /** What a tab's count means, for screen readers ("Tasks, 2 open"). */
@@ -14,9 +15,8 @@ const FADE_WIDTH = 32;
 const LEFT_FADE_WIDTH = 12;
 
 /**
- * The case page's sections as a quiet, horizontally scrolling tab row: tracked labels with a
- * champagne-gold underline on the current tab. Seven tabs do not fit a phone as a segmented control, so the row
- * scrolls the current tab into view (including when a notification opens a later tab) and fades at the edge
+ * The case page's sections as the redesign's underline tabs (15px bold, 2px gold underline, count badges).
+ * Seven tabs do not fit a phone, so the row scrolls the current tab into view (including when a notification opens a later tab) and fades at the edge
  * while more tabs are hidden. It always scrolls to the start of a tab, so the left-hand tab is never cut in half.
  */
 export function CaseTabs({ value, onChange, counts }: { value: CaseTab; onChange: (t: CaseTab) => void; counts?: Partial<Record<CaseTab, number>> }) {
@@ -129,15 +129,10 @@ export function CaseTabs({ value, onChange, counts }: { value: CaseTab; onChange
               aria-selected={active}
               accessibilityLabel={n ? `${CASE_TAB_LABELS[t]}, ${n} ${COUNT_LABELS[t] ?? ''}`.trim() : CASE_TAB_LABELS[t]}
               style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}>
-              <Text
-                style={[
-                  font('sans', 'bold'),
-                  styles.label,
-                  { color: active ? theme.text : theme.textMuted },
-                ]}>
-                {CASE_TAB_LABELS[t]}
-                {n ? <Text style={{ color: theme.accent }}>{`  ${n}`}</Text> : null}
-              </Text>
+              <View style={styles.labelRow}>
+                <Text style={[font('sans', 'bold'), styles.label, { color: active ? theme.text : theme.textMuted }]}>{CASE_TAB_LABELS[t]}</Text>
+                {n ? <CountBadge count={n} /> : null}
+              </View>
               <View style={[styles.marker, { backgroundColor: active ? theme.gold : 'transparent' }]} />
             </Pressable>
           );
@@ -164,10 +159,11 @@ function EdgeFade({ side, color }: { side: 'left' | 'right'; color: string }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { borderBottomWidth: StyleSheet.hairlineWidth, marginHorizontal: -Spacing.one },
-  row: { gap: Spacing.one, paddingHorizontal: Spacing.one },
-  tab: { paddingHorizontal: Spacing.two + 2, paddingTop: Spacing.two + 2, alignItems: 'center' },
-  label: { fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase' },
-  marker: { height: 2, alignSelf: 'stretch', marginTop: Spacing.two, borderRadius: 1 },
+  wrap: { borderBottomWidth: 1, marginHorizontal: -Spacing.one },
+  row: { gap: 22 - Spacing.one, paddingHorizontal: Spacing.one },
+  tab: { paddingHorizontal: Spacing.one / 2, paddingTop: Spacing.two, alignItems: 'stretch', minHeight: 44 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' },
+  label: { fontSize: 15, lineHeight: 20 },
+  marker: { height: 2, alignSelf: 'stretch', marginTop: 11 },
   fade: { position: 'absolute', top: 0, bottom: 1, flexDirection: 'row' },
 });

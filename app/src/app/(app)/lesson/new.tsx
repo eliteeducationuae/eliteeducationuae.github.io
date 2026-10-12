@@ -4,16 +4,16 @@ import { View } from 'react-native';
 
 import { CataloguePicker } from '@/components/catalogue-picker';
 import { bookingPriceNotes } from '@/components/rates';
-import { Banner, Button, Chip, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { NoHeader, StepLabel, SummaryCard } from '@/components/ops/parts';
+import { Button, Chip, ChipField, Columns, ErrorNote, Field, FieldsCard, Loading, Notice, PageHeader, Row, Screen, Txt, useToast } from '@/components/ui';
 import { tutorChipLabel, useComplianceMap, VettingWarning } from '@/components/vetting';
-import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useBusyBlocks, useClosures, useEnrolments, useLessons, useLookup, useServices, useStudents, useTutors } from '@/data/hooks';
 import { formatAED } from '@/domain/billing';
 import { slotWarning } from '@/domain/calendar-connection';
 import { SUBJECTS } from '@/domain/catalogue';
 import { addDays, formatDay, formatTime, fromDateAndTime, startOfDay, toDateKey } from '@/domain/dates';
-import { defaultSubject, enrolmentFor, sameSubject, subjectsFor } from '@/domain/enrolments';
+import { defaultSubject, enrolmentFor, sameSubject, subjectsFor, tutorTeaches } from '@/domain/enrolments';
 import { expandWeeklySkipping, findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonLocation } from '@/domain/types';
 import { isVettingBlock } from '@/domain/vetting';
@@ -32,6 +32,7 @@ export default function NewLesson() {
   const services = useServices();
   const enrolments = useEnrolments();
   const create = useAction(source.createLessons);
+  const toast = useToast();
 
   const initial = params.date ? new Date(params.date) : new Date();
   const [studentIds, setStudentIds] = useState<string[]>(params.studentId ? [params.studentId] : []);
@@ -111,158 +112,191 @@ export default function NewLesson() {
       })),
     ]).catch(() => null);
     if (made === null) return;
-    router.back();
+    const who = lookup.studentNames(studentIds).split(' ')[0];
+    if (router.canGoBack()) router.back();
+    else router.replace('/admin/calendar');
+    toast(`${slots.length} lesson${slots.length === 1 ? '' : 's'} scheduled for ${who || 'the student'}.`);
   }
 
   if (!lookup.ready) return <Loading />;
   const q = query.trim().toLowerCase();
   const studentList = withoutClosed(students.data).filter((s) => studentIds.includes(s.id) || !q || s.fullName.toLowerCase().includes(q));
+  const tutorName = chosenTutorId ? lookup.tutor(chosenTutorId)?.fullName : undefined;
+  const label = clashCount ? `Schedule ${slots.length} anyway` : `Schedule ${slots.length || ''} lesson${slots.length === 1 ? '' : 's'}`;
 
   return (
-    <Screen
-      footer={
-        <Button
-          title={clashCount ? `Schedule ${slots.length} anyway` : `Schedule ${slots.length || ''} lesson${slots.length === 1 ? '' : 's'}`}
-          variant="gold"
-          style={{ flex: 1 }}
-          disabled={!ready}
-          loading={create.isPending}
-          onPress={submit}
-        />
-      }>
-      <Section title="Who">
-        <Field label="Find student" value={query} onChangeText={setQuery} placeholder="Type a name" />
-        <Row gap={Spacing.one} wrap>
-          {studentList.map((s) => (
-            <Chip key={s.id} label={s.fullName} selected={studentIds.includes(s.id)} onPress={() => toggleStudent(s.id)} />
-          ))}
-        </Row>
-        {studentIds.length > 1 ? (
-          <Txt variant="small">Group lesson: each family is charged its own price, and the tutor is paid the highest rate among the students.</Txt>
-        ) : null}
-        {bookingPriceNotes(studentIds, subject, allEnrolments, (id) => lookup.student(id)?.fullName).map((line) => (
-          <Txt key={line} variant="small">
-            {line}
-          </Txt>
-        ))}
-      </Section>
-
-      {studentIds.length ? (
-        <Section title="Subject">
-          <Row gap={Spacing.one} wrap>
-            {enrolled.map((x) => (
-              <Chip
-                key={x}
-                label={x}
-                selected={!showOther && sameSubject(subject, x)}
-                onPress={() => {
-                  setOtherOpen(false);
-                  pickSubject(x);
-                }}
-              />
+    <Screen topInset>
+      <NoHeader />
+      <PageHeader back kicker="Diary" title="Schedule lessons" sub="One-off or repeating, with clash checks against the diary and Google Calendar." />
+      <Columns>
+        <FieldsCard>
+          <View style={{ gap: 12 }}>
+            <StepLabel n={1} title="Student" />
+            <Field label="Find a student" value={query} onChangeText={setQuery} placeholder="Type a name" />
+            <Row gap={8} wrap>
+              {studentList.map((s) => (
+                <Chip key={s.id} label={s.fullName} selected={studentIds.includes(s.id)} onPress={() => toggleStudent(s.id)} />
+              ))}
+            </Row>
+            {studentIds.length > 1 ? (
+              <Txt variant="small">Group lesson: each family is charged its own price, and the tutor is paid the highest rate among the students.</Txt>
+            ) : null}
+            {bookingPriceNotes(studentIds, subject, allEnrolments, (id) => lookup.student(id)?.fullName).map((line) => (
+              <Txt key={line} variant="small">
+                {line}
+              </Txt>
             ))}
-            <Chip label="Other subject…" selected={showOther} onPress={() => setOtherOpen(true)} />
-          </Row>
-          {!enrolled.length ? <Txt variant="small">No subjects are recorded for this student yet. Please choose one below.</Txt> : null}
-          {showOther ? (
-            <CataloguePicker label="Other subject" options={SUBJECTS} value={subject} onChange={pickSubject} otherPlaceholder="For example, Latin" collapsed={10} />
-          ) : null}
-        </Section>
-      ) : null}
-
-      <Section title="Tutor">
-        <Row gap={Spacing.one} wrap>
-          {withoutClosed(tutors.data).map((t) => (
-            <Chip key={t.id} label={tutorChipLabel(t.fullName, vetting.get(t.id))} selected={chosenTutorId === t.id} onPress={() => setTutorId(t.id)} />
-          ))}
-        </Row>
-      </Section>
-
-      <Section title="Service">
-        <Row gap={Spacing.one} wrap>
-          {(services.data ?? []).map((s) => (
-            <Chip key={s.id} label={`${s.name} · ${s.durationMin}m · ${formatAED(s.rate)}`} selected={serviceId === s.id} onPress={() => setServiceId(s.id)} />
-          ))}
-        </Row>
-      </Section>
-
-      <Section title="When">
-        <Row gap={Spacing.two}>
-          <View style={{ flex: 1 }}>
-            <Field label="First lesson date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
           </View>
-          <View style={{ flex: 1 }}>
-            <Field label="Start time" value={time} onChangeText={setTime} placeholder="HH:MM" />
-          </View>
-        </Row>
-        {!start ? <Banner tone="danger" icon="alert">Enter the date as YYYY-MM-DD and the time as HH:MM (24-hour).</Banner> : null}
-        <Segmented
-          value={repeat}
-          onChange={setRepeat}
-          options={[
-            { value: 'once', label: 'One-off' },
-            { value: 'weekly', label: 'Weekly' },
-            { value: 'fortnightly', label: 'Fortnightly' },
-          ]}
-        />
-        {repeat !== 'once' ? <Field label="Number of lessons" value={count} onChangeText={setCount} keyboardType="number-pad" /> : null}
-      </Section>
 
-      <Section title="Where">
-        <Segmented
-          value={location}
-          onChange={setLocation}
-          options={[
-            { value: 'online', label: 'Online' },
-            { value: 'in-person', label: 'In person' },
-          ]}
-        />
-        <Field
-          label={location === 'online' ? 'Meeting link' : 'Address'}
-          value={where}
-          onChangeText={setWhere}
-          placeholder={location === 'online' ? 'https://meet.google.com/…' : 'e.g. Elite Education Centre, Al Barsha'}
-          autoCapitalize={location === 'online' ? 'none' : 'sentences'}
-          hint={badLink ? 'Please enter a secure web address beginning https://, such as a Google Meet or Zoom link.' : undefined}
-        />
-      </Section>
+          {studentIds.length ? (
+            <View style={{ gap: 12 }}>
+              <StepLabel n={2} title="Subject" />
+              <Row gap={8} wrap>
+                {enrolled.map((x) => (
+                  <Chip
+                    key={x}
+                    label={x}
+                    selected={!showOther && sameSubject(subject, x)}
+                    onPress={() => {
+                      setOtherOpen(false);
+                      pickSubject(x);
+                    }}
+                  />
+                ))}
+                <Chip label="Other subject…" selected={showOther} onPress={() => setOtherOpen(true)} />
+              </Row>
+              {!enrolled.length ? <Txt variant="small">No subjects are recorded for this student yet. Please choose one below.</Txt> : null}
+              {showOther ? (
+                <CataloguePicker label="Other subject" options={SUBJECTS} value={subject} onChange={pickSubject} otherPlaceholder="For example, Latin" collapsed={10} />
+              ) : null}
+            </View>
+          ) : null}
 
-      {slots.length > 0 ? (
-        <Section title={`Preview · ${subject ? `${subject} · ` : ''}${slots.length} lesson${slots.length === 1 ? '' : 's'}`}>
-          {skipped.length ? (
-            <Banner icon="sun">
-              Skipping {skipped.map((d) => formatDay(d)).join(', ')} (holiday{skipped.length === 1 ? '' : 's'}).
-            </Banner>
-          ) : null}
-          {clashCount ? (
-            <Banner tone="warning" icon="alert">
-              {warning}
-            </Banner>
-          ) : chosenTutorId ? (
-            <Banner tone="success" icon="check">
-              No clashes with existing lessons.
-            </Banner>
-          ) : null}
-          <View style={{ gap: 4 }}>
-            {slots.slice(0, 12).map((s) => {
-              const clash = clashes.find((x) => x.slot === s);
-              const googleBusy = busyClashes.some((x) => x.slot === s);
-              return (
-                <Txt key={s.start.toISOString()} variant="muted" color={clash || googleBusy ? 'warning' : undefined}>
-                  {formatDay(s.start)} · {formatTime(s.start)}–{formatTime(s.end)}
-                  {clash
-                    ? ` · Clash: ${clash.c.reason === 'tutor' ? 'the tutor is busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}`
-                    : ''}
-                  {googleBusy ? ' · Google Calendar shows the tutor as busy' : ''}
-                </Txt>
-              );
-            })}
-            {slots.length > 12 ? <Txt variant="small">…and {slots.length - 12} more</Txt> : null}
+          <View style={{ gap: 12 }}>
+            <StepLabel n={3} title="Tutor" />
+            <Row gap={8} wrap>
+              {withoutClosed(tutors.data).map((t) => (
+                <Chip
+                  key={t.id}
+                  label={tutorChipLabel(subject && tutorTeaches(t, subject) ? `${t.fullName} ✓` : t.fullName, vetting.get(t.id))}
+                  selected={chosenTutorId === t.id}
+                  onPress={() => setTutorId(t.id)}
+                />
+              ))}
+            </Row>
+            {subject ? <Txt variant="small">✓ marks tutors who already teach {subject}.</Txt> : null}
           </View>
-        </Section>
-      ) : null}
-      {chosenTutorId ? <VettingWarning key={chosenTutorId} tutorId={chosenTutorId} action="lesson" expanded={isVettingBlock(create.error)} /> : null}
-      <ErrorNote error={create.error} />
+
+          <View style={{ gap: 12 }}>
+            <StepLabel n={4} title="Service" />
+            <Row gap={8} wrap>
+              {(services.data ?? []).map((s) => (
+                <Chip key={s.id} label={`${s.name} · ${s.durationMin} min · ${formatAED(s.rate)}`} selected={serviceId === s.id} onPress={() => setServiceId(s.id)} />
+              ))}
+            </Row>
+          </View>
+
+          <View style={{ gap: 12 }}>
+            <StepLabel n={5} title="First lesson" />
+            <Row gap={12} style={{ alignItems: 'flex-start' }}>
+              <View style={{ flex: 1 }}>
+                <Field label="Date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label="Start time" value={time} onChangeText={setTime} placeholder="HH:MM" />
+              </View>
+            </Row>
+            {!start ? <Notice tone="danger">Enter the date as YYYY-MM-DD and the time as HH:MM (24-hour).</Notice> : null}
+          </View>
+
+          <View style={{ gap: 12 }}>
+            <StepLabel n={6} title="Repeat" />
+            <ChipField<Repeat>
+              options={[
+                { value: 'once', label: 'One-off' },
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'fortnightly', label: 'Fortnightly' },
+              ]}
+              value={repeat}
+              onChange={setRepeat}
+            />
+            {repeat !== 'once' ? <Field label="Number of lessons" value={count} onChangeText={setCount} keyboardType="number-pad" /> : null}
+          </View>
+
+          <View style={{ gap: 12 }}>
+            <StepLabel n={7} title="Where" />
+            <ChipField<LessonLocation>
+              options={[
+                { value: 'online', label: 'Online' },
+                { value: 'in-person', label: 'In person' },
+              ]}
+              value={location}
+              onChange={setLocation}
+            />
+            <Field
+              label={location === 'online' ? 'Meeting link' : 'Address'}
+              value={where}
+              onChangeText={setWhere}
+              placeholder={location === 'online' ? 'https://meet.google.com/…' : 'e.g. Elite Education Centre, Al Barsha'}
+              autoCapitalize={location === 'online' ? 'none' : 'sentences'}
+              error={badLink ? 'Please enter a secure web address beginning https://, such as a Google Meet or Zoom link.' : undefined}
+            />
+          </View>
+        </FieldsCard>
+
+        <View style={{ gap: 16 }}>
+          <SummaryCard
+            kicker="Preview"
+            title={
+              slots.length
+                ? `${lookup.studentNames(studentIds) || 'Choose a student'}${subject ? ` · ${subject}` : ''}${tutorName ? ` with ${tutorName.split(' ')[0]}` : ''}, ${slots.length} lesson${slots.length === 1 ? '' : 's'}`
+                : 'Choose a service and a start time'
+            }>
+            {skipped.length ? (
+              <Notice icon="beach_access">
+                Skipping {skipped.map((d) => formatDay(d)).join(', ')} (holiday{skipped.length === 1 ? '' : 's'}).
+              </Notice>
+            ) : null}
+            {slots.length && clashCount ? (
+              <Notice tone="warn">{warning}</Notice>
+            ) : slots.length && chosenTutorId ? (
+              <Notice tone="good">No clashes with existing lessons.</Notice>
+            ) : null}
+            {slots.length ? (
+              <View>
+                {slots.slice(0, 12).map((s) => {
+                  const clash = clashes.find((x) => x.slot === s);
+                  const googleBusy = busyClashes.some((x) => x.slot === s);
+                  const flagged = clash || googleBusy;
+                  return (
+                    <View key={s.start.toISOString()} style={{ paddingVertical: 6, gap: 2 }}>
+                      <Row style={{ justifyContent: 'space-between' }}>
+                        <Txt style={{ fontSize: 14.5 }} color={flagged ? 'warning' : undefined}>
+                          {formatDay(s.start)}
+                        </Txt>
+                        <Txt variant="note" color={flagged ? 'warning' : undefined}>
+                          {formatTime(s.start)}–{formatTime(s.end)}
+                        </Txt>
+                      </Row>
+                      {flagged ? (
+                        <Txt variant="small" color="warning">
+                          {clash ? `Clash: ${clash.c.reason === 'tutor' ? 'the tutor is busy' : `${lookup.studentNames(clash.c.studentIds)} busy`}` : ''}
+                          {clash && googleBusy ? ' · ' : ''}
+                          {googleBusy ? 'Google Calendar shows the tutor as busy' : ''}
+                        </Txt>
+                      ) : null}
+                    </View>
+                  );
+                })}
+                {slots.length > 12 ? <Txt variant="small">…and {slots.length - 12} more</Txt> : null}
+              </View>
+            ) : null}
+            {chosenTutorId ? <VettingWarning key={chosenTutorId} tutorId={chosenTutorId} action="lesson" expanded={isVettingBlock(create.error)} /> : null}
+            <ErrorNote error={create.error} />
+            <Button title={label} icon="event_available" disabled={!ready} loading={create.isPending} onPress={submit} />
+          </SummaryCard>
+        </View>
+      </Columns>
     </Screen>
   );
 }

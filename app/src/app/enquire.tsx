@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { EnquiryForm } from '@/components/enquiry-form';
+import { LogEnquiry } from '@/components/ops/log-enquiry';
 import { Screen, Txt } from '@/components/ui';
 import { useSession } from '@/data/session';
 
@@ -8,6 +9,8 @@ import { useSession } from '@/data/session';
 export default function Enquire() {
   const profile = useSession((s) => s.profile);
   const isAdmin = profile?.role === 'admin';
+  // The office logs phone and referral enquiries on its own redesigned page; the public form below is unchanged.
+  if (isAdmin) return <LogEnquiry />;
   return (
     <Screen>
       <Stack.Screen options={{ title: isAdmin ? 'Add an enquiry' : 'Book a complimentary consultation' }} />
