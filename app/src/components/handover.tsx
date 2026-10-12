@@ -6,8 +6,8 @@ import { View } from 'react-native';
 import { Icon } from '@/components/icon';
 import { openAttachment } from '@/components/resources';
 import { NoHeader, RowMeta } from '@/components/admin-people/kit';
-import { Actions, Badge, Banner, Button, Card, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Loading, Notice, PageHeader, ProgressBar, Row, Screen, Section, Txt, useToast } from '@/components/ui';
-import { MasteryColors, Spacing } from '@/constants/theme';
+import { Actions, Button, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, ListItem, Loading, Notice, PageHeader, Screen, Txt, useToast } from '@/components/ui';
+import { MasteryColors } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandoverPack, useHandovers, useLesson, useLookup, type Lookup } from '@/data/hooks';
 import { useMe, useViewing } from '@/data/session';
@@ -18,7 +18,6 @@ import { RATING_LABELS } from '@/domain/progress';
 import type { Handover } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
 import { HANDOVER_PROMPTS as PROMPTS, joinHandoverNote, splitHandoverNote } from '@/components/tutor/handover-note';
-import { notify } from '@/lib/confirm';
 
 const handoverPath = (id: string) => ({ pathname: '/handover/[id]' as const, params: { id } });
 
@@ -89,19 +88,6 @@ export function HandoverBanners() {
 // ---------------------------------------------------------------------------
 // Handover packs list
 // ---------------------------------------------------------------------------
-
-function HandoverItem({ h, lookup, incoming }: { h: Handover; lookup: Lookup; incoming: boolean }) {
-  const theme = useTheme();
-  return (
-    <ListItem
-      title={handoverTitle(h, studentName(lookup, h))}
-      subtitle={`${HANDOVER_REASON_LABEL[h.reason]} · ${tutorName(lookup, h.fromTutorId)} to ${tutorName(lookup, h.toTutorId, 'the new tutor')} · ${formatDate(h.createdAt)}`}
-      left={<Icon name="book" size={22} color={theme.accent} />}
-      right={incoming && !h.viewedAt ? <Badge label="New" tone="gold" /> : undefined}
-      onPress={() => router.push(handoverPath(h.id))}
-    />
-  );
-}
 
 /** Every handover the viewer may see: all for admins; for tutors, packs to read and notes to write. */
 export function HandoverList() {
