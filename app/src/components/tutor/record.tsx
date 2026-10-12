@@ -196,7 +196,7 @@ function RecordForm({ id, prefill, planned }: { id: string; prefill: RecordPrefi
     toast(
       status === 'completed'
         ? `Recorded. ${familyNames.length === 1 ? `The ${familyNames[0]} family has` : 'The family has'} the note${pay ? ` and ${formatAED(pay.amount)} is on your ${month} pay` : ''}.`
-        : 'Recorded as a no-show. The office has been told.',
+        : 'Recorded as a no-show.',
     );
     if (router.canGoBack()) router.back();
     else router.replace('/tutor');

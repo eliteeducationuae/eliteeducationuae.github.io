@@ -12,6 +12,7 @@ import { RELATIONSHIP_LABELS } from '@/domain/contacts';
 import { formatTime, relativeDay } from '@/domain/dates';
 import type { Message } from '@/domain/types';
 import { useTheme } from '@/hooks/use-theme';
+import { onDraftOffered, takeDraft } from '@/lib/pending-draft';
 
 import { Icon } from './icon';
 import { Avatar, Badge, EmptyState, ErrorNote, ListItem, Loading, Screen, Txt } from './ui';
@@ -52,10 +53,11 @@ export function ThreadList() {
 }
 
 /**
- * A family conversation with a composer. `initialDraft` pre-fills the composer (e.g. a tutor's "I can't make it"; nothing is
- * sent until Send is pressed); `header` sits above the messages, inside the scrolling column (e.g. a page header).
+ * A family conversation with a composer. A one-shot draft from `offerDraft` (e.g. a parent's "Ask about this invoice")
+ * pre-fills the composer; nothing is sent until Send is pressed. `header` sits above the messages, inside the scrolling
+ * column (e.g. a page header).
  */
-export function Conversation({ familyId, initialDraft, header }: { familyId: string; initialDraft?: string; header?: ReactNode }) {
+export function Conversation({ familyId, header }: { familyId: string; header?: ReactNode }) {
   const theme = useTheme();
   const me = useMe();
   const insets = useSafeAreaInsets();
@@ -63,7 +65,16 @@ export function Conversation({ familyId, initialDraft, header }: { familyId: str
   const contacts = useFamilyContacts(familyId);
   // A parent sender's relationship (Mother, Father…), by login. Tutors never see profile ids, so they see the name alone.
   const relationshipBySender = new Map((contacts.data ?? []).filter((c) => c.profileId).map((c) => [c.profileId!, RELATIONSHIP_LABELS[c.relationship]]));
-  const [draft, setDraft] = useState(initialDraft ?? '');
+  const [draft, setDraft] = useState(() => takeDraft(familyId) ?? '');
+  // A draft offered while this conversation is already open (a tab that stays mounted) replaces the composer text.
+  useEffect(
+    () =>
+      onDraftOffered(() => {
+        const text = takeDraft(familyId);
+        if (text !== undefined) setDraft(text);
+      }),
+    [familyId],
+  );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const scroll = useRef<ScrollView>(null);

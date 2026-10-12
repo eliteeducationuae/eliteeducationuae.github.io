@@ -1,7 +1,8 @@
 /**
  * Design-system kit (developer page): every block of the 2026 redesign in each of its states, for checking the
- * components against the prototypes in light and dark mode at phone and desktop widths. Admin only, linked from
- * nowhere; open /kit directly. Everything here is sample copy for the page itself and changes nothing.
+ * components against the prototypes in light and dark mode at phone and desktop widths. Admin only, in development and
+ * demo builds only, linked from nowhere; open /kit directly. Everything here is sample copy for the page itself and
+ * changes nothing.
  */
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
@@ -39,6 +40,7 @@ import {
   Txt,
   useToast,
 } from '@/components/ui';
+import { DEMO_MODE } from '@/config';
 import { AvatarColors, font, MasteryColors } from '@/constants/theme';
 import { useSession } from '@/data/session';
 import { useTheme } from '@/hooks/use-theme';
@@ -55,7 +57,8 @@ export default function Kit() {
   const [notify, setNotify] = useState(true);
   const [sms, setSms] = useState(false);
   const [draft, setDraft] = useState('');
-  if (role !== 'admin') return <Redirect href="/" />;
+  // A developer page: in a production build it does not exist, whoever opens it.
+  if ((!__DEV__ && !DEMO_MODE) || role !== 'admin') return <Redirect href="/" />;
 
   return (
     <Screen topInset>

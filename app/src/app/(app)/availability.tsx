@@ -13,12 +13,13 @@ import type { Availability, Tutor } from '@/domain/types';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const today = startOfDay(new Date());
 
 /** A tutor's weekly availability (what families can book) and time off. Admins can open it for any tutor. */
 export default function AvailabilityScreen() {
   const me = useMe();
-  const params = useLocalSearchParams<{ tutorId?: string }>();
+  const params = useLocalSearchParams<{ tutorId?: string; date?: string }>();
   const tutors = useTutors();
   const availability = useAvailability();
   const tutorId = params.tutorId ?? me.tutorId;
@@ -37,7 +38,7 @@ export default function AvailabilityScreen() {
         sub="Families can request lessons within these times, in 30-minute steps, whenever you are free."
       />
       <WeeklyEditor key={`${tutor.id}-${mine.length}`} tutor={tutor} initial={mine} />
-      <TimeOff tutor={tutor} />
+      <TimeOff tutor={tutor} initialDate={own && params.date && DATE.test(params.date) && params.date >= toDateKey(today) ? params.date : undefined} />
     </Screen>
   );
 }
@@ -119,17 +120,19 @@ function WeeklyEditor({ tutor, initial }: { tutor: Tutor; initial: Availability[
   );
 }
 
-function TimeOff({ tutor }: { tutor: Tutor }) {
+/** `initialDate` comes from a lesson's "I can’t make it": the form opens with that day filled in. */
+function TimeOff({ tutor, initialDate }: { tutor: Tutor; initialDate?: string }) {
   const me = useMe();
   const absences = useAbsences();
   const lookup = useLookup();
   const lessons = useLessons(today, addDays(today, 120));
   const saveAbsence = useAction(source.saveAbsence);
   const remove = useAction(source.deleteAbsence);
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
+  const [start, setStart] = useState(initialDate ?? '');
+  const [end, setEnd] = useState(initialDate ?? '');
   const [reason, setReason] = useState('');
   const [tried, setTried] = useState(false);
+  const [asked, setAsked] = useState(!!initialDate);
   const toast = useToast();
   const viewing = !!useViewing();
   const mine = (absences.data ?? []).filter((a) => a.tutorId === tutor.id && a.endDate >= toDateKey(today));
@@ -169,6 +172,12 @@ function TimeOff({ tutor }: { tutor: Tutor }) {
       </Group>
       {!viewing ? (
         <>
+          {asked && initialDate ? (
+            <Notice tone="info" icon="event_busy" title="Can’t make a lesson?">
+              Tell the office you can’t make it. The office will arrange cover and contact the family. Time off covers the whole day, so every lesson you have on{' '}
+              {formatDate(initialDate)} will need cover.
+            </Notice>
+          ) : null}
           <FieldsCard title="Add time off">
             <DateKeyField label="First day" value={start} onChange={setStart} />
             <DateKeyField label="Last day (optional)" value={end} onChange={setEnd} />
@@ -192,6 +201,7 @@ function TimeOff({ tutor }: { tutor: Tutor }) {
                 setEnd('');
                 setReason('');
                 setTried(false);
+                setAsked(false);
                 toast(clash ? `Time off added. Elite Education will arrange cover for ${clash} lesson${clash === 1 ? '' : 's'}.` : 'Time off added.');
               }}
             />

@@ -10,6 +10,7 @@ import { findBusyClashes, findClashes } from '@/domain/scheduling';
 import type { LessonRequest, RequestStatus } from '@/domain/types';
 
 import { Badge, Banner, Button, Card, ErrorNote, Field, Row, Txt, type Tone } from './ui';
+import { tutorChipLabel, useComplianceMap, VettingWarning } from './vetting';
 
 export const REQUEST_STATUS: Record<RequestStatus, { label: string; tone: Tone }> = {
   pending: { label: 'Waiting', tone: 'warning' },
@@ -29,6 +30,8 @@ export function RequestCard({ r }: { r: LessonRequest }) {
   const withdraw = useAction(source.withdrawRequest);
   // Google Calendar: a busy time is only a warning; the office may still approve.
   const busyBlocks = useBusyBlocks(today, addDays(today, 60), r.tutorId);
+  const vetting = useComplianceMap();
+  const tutorName = lookup.tutor(r.tutorId)?.fullName ?? 'the tutor';
   const [response, setResponse] = useState('');
   const s = REQUEST_STATUS[r.status];
   const original = r.lessonId ? (lessons.data ?? []).find((l) => l.id === r.lessonId) : undefined;
@@ -50,7 +53,7 @@ export function RequestCard({ r }: { r: LessonRequest }) {
             {r.subject ? ` · ${r.subject}` : ''}
           </Txt>
           <Txt>
-            {formatDay(r.start)} at {formatTime(r.start)} with {lookup.tutor(r.tutorId)?.fullName}
+            {formatDay(r.start)} at {formatTime(r.start)} with {me.role === 'admin' ? tutorChipLabel(tutorName, vetting.get(r.tutorId)) : tutorName}
           </Txt>
           {original ? <Txt variant="muted">Instead of {formatDay(original.start)} {formatTime(original.start)}</Txt> : null}
           {me.role === 'admin' ? <Txt variant="small">{lookup.family(r.familyId)?.parentName} · requested {relativeDay(r.createdAt).toLowerCase()}</Txt> : null}
@@ -68,6 +71,7 @@ export function RequestCard({ r }: { r: LessonRequest }) {
 
       {r.status === 'pending' && me.role === 'admin' ? (
         <>
+          <VettingWarning tutorId={r.tutorId} action="lesson" checksLink />
           <Field label="Reply (optional)" value={response} onChangeText={setResponse} placeholder="For example: Confirmed. Or: Would 5pm suit instead?" />
           <ErrorNote error={decide.error} />
           <Row gap={Spacing.two}>

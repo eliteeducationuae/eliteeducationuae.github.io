@@ -1,8 +1,8 @@
 /**
  * The lesson page as the lesson's tutor sees it (2026 redesign). The tutor sees their own pay, never the
- * family's price, and never the family's email or phone. "I can't make it" writes to the office in the family
- * conversation (which the office reads); the office then arranges a new time or cover. A tutor never cancels
- * a lesson or creates a charge from here.
+ * family's price, and never the family's email or phone. "I can't make it" opens Availability to book time off
+ * for the lesson's date; the office sees it as "Cover needed" on Today, arranges cover and contacts the family.
+ * A tutor never cancels a lesson, writes to the family about it, or creates a charge from here.
  */
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
@@ -15,7 +15,7 @@ import { LessonVettingNote } from '@/components/vetting';
 import { useEnrolments, useLesson, useLessonPlan, useLookup, useNotes, useTopicLookup } from '@/data/hooks';
 import { useMe, useViewing } from '@/data/session';
 import { formatAED } from '@/domain/billing';
-import { formatTime, minutesBetween, relativeDay } from '@/domain/dates';
+import { formatTime, minutesBetween, relativeDay, toDateKey } from '@/domain/dates';
 import { lessonSubject } from '@/domain/enrolments';
 import { isPlanEmpty } from '@/domain/plans';
 import { safeMeetingUrl } from '@/lib/safe-url';
@@ -60,7 +60,7 @@ export function TutorLessonPage({ id }: { id: string }) {
   const p = plan.data && !isPlanEmpty(plan.data) ? plan.data : null;
   const openPlan = () => router.push({ pathname: '/plan/[id]', params: { id: l.id } });
   const openRecord = () => router.push({ pathname: '/complete/[id]', params: { id: l.id } });
-  const draftFor = `Hello. I’m sorry, but I can’t make ${names}’s lesson on ${longDay(l.start)} at ${formatTime(l.start)}, because `;
+  const openTimeOff = () => router.push({ pathname: '/availability', params: { date: toDateKey(new Date(l.start)) } });
 
   return (
     <Screen topInset onRefresh={() => lesson.refetch()} refreshing={lesson.isRefetching}>
@@ -79,7 +79,7 @@ export function TutorLessonPage({ id }: { id: string }) {
       ) : null}
       {l.status === 'completed' || l.status === 'no-show' ? (
         <Notice tone="good" title={l.status === 'no-show' ? 'Recorded as a no-show' : 'Recorded'}>
-          {l.status === 'no-show' ? 'The office has been told that the student did not attend.' : 'The note has gone to the family and the lesson is on your pay.'}
+          {l.status === 'no-show' ? 'Recorded: the student did not attend.' : 'The note has gone to the family and the lesson is on your pay.'}
         </Notice>
       ) : null}
       {isCancelled(l) ? (
@@ -176,17 +176,12 @@ export function TutorLessonPage({ id }: { id: string }) {
       {cantMake ? (
         <Notice tone="info" icon="event_busy" title="Tell the office">
           <View style={{ gap: 10 }}>
-            <Txt style={{ fontSize: 14.5, lineHeight: 21.75 }}>
-              Write to the office in the family’s conversation, which the office reads. The family can see it too. The lesson stays booked until the office arranges a new time or cover with the family; you are never asked to cancel it yourself.
+            <Txt style={{ fontSize: 14.5, lineHeight: 21.75 }}>Tell the office you can’t make it. The office will arrange cover and contact the family.</Txt>
+            <Txt variant="note">
+              Add time off for {longDay(l.start)}. Time off covers the whole day, so any other lessons you have that day will need cover too. The lesson stays booked until the office has arranged cover.
             </Txt>
             <Actions>
-              {families[0] ? (
-                <Button
-                  title="Write the message"
-                  icon="forum"
-                  onPress={() => router.push({ pathname: '/messages/[familyId]', params: { familyId: families[0], draft: draftFor } })}
-                />
-              ) : null}
+              <Button title="Add time off" icon="beach_access" onPress={openTimeOff} />
               <Button title="Not now" variant="secondary" onPress={() => setCantMake(false)} />
             </Actions>
           </View>

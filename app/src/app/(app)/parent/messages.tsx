@@ -1,4 +1,3 @@
-import { useLocalSearchParams } from 'expo-router';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,8 +14,7 @@ import { useTheme } from '@/hooks/use-theme';
 /** Parents have a single conversation with Elite Education and their children's tutors. */
 export default function ParentMessages() {
   const me = useMe();
-  // "Ask about this invoice" and similar links arrive with a draft for the composer (?draft=…); nothing is sent until Send.
-  const { draft } = useLocalSearchParams<{ draft?: string }>();
+  // "Ask about this invoice" and similar buttons leave a one-shot draft for the composer (lib/pending-draft), never in the URL.
   if (!me.familyId) {
     return (
       <Screen topInset>
@@ -25,7 +23,7 @@ export default function ParentMessages() {
       </Screen>
     );
   }
-  return <Conversation key={draft ?? ''} familyId={me.familyId} initialDraft={draft} header={<MessagesHeader />} />;
+  return <Conversation familyId={me.familyId} header={<MessagesHeader />} />;
 }
 
 /** "Messages · Elite Education", with who is in the conversation: the office and the children's tutors. */

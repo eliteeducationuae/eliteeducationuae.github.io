@@ -34,7 +34,7 @@ import { findBusyClashes, findClashes, lessonsDuringAbsence } from '@/domain/sch
 import { withoutSpam } from '@/domain/spam';
 import { tutorInvoiceTotal } from '@/domain/tutor-pay';
 import type { LessonRequest, StudentReport, TutorCompliance } from '@/domain/types';
-import { needsAttention } from '@/domain/vetting';
+import { isCleared, needsAttention } from '@/domain/vetting';
 import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { plural } from '@/lib/id';
@@ -167,7 +167,12 @@ export function useDecisions(): { items: Decision[]; ready: boolean; error: unkn
           ? `The ${familyName(r.familyId)} family would like to move ${firstName(student)}’s ${subject}lesson${original ? ` on ${formatDay(original.start)}` : ''} to ${at}.`
           : `The ${familyName(r.familyId)} family would like an extra ${subject}lesson for ${firstName(student)}, ${at}.`;
       const tutor = firstName(tutorName(r.tutorId));
+      // Police clearance: an uncleared tutor's request is never approved in one tap here. The card opens Lesson
+      // requests, which shows the clearance warning (and the override form) before Approve.
+      const c = (compliance.data ?? []).find((x) => x.tutorId === r.tutorId);
+      const uncleared = !!c && !isCleared(c.vettingStatus);
       const body = [
+        c && uncleared ? `${cap(checkLine(c))} for ${tutorName(r.tutorId)}. Open the request to check before approving.` : '',
         clash.length
           ? 'This now clashes with another lesson, so it cannot be approved as it stands. Decline it and suggest another time.'
           : gBusy.length
@@ -194,13 +199,19 @@ export function useDecisions(): { items: Decision[]; ready: boolean; error: unkn
         when: relativeDay(r.createdAt, now),
         title,
         body,
-        primary: {
-          label: r.kind === 'reschedule' ? 'Approve the change' : 'Approve',
-          writes: true,
-          disabled: clash.length > 0,
-          busy: busyKey === key,
-          onPress: () => confirm('Approve this request?', `${firstName(student)}’s lesson will be booked for ${formatDay(r.start)} at ${formatTime(r.start)}.`, run(true), 'Approve'),
-        },
+        primary: uncleared
+          ? {
+              label: 'Open the request',
+              onPress: open('/manage/requests'),
+              accessibilityLabel: `Open the request: ${tutorName(r.tutorId)}’s police clearance is not verified`,
+            }
+          : {
+              label: r.kind === 'reschedule' ? 'Approve the change' : 'Approve',
+              writes: true,
+              disabled: clash.length > 0,
+              busy: busyKey === key,
+              onPress: () => confirm('Approve this request?', `${firstName(student)}’s lesson will be booked for ${formatDay(r.start)} at ${formatTime(r.start)}.`, run(true), 'Approve'),
+            },
         secondary: {
           label: 'Decline',
           writes: true,

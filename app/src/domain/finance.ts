@@ -155,11 +155,19 @@ export function revenueBySubject(charges: Charge[], lessons: Lesson[], packages:
     .sort((a, b) => b.revenue - a.revenue || a.subject.localeCompare(b.subject));
 }
 
-/** RFC 4180 CSV. */
+/** A plain number written as text, e.g. "-120.50" or "1,250". Left alone by the formula guard below. */
+const NUMERIC = /^[-+]?(\d{1,3}(,\d{3})+|\d+)?(\.\d+)?$/;
+
+/**
+ * RFC 4180 CSV. Text that a spreadsheet would read as a formula (starting with =, +, -, @, a tab or a carriage
+ * return) is prefixed with an apostrophe, so a name or note typed into the app can never run in Excel or Sheets.
+ * Numbers, and numbers written as text such as "-120.50", are left exactly as they are.
+ */
 export function toCSV(rows: (string | number | undefined | null)[][]): string {
   const cell = (v: string | number | undefined | null) => {
-    const s = v === undefined || v === null ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = v === undefined || v === null ? '' : String(v);
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !NUMERIC.test(s)) s = `'${s}`;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return rows.map((r) => r.map(cell).join(',')).join('\r\n');
 }

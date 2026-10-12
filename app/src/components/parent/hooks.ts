@@ -4,6 +4,7 @@ import { useInvoices } from '@/data/hooks';
 import { invoiceTotals } from '@/domain/billing';
 import { autopayHoldsInvoice } from '@/domain/payments';
 import type { Invoice } from '@/domain/types';
+import { offerDraft } from '@/lib/pending-draft';
 
 /** Issued invoices that still ask the family for money, oldest due first. */
 export function payableInvoices(list: Invoice[] | undefined): Invoice[] {
@@ -30,5 +31,6 @@ export function useBillingBadge(): number {
 
 /** Open the family conversation, optionally with a draft already typed (nothing is sent until they press Send). */
 export function openMessages(draft?: string) {
-  router.navigate(draft ? { pathname: '/parent/messages', params: { draft } } : '/parent/messages');
+  if (draft) offerDraft(draft);
+  router.navigate('/parent/messages');
 }
