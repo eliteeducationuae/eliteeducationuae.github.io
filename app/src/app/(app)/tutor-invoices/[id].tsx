@@ -1,19 +1,17 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { CustomBadge } from '@/components/rates';
 import { periodLabel, TUTOR_INVOICE_STATUS } from '@/components/tutor-pay';
-import { Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Actions, Button, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, Loading, Notice, PageHeader, Row, Screen, useToast } from '@/components/ui';
 import { source } from '@/data';
-import { useAction, useLookup, usePaymentDetails, useSettings, useTutorInvoices } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useAction, useLessons, useLookup, usePaymentDetails, useSettings, useTutorInvoices } from '@/data/hooks';
+import { useMe, useViewing } from '@/data/session';
 import { formatAED } from '@/domain/billing';
-import { formatDate, relativeDay } from '@/domain/dates';
+import { formatDate, formatDay, relativeDay } from '@/domain/dates';
 import { formatIban, maskIban, tutorInvoiceTotal } from '@/domain/tutor-pay';
 import type { TutorInvoice } from '@/domain/types';
-import { useTheme } from '@/hooks/use-theme';
 import { confirm } from '@/lib/confirm';
 import { plural } from '@/lib/id';
 import { shareTutorInvoice } from '@/lib/tutor-invoice-pdf';
@@ -30,7 +28,6 @@ export default function TutorInvoiceScreen() {
 type Extra = { description: string; quantity: string; unitPrice: string };
 
 function Detail({ inv }: { inv: TutorInvoice }) {
-  const theme = useTheme();
   const me = useMe();
   const lookup = useLookup();
   const settings = useSettings();
@@ -47,6 +44,10 @@ function Detail({ inv }: { inv: TutorInvoice }) {
   const [comment, setComment] = useState('');
   const [reference, setReference] = useState('');
   const [revealed, setRevealed] = useState(false);
+  const toast = useToast();
+  const viewing = !!useViewing();
+  const monthStart = new Date(`${inv.periodStart}T00:00:00`);
+  const monthLessons = useLessons(monthStart, new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1));
 
   const isTutor = me.tutorId === inv.tutorId && me.role === 'tutor';
   const editable = (inv.status === 'draft' || inv.status === 'rejected') && (isTutor || me.role === 'admin');
@@ -60,148 +61,152 @@ function Detail({ inv }: { inv: TutorInvoice }) {
   const saveExtras = () =>
     update.mutateAsync([inv.id, extras.map((e) => ({ description: e.description, quantity: Number(e.quantity), unitPrice: Number(e.unitPrice) })), notes]);
 
+  // Lessons in this month that ended but are not recorded yet, so they are not on the invoice.
+  const unrecorded = (monthLessons.data ?? []).filter((l) => l.tutorId === inv.tutorId && l.status === 'scheduled' && new Date(l.end) < new Date());
+  const total = editable ? draftTotal : tutorInvoiceTotal(inv.items);
+
   return (
-    <Screen
-      footer={
-        isTutor && editable ? (
+    <Screen topInset>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader
+        back
+        kicker={`Invoice · ${periodLabel(inv)}`}
+        title={formatAED(total)}
+        sub={[`${plural(lessonLines.length, 'lesson')}`, inv.number, s.label, me.role === 'admin' ? tutor?.fullName : null].filter(Boolean).join(' · ')}
+      />
+      {inv.status === 'rejected' && inv.adminComment ? <Notice tone="danger" title="Changes requested">{inv.adminComment}</Notice> : null}
+      {inv.status === 'approved' && inv.adminComment ? <Notice tone="info">{inv.adminComment}</Notice> : null}
+      {inv.status === 'paid' ? (
+        <Notice tone="good" title="Paid">
+          {`${inv.paidAt ? `Paid on ${formatDate(inv.paidAt)}` : 'Paid'}${inv.paymentReference ? ` · reference ${inv.paymentReference}` : ''}.`}
+        </Notice>
+      ) : inv.submittedAt && inv.status === 'submitted' ? (
+        <Notice tone="info" icon="schedule">{`Submitted ${relativeDay(inv.submittedAt).toLowerCase()}. The office will review it.`}</Notice>
+      ) : null}
+      {editable && unrecorded.length ? (
+        <Notice
+          tone="warn"
+          title={unrecorded.length === 1 ? 'A lesson is not recorded' : `${unrecorded.length} lessons are not recorded`}
+          link={isTutor ? { label: 'Record it now', onPress: () => router.push({ pathname: '/complete/[id]', params: { id: unrecorded[0].id } }) } : undefined}>
+          {`${unrecorded.map((l) => `${formatDay(l.start)} with ${lookup.studentNames(l.studentIds)}`).join(', ')} ${unrecorded.length === 1 ? 'is' : 'are'} not included yet. Record ${unrecorded.length === 1 ? 'it' : 'them'}, then refresh this invoice.`}
+        </Notice>
+      ) : null}
+
+      <Group
+        title={`Lessons (${lessonLines.length})`}
+        link={editable && !viewing ? { label: refresh.isPending ? 'Refreshing…' : 'Refresh from lessons', onPress: () => refresh.mutate([inv.tutorId, inv.periodStart]) } : undefined}
+        note={lessonLines.length ? undefined : 'No taught lessons this month yet.'}>
+        {lessonLines.map((i, n) => (
+          <GroupRow
+            key={n}
+            icon="school"
+            title={i.description}
+            titleWeight="regular"
+            note={`${plural(i.quantity, 'hour')} at ${formatAED(i.unitPrice)} per hour`}
+            value={formatAED(i.quantity * i.unitPrice)}
+            valueTone="text">
+            {i.rateSource === 'custom' ? (
+              <Row style={{ marginTop: 4 }}>
+                <CustomBadge />
+              </Row>
+            ) : null}
+          </GroupRow>
+        ))}
+      </Group>
+
+      {editable && !viewing ? (
+        <FieldsCard title="Extras">
+          {extras.map((e, n) => (
+            <View key={n} style={{ gap: 12 }}>
+              <Field label="Description" value={e.description} onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, description: t } : y)))} placeholder="e.g. Mock exam marking" />
+              <Row gap={10} style={{ alignItems: 'flex-end' }}>
+                <View style={{ flex: 1 }}>
+                  <Field label="Qty / hours" value={e.quantity} keyboardType="decimal-pad" onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, quantity: t } : y)))} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field label="Rate (AED)" value={e.unitPrice} keyboardType="decimal-pad" onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, unitPrice: t } : y)))} />
+                </View>
+                <Button title="Remove" size="sm" variant="secondary" onPress={() => setExtras((x) => x.filter((_, j) => j !== n))} />
+              </Row>
+            </View>
+          ))}
+          <Row>
+            <Button title="Add an extra line" icon="add" size="sm" variant="secondary" onPress={() => setExtras((x) => [...x, { description: '', quantity: '1', unitPrice: String(tutor?.hourlyPay ?? '') }])} />
+          </Row>
+          <Field label="Note to Elite Education (optional)" value={notes} onChangeText={setNotes} multiline />
+        </FieldsCard>
+      ) : (
+        <Group title="Extras" note={inv.items.some((i) => !i.lessonId) || inv.notes ? undefined : 'None'}>
+          {inv.items
+            .filter((i) => !i.lessonId)
+            .map((i, n) => (
+              <GroupRow key={n} icon="add" title={i.description} titleWeight="regular" note={`${i.quantity} × ${formatAED(i.unitPrice)}`} value={formatAED(i.quantity * i.unitPrice)} valueTone="text" />
+            ))}
+          {inv.notes ? <GroupRow icon="notes" title="Note" note={`“${inv.notes}”`} /> : null}
+        </Group>
+      )}
+
+      <Group title="Pay to">
+        {bank.data ? (
+          <GroupRow
+            icon="account_balance"
+            title={`${bank.data.accountName} · ${bank.data.bankName}`}
+            note={revealed ? formatIban(bank.data.iban) : maskIban(bank.data.iban)}
+            action={me.role === 'admin' ? { label: revealed ? 'Hide' : 'Reveal', onPress: () => setRevealed(!revealed) } : undefined}
+          />
+        ) : (
+          <GroupRow
+            icon="account_balance"
+            tone="warn"
+            title="No bank details on file yet"
+            note={isTutor ? 'Add them so that we can pay you' : undefined}
+            onPress={isTutor ? () => router.push('/payment-details') : undefined}
+          />
+        )}
+      </Group>
+
+      {me.role === 'admin' && inv.status === 'submitted' ? (
+        <FieldsCard title="Review">
+          <Field label="Comment (optional)" value={comment} onChangeText={setComment} placeholder="Shown to the tutor" />
+          <Actions>
+            <Button title="Approve" loading={review.isPending} onPress={() => review.mutate([inv.id, true, comment])} />
+            <Button title="Send back" variant="danger" loading={review.isPending} onPress={() => review.mutate([inv.id, false, comment])} />
+          </Actions>
+        </FieldsCard>
+      ) : null}
+      {me.role === 'admin' && inv.status === 'approved' ? (
+        <FieldsCard title="Mark as paid">
+          <Field label="Bank transfer reference (optional)" value={reference} onChangeText={setReference} />
+          <Button
+            title={`Mark ${formatAED(tutorInvoiceTotal(inv.items))} paid`}
+            loading={pay.isPending}
+            onPress={() => confirm('Mark as paid?', `${tutor?.fullName} will be notified that the payment has been sent.`, () => pay.mutate([inv.id, reference]), 'Mark paid')}
+          />
+        </FieldsCard>
+      ) : null}
+      {editable && me.role === 'admin' ? (
+        <Actions>
+          <Button title="Save draft" variant="secondary" loading={update.isPending} disabled={!extrasValid} onPress={saveExtras} />
+        </Actions>
+      ) : null}
+
+      <ErrorNote error={update.error ?? submit.error ?? review.error ?? pay.error ?? refresh.error} />
+      <Actions>
+        {isTutor && editable && !viewing ? (
           <Button
             title={`Submit ${formatAED(draftTotal)}`}
-            variant="gold"
-            style={{ flex: 1 }}
+            icon="send"
             disabled={!extrasValid || (lessonLines.length === 0 && extras.length === 0)}
             loading={submit.isPending || update.isPending}
             onPress={async () => {
               await saveExtras();
               await submit.mutateAsync([inv.id]);
+              toast('Invoice submitted. The office will review it and let you know when it is paid.');
             }}
           />
-        ) : undefined
-      }>
-      <Stack.Screen options={{ title: inv.number }} />
-      <Card style={{ gap: Spacing.two }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="h2">{formatAED(editable ? draftTotal : tutorInvoiceTotal(inv.items))}</Txt>
-            <Txt variant="muted">
-              {tutor?.fullName} · {periodLabel(inv)}
-            </Txt>
-          </View>
-          <Badge label={s.label} tone={s.tone} />
-        </Row>
-        {inv.submittedAt ? <Txt variant="small">Submitted {relativeDay(inv.submittedAt).toLowerCase()}</Txt> : null}
-        {inv.paidAt ? <Txt variant="small">Paid {formatDate(inv.paidAt)}{inv.paymentReference ? ` · ref ${inv.paymentReference}` : ''}</Txt> : null}
-      </Card>
-      {inv.status === 'rejected' && inv.adminComment ? <Banner tone="danger" icon="alert">Changes requested: {inv.adminComment}</Banner> : null}
-      {inv.status === 'approved' && inv.adminComment ? <Banner tone="info">{inv.adminComment}</Banner> : null}
-
-      <Section
-        title={`Lessons (${lessonLines.length})`}
-        action={editable ? <Button title="Refresh from lessons" size="sm" variant="ghost" loading={refresh.isPending} onPress={() => refresh.mutate([inv.tutorId, inv.periodStart])} /> : undefined}>
-        <Card style={{ gap: Spacing.two }}>
-          {lessonLines.length === 0 ? <Txt variant="muted">No taught lessons this month yet.</Txt> : null}
-          {lessonLines.map((i, n) => (
-            <Row key={n} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.two}>
-              {/* The description keeps the full width; the hours, rate and any Custom badge sit beneath it. */}
-              <View style={{ flex: 1, gap: 2 }}>
-                <Txt>{i.description}</Txt>
-                <Row gap={Spacing.two} wrap>
-                  <Txt variant="muted">
-                    {plural(i.quantity, 'hour')} at {formatAED(i.unitPrice)} per hour
-                  </Txt>
-                  {i.rateSource === 'custom' ? <CustomBadge /> : null}
-                </Row>
-              </View>
-              <Txt style={{ width: 90, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{formatAED(i.quantity * i.unitPrice)}</Txt>
-            </Row>
-          ))}
-        </Card>
-      </Section>
-
-      <Section title="Extras">
-        {editable ? (
-          <>
-            {extras.map((e, n) => (
-              <Card key={n} style={{ gap: Spacing.two }}>
-                <Field label="Description" value={e.description} onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, description: t } : y)))} placeholder="e.g. Mock exam marking" />
-                <Row gap={Spacing.two}>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Qty / hours" value={e.quantity} keyboardType="decimal-pad" onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, quantity: t } : y)))} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Rate (AED)" value={e.unitPrice} keyboardType="decimal-pad" onChangeText={(t) => setExtras((x) => x.map((y, j) => (j === n ? { ...y, unitPrice: t } : y)))} />
-                  </View>
-                  <Button title="Remove" size="sm" variant="danger" style={{ marginTop: 18 }} onPress={() => setExtras((x) => x.filter((_, j) => j !== n))} />
-                </Row>
-              </Card>
-            ))}
-            <Button title="Add an extra line" icon="plus" size="sm" variant="secondary" onPress={() => setExtras((x) => [...x, { description: '', quantity: '1', unitPrice: String(tutor?.hourlyPay ?? '') }])} />
-            <Field label="Note to Elite Education (optional)" value={notes} onChangeText={setNotes} multiline />
-            {!isTutor ? <Button title="Save draft" variant="secondary" loading={update.isPending} disabled={!extrasValid} onPress={saveExtras} /> : null}
-          </>
-        ) : (
-          <Card style={{ gap: Spacing.one }}>
-            {inv.items.filter((i) => !i.lessonId).length === 0 ? <Txt variant="muted">None</Txt> : null}
-            {inv.items
-              .filter((i) => !i.lessonId)
-              .map((i, n) => (
-                <Row key={n} style={{ justifyContent: 'space-between' }}>
-                  <Txt style={{ flex: 1 }}>
-                    {i.description} ({i.quantity} × {formatAED(i.unitPrice)})
-                  </Txt>
-                  <Txt>{formatAED(i.quantity * i.unitPrice)}</Txt>
-                </Row>
-              ))}
-            {inv.notes ? <Txt variant="muted">“{inv.notes}”</Txt> : null}
-          </Card>
-        )}
-      </Section>
-
-      <Card style={{ gap: Spacing.two }}>
-        <Txt variant="label">Pay to</Txt>
-        {bank.data ? (
-          <>
-            <Txt>
-              {bank.data.accountName} · {bank.data.bankName}
-            </Txt>
-            <Row gap={Spacing.two}>
-              <Txt style={{ flex: 1, fontVariant: ['tabular-nums'] }} selectable={revealed}>
-                {revealed ? formatIban(bank.data.iban) : maskIban(bank.data.iban)}
-              </Txt>
-              {me.role === 'admin' ? <Button title={revealed ? 'Hide' : 'Reveal'} size="sm" variant="ghost" onPress={() => setRevealed(!revealed)} /> : null}
-            </Row>
-          </>
-        ) : (
-          <Txt variant="muted" style={{ color: theme.warning }}>
-            No bank details on file yet.
-          </Txt>
-        )}
-      </Card>
-
-      {me.role === 'admin' && inv.status === 'submitted' ? (
-        <Card style={{ gap: Spacing.three }}>
-          <Txt variant="h3">Review</Txt>
-          <Field label="Comment (optional)" value={comment} onChangeText={setComment} placeholder="Shown to the tutor" />
-          <Row gap={Spacing.two}>
-            <Button title="Send back" variant="danger" style={{ flex: 1 }} loading={review.isPending} onPress={() => review.mutate([inv.id, false, comment])} />
-            <Button title="Approve" style={{ flex: 1 }} loading={review.isPending} onPress={() => review.mutate([inv.id, true, comment])} />
-          </Row>
-        </Card>
-      ) : null}
-      {me.role === 'admin' && inv.status === 'approved' ? (
-        <Card style={{ gap: Spacing.three }}>
-          <Txt variant="h3">Mark as paid</Txt>
-          <Field label="Bank transfer reference (optional)" value={reference} onChangeText={setReference} />
-          <Button
-            title={`Mark ${formatAED(tutorInvoiceTotal(inv.items))} paid`}
-            variant="gold"
-            loading={pay.isPending}
-            onPress={() => confirm('Mark as paid?', `${tutor?.fullName} will be notified that the payment has been sent.`, () => pay.mutate([inv.id, reference]), 'Mark paid')}
-          />
-        </Card>
-      ) : null}
-
-      <Button title="Download PDF" icon="share" variant="secondary" onPress={() => shareTutorInvoice(inv, tutor, bank.data ?? null, settings.data?.businessName ?? 'Elite Education')} />
-      <ErrorNote error={update.error ?? submit.error ?? review.error ?? pay.error ?? refresh.error} />
+        ) : null}
+        <Button title="Download PDF" icon="download" variant="secondary" onPress={() => shareTutorInvoice(inv, tutor, bank.data ?? null, settings.data?.businessName ?? 'Elite Education')} />
+      </Actions>
     </Screen>
   );
 }

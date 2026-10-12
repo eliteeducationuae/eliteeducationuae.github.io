@@ -32,7 +32,7 @@ import { confirm, notify } from '@/lib/confirm';
 
 import { pickFile } from './file-pick';
 import { Icon } from './icon';
-import { Badge, Banner, Button, Card, Chip, ErrorNote, Field, ListItem, ProgressBar, Row, Txt, type Tone } from './ui';
+import { Badge, Banner, Button, Card, Chip, ErrorNote, Field, ListItem, Notice, ProgressBar, Row, Txt, type Tone } from './ui';
 import type { PickedFile } from '@/data/source';
 
 // ---------------------------------------------------------------------------
@@ -650,11 +650,11 @@ export function ClearanceBanner() {
     pending: 'Thank you for uploading your police clearance. We will let you know once it has been verified.',
   };
   return (
-    <Banner tone={c.vettingStatus === 'pending' ? 'info' : c.vettingStatus === 'expiring' ? 'warning' : 'danger'} icon={c.vettingStatus === 'pending' ? 'clock' : 'alert'}>
-      {message[c.vettingStatus]}{' '}
-      <Txt variant="muted" color="accent" accessibilityRole="link" onPress={() => router.push('/checks')}>
-        My checks
-      </Txt>
-    </Banner>
+    <Notice
+      tone={c.vettingStatus === 'pending' ? 'info' : c.vettingStatus === 'expiring' ? 'warn' : 'danger'}
+      icon={c.vettingStatus === 'pending' ? 'schedule' : 'verified_user'}
+      link={{ label: 'My checks', onPress: () => router.push('/checks') }}>
+      {message[c.vettingStatus]}
+    </Notice>
   );
 }

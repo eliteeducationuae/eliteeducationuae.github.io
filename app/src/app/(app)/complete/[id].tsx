@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -20,12 +20,27 @@ import { masteryByTopic, type Syllabus } from '@/domain/progress';
 import { DEFAULT_UNIT } from '@/domain/topics';
 import type { Attachment, AttendanceMark, TopicRating } from '@/domain/types';
 import { notify } from '@/lib/confirm';
+import { TutorRecordPage } from '@/components/tutor/record';
 
 type Rating = TopicRating['rating'];
 
-/** Record a lesson in one pass: attendance, topics + ratings, summary for the family, homework. */
-export default function CompleteLesson() {
+/** Record a lesson. The lesson's tutor gets the redesigned page; the office keeps this one. */
+export default function CompleteLessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  if (me.role === 'tutor') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <TutorRecordPage id={id} />
+      </>
+    );
+  }
+  return <CompleteLesson id={id} />;
+}
+
+/** Record a lesson in one pass: attendance, topics + ratings, summary for the family, homework. */
+function CompleteLesson({ id }: { id: string }) {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const enrolments = useEnrolments();

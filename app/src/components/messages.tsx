@@ -51,8 +51,8 @@ export function ThreadList() {
   );
 }
 
-/** A family conversation with a composer. */
-export function Conversation({ familyId }: { familyId: string }) {
+/** A family conversation with a composer. `initialDraft` pre-fills the composer (e.g. a tutor's "I can't make it"). */
+export function Conversation({ familyId, initialDraft }: { familyId: string; initialDraft?: string }) {
   const theme = useTheme();
   const me = useMe();
   const insets = useSafeAreaInsets();
@@ -60,7 +60,7 @@ export function Conversation({ familyId }: { familyId: string }) {
   const contacts = useFamilyContacts(familyId);
   // A parent sender's relationship (Mother, Father…), by login. Tutors never see profile ids, so they see the name alone.
   const relationshipBySender = new Map((contacts.data ?? []).filter((c) => c.profileId).map((c) => [c.profileId!, RELATIONSHIP_LABELS[c.relationship]]));
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const scroll = useRef<ScrollView>(null);

@@ -9,6 +9,7 @@ import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
 import { LessonPlanSection } from '@/components/plans';
+import { TutorLessonPage } from '@/components/tutor/lesson';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -39,6 +40,16 @@ import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 import { safeMeetingUrl } from '@/lib/safe-url';
 
+/** Tutors get their own page; it hides the native header and draws a PageHeader. */
+function TutorLesson({ id }: { id: string }) {
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <TutorLessonPage id={id} />
+    </>
+  );
+}
+
 export default function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
@@ -49,6 +60,8 @@ export default function LessonDetail() {
   const enrolments = useEnrolments();
   const topics = useTopicLookup();
   const [mode, setMode] = useState<'view' | 'cancel' | 'move' | 'cover'>('view');
+  // The lesson's tutor has their own page (redesign): their pay, never the family's price, and no cancelling.
+  if (me.role === 'tutor' && (!lesson.data || lesson.data.tutorId === me.tutorId)) return <TutorLesson id={id} />;
 
   if (lesson.isLoading || !lookup.ready) return <Loading />;
   const l = lesson.data;

@@ -8,10 +8,17 @@ import { useAction, useAnnouncements } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { relativeDay } from '@/domain/dates';
 import type { Audience } from '@/domain/types';
+import { TutorAnnouncements } from '@/components/tutor/announcements';
 
 const AUDIENCE_LABEL: Record<Audience, string> = { everyone: 'Everyone', parents: 'Parents', tutors: 'Tutors' };
 
-export default function Announcements() {
+export default function AnnouncementsScreen() {
+  const me = useMe();
+  // Tutors have the redesigned list; the office and families keep this page.
+  return me.role === 'tutor' ? <TutorAnnouncements /> : <Announcements />;
+}
+
+function Announcements() {
   const me = useMe();
   const list = useAnnouncements();
   return (

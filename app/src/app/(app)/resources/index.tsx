@@ -1,9 +1,9 @@
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { applyResourceFilter, openAttachment, ResourceCard, ResourceFilters, type ResourceFilterValue } from '@/components/resources';
-import { Button, Card, Chip, EmptyState, ErrorNote, Loading, Row, Screen, Txt } from '@/components/ui';
+import { Actions, Button, Card, Chip, EmptyState, ErrorNote, Loading, PageHeader, Row, Screen, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useResources, useStudents } from '@/data/hooks';
@@ -64,17 +64,23 @@ export default function ResourceLibrary() {
     notify('Shared', `${r.title} is now available to ${firstName} and their family.`);
   }
 
-  const addButton = <Button title="Add a resource" icon="plus" variant="gold" onPress={() => router.push('/resources/edit')} />;
+  const addButton = <Button title="Add a resource" icon="upload" onPress={() => router.push('/resources/edit')} />;
 
   return (
-    <Screen onRefresh={() => resources.refetch()} refreshing={resources.isRefetching}>
-      <Txt variant="muted">Keep worksheets, past papers and useful links in one place, then share them with a student or attach them to homework.</Txt>
+    <Screen topInset onRefresh={() => resources.refetch()} refreshing={resources.isRefetching}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader
+        back
+        kicker="Resources"
+        title="Resource library"
+        sub="Worksheets, past papers and links shared by Elite Education tutors. Share one with a student and it appears alongside their homework."
+      />
       {all.length === 0 ? (
         <EmptyState icon="folder" title="The library is empty" message="Add your first worksheet, past paper or link so that every tutor can use it." action={addButton} />
       ) : (
         <>
           <ResourceFilters resources={all} value={filter} onChange={setFilter} />
-          {addButton}
+          <Actions>{addButton}</Actions>
           <ErrorNote error={remove.error} />
           {list.length === 0 ? <Txt variant="muted">No resources match your search.</Txt> : null}
           {list.map((r) => (

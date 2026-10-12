@@ -2,13 +2,13 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { View } from 'react-native';
 
-import { LessonCard } from '@/components/lessons';
 import { openAttachment } from '@/components/resources';
-import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { Actions, Badge, Button, Card, Chip, ChipField, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, Loading, Notice, PageHeader, Row, Screen, Section, Toggle, Txt, useToast } from '@/components/ui';
+import { formatDay, formatTime, relativeDay } from '@/domain/dates';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useEnrolments, useLesson, useLessonPlan, useLessonPlans, useLookup, useResources, useTopicLookup } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import type { LessonPlanInput } from '@/data/source';
 import { enrolmentFor, lessonSubject } from '@/domain/enrolments';
 import { filterResources, resourceAttachment } from '@/domain/homework';
@@ -44,21 +44,23 @@ export function PlanEditor({ lessonId }: { lessonId: string | undefined }) {
   const l = lesson.data;
   if (!l) {
     return (
-      <Screen>
-        <EmptyState title="Lesson not found" />
+      <Screen topInset>
+        <PageHeader back kicker="Lesson plan" title="Lesson not found" />
       </Screen>
     );
   }
   if (!canPlan(me, l)) {
     return (
-      <Screen>
+      <Screen topInset>
+        <PageHeader back kicker="Lesson plan" title="Lesson plan" />
         <EmptyState icon="book" title="This lesson cannot be planned here" message="Only the lesson’s tutor or the office can write a lesson plan." />
       </Screen>
     );
   }
   if (l.status !== 'scheduled') {
     return (
-      <Screen>
+      <Screen topInset>
+        <PageHeader back kicker="Lesson plan" title="Lesson plan" />
         <EmptyState icon="check" title="This lesson has already taken place" message="Lesson plans can only be written for scheduled lessons." />
       </Screen>
     );
@@ -96,6 +98,8 @@ function PlanForm({
 }) {
   const lookup = useLookup();
   const topics = useTopicLookup();
+  const toast = useToast();
+  const viewing = !!useViewing();
   const save = useAction(source.saveLessonPlan);
   const remove = useAction(source.deleteLessonPlan);
 
@@ -141,6 +145,7 @@ function PlanForm({
     try {
       await save.mutateAsync([clean]);
       router.back();
+      toast(clean.sharedWithFamily ? 'Plan saved and shared with the family.' : 'Plan saved.');
     } catch {
       // Shown by ErrorNote.
     }
@@ -162,82 +167,82 @@ function PlanForm({
     );
   }
 
+  const names = students.map((st) => st.fullName.split(' ')[0]).join(' & ') || 'Lesson';
+  const when = relativeDay(lesson.start);
   return (
-    <Screen
-      footer={
-        <Row gap={Spacing.two} style={{ flex: 1 }}>
-          {plan ? <Button title="Remove plan" variant="danger" loading={remove.isPending} onPress={onRemove} /> : null}
-          <Button title="Save plan" icon="check" variant="gold" style={{ flex: 1 }} loading={save.isPending} onPress={onSave} />
-        </Row>
-      }>
-      <Section title="Objectives">
+    <Screen topInset>
+      <PageHeader
+        back
+        kicker="Lesson plan"
+        title={`${names} · ${when === 'Today' || when === 'Tomorrow' ? when : formatDay(lesson.start)}`}
+        sub={[formatTime(lesson.start), subject].filter(Boolean).join(' · ')}
+      />
+      <FieldsCard>
         <Field
-          label="Objectives"
+          label="Aims"
           multiline
           value={objectives}
           onChangeText={setObjectives}
           maxLength={PLAN_LIMITS.objectives}
-          placeholder="For example: Consolidate the method for completing the square and apply it to exam-style questions."
+          placeholder="What the student should be able to do by the end of the lesson"
         />
-      </Section>
-
-      <Section title="Topics">
-        {tree && tree.units.length ? (
-          <>
-            <Txt variant="small">Browse by unit</Txt>
-            <Row gap={Spacing.one} wrap>
-              {tree.units.map((u) => (
-                <Chip key={u.id} label={u.name} selected={browseUnit === u.name} onPress={() => setBrowseUnit(browseUnit === u.name ? null : u.name)} />
-              ))}
-            </Row>
-          </>
-        ) : (
-          <Txt variant="muted">No topic list has been set up for {subject ?? 'this subject'} yet.</Txt>
-        )}
-        {tree && browseUnit && tree.units.some((u) => u.name === browseUnit) ? (
-          <Card style={{ gap: Spacing.one }}>
-            <Row gap={Spacing.one} wrap>
+        <View style={{ gap: 8 }}>
+          <Txt variant="label">Topics</Txt>
+          {tree && tree.units.length ? (
+            <>
+              <Txt variant="small">Browse by unit</Txt>
+              <Row gap={8} wrap>
+                {tree.units.map((u) => (
+                  <Chip key={u.id} label={u.name} selected={browseUnit === u.name} onPress={() => setBrowseUnit(browseUnit === u.name ? null : u.name)} />
+                ))}
+              </Row>
+            </>
+          ) : (
+            <Txt variant="note">No topic list has been set up for {subject ?? 'this subject'} yet.</Txt>
+          )}
+          {tree && browseUnit && tree.units.some((u) => u.name === browseUnit) ? (
+            <Row gap={8} wrap>
               {tree.units
                 .find((u) => u.name === browseUnit)!
                 .topics.map((t) => (
                   <Chip key={t.id} label={t.name} selected={topicIds.includes(t.id)} onPress={() => setTopicIds((ids) => toggle(ids, t.id))} />
                 ))}
             </Row>
-          </Card>
-        ) : null}
-        {topicIds.length ? (
-          <View style={{ gap: Spacing.one }}>
-            <Txt variant="small">Planned topics</Txt>
-            <Row gap={Spacing.one} wrap>
-              {topicIds.map((t) => (
-                <Chip key={t} label={topics.name(t)} selected onPress={() => setTopicIds((ids) => toggle(ids, t))} />
+          ) : null}
+          {topicIds.length ? (
+            <>
+              <Txt variant="small">Planned topics</Txt>
+              <Row gap={8} wrap>
+                {topicIds.map((t) => (
+                  <Chip key={t} label={topics.name(t)} selected onPress={() => setTopicIds((ids) => toggle(ids, t))} />
+                ))}
+              </Row>
+            </>
+          ) : null}
+        </View>
+        <View style={{ gap: 8 }}>
+          <Field label="Resources from the library" value={query} onChangeText={setQuery} placeholder="Search the library" autoCapitalize="none" />
+          {offered.length || chosenElsewhere.length ? (
+            <Row gap={8} wrap>
+              {[...chosenElsewhere, ...offered].map((r) => (
+                <Chip key={r.id} label={r.title} selected={resourceIds.includes(r.id)} onPress={() => setResourceIds((ids) => toggle(ids, r.id))} />
               ))}
             </Row>
-          </View>
-        ) : null}
-      </Section>
+          ) : (
+            <Txt variant="note">{query.trim() ? 'Nothing in the library matches your search.' : 'The library has no resources yet.'}</Txt>
+          )}
+        </View>
+      </FieldsCard>
 
-      <Section title="Resources from the library">
-        <Field label="Search" value={query} onChangeText={setQuery} placeholder="Search the library" autoCapitalize="none" />
-        {offered.length || chosenElsewhere.length ? (
-          <Row gap={Spacing.one} wrap>
-            {[...chosenElsewhere, ...offered].map((r) => (
-              <Chip key={r.id} label={r.title} selected={resourceIds.includes(r.id)} onPress={() => setResourceIds((ids) => toggle(ids, r.id))} />
-            ))}
-          </Row>
-        ) : (
-          <Txt variant="muted">{query.trim() ? 'Nothing in the library matches your search.' : 'The library has no resources yet.'}</Txt>
-        )}
-      </Section>
-
-      <Section title="Planned homework">
+      <FieldsCard title="Planned homework">
         {homework.map((h) => (
-          <Card key={h.key} style={{ gap: Spacing.two }}>
+          <View key={h.key} style={{ gap: 12 }}>
             {students.length > 1 ? (
-              <Segmented
+              <ChipField
+                label="For"
                 value={h.studentId}
                 onChange={(studentId) => updateRow(h.key, { studentId })}
-                options={[{ value: EVERYONE, label: 'Everyone' }, ...students.map((s) => ({ value: s.id, label: s.fullName.split(' ')[0] }))]}
+                options={[{ value: EVERYONE, label: 'Everyone' }, ...students.map((st) => ({ value: st.id, label: st.fullName.split(' ')[0] }))]}
               />
             ) : null}
             <Field
@@ -258,41 +263,45 @@ function PlanForm({
             <Row>
               <Button title="Remove" icon="close" size="sm" variant="ghost" onPress={() => setHomework((rows) => rows.filter((r) => r.key !== h.key))} />
             </Row>
-          </Card>
+          </View>
         ))}
         {homework.length < PLAN_LIMITS.homework ? (
           <Row>
             <Button
               title="Add homework"
-              icon="plus"
+              icon="add"
               size="sm"
-              variant="outline"
+              variant="secondary"
               onPress={() =>
                 setHomework((rows) => [...rows, { key: rows.reduce((m, r) => Math.max(m, r.key), -1) + 1, studentId: EVERYONE, title: '', details: '' }])
               }
             />
           </Row>
-        ) : null}
-      </Section>
+        ) : (
+          <Txt variant="note">That is the most homework one plan can hold.</Txt>
+        )}
+      </FieldsCard>
 
-      <Section title="Sharing">
-        <Segmented
-          value={shared}
-          onChange={setShared}
-          options={[
-            { value: 'tutors', label: 'Tutors only' },
-            { value: 'family', label: 'Share with the family' },
-          ]}
+      <FieldsCard>
+        <Toggle
+          title="Share with the family"
+          note="Off: the plan is for you and the office. On: the family and student see the aims, topics, resources and planned homework before the lesson."
+          value={shared === 'family'}
+          onValueChange={(on) => setShared(on ? 'family' : 'tutors')}
         />
-        <Txt variant="small">When shared, parents and the student can see the objectives, topics, resources and planned homework before the lesson.</Txt>
-      </Section>
+      </FieldsCard>
+      <Notice tone="info" icon="visibility">
+        {shared === 'family' ? 'The family and the student will see this plan in their app.' : 'Only you and the office can see this plan.'}
+      </Notice>
 
-      {problem ? (
-        <Banner tone="danger" icon="alert">
-          {problem}
-        </Banner>
-      ) : null}
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
       <ErrorNote error={save.error ?? remove.error} />
+      {!viewing ? (
+        <Actions>
+          <Button title="Save plan" icon="check" loading={save.isPending} onPress={onSave} />
+          {plan ? <Button title="Remove plan" variant="secondary" icon="delete" loading={remove.isPending} onPress={onRemove} /> : null}
+        </Actions>
+      ) : null}
     </Screen>
   );
 }
@@ -381,10 +390,11 @@ function planWindow() {
   return { now, to: new Date(now.getTime() + 48 * 3_600_000) };
 }
 
-/** The tutor's lessons in the next 48 hours that have no plan yet. Renders nothing when all are planned. */
+/** The tutor's lessons in the next 48 hours that have no plan yet ("Plans to write"). Renders nothing when all are planned. */
 export function PlansDueCard({ lessons }: { lessons: Lesson[] }) {
   const me = useMe();
   const lookup = useLookup();
+  const enrolments = useEnrolments();
   const [range, setRange] = useState(planWindow);
   // Today stays mounted as a tab, so move the 48-hour window on whenever the screen comes back into view.
   useFocusEffect(
@@ -400,15 +410,22 @@ export function PlansDueCard({ lessons }: { lessons: Lesson[] }) {
   const due = lessonsNeedingPlan(lessons, plans.data ?? [], me.tutorId, range.now);
   if (!due.length) return null;
   return (
-    <Section title={`Lessons without a plan in the next 48 hours (${due.length})`}>
-      {due.map((l) => (
-        <View key={l.id} style={{ gap: Spacing.one }}>
-          <LessonCard lesson={l} lookup={lookup} perspective="tutor" showDate />
-          <Row>
-            <Button title="Write plan" icon="book" size="sm" variant="outline" onPress={() => router.push(planPath(l.id))} />
-          </Row>
-        </View>
-      ))}
-    </Section>
+    <Group title="Plans to write" meta="Next 48 hours">
+      {due.map((l) => {
+        const names = lookup.studentNames(l.studentIds);
+        const when = relativeDay(l.start, range.now);
+        const subject = lessonSubject(l, enrolments.data ?? []);
+        return (
+          <GroupRow
+            key={l.id}
+            icon="edit_note"
+            title={`${names} · ${when === 'Today' || when === 'Tomorrow' ? when.toLowerCase() : when} at ${formatTime(l.start)}`}
+            note={subject ? `${subject} · no plan yet` : 'No plan yet'}
+            onPress={() => router.push(planPath(l.id))}
+            accessibilityHint="Opens the lesson plan"
+          />
+        );
+      })}
+    </Group>
   );
 }

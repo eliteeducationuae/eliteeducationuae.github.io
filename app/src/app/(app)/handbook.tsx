@@ -1,13 +1,13 @@
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Markdown } from '@/components/markdown';
-import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
+import { Actions, Avatar, Badge, Button, Card, EmptyState, ErrorNote, ListItem, Loading, Notice, PageHeader, Row, Screen, Section, Txt, useToast } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useHandbookAcks, useHandbookVersions, useTutors } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { formatLongDate } from '@/domain/vetting';
 
 /** The tutor handbook: tutors read and acknowledge it; admins publish versions and follow acknowledgements. */
@@ -18,13 +18,17 @@ export default function Handbook() {
   const tutors = useTutors();
   const acknowledge = useAction(source.acknowledgeHandbook);
   const [viewing, setViewing] = useState<number | null>(null);
+  const viewingAs = !!useViewing();
+  const toast = useToast();
 
   if (versions.isLoading || acks.isLoading) return <Loading />;
   const list = versions.data ?? [];
   const latest = list[0];
   if (!latest) {
     return (
-      <Screen>
+      <Screen topInset>
+        <Stack.Screen options={{ headerShown: false }} />
+        <PageHeader back kicker="Elite Education" title="Tutor handbook" />
         <EmptyState
           icon="book"
           title="No handbook yet"
@@ -41,29 +45,25 @@ export default function Handbook() {
   const needsAck = isTutor && !myAck;
 
   return (
-    <Screen
-      footer={
-        needsAck ? (
-          <Button
-            title="I have read and agree to the handbook"
-            variant="gold"
-            style={{ flex: 1 }}
-            loading={acknowledge.isPending}
-            onPress={() => acknowledge.mutate([latest.version])}
-          />
-        ) : undefined
-      }>
+    <Screen topInset>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader
+        back
+        kicker="Elite Education"
+        title="Tutor handbook"
+        sub={`Version ${latest.version}, published ${formatLongDate(latest.publishedAt)}.`}
+      />
       {myAck ? (
-        <Banner tone="success" icon="check">
-          Acknowledged on {formatLongDate(myAck.acknowledgedAt)} (version {myAck.version}).
-        </Banner>
+        <Notice tone="good" title="Acknowledged">
+          {`You acknowledged version ${myAck.version} on ${formatLongDate(myAck.acknowledgedAt)}.`}
+        </Notice>
       ) : null}
       {needsAck ? (
-        <Banner tone="info" icon="book">
+        <Notice tone="info" icon="menu_book" title={`Tutor handbook, version ${latest.version}`}>
           {latest.version > 1
             ? `The handbook has been updated to version ${latest.version}. Please read it and confirm that you agree to it.`
             : 'Please read the handbook and confirm that you agree to it.'}
-        </Banner>
+        </Notice>
       ) : null}
       <ErrorNote error={acknowledge.error} />
       {me.role === 'admin' ? <Button title="Edit handbook" icon="doc" variant="outline" onPress={() => router.push('/handbook-edit')} /> : null}
@@ -79,6 +79,19 @@ export default function Handbook() {
         <Markdown text={shown.body} />
         {shown.version !== latest.version ? <Button title="Back to the current version" variant="secondary" size="sm" onPress={() => setViewing(null)} /> : null}
       </Card>
+      {needsAck && !viewingAs ? (
+        <Actions>
+          <Button
+            title="I have read and agree to the handbook"
+            icon="check"
+            loading={acknowledge.isPending}
+            onPress={async () => {
+              await acknowledge.mutateAsync([latest.version]);
+              toast('Thank you. Handbook acknowledged.');
+            }}
+          />
+        </Actions>
+      ) : null}
 
       {me.role === 'admin' ? (
         <Section title="Acknowledgements">

@@ -6,6 +6,7 @@ import { StudentAdmissionsLinks } from '@/components/admissions/entry-links';
 import { RiskNote, riskTone, useAtRisk } from '@/components/insights';
 import { FamilyContactsReadOnly } from '@/components/family-contacts';
 import { StudentOverview } from '@/components/student-overview';
+import { TutorStudentPage } from '@/components/tutor/student';
 import { Badge, Button, Card, EmptyState, Loading, Row, Screen, Txt } from '@/components/ui';
 import { ViewAsActions } from '@/components/view-as';
 import { Spacing } from '@/constants/theme';
@@ -24,6 +25,15 @@ export default function StudentPage() {
   if (!student) return <Screen><EmptyState title="Student not found" /></Screen>;
   const family = lookup.family(student.familyId);
   const risk = atRisk.list.find((r) => r.studentId === student.id);
+  // Tutors get the redesigned page (Overview, Notes, Homework, Topics), without the family's email or phone.
+  if (me.role === 'tutor') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <TutorStudentPage student={student} />
+      </>
+    );
+  }
 
   return (
     <Screen>
@@ -38,11 +48,11 @@ export default function StudentPage() {
         </Card>
       ) : null}
       <StudentOverview student={student} />
-      {family && (me.role === 'admin' || me.role === 'tutor') ? (
+      {family && me.role === 'admin' ? (
         <Card style={{ gap: 4 }}>
           <Txt variant="label">Family</Txt>
           <Txt variant="h3">{`${family.name} family`}</Txt>
-          {/* Tutors see the family's contacts by name and relationship only. */}
+          {/* Tutors have their own page (components/tutor/student.tsx): contacts by name and relationship only. */}
           {me.role === 'admin' ? (
             <Txt variant="muted">
               {family.email}

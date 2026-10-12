@@ -1,11 +1,10 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
-import { Banner, Button, Card, EmptyState, ErrorNote, Field, Loading, Row, Screen, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Actions, Button, EmptyState, ErrorNote, Field, FieldsCard, Group, GroupRow, Loading, PageHeader, Screen, useToast } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useLookup, usePaymentDetails } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { formatDate } from '@/domain/dates';
 import { formatIban, isValidIban, maskIban, normaliseIban } from '@/domain/tutor-pay';
 import type { PaymentDetails } from '@/domain/types';
@@ -21,9 +20,14 @@ export default function PaymentDetailsScreen() {
   if (details.isLoading) return <Loading />;
   const own = tutorId === me.tutorId;
   return (
-    <Screen>
-      <Stack.Screen options={{ title: own ? 'Payment details' : `${lookup.tutor(tutorId)?.fullName.split(' ')[0] ?? 'Tutor'}’s bank details` }} />
-      <Banner icon="alert">Your bank details are private. Only you and Elite Education’s administrators can see them, and they are never sent by email.</Banner>
+    <Screen topInset>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader
+        back
+        kicker="Pay"
+        title={own ? 'Payment details' : `${lookup.tutor(tutorId)?.fullName.split(' ')[0] ?? 'Tutor'}’s bank details`}
+        sub="Private: only you and Elite Education’s administrators can see them, and they are never sent by email."
+      />
       <Form key={details.data?.updatedAt ?? 'new'} tutorId={tutorId} existing={details.data ?? null} startEditing={own && !details.data} />
     </Screen>
   );
@@ -38,67 +42,79 @@ function Form({ tutorId, existing, startEditing }: { tutorId: string; existing: 
   const [iban, setIban] = useState(existing ? formatIban(existing.iban) : '');
   const [swift, setSwift] = useState(existing?.swift ?? '');
   const ibanOk = isValidIban(iban);
+  const [tried, setTried] = useState(false);
+  const toast = useToast();
+  const viewing = !!useViewing();
 
   if (!editing) {
     if (!existing) {
       return (
-        <EmptyState icon="money" title="No bank details yet" message="Please add the account into which we should pay you." action={<Button title="Add bank details" variant="gold" onPress={() => setEditing(true)} />} />
+        <EmptyState
+          icon="account_balance"
+          title="No bank details yet"
+          message="Please add the account into which we should pay you."
+          action={!viewing ? <Button title="Add bank details" onPress={() => setEditing(true)} /> : undefined}
+        />
       );
     }
     return (
-      <Card style={{ gap: Spacing.two }}>
-        <Txt variant="label">Account name</Txt>
-        <Txt variant="h3">{existing.accountName}</Txt>
-        <Txt variant="label">Bank</Txt>
-        <Txt>{existing.bankName}</Txt>
-        <Txt variant="label">IBAN</Txt>
-        <Row gap={Spacing.two}>
-          <Txt style={{ fontVariant: ['tabular-nums'], flex: 1 }} selectable={revealed}>
-            {revealed ? formatIban(existing.iban) : maskIban(existing.iban)}
-          </Txt>
-          <Button title={revealed ? 'Hide' : 'Reveal'} size="sm" variant="ghost" onPress={() => setRevealed(!revealed)} />
-        </Row>
-        {existing.swift ? (
-          <>
-            <Txt variant="label">SWIFT / BIC</Txt>
-            <Txt>{existing.swift}</Txt>
-          </>
+      <>
+        <Group>
+          <GroupRow icon="person" title="Account name" note={existing.accountName} />
+          <GroupRow icon="account_balance" title="Bank" note={existing.bankName} />
+          <GroupRow
+            icon="lock"
+            title="IBAN"
+            note={revealed ? formatIban(existing.iban) : maskIban(existing.iban)}
+            action={{ label: revealed ? 'Hide' : 'Reveal', onPress: () => setRevealed(!revealed), accessibilityLabel: revealed ? 'Hide the IBAN' : 'Reveal the IBAN' }}
+          />
+          {existing.swift ? <GroupRow icon="account_balance" title="SWIFT / BIC" note={existing.swift} /> : null}
+          {existing.updatedAt ? <GroupRow icon="schedule" title="Last updated" note={formatDate(existing.updatedAt)} titleWeight="regular" /> : null}
+        </Group>
+        {!viewing ? (
+          <Actions>
+            <Button title="Update details" icon="edit" variant="secondary" onPress={() => setEditing(true)} />
+          </Actions>
         ) : null}
-        {existing.updatedAt ? <Txt variant="small">Last updated {formatDate(existing.updatedAt)}</Txt> : null}
-        <Button title="Update details" variant="secondary" onPress={() => setEditing(true)} />
-      </Card>
+      </>
     );
   }
 
   return (
-    <Card style={{ gap: Spacing.three }}>
-      <Field label="Account holder name" value={accountName} onChangeText={setAccountName} autoCapitalize="words" />
-      <Field label="Bank" value={bankName} onChangeText={setBankName} placeholder="e.g. Emirates NBD" />
-      <Field
-        label="IBAN"
-        value={iban}
-        onChangeText={(t) => setIban(formatIban(t))}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        placeholder="AE07 0331 2345 6789 0123 456"
-        hint={iban && !ibanOk ? 'That IBAN does not look right. Please check it.' : 'UAE IBANs start with AE and have 23 characters.'}
-      />
-      <Field label="SWIFT / BIC (optional)" value={swift} onChangeText={(t) => setSwift(t.toUpperCase())} autoCapitalize="characters" />
-      <ErrorNote error={save.error} />
-      <Row gap={Spacing.two}>
-        {existing ? <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setEditing(false)} /> : null}
-        <Button
-          title="Save securely"
-          variant="gold"
-          style={{ flex: 1 }}
-          disabled={!accountName.trim() || !bankName.trim() || !ibanOk}
-          loading={save.isPending}
-          onPress={async () => {
-            await save.mutateAsync([{ tutorId, accountName, bankName, iban: normaliseIban(iban), swift: swift.trim() || undefined }]);
-            setEditing(false);
-          }}
+    <>
+      <FieldsCard>
+        <Field label="Account holder name" value={accountName} onChangeText={setAccountName} autoCapitalize="words" error={tried && !accountName.trim()} />
+        <Field label="Bank" value={bankName} onChangeText={setBankName} placeholder="e.g. Emirates NBD" error={tried && !bankName.trim()} />
+        <Field
+          label="IBAN"
+          value={iban}
+          onChangeText={(t) => setIban(formatIban(t))}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder="AE07 0331 2345 6789 0123 456"
+          error={(tried || !!iban) && !ibanOk ? 'That IBAN does not look right. Please check it.' : undefined}
+          hint="UAE IBANs start with AE and have 23 characters."
         />
-      </Row>
-    </Card>
+        <Field label="SWIFT / BIC (optional)" value={swift} onChangeText={(t) => setSwift(t.toUpperCase())} autoCapitalize="characters" />
+      </FieldsCard>
+      <ErrorNote error={save.error} />
+      {!viewing ? (
+        <Actions>
+          <Button
+            title="Save securely"
+            icon="lock"
+            loading={save.isPending}
+            onPress={async () => {
+              setTried(true);
+              if (!accountName.trim() || !bankName.trim() || !ibanOk) return;
+              await save.mutateAsync([{ tutorId, accountName, bankName, iban: normaliseIban(iban), swift: swift.trim() || undefined }]);
+              setEditing(false);
+              toast('Payment details saved');
+            }}
+          />
+          {existing ? <Button title="Cancel" variant="secondary" onPress={() => setEditing(false)} /> : null}
+        </Actions>
+      ) : null}
+    </>
   );
 }
