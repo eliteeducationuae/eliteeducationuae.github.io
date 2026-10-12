@@ -122,42 +122,46 @@ export function OnboardingChecklist({
         <Txt variant="small">
           {progress.done} of {progress.total} complete
         </Txt>
-        <ProgressBar value={(progress.done / Math.max(progress.total, 1)) * 100} color={progress.complete ? theme.success : undefined} />
+        <ProgressBar label="Onboarding steps complete" value={(progress.done / Math.max(progress.total, 1)) * 100} color={progress.complete ? theme.success : undefined} />
       </View>
-      {items.map((item) => {
-        const body = (
-          <Row gap={Spacing.two} style={{ alignItems: 'flex-start', paddingVertical: 4 }}>
-            <Icon name={item.done ? 'check' : 'circle'} size={20} color={item.done ? theme.success : theme.textMuted} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Row gap={Spacing.two} wrap>
-                <Txt style={{ flexShrink: 1 }}>{item.label}</Txt>
-                {item.optional ? <Badge label="Optional" /> : null}
-              </Row>
-              {item.detail ? <Txt variant="small">{item.detail}</Txt> : null}
-            </View>
-            {links && !item.done && !unlinked.includes(item.key) ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
-          </Row>
-        );
-        const spoken = `${item.label}${item.optional ? ', optional' : ''}, ${item.done ? 'complete' : 'to do'}`;
-        if (!links || item.done || unlinked.includes(item.key)) {
+      <View role="list" style={{ gap: Spacing.two }}>
+        {items.map((item) => {
+          const body = (
+            <Row gap={Spacing.two} style={{ alignItems: 'flex-start', paddingVertical: 4 }}>
+              <Icon name={item.done ? 'check' : 'circle'} size={20} color={item.done ? theme.success : theme.textMuted} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Row gap={Spacing.two} wrap>
+                  <Txt style={{ flexShrink: 1 }}>{item.label}</Txt>
+                  {item.optional ? <Badge label="Optional" /> : null}
+                </Row>
+                {item.detail ? <Txt variant="small">{item.detail}</Txt> : null}
+              </View>
+              {links && !item.done && !unlinked.includes(item.key) ? <Icon name="chevron" size={16} color={theme.textMuted} /> : null}
+            </Row>
+          );
+          const spoken = `${item.label}${item.optional ? ', optional' : ''}, ${item.done ? 'complete' : 'to do'}`;
+          if (!links || item.done || unlinked.includes(item.key)) {
+            return (
+              // Read-only: a list item read as one line ("…, complete"), not a checkbox and not focusable.
+              <View key={item.key} role="listitem" accessibilityLabel={spoken}>
+                {body}
+              </View>
+            );
+          }
           return (
-            <View key={item.key} accessible accessibilityRole="checkbox" accessibilityState={{ checked: item.done }} accessibilityLabel={spoken}>
-              {body}
+            <View key={item.key} role="listitem">
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={spoken}
+                accessibilityHint="Opens the page to complete this step"
+                onPress={() => router.navigate(CHECKLIST_LINKS[item.key])}
+                style={({ pressed }) => pressed && { opacity: 0.7 }}>
+                {body}
+              </Pressable>
             </View>
           );
-        }
-        return (
-          <Pressable
-            key={item.key}
-            accessibilityRole="link"
-            accessibilityLabel={spoken}
-            accessibilityHint="Opens the page to complete this step"
-            onPress={() => router.navigate(CHECKLIST_LINKS[item.key])}
-            style={({ pressed }) => pressed && { opacity: 0.7 }}>
-            {body}
-          </Pressable>
-        );
-      })}
+        })}
+      </View>
     </View>
   );
 }
@@ -217,7 +221,7 @@ export function TutorChecksSummary({ tutorId }: { tutorId: string }) {
         {progress.done} of {progress.total} onboarding steps complete
         {c.documentsPending ? ` · ${c.documentsPending} ${c.documentsPending === 1 ? 'document' : 'documents'} awaiting review` : ''}
       </Txt>
-      <ProgressBar value={(progress.done / Math.max(progress.total, 1)) * 100} />
+      <ProgressBar label="Onboarding steps complete" value={(progress.done / Math.max(progress.total, 1)) * 100} />
       <Button title="Open tutor checks" icon="check" variant="outline" size="sm" onPress={open} />
     </Card>
   );

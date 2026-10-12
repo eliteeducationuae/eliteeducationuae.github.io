@@ -93,7 +93,7 @@ function Profile({ family }: { family: Family }) {
         />
         <Figure label="Lesson credits" value={String(credits)} hint={credits ? 'left on packages' : 'no package'} />
         <Figure label="Payment" value={family.autopay ? 'Autopay' : 'Manual'} hint={family.savedCard ? 'card on file' : 'no card saved'} />
-        <Figure label="App access" value={canSignIn ? 'Signed up' : 'No login yet'} hint={canSignIn ? 'main contact can sign in' : 'not signed up yet'} tone={canSignIn ? undefined : 'warn'} />
+        <Figure label="App access" value={canSignIn ? 'Signed up' : 'Not signed up yet'} hint={canSignIn ? 'main contact can sign in' : 'main contact has no account'} tone={canSignIn ? undefined : 'warn'} />
       </Figures>
 
       {canSignIn ? null : <LoginHint email={family.email} who="parent" name={family.parentName} />}

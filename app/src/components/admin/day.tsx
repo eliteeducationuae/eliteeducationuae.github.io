@@ -156,7 +156,7 @@ export function DayRibbon({ lessons, lookup, now }: { lessons: Lesson[]; lookup:
             );
           })}
           {showNow ? (
-            <View pointerEvents="none" style={[st.now, { left: (nowH - first) * HOUR }]} accessibilityLabel={`Now, ${formatTime(now)}`}>
+            <View pointerEvents="none" style={[st.now, { left: (nowH - first) * HOUR }]} role="img" accessibilityLabel={`Now, ${formatTime(now)}`}>
               <View style={st.nowDot} />
             </View>
           ) : null}

@@ -20,7 +20,7 @@ import { plural } from '@/lib/id';
 
 import { Icon, type IconName } from '../icon';
 import { ErrorNote, useWide } from '../ui';
-import { useConcierge } from './concierge-store';
+import { takeConciergeOpener, useConcierge } from './concierge-store';
 import { RuledHeading, RuledRow } from './kit';
 import { PEOPLE_GROUPS, useRecordSearch, type HitGroup } from './record-search';
 
@@ -208,8 +208,14 @@ export function ConciergeSheet() {
   // A fresh panel (and search) each time it opens.
   const [openCount, setOpenCount] = useState(0);
   const wasOpen = useRef(false);
+  // On the web, focus goes back to whatever opened the concierge (the "+" or the search button) when it closes.
   useEffect(() => {
     if (open && !wasOpen.current) setOpenCount((n) => n + 1);
+    if (!open && wasOpen.current) {
+      const el = takeConciergeOpener();
+      // Once the closing animation is over and the modal has released its focus trap.
+      if (el) setTimeout(() => el.isConnected && el.focus(), 450);
+    }
     wasOpen.current = open;
   }, [open]);
 
@@ -221,17 +227,18 @@ export function ConciergeSheet() {
   return (
     <Modal visible={open} transparent animationType={wide ? 'fade' : 'slide'} onRequestClose={hide} statusBarTranslucent>
       <View style={[StyleSheet.absoluteFill, { flexDirection: wide ? 'row' : 'column', justifyContent: wide ? 'flex-end' : 'flex-end' }]}>
+        {/* The scrim closes on tap but is not a second close button for keyboards and screen readers. */}
         <Pressable
           onPress={hide}
-          accessibilityRole="button"
-          accessibilityLabel="Close the concierge"
+          accessible={false}
+          importantForAccessibility="no"
+          aria-hidden
+          tabIndex={-1}
           style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,10,10,0.42)' }]}
         />
+        {/* The Modal is already the dialog on the web; this panel only keeps VoiceOver inside it on iOS. */}
         <View
           accessibilityViewIsModal
-          aria-modal
-          role="dialog"
-          aria-label="Elite concierge"
           style={[
             { backgroundColor: theme.background, overflow: 'hidden' },
             wide
@@ -246,7 +253,7 @@ export function ConciergeSheet() {
           ) : null}
           <View style={[cs.head, { paddingTop: wide ? insets.top + 20 : 16 }]}>
             <Text style={[font('sans', 'bold'), cs.kicker, { color: theme.textMuted }]}>Elite concierge</Text>
-            <Pressable onPress={hide} accessibilityRole="button" accessibilityLabel="Close" hitSlop={5} style={[cs.close, { borderColor: theme.border }, webStyle({ cursor: 'pointer' })]}>
+            <Pressable onPress={hide} accessibilityRole="button" accessibilityLabel="Close the concierge" hitSlop={5} style={[cs.close, { borderColor: theme.border }, webStyle({ cursor: 'pointer' })]}>
               <Icon name="close" size={18} color={theme.text} />
             </Pressable>
           </View>
@@ -266,5 +273,5 @@ const cs = StyleSheet.create({
   input: { flex: 1, fontSize: 16, height: 46 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 },
   kicker: { fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
-  close: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });

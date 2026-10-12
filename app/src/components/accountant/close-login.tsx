@@ -9,7 +9,7 @@ import { flagViewError } from '@/data/view-as';
 import { confirm, notify } from '@/lib/confirm';
 
 /**
- * The accountant's "Close my login": the account-delete flow (source.deleteMyAccount, then sign out) with a plain
+ * The accountant's "Close my access": the account-delete flow (source.deleteMyAccount, then sign out) with a plain
  * explanation and an "I understand" switch instead of a typed word. The books are business records and stay.
  */
 export function CloseLoginScreen() {
@@ -27,7 +27,7 @@ export function CloseLoginScreen() {
     } catch (err) {
       setClosing(false);
       if (flagViewError(err)) return;
-      notify('Your login has not been closed', err instanceof Error ? err.message : 'Please try again in a moment.');
+      notify('Your access has not been closed', err instanceof Error ? err.message : 'Please try again in a moment.');
       return;
     }
     queryClient.clear();
@@ -38,16 +38,16 @@ export function CloseLoginScreen() {
       useSession.setState({ profile: null, status: 'signed-out' });
     }
     router.replace('/sign-in');
-    notify('Your login has been closed', 'Thank you for your help with the Elite Education books.');
+    notify('Your access has been closed', 'Thank you for your help with the Elite Education books.');
   }
 
   return (
     <Screen topInset narrow>
-      <Stack.Screen options={{ headerShown: false, title: 'Close my login' }} />
-      <PageHeader back={{ fallback: '/accountant/account' }} kicker="Data and privacy" title="Close my login" />
+      <Stack.Screen options={{ headerShown: false, title: 'Close my access' }} />
+      <PageHeader back={{ fallback: '/accountant/account' }} kicker="Data and privacy" title="Close my access" />
       <Prose
         paragraphs={[
-          'Your login is removed and you can no longer see the books. Elite Education keeps its own records, including every invoice, credit note and VAT return, as UAE law requires.',
+          'Your access is removed and you can no longer see the books. Elite Education keeps its own records, including every invoice, credit note and VAT return, as UAE law requires.',
           'The office can invite you again at any time.',
         ]}
       />
@@ -56,12 +56,12 @@ export function CloseLoginScreen() {
       </FieldsCard>
       <Actions>
         <Button
-          title="Close my login"
+          title="Close my access"
           icon="person_remove"
           variant="danger"
           disabled={!sure}
           loading={closing}
-          onPress={() => confirm('Close your login?', 'This cannot be undone. You will be signed out straight away.', closeNow, 'Close my login')}
+          onPress={() => confirm('Close your access?', 'This cannot be undone. You will be signed out straight away.', closeNow, 'Close my access')}
         />
       </Actions>
     </Screen>

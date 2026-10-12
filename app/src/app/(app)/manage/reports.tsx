@@ -111,7 +111,7 @@ export default function AdminReports() {
                 <Text style={[font('serif'), tabular, { fontSize: 56, lineHeight: 60, color: theme.text }]}>{progress.written}</Text>
                 <Text style={[font('serif'), { fontSize: 21, color: theme.textMuted }]}>of {inCycle.length} written</Text>
               </View>
-              <ProgressBar value={progress.percent} />
+              <ProgressBar label="Reports written" value={progress.percent} />
               <Txt variant="note">
                 Lessons since {formatDate(cycle.startsOn)} · due {formatDate(cycle.dueDate)} · {count('published')} sent to families
               </Txt>
@@ -127,7 +127,7 @@ export default function AdminReports() {
                         {p.written} of {p.total}
                       </Txt>
                     </View>
-                    <ProgressBar value={p.percent} color={theme.text} />
+                    <ProgressBar label={`${lookup.tutor(tutorId)?.fullName ?? 'Tutor'}, reports written`} value={p.percent} color={theme.text} />
                   </View>
                 );
               })}

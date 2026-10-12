@@ -244,6 +244,7 @@ function TopicsTab({
                   key={m.topicId}
                   title={topics.name(m.topicId)}
                   progress={r * 20}
+                  progressLabel={`${topics.name(m.topicId)} mastery`}
                   progressColor={MasteryColors[r - 1]}
                   value={RATING_LABELS[r]}
                   valueTone="text"

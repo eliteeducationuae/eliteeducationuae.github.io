@@ -35,7 +35,7 @@ const CHANNEL_OPTIONS = (Object.keys(CHANNEL_LABELS) as ContactChannel[]).map((v
 
 /** What a contact receives, as one line: 'Main contact, signed in, invoices, reports'. */
 function contactFlagsLine(c: FamilyContact): string {
-  const flags = contactFlagsSummary(c).map((label) => (label === 'Signs in' && c.hasLogin ? 'Signed in' : label));
+  const flags = contactFlagsSummary(c).map((label) => (label === 'Signs in' && c.hasLogin ? 'Can sign in' : label));
   return flags.length ? flags.map((f, i) => (i ? f.toLowerCase() : f)).join(', ') : 'Receives nothing yet';
 }
 

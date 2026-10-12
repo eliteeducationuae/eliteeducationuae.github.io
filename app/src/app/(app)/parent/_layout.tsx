@@ -14,7 +14,7 @@ export default function ParentLayout() {
         { name: 'index', title: 'Home', icon: 'home', headerShown: false },
         { name: 'progress', title: 'Progress', icon: 'monitoring', headerShown: false },
         { name: 'messages', title: 'Messages', icon: 'forum', unreadBadge: true, headerShown: false },
-        { name: 'billing', title: 'Billing', icon: 'credit_card', badge: useBillingBadge, headerShown: false },
+        { name: 'billing', title: 'Billing', icon: 'credit_card', badge: useBillingBadge, badgeNoun: 'to pay', headerShown: false },
         { name: 'account', title: 'Account', icon: 'person', headerShown: false },
       ]}
     />

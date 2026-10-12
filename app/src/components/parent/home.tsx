@@ -67,24 +67,27 @@ export function NextLessonPanel({ lesson, lookup, now, showChild }: { lesson: Le
   const meta = `${formatTime(lesson.start)} to ${formatTime(lesson.end)} · ${placeLabel(lesson)} · ${lessonMinutes(lesson)} minutes`;
   const open = () => router.push({ pathname: '/lesson/[id]', params: { id: lesson.id } });
   return (
-    <Pressable
-      onPress={open}
-      onHoverIn={() => setHover(true)}
-      onHoverOut={() => setHover(false)}
-      accessibilityRole="button"
-      accessibilityLabel={`Next lesson, ${shortWhen(lesson.start, now)} at ${formatTime(lesson.start)}. ${title}. ${meta}`}
-      style={[styles.next, { backgroundColor: theme.hero, borderColor: hover ? theme.gold : theme.heroBorder }, webStyle({ cursor: 'pointer' })]}>
-      <View style={styles.nextTop}>
-        <Text style={[font('sans', 'bold'), styles.nextKicker, { color: theme.gold }]}>Next lesson · {shortWhen(lesson.start, now)}</Text>
-        <Icon name="arrow_forward" size={18} color={theme.onHeroMuted} />
-      </View>
-      <View style={styles.nextMain}>
-        <Text style={[font('serif'), styles.nextTime, { color: theme.onHero }]}>{formatTime(lesson.start)}</Text>
-        <View style={{ gap: 3, paddingBottom: 3, flexShrink: 1 }}>
-          <Text style={[font('sans', 'bold'), { fontSize: 16.5, lineHeight: 21, color: theme.onHero }]}>{title}</Text>
-          <Text style={[font('sans'), { fontSize: 14, lineHeight: 19, color: theme.onHeroMuted }]}>{meta}</Text>
+    // A plain panel: the day, time and title open the lesson; Join and Move are siblings, never nested in it.
+    <View style={[styles.next, { backgroundColor: theme.hero, borderColor: hover ? theme.gold : theme.heroBorder }]}>
+      <Pressable
+        onPress={open}
+        onHoverIn={() => setHover(true)}
+        onHoverOut={() => setHover(false)}
+        accessibilityRole="link"
+        accessibilityLabel={`Open next lesson, ${shortWhen(lesson.start, now)} at ${formatTime(lesson.start)}. ${title}. ${meta}`}
+        style={[styles.nextOpen, webStyle({ cursor: 'pointer' })]}>
+        <View style={styles.nextTop}>
+          <Text style={[font('sans', 'bold'), styles.nextKicker, { color: theme.gold }]}>Next lesson · {shortWhen(lesson.start, now)}</Text>
+          <Icon name="arrow_forward" size={18} color={theme.onHeroMuted} />
         </View>
-      </View>
+        <View style={styles.nextMain}>
+          <Text style={[font('serif'), styles.nextTime, { color: theme.onHero }]}>{formatTime(lesson.start)}</Text>
+          <View style={{ gap: 3, paddingBottom: 3, flexShrink: 1 }}>
+            <Text style={[font('sans', 'bold'), { fontSize: 16.5, lineHeight: 21, color: theme.onHero }]}>{title}</Text>
+            <Text style={[font('sans'), { fontSize: 14, lineHeight: 19, color: theme.onHeroMuted }]}>{meta}</Text>
+          </View>
+        </View>
+      </Pressable>
       <View style={styles.nextActions}>
         <JoinPill lesson={lesson} now={now} onDark />
         {viewing ? null : (
@@ -97,7 +100,7 @@ export function NextLessonPanel({ lesson, lookup, now, showChild }: { lesson: Le
           </Pressable>
         )}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -140,6 +143,7 @@ function Tile({ tile }: { tile: QuickTile }) {
 
 const styles = StyleSheet.create({
   next: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 22, paddingTop: 22, paddingBottom: 20, gap: 14 },
+  nextOpen: { gap: 14 },
   nextTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   nextKicker: { fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
   nextMain: { flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' },

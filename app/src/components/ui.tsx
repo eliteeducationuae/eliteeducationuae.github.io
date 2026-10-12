@@ -502,7 +502,8 @@ export function Group({
 export function TextLink({ label, onPress, underline }: { label: string; onPress: () => void; underline?: boolean }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="link" hitSlop={12} style={webStyle({ cursor: 'pointer' })}>
+    // Padded to a 44px target, with negative margins so the link still sits where its text does.
+    <Pressable onPress={onPress} accessibilityRole="link" hitSlop={12} style={[styles.textLink, webStyle({ cursor: 'pointer' })]}>
       {({ pressed }) => (
         <Text
           style={[
@@ -575,6 +576,7 @@ export function GroupRow({
   date,
   progress,
   progressColor,
+  progressLabel,
   value,
   valueTone = 'muted',
   valueSize,
@@ -605,6 +607,8 @@ export function GroupRow({
   /** 0–100: a 6px progress bar under the note. */
   progress?: number;
   progressColor?: string;
+  /** What the progress bar measures, for screen readers (defaults to the title). */
+  progressLabel?: string;
   /** Right-aligned tabular value, e.g. an amount or a status word. */
   value?: string;
   valueTone?: ValueTone;
@@ -656,7 +660,7 @@ export function GroupRow({
         {note ? typeof note === 'string' ? <Txt variant="note">{note}</Txt> : note : null}
         {progress != null ? (
           <View style={{ marginTop: 6 }}>
-            <ProgressBar value={progress} color={progressColor} />
+            <ProgressBar value={progress} color={progressColor} label={progressLabel ?? title} />
           </View>
         ) : null}
         {children}
@@ -762,7 +766,7 @@ export function Notice({
         ) : null}
         {link ? (
           <View style={{ alignSelf: 'flex-start', marginTop: 4 }}>
-            <Pressable onPress={link.onPress} accessibilityRole="link" hitSlop={10} style={webStyle({ cursor: 'pointer' })}>
+            <Pressable onPress={link.onPress} accessibilityRole="link" hitSlop={10} style={[styles.textLink, webStyle({ cursor: 'pointer' })]}>
               <Text style={[font('sans', 'bold'), { fontSize: 14, color: fg, textDecorationLine: 'underline' }]}>{link.label}</Text>
             </Pressable>
           </View>
@@ -1043,6 +1047,7 @@ export function Button({
   const c = palette[variant];
   const inactive = disabled || loading;
   const sm = size === 'sm';
+  const wide = useWide();
   return (
     <Pressable
       onPress={onPress}
@@ -1056,6 +1061,7 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         sm && styles.buttonSm,
+        sm && !wide && styles.buttonSmPhone,
         { backgroundColor: (hover || pressed) && c.hoverBg && !inactive && !onHero ? c.hoverBg : c.bg, borderColor: c.border },
         (hover || pressed) && !inactive && !c.hoverBg && variant !== 'ghost' && { borderColor: theme.gold },
         pressed && { opacity: 0.9 },
@@ -1122,7 +1128,7 @@ export function Chip({
       style={({ pressed }) => [
         styles.chip,
         {
-          borderColor: selected ? theme.primary : error ? theme.errorBorder : hover || pressed ? theme.gold : theme.border,
+          borderColor: selected ? theme.primary : error ? theme.errorBorder : hover || pressed ? theme.gold : theme.inputBorder,
           backgroundColor: selected ? theme.primary : theme.surface,
         },
         disabled && { opacity: 0.4 },
@@ -1365,7 +1371,7 @@ export function Field({
             ? { backgroundColor: theme.surfaceAlt, borderColor: theme.border, color: theme.textMuted }
             : {
                 backgroundColor: theme.inputFill,
-                borderColor: message ? theme.errorBorder : focused ? theme.gold : theme.border,
+                borderColor: message ? theme.errorBorder : focused ? theme.gold : theme.inputBorder,
                 color: theme.text,
               },
           input.multiline && { minHeight: 96, textAlignVertical: 'top', paddingTop: 12, lineHeight: 23 },
@@ -1416,6 +1422,16 @@ export function Toggle({
       accessibilityHint={note}
       accessibilityState={{ checked: value, disabled: !!disabled }}
       aria-checked={value}
+      // react-native-web presses a switch on Enter only; Space must toggle it too (the WAI-ARIA switch pattern).
+      {...(web
+        ? ({
+            onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+              if (disabled || (e.key !== ' ' && e.key !== 'Spacebar')) return;
+              e.preventDefault();
+              onValueChange(!value);
+            },
+          } as object)
+        : null)}
       style={[styles.toggleRow, disabled && { opacity: 0.4 }, webStyle({ cursor: disabled ? 'not-allowed' : 'pointer' })]}>
       {title || note ? (
         <View style={{ flex: 1, gap: 2 }}>
@@ -1473,13 +1489,15 @@ export function Avatar({ name, color, size = 40 }: { name: string; color?: strin
   );
 }
 
-export function ProgressBar({ value, color }: { value: number; color?: string }) {
+/** A 6px progress track. Pass `label` so screen readers say what is progressing, e.g. "Algebra mastery". */
+export function ProgressBar({ value, color, label }: { value: number; color?: string; label?: string }) {
   const theme = useTheme();
   const pct = Math.max(0, Math.min(100, value));
   return (
     <View
       style={{ height: 6, borderRadius: 3, backgroundColor: theme.rowDivider, overflow: 'hidden' }}
       accessibilityRole="progressbar"
+      accessibilityLabel={label}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}>
       <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color ?? theme.gold, borderRadius: 3 }} />
     </View>
@@ -1589,10 +1607,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   buttonSm: { minHeight: 34, height: 34, paddingHorizontal: 14, gap: 6 },
+  // On phones the compact pill keeps a full 44px target.
+  buttonSmPhone: { minHeight: 44, height: 44 },
+  textLink: { minHeight: 44, minWidth: 44, justifyContent: 'center', marginVertical: -13.5 },
   buttonText: { ...font('sans', 'bold'), fontSize: 15 },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: Radius.pill, alignSelf: 'flex-start' },
   badgeText: { ...font('sans', 'bold'), fontSize: 11, lineHeight: 15, textTransform: 'uppercase', letterSpacing: 1.1 },
-  chip: { paddingHorizontal: 16, borderRadius: Radius.pill, borderWidth: 1, minHeight: 40, justifyContent: 'center' },
+  chip: { paddingHorizontal: 16, borderRadius: Radius.pill, borderWidth: 1, minHeight: 44, justifyContent: 'center' },
   segmented: { flexDirection: 'row', borderRadius: Radius.pill, padding: 4, gap: 4 },
   segment: {
     flex: 1,
@@ -1605,7 +1626,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   segmentMarker: { position: 'absolute', bottom: 3, width: 18, height: 2, borderRadius: 1 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 2, marginBottom: -1, minHeight: 44 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 2, marginBottom: -1, minHeight: 44, minWidth: 44, justifyContent: 'center' },
   count: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   fields: { borderRadius: Radius.card, borderWidth: 1, padding: 20, gap: 20 },
   input: { borderWidth: 1, borderRadius: Radius.input, paddingHorizontal: 14, paddingVertical: 11, fontSize: 16, minHeight: 48 },

@@ -185,6 +185,7 @@ export function ChildProgress({ student, tab, onTab }: { student: Student; tab: 
                     key={m.topicId}
                     title={topics.name(m.topicId)}
                     progress={m.rating * 20}
+                    progressLabel={`${topics.name(m.topicId)} mastery`}
                     progressColor={MasteryColors[m.rating - 1]}
                     value={levelLabel(m.rating)}
                     valueSize={13}
@@ -381,6 +382,7 @@ function TopicsTab({ student, subjects, tutor, studentLessons }: { student: Stud
               key={m.topicId}
               title={topics.name(m.topicId)}
               progress={m.rating * 20}
+                    progressLabel={`${topics.name(m.topicId)} mastery`}
               progressColor={MasteryColors[m.rating - 1]}
               value={levelLabel(m.rating)}
               valueSize={13}

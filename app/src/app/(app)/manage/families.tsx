@@ -8,7 +8,7 @@ import { useFamilies, useInvoices, useLoginEmails, usePackages, useStudents } fr
 import { formatAED, invoiceTotals, packageRemaining } from '@/domain/billing';
 import { CLOSED_LABEL, closedCount, closedLast, isClosed } from '@/domain/closed-accounts';
 
-const FILTERS = ['All', 'Owes money', 'Autopay', 'No login yet', 'Prospects', 'Archived'] as const;
+const FILTERS = ['All', 'Owes money', 'Autopay', 'Not signed up yet', 'Prospects', 'Archived'] as const;
 type Filter = (typeof FILTERS)[number];
 
 export default function Families() {
@@ -34,7 +34,7 @@ export default function Families() {
     .filter((f) => {
       if (filter === 'Owes money') return !!owed.get(f.id);
       if (filter === 'Autopay') return !!f.autopay;
-      if (filter === 'No login yet') return !isClosed(f) && !logins.has(f.email.toLowerCase());
+      if (filter === 'Not signed up yet') return !isClosed(f) && !logins.has(f.email.toLowerCase());
       if (filter === 'Prospects') return f.status === 'prospect';
       if (filter === 'Archived') return f.status === 'archived';
       return true;
@@ -89,7 +89,7 @@ export default function Families() {
                 avatar={f.parentName}
                 title={`${f.name} family`}
                 note={[f.parentName, kids.join(', ') || 'no students yet', credits ? `${credits} lesson credits` : null].filter(Boolean).join(' · ')}
-                right={<RowMeta {...tag} meta={canSignIn ? 'Can sign in' : 'No login yet'} />}
+                right={<RowMeta {...tag} meta={canSignIn ? 'Can sign in' : 'Not signed up yet'} />}
                 onPress={() => router.push({ pathname: '/manage/family/[id]', params: { id: f.id } })}
               />
             );

@@ -71,7 +71,7 @@ export function AccountantAccountScreen() {
             <GroupRow
               icon="person_remove"
               tone="bad"
-              title="Close my login"
+              title="Close my access"
               note="The books are not affected"
               onPress={() => router.push('/account-delete')}
             />

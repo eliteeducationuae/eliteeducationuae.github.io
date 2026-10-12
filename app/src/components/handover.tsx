@@ -472,6 +472,7 @@ export function HandoverPackView({ id, markViewed, footer }: { id: string; markV
                   title={t.name}
                   titleWeight="regular"
                   progress={r * 20}
+                  progressLabel={`${t.name} mastery`}
                   progressColor={MasteryColors[r - 1]}
                   value={RATING_LABELS[r] ?? `${t.rating}`}
                   valueTone={t.rating < 3 ? 'warn' : 'muted'}

@@ -189,7 +189,7 @@ export function SectionHead({
 export function InlineLink({ label, onPress, accessibilityLabel }: { label: string; onPress: () => void; accessibilityLabel?: string }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel={accessibilityLabel} hitSlop={12} style={[{ minHeight: 24, justifyContent: 'center' }, webStyle({ cursor: 'pointer' })]}>
+    <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel={accessibilityLabel} hitSlop={12} style={[{ minHeight: 44, marginVertical: -10, justifyContent: 'center' }, webStyle({ cursor: 'pointer' })]}>
       {({ pressed }) => <Text style={[font('sans', 'bold'), { fontSize: 13.5, color: pressed ? theme.text : theme.accent }]}>{label}</Text>}
     </Pressable>
   );
@@ -363,6 +363,7 @@ export function PillSwitch<T extends string>({
   label?: string;
 }) {
   const theme = useTheme();
+  const wide = useWide();
   return (
     <View style={[kit.pillSwitch, { backgroundColor: theme.surfaceAlt }]} accessibilityRole="tablist" accessibilityLabel={label}>
       {options.map((o) => {
@@ -377,6 +378,7 @@ export function PillSwitch<T extends string>({
             hitSlop={{ top: 5, bottom: 5 }}
             style={[
               kit.pill,
+              !wide && kit.phoneTarget,
               on && { backgroundColor: theme.surface, borderColor: theme.hairline },
               on && (web ? webStyle({ boxShadow: '0 1px 4px rgba(26,20,8,.08)' }) : null),
               webStyle({ cursor: 'pointer' }),
@@ -402,6 +404,7 @@ export function TextFilters<T extends string>({
   label?: string;
 }) {
   const theme = useTheme();
+  const wide = useWide();
   return (
     <View style={{ flexDirection: 'row', gap: 18 }} accessibilityRole="tablist" accessibilityLabel={label}>
       {options.map((o) => {
@@ -414,7 +417,7 @@ export function TextFilters<T extends string>({
             accessibilityState={{ selected: on }}
             aria-selected={on}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            style={[{ paddingVertical: 6, borderBottomWidth: 2, borderBottomColor: on ? theme.gold : 'transparent' }, webStyle({ cursor: 'pointer' })]}>
+            style={[{ paddingVertical: 6, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: on ? theme.gold : 'transparent' }, !wide && { minHeight: 44 }, webStyle({ cursor: 'pointer' })]}>
             <Text style={[font('sans', 'bold'), { fontSize: 13.5, color: on ? theme.text : theme.textMuted }]}>{o.label}</Text>
           </Pressable>
         );
@@ -426,6 +429,7 @@ export function TextFilters<T extends string>({
 /** A 36px white pill link with a gold-brown icon (Money, VAT returns, Insights). */
 export function LinkPill({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   const theme = useTheme();
+  const wide = useWide();
   const [hover, setHover] = useState(false);
   return (
     <Pressable
@@ -435,7 +439,7 @@ export function LinkPill({ icon, label, onPress }: { icon: IconName; label: stri
       accessibilityRole="link"
       accessibilityLabel={label}
       hitSlop={{ top: 4, bottom: 4 }}
-      style={[kit.linkPill, { borderColor: hover ? theme.gold : theme.border, backgroundColor: theme.surface }, webStyle({ cursor: 'pointer' })]}>
+      style={[kit.linkPill, !wide && kit.phoneTarget, { borderColor: hover ? theme.gold : theme.border, backgroundColor: theme.surface }, webStyle({ cursor: 'pointer' })]}>
       <Icon name={icon} size={17} color={theme.accent} />
       <Text style={[font('sans', 'bold'), { fontSize: 13.5, color: theme.text }]}>{label}</Text>
     </Pressable>
@@ -461,6 +465,7 @@ export function PillButton({
   icon?: IconName;
 }) {
   const theme = useTheme();
+  const wide = useWide();
   const [hover, setHover] = useState(false);
   const primary = variant === 'primary';
   const off = disabled || busy;
@@ -476,6 +481,7 @@ export function PillButton({
       hitSlop={{ top: 3, bottom: 3 }}
       style={[
         kit.pillButton,
+        !wide && kit.phoneTarget,
         primary
           ? { backgroundColor: hover && !off ? theme.primaryHover : theme.primary, borderColor: Brand.gold }
           : { backgroundColor: theme.surface, borderColor: hover && !off ? theme.gold : theme.border },
@@ -510,9 +516,8 @@ export function RuledFigures({ items }: { items: { label: string; value: string;
           <>
             <Text style={[font('sans', 'bold'), kit.figLabel, { color: theme.textMuted }]}>{f.label}</Text>
             <Text
-              style={[font('serif'), tabular, { fontSize: wide ? 25 : 21, lineHeight: wide ? 30 : 26, letterSpacing: -0.3, color: f.tone === 'bad' ? theme.danger : theme.text }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit>
+              style={[font('serif'), tabular, { fontSize: wide ? 25 : 21, lineHeight: wide ? 30 : 26, letterSpacing: -0.3, color: f.tone === 'bad' ? theme.danger : theme.text }]}>
+              {/* Wraps (e.g. "AED" over the number) rather than truncating at 320px. */}
               {f.value}
             </Text>
             {f.hint ? <Text style={[font('sans'), { fontSize: 12.5, lineHeight: 17, color: theme.textMuted }]}>{f.hint}</Text> : null}
@@ -567,6 +572,8 @@ const kit = StyleSheet.create({
   pillSwitch: { flexDirection: 'row', gap: 4, padding: 4, borderRadius: 999, alignSelf: 'flex-start' },
   pill: { height: 34, paddingHorizontal: 16, borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
   linkPill: { height: 36, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Phones keep a full 44px tap target on the compact pills.
+  phoneTarget: { height: 44 },
   pillButton: { height: 38, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   check: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   figures: { flexDirection: 'row', borderTopWidth: 1 },

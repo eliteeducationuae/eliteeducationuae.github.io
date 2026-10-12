@@ -118,8 +118,8 @@ export function DeleteAccountScreen() {
             confirm(
               'Delete your account?',
               ownLoginOnly
-                ? "This cannot be undone. Your login and personal details will be removed straight away; the family's account stays with the main contact."
-                : 'This cannot be undone. Your login and personal details will be removed straight away.',
+                ? "This cannot be undone. Your sign-in and personal details will be removed straight away; the family's account stays with the main contact."
+                : 'This cannot be undone. Your sign-in and personal details will be removed straight away.',
               deleteNow,
               'Delete',
             )

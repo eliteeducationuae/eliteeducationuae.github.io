@@ -40,6 +40,7 @@ export function TaskRow({
           disabled={busy}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: done, busy: !!busy }}
+          aria-checked={done}
           accessibilityLabel={done ? `Mark “${task.title}” as not done` : `Mark “${task.title}” as done`}
           hitSlop={8}
           style={({ pressed }) => [

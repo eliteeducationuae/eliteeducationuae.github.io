@@ -172,7 +172,7 @@ function Profile({ tutor }: { tutor: Tutor }) {
             />
           </Group>
           <Group title="Account">
-            <GroupRow icon="person" title={canSignIn ? 'Can sign in' : 'No login yet'} note={canSignIn ? `Signs in with ${tutor.email}` : 'Not signed up yet'} />
+            <GroupRow icon="person" title={canSignIn ? 'Can sign in' : 'Not signed up yet'} note={canSignIn ? `Signs in with ${tutor.email}` : 'They create their account in the app'} />
             <GroupRow
               icon="calendar_month"
               title="Calendar colour"

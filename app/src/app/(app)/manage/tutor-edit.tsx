@@ -112,7 +112,7 @@ function TutorForm({ existing }: { existing?: Tutor }) {
         back={{ label: 'Cancel', onPress: back }}
         kicker={existing ? 'Team · Edit' : 'Team · New'}
         title={existing ? existing.fullName : 'Add a tutor'}
-        sub={existing ? 'Profile, subjects and pay. Changes to pay are recorded in the activity log.' : 'They create their login in the app and are asked to complete onboarding.'}
+        sub={existing ? 'Profile, subjects and pay. Changes to pay are recorded in the activity log.' : 'They create their account in the app and are asked to complete onboarding.'}
       />
       {tried && !valid ? (
         <Notice tone="danger" title="Not saved yet">

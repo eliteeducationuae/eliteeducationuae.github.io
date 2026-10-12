@@ -130,6 +130,9 @@ const REDESIGN_UI: [keyof Palette, keyof Palette][] = [
   ['chevron', 'rowHover'],
   ['toggleOff', 'surface'],
   ['toggleOn', 'surface'],
+  ['inputBorder', 'inputFill'],
+  ['inputBorder', 'surface'],
+  ['errorBorder', 'inputFill'],
 ];
 
 describe('redesign tokens', () => {
@@ -163,7 +166,7 @@ describe('redesign tokens', () => {
       '#F0EADF',
       '#FBF8F2',
       '#FDFCFA',
-      '#C99A93',
+      '#8E3A33',
       '#3D6B4F',
     ]);
     expect([l.successBg, l.warningBg, l.dangerBg]).toEqual(['#EAF1EA', '#FBF1E4', '#F8E9E6']);

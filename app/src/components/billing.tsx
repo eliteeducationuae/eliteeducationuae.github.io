@@ -54,7 +54,7 @@ export function PackageCard({ pkg }: { pkg: LessonPackage }) {
         <Txt variant="h3">{pkg.name}</Txt>
         <Badge label={`${remaining} left`} tone={remaining === 0 ? 'neutral' : low ? 'warning' : 'success'} />
       </Row>
-      <ProgressBar value={(pkg.lessonsUsed / pkg.lessonsTotal) * 100} />
+      <ProgressBar label={`${pkg.name}, lessons used`} value={(pkg.lessonsUsed / pkg.lessonsTotal) * 100} />
       <Txt variant="small">
         {pkg.lessonsUsed} of {pkg.lessonsTotal} lessons used · bought {formatDate(pkg.purchasedAt)}
         {pkg.expiresAt ? ` · expires ${formatDate(pkg.expiresAt)}` : ''}
