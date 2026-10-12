@@ -39,6 +39,17 @@ export interface TabSpec {
   badge?: () => number;
   /** Only in the desktop sidebar; on phones the screen is reached from elsewhere (e.g. More). */
   wideOnly?: boolean;
+  /** A route in this tab group that never gets a tab (reached from elsewhere, e.g. the admin Directory). */
+  hidden?: boolean;
+}
+
+/** A desktop rail row below the tabs that opens a page outside the tab group (e.g. admin Messages). */
+export interface RailLink {
+  title: string;
+  icon: IconName;
+  href: Href;
+  /** Show the unread-messages count. */
+  unreadBadge?: boolean;
 }
 
 /** The rail footer's primary pill, e.g. "Book a lesson". Hidden while an admin is viewing as someone else. */
@@ -120,6 +131,7 @@ type BarProps = BottomTabBarProps & {
   variant: 'sand' | 'noir';
   railAction?: RailAction;
   centreAction?: CentreAction;
+  railLinks?: RailLink[];
 };
 
 /** The routes that get a tab (expo-router hides `href: null` screens with display: none). */
@@ -147,13 +159,16 @@ function RailItem({
   noir,
   onPress,
   onLongPress,
+  link,
 }: {
   spec: TabSpec | undefined;
   label: string;
   focused: boolean;
   noir: boolean;
   onPress: () => void;
-  onLongPress: () => void;
+  onLongPress?: () => void;
+  /** A rail link (opens a page) rather than a tab. */
+  link?: boolean;
 }) {
   const theme = useTheme();
   const badge = useTabBadge(spec);
@@ -166,9 +181,9 @@ function RailItem({
       onLongPress={onLongPress}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: focused }}
-      aria-selected={focused}
+      accessibilityRole={link ? 'link' : 'tab'}
+      accessibilityState={link ? undefined : { selected: focused }}
+      aria-selected={link ? undefined : focused}
       accessibilityLabel={badge ? `${label}, ${badge}${spec?.unreadBadge ? ' unread' : ''}` : label}
       style={[
         rail.item,
@@ -210,7 +225,7 @@ function RailItem({
 }
 
 function Rail(props: BarProps) {
-  const { state, navigation, specs, variant, railAction } = props;
+  const { state, navigation, specs, variant, railAction, railLinks } = props;
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const profile = useSession((s) => s.profile);
@@ -235,7 +250,8 @@ function Rail(props: BarProps) {
         <Logo wide tone={noir ? 'white' : 'auto'} width={noir ? 148 : 150} />
       </View>
       <View style={[rail.rule, { backgroundColor: Brand.gold, opacity: noir ? 0.55 : 0.6 }]} />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} accessibilityRole="tablist">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }}>
+        <View style={{ gap: 2 }} accessibilityRole="tablist">
         {visibleRoutes(props).map(({ route, index, options }) => {
           const spec = specs.find((t) => t.name === route.name);
           const focused = index === state.index;
@@ -252,6 +268,23 @@ function Rail(props: BarProps) {
             />
           );
         })}
+        </View>
+        {railLinks?.length ? (
+          <>
+            <View style={[rail.linkRule, { backgroundColor: noir ? 'rgba(249,248,245,0.1)' : theme.hairline }]} />
+            {railLinks.map((l) => (
+              <RailItem
+                key={l.title}
+                spec={{ name: l.title, title: l.title, icon: l.icon, unreadBadge: l.unreadBadge }}
+                label={l.title}
+                focused={false}
+                noir={noir}
+                link
+                onPress={() => router.push(l.href)}
+              />
+            ))}
+          </>
+        ) : null}
       </ScrollView>
       {profile ? (
         <View style={[rail.footer, { borderTopColor: noir ? 'rgba(201,168,76,0.3)' : 'rgba(126,98,31,0.25)' }]}>
@@ -311,6 +344,7 @@ function initials(name: string) {
 const rail = StyleSheet.create({
   panel: { borderRightWidth: 1 },
   rule: { height: 1, marginTop: 24, marginBottom: 18, marginHorizontal: 28 },
+  linkRule: { height: 1, marginVertical: 16, marginHorizontal: 28 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, height: 46, paddingHorizontal: 28 },
   marker: { position: 'absolute', left: 0, top: 11, bottom: 11, width: 3, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
   markerNoir: { position: 'absolute', left: 0, top: 12, bottom: 12, width: 2 },
@@ -459,19 +493,20 @@ const bar = StyleSheet.create({
   pillShadow: { shadowColor: '#0A0A0A', shadowOpacity: 0.28, shadowRadius: 15, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
 });
 
-/** Ctrl-K / Cmd-K opens search on the web. */
-function useSearchShortcut(enabled: boolean) {
+/** Ctrl-K / Cmd-K opens search on the web (or `onSearch`, e.g. the admin concierge). */
+function useSearchShortcut(enabled: boolean, onSearch?: () => void) {
   useEffect(() => {
     if (!enabled || !web || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        router.push('/search');
+        if (onSearch) onSearch();
+        else router.push('/search');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enabled]);
+  }, [enabled, onSearch]);
 }
 
 /**
@@ -479,6 +514,8 @@ function useSearchShortcut(enabled: boolean) {
  * - variant: 'sand' (default) or 'noir' (admin).
  * - railAction: the rail footer's primary pill (e.g. Book a lesson).
  * - centreAction: a round button in the middle of the phone tab bar (admin "+").
+ * - railLinks: desktop rail rows below the tabs that open pages (admin Messages).
+ * - onSearchShortcut: what Ctrl/Cmd-K does instead of opening /search (admin concierge).
  */
 export function RoleTabs({
   role,
@@ -488,6 +525,8 @@ export function RoleTabs({
   variant = 'sand',
   railAction,
   centreAction,
+  railLinks,
+  onSearchShortcut,
 }: {
   role: Role;
   tabs: TabSpec[];
@@ -496,12 +535,14 @@ export function RoleTabs({
   variant?: 'sand' | 'noir';
   railAction?: RailAction;
   centreAction?: CentreAction;
+  railLinks?: RailLink[];
+  onSearchShortcut?: () => void;
 }) {
   const theme = useTheme();
   const { status, profile } = useSession();
   const { width } = useWindowDimensions();
   const wide = width >= SIDEBAR_MIN_WIDTH;
-  useSearchShortcut(!!search && status === 'signed-in');
+  useSearchShortcut(!!search && status === 'signed-in', onSearchShortcut);
   if (status === 'loading') return <Loading />;
   if (!profile || profile.role !== role) return <Redirect href="/" />;
 
@@ -509,7 +550,7 @@ export function RoleTabs({
     <Tabs
       tabBar={(props) =>
         wide ? (
-          <Rail {...props} specs={tabs} variant={variant} railAction={railAction} centreAction={centreAction} />
+          <Rail {...props} specs={tabs} variant={variant} railAction={railAction} centreAction={centreAction} railLinks={railLinks} />
         ) : (
           <PhoneBar {...props} specs={tabs} variant={variant} railAction={railAction} centreAction={centreAction} />
         )
@@ -535,7 +576,7 @@ export function RoleTabs({
           key={t.name}
           name={t.name}
           options={{
-            href: t.wideOnly && !wide ? null : undefined,
+            href: t.hidden || (t.wideOnly && !wide) ? null : undefined,
             title: t.header ?? t.title,
             tabBarLabel: t.title,
             headerShown: t.headerShown ?? true,
