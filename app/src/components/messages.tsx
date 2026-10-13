@@ -161,7 +161,8 @@ export function DaySeparator({ label }: { label: string }) {
 
 /**
  * One message: mine in a noir bubble (radius 20 20 6 20) on the right; theirs in a white bordered bubble
- * (20 20 20 6) on the left, with the sender above. Up to 82% wide, 15.5px text, the time underneath.
+ * (20 20 20 6) on the left, with the sender above. Up to 82% wide, 15.5px text, the time underneath
+ * ("You · 18:20" under your own).
  */
 export function MessageBubble({ mine = false, who, time, children }: { mine?: boolean; who?: string; time?: string; children: ReactNode }) {
   const theme = useTheme();
@@ -177,7 +178,7 @@ export function MessageBubble({ mine = false, who, time, children }: { mine?: bo
         ]}>
         <Text style={[font('sans'), styles.bubbleText, { color: mine ? theme.onPrimary : theme.text }]}>{children}</Text>
       </View>
-      {time ? <Text style={[font('sans'), { fontSize: 11.5, color: theme.timestamp, paddingHorizontal: 4 }]}>{time}</Text> : null}
+      {time ? <Text style={[font('sans'), { fontSize: 11.5, color: theme.timestamp, paddingHorizontal: 4 }]}>{mine ? `You · ${time}` : time}</Text> : null}
     </View>
   );
 }

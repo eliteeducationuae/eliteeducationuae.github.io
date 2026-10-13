@@ -66,6 +66,8 @@ export function NextLessonPanel({ lesson, lookup, now, showChild }: { lesson: Le
   const title = useLessonTitle(lesson, lookup, showChild);
   const meta = `${formatTime(lesson.start)} to ${formatTime(lesson.end)} · ${placeLabel(lesson)} · ${lessonMinutes(lesson)} minutes`;
   const open = () => router.push({ pathname: '/lesson/[id]', params: { id: lesson.id } });
+  // The lesson page's rule: once a lesson has started it can no longer be moved.
+  const started = new Date(lesson.start) <= now;
   return (
     // A plain panel: the day, time and title open the lesson; Join and Move are siblings, never nested in it.
     <View style={[styles.next, { backgroundColor: theme.hero, borderColor: hover ? theme.gold : theme.heroBorder }]}>
@@ -90,7 +92,7 @@ export function NextLessonPanel({ lesson, lookup, now, showChild }: { lesson: Le
       </Pressable>
       <View style={styles.nextActions}>
         <JoinPill lesson={lesson} now={now} onDark />
-        {viewing ? null : (
+        {viewing || started ? null : (
           <Pressable
             onPress={() => router.push({ pathname: '/book', params: { lessonId: lesson.id } })}
             accessibilityRole="button"

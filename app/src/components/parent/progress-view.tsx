@@ -38,9 +38,9 @@ const HISTORY_TO = addDays(new Date(), 90);
 export type ProgressTab = 'overview' | 'topics' | 'notes' | 'homework' | 'reports';
 export const PROGRESS_TABS: { value: ProgressTab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
-  { value: 'topics', label: 'Topics' },
   { value: 'notes', label: 'Lesson notes' },
   { value: 'homework', label: 'Homework' },
+  { value: 'topics', label: 'Topics' },
   { value: 'reports', label: 'Reports' },
 ];
 
@@ -194,7 +194,7 @@ export function ChildProgress({ student, tab, onTab }: { student: Student; tab: 
               </Group>
             ) : null}
             {published.length ? (
-              <Group title="Reports">
+              <Group title="Reports" link={published.length > 2 ? { label: 'All reports', onPress: () => onTab('reports') } : undefined}>
                 {published.slice(0, 2).map((r) => (
                   <GroupRow
                     key={r.id}

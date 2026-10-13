@@ -206,7 +206,7 @@ export function useDecisions(): { items: Decision[]; ready: boolean; error: unkn
               accessibilityLabel: `Open the request: ${tutorName(r.tutorId)}’s police clearance is not verified`,
             }
           : {
-              label: r.kind === 'reschedule' ? 'Approve the change' : 'Approve',
+              label: r.kind === 'reschedule' ? 'Approve the change' : 'Approve the lesson',
               writes: true,
               disabled: clash.length > 0,
               busy: busyKey === key,
@@ -255,7 +255,7 @@ export function useDecisions(): { items: Decision[]; ready: boolean; error: unkn
           : `${cap(plural(submitted.length, `${months.length === 1 ? `${months[0]} ` : ''}invoice`))} totalling ${formatAED(total)}.`,
         body: one ? 'Check the hours against the lessons recorded, then approve it for payment.' : `${joinNames(submitted.map((i) => firstName(tutorName(i.tutorId))))}. Check the hours against the lessons recorded.`,
         primary: {
-          label: one ? 'Approve' : `Approve all ${submitted.length}`,
+          label: one ? 'Approve invoice' : `Approve all ${submitted.length} invoices`,
           writes: true,
           busy: busyKey === 'tinv',
           onPress: () =>
@@ -284,7 +284,7 @@ export function useDecisions(): { items: Decision[]; ready: boolean; error: unkn
         title: `${tutorName(r.tutorId)}’s ${r.subject ? `${r.subject} ` : ''}report for ${lookup.student(r.studentId)?.fullName ?? 'a student'}.`,
         body: excerpt(r.comment || r.strengths) ?? 'Read it before approving; families see it once the round is sent.',
         primary: {
-          label: 'Approve',
+          label: 'Approve report',
           writes: true,
           busy: busyKey === key,
           onPress: () =>
