@@ -109,6 +109,7 @@ export function KeyDateRow({
           onPress={onToggleDone}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: date.done }}
+          aria-checked={date.done}
           accessibilityLabel={date.done ? `Mark ${date.title} as not done` : `Mark ${date.title} as done`}
           hitSlop={8}
           style={({ pressed }) => [

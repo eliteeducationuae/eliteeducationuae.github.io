@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import type { NewEnquiry } from '@/data/source';
 import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
@@ -9,7 +7,7 @@ import { CURRICULA, PHASES, SUBJECTS } from '@/domain/catalogue';
 import { CataloguePicker } from './catalogue-picker';
 import { Honeypot } from './honeypot';
 import { FormError } from './spam';
-import { Banner, Button, Card, Chip, Field, Row, Section, Txt } from './ui';
+import { Actions, Button, ChipField, Field, FieldsCard, Notice, Txt } from './ui';
 
 const TIMES = ['Weekday afternoons', 'Weekday evenings', 'Weekends', 'Flexible'];
 
@@ -47,9 +45,9 @@ export function EnquiryForm({
 
   if (sent) {
     return (
-      <Banner tone="success" icon="check">
+      <Notice tone="good" title="Thank you">
         Thank you. We have received your enquiry and will be in touch within one working day to arrange a complimentary consultation.
-      </Banner>
+      </Notice>
     );
   }
 
@@ -90,59 +88,45 @@ export function EnquiryForm({
   }
 
   return (
-    <Card style={{ gap: Spacing.three }}>
-      <Txt variant="muted">Please tell us a little about your child and the support you are looking for.</Txt>
-      {!hideContact ? (
-        <>
-          <Field label="Your name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
-          <Honeypot value={honeypot} onChange={setHoneypot} />
-          <Row gap={Spacing.two}>
-            <View style={{ flex: 1 }}>
-              <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Mobile or WhatsApp number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-            </View>
-          </Row>
-        </>
-      ) : null}
-      <Row gap={Spacing.two}>
-        <View style={{ flex: 1 }}>
-          <Field label="Student’s first name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example, Year 11" />
-        </View>
-      </Row>
-      <CataloguePicker
-        label="Subject"
-        options={SUBJECTS}
-        value={subject}
-        onChange={setSubject}
-        collapsed={10}
-        optional
-        otherPlaceholder="For example, Latin or Music theory"
-      />
-      <Txt variant="small">One subject is enough here; please mention any others in your message below.</Txt>
-      <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
-      <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
-      <Section title="Best times">
-        <Row gap={Spacing.one} wrap>
-          {TIMES.map((t) => (
-            <Chip key={t} label={t} selected={times.includes(t)} onPress={() => setTimes((x) => (x.includes(t) ? x.filter((y) => y !== t) : [...x, t]))} />
-          ))}
-        </Row>
-      </Section>
-      <Field
-        label="How can we help?"
-        value={message}
-        onChangeText={setMessage}
-        multiline
-        placeholder="For example: predicted a 5 and aiming for a 7; finds essay structure difficult; mock examinations in January."
-      />
+    <>
+      <FieldsCard title={hideContact ? 'What would help' : 'Send an enquiry'}>
+        <Txt variant="note">Please tell us a little about your child and the support you are looking for.</Txt>
+        {!hideContact ? (
+          <>
+            <Field label="Your name" value={parentName} onChangeText={setParentName} autoCapitalize="words" />
+            <Honeypot value={honeypot} onChange={setHoneypot} />
+            <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Mobile or WhatsApp number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+971" />
+          </>
+        ) : null}
+        <Field label="Student’s first name" value={studentName} onChangeText={setStudentName} autoCapitalize="words" />
+        <Field label="Year group" value={yearGroup} onChangeText={setYearGroup} placeholder="For example, Year 11" />
+        <CataloguePicker
+          label="Subject"
+          options={SUBJECTS}
+          value={subject}
+          onChange={setSubject}
+          collapsed={10}
+          optional
+          otherPlaceholder="For example, Latin or Music theory"
+        />
+        <Txt variant="small">One subject is enough here; please mention any others in your message below.</Txt>
+        <CataloguePicker label="Phase" options={PHASES} value={phase} onChange={setPhase} optional />
+        <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
+        <ChipField label="Best times" options={TIMES} value={times} onChange={(t) => setTimes((x) => (x.includes(t) ? x.filter((y) => y !== t) : [...x, t]))} />
+        <Field
+          label="How can we help?"
+          value={message}
+          onChangeText={setMessage}
+          multiline
+          placeholder="For example: predicted a 5 and aiming for a 7; finds essay structure difficult; mock examinations in January."
+        />
+      </FieldsCard>
       <FormError error={error} />
-      <Button title={submitLabel} variant="gold" onPress={send} loading={busy} disabled={!valid} />
+      <Actions>
+        <Button title={submitLabel} icon="send" onPress={send} loading={busy} disabled={!valid} />
+      </Actions>
       {!hideContact ? <Txt variant="small">We use your details only to reply to this enquiry.</Txt> : null}
-    </Card>
+    </>
   );
 }

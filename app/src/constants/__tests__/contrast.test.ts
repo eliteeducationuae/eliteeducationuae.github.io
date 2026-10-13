@@ -1,4 +1,4 @@
-import { Brand, Colors, MasteryColors, type Palette } from '../palette';
+import { AvatarColors, Brand, Colors, MasteryColors, type Palette } from '../palette';
 
 /** WCAG 2.x relative luminance of a #RRGGBB colour. */
 function luminance(hex: string): number {
@@ -81,6 +81,97 @@ describe('brand palette contrast (WCAG AA, 4.5:1)', () => {
       });
     });
   }
+});
+
+// 2026 redesign: every text colour on the surfaces it is used on (WCAG AA, 4.5:1).
+const REDESIGN_TEXT: [keyof Palette, keyof Palette][] = [
+  // Hero (sand): greeting, kicker, warm line, grey sub-lines; the info notice is gold-brown on sand.
+  ['text', 'sand'],
+  ['accent', 'sand'],
+  ['textWarm', 'sand'],
+  ['textMuted', 'sand'],
+  ['textBody', 'sand'],
+  // Cards: warm body text, prose, field errors, values.
+  ['textWarm', 'surface'],
+  ['textBody', 'surface'],
+  ['textProse', 'surface'],
+  ['danger', 'surface'],
+  ['success', 'surface'],
+  ['warning', 'surface'],
+  // Notice bodies on their tints.
+  ['textBody', 'warningBg'],
+  ['textBody', 'successBg'],
+  ['textBody', 'dangerBg'],
+  // A hovered row.
+  ['text', 'rowHover'],
+  ['textMuted', 'rowHover'],
+  ['accent', 'rowHover'],
+  // Inputs: typed text and placeholders.
+  ['text', 'inputFill'],
+  ['textMuted', 'inputFill'],
+  // Tab bar labels and message timestamps on the page.
+  ['navInactive', 'background'],
+  ['tabActive', 'background'],
+  ['timestamp', 'background'],
+  // The rail.
+  ['text', 'rail'],
+  ['textMuted', 'rail'],
+  // The solid danger button.
+  ['onDangerSolid', 'dangerSolid'],
+  // Chevrons and other icons are font glyphs on the web, so they meet text contrast too.
+  ['chevron', 'surface'],
+  ['chevron', 'rowHover'],
+  ['chevron', 'background'],
+];
+
+// Non-text parts that carry meaning (WCAG 1.4.11, 3:1): chevrons, the toggle track in both states.
+const REDESIGN_UI: [keyof Palette, keyof Palette][] = [
+  ['chevron', 'surface'],
+  ['chevron', 'rowHover'],
+  ['toggleOff', 'surface'],
+  ['toggleOn', 'surface'],
+  ['inputBorder', 'inputFill'],
+  ['inputBorder', 'surface'],
+  ['errorBorder', 'inputFill'],
+];
+
+describe('redesign tokens', () => {
+  for (const scheme of ['light', 'dark'] as const) {
+    const p: Palette = Colors[scheme];
+    describe(scheme, () => {
+      it.each(REDESIGN_TEXT)('%s on %s reaches 4.5:1', (fg, bg) => {
+        expect(contrast(p[fg], p[bg])).toBeGreaterThanOrEqual(4.5);
+      });
+      it.each(REDESIGN_UI)('%s against %s reaches 3:1', (fg, bg) => {
+        expect(contrast(p[fg], p[bg])).toBeGreaterThanOrEqual(3);
+      });
+      it('keeps the white toggle knob visible on the "on" track', () => {
+        expect(contrast('#FFFFFF', p.toggleOn)).toBeGreaterThanOrEqual(3);
+      });
+      it('defines every light token in dark mode too', () => {
+        expect(Object.keys(Colors.dark).sort()).toEqual(Object.keys(Colors.light).sort());
+      });
+    });
+  }
+
+  it.each(AvatarColors)('white initials read on avatar colour %s', (c) => {
+    expect(contrast('#FFFFFF', c)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('matches the handoff values in light mode', () => {
+    const l = Colors.light;
+    expect([l.sand, l.hairline, l.rowDivider, l.rowHover, l.inputFill, l.errorBorder, l.toggleOn]).toEqual([
+      '#F3EDE1',
+      '#E9E2D3',
+      '#F0EADF',
+      '#FBF8F2',
+      '#FDFCFA',
+      '#8E3A33',
+      '#3D6B4F',
+    ]);
+    expect([l.successBg, l.warningBg, l.dangerBg]).toEqual(['#EAF1EA', '#FBF1E4', '#F8E9E6']);
+    expect([l.textWarm, l.textBody, l.textProse]).toEqual(['#4A463F', '#3F3B35', '#2E2B26']);
+  });
 });
 
 describe('mastery colours', () => {

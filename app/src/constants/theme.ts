@@ -8,9 +8,9 @@ import '@/global.css';
 
 import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
-import type { Palette } from './palette';
+import { Layout, type Palette } from './palette';
 
-export { Brand, Colors, MasteryColors, Radius, Spacing } from './palette';
+export { AvatarColors, avatarColor, Brand, Colors, Layout, MasteryColors, Radius, Spacing } from './palette';
 export type { Palette, ThemeColor } from './palette';
 
 /**
@@ -51,4 +51,8 @@ export function elevation(palette: Palette, level: 1 | 2 = 1): ViewStyle {
     : { shadowColor: palette.shadow, shadowOpacity: opacity, shadowRadius: blur / 2, shadowOffset: { width: 0, height: y }, elevation: level * 2 };
 }
 
-export const MaxContentWidth = 860;
+/** The content column's maximum width (the redesign's 1080). */
+export const MaxContentWidth: number = Layout.maxWidth;
+
+/** Tabular figures for amounts, times and counts. */
+export const tabular: TextStyle = { fontVariant: ['tabular-nums'] };

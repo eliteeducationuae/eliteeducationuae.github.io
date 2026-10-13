@@ -6,6 +6,7 @@ import { ViewAsFrame, viewAsScreenLayout } from '@/components/view-as';
 import { useSession } from '@/data/session';
 import { useTheme } from '@/hooks/use-theme';
 import { useAccountantOffLimits } from '@/lib/accountant-routes';
+import { useManageOffLimits } from '@/lib/manage-routes';
 
 // Launch readiness: a calm, branded screen when something here fails to render.
 export { ErrorBoundary } from '@/components/error-boundary';
@@ -18,10 +19,13 @@ export default function SignedInLayout() {
   const palette = useTheme();
   const status = useSession((s) => s.status);
   const accountantOffLimits = useAccountantOffLimits();
+  const manageOffLimits = useManageOffLimits();
   if (status === 'loading') return <Loading />;
   if (status === 'signed-out') return <Redirect href="/sign-in" />;
   // Tax: the accountant only sees the books.
   if (accountantOffLimits) return <Redirect href="/accountant" />;
+  // The office's screens (/manage/*) are for admins only; anyone else goes to their own home.
+  if (manageOffLimits) return <Redirect href="/" />;
   const stack = (
     <Stack screenOptions={stackOptions(palette)} screenLayout={viewAsScreenLayout}>
       <Stack.Screen name="admin" options={{ headerShown: false }} />
@@ -105,6 +109,8 @@ export default function SignedInLayout() {
       <Stack.Screen name="plan/[id]" options={{ title: 'Lesson plan', presentation: 'modal' }} />
       <Stack.Screen name="handover/index" options={{ title: 'Handover packs' }} />
       <Stack.Screen name="handover/[id]" options={{ title: 'Handover pack' }} />
+      {/* Design-system kit (admin only, not linked from any menu). */}
+      <Stack.Screen name="kit" options={{ headerShown: false }} />
     </Stack>
   );
   // While an admin is viewing as someone else, the frame adds the "View as" banner above every screen.

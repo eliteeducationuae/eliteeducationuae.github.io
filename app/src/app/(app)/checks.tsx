@@ -1,11 +1,10 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
-import { Card, EmptyState, Loading, Row, Screen, Section, Txt, Banner } from '@/components/ui';
-import { DocumentRow, DocumentUploadCard, OnboardingChecklist, useComplianceFor, useToday, VettingBadge } from '@/components/vetting';
-import { Spacing } from '@/constants/theme';
+import { EmptyState, FieldsCard, Loading, Notice, PageHeader, Screen, Section } from '@/components/ui';
+import { DocumentRow, DocumentUploadCard, OnboardingChecklist, useComplianceFor, useToday } from '@/components/vetting';
 import { useTutorDocuments, useTutors } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { formatLongDate, vettingSummary } from '@/domain/vetting';
 
 /** A tutor's police clearance, onboarding steps and documents. Admins may pass ?tutorId= to act for a tutor. */
@@ -18,10 +17,13 @@ export default function MyChecks() {
   const tutors = useTutors();
   const { compliance: c, isLoading } = useComplianceFor(tutorId);
   const docs = useTutorDocuments(tutorId);
+  const viewing = !!useViewing();
 
   if (!tutorId) {
     return (
-      <Screen>
+      <Screen topInset>
+        <Stack.Screen options={{ headerShown: false }} />
+        <PageHeader back kicker="Elite Education" title="Checks" />
         <EmptyState icon="person" title="No tutor selected" message="Open a tutor from Tutor checks to see their documents." />
       </Screen>
     );
@@ -31,53 +33,52 @@ export default function MyChecks() {
   const name = tutors.data?.find((t) => t.id === tutorId)?.fullName;
   const renewBy = c?.clearanceExpiry ? formatLongDate(c.clearanceExpiry) : undefined;
 
+  const tone = !c ? 'info' : c.vettingStatus === 'cleared' ? 'good' : c.vettingStatus === 'pending' ? 'info' : c.vettingStatus === 'expiring' ? 'warn' : 'danger';
+  const detail = !c
+    ? ''
+    : c.vettingStatus === 'missing'
+      ? 'Please upload your police clearance certificate below. Once we have verified it, we can begin to assign you lessons.'
+      : c.vettingStatus === 'pending'
+        ? 'Thank you. We are reviewing your certificate and will let you know once it has been verified.'
+        : c.vettingStatus === 'expired'
+          ? 'Your police clearance has expired. Please upload your renewed certificate so that we can continue to assign you lessons.'
+          : c.vettingStatus === 'expiring'
+            ? `Please upload your renewed certificate before ${renewBy} so that we can continue to assign you lessons.`
+            : 'We will remind you before it expires.';
+
   return (
-    <Screen onRefresh={() => docs.refetch()} refreshing={docs.isRefetching}>
-      {!own && name ? <Stack.Screen options={{ title: `${name}: checks` }} /> : null}
+    <Screen topInset onRefresh={() => docs.refetch()} refreshing={docs.isRefetching}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back kicker="Elite Education" title={own ? 'My checks and documents' : `${name ?? 'Tutor'}: checks`} />
       {c ? (
-        <Card style={{ gap: Spacing.two }}>
-          <Row style={{ justifyContent: 'space-between' }} wrap>
-            <Txt variant="h2">Police clearance</Txt>
-            <VettingBadge status={c.vettingStatus} />
-          </Row>
-          <Txt variant="muted">{vettingSummary(c, today)}</Txt>
-          {c.vettingStatus === 'missing' ? (
-            <Txt>Please upload your police clearance certificate below. Once we have verified it, we can begin to assign you lessons.</Txt>
-          ) : null}
-          {c.vettingStatus === 'pending' ? <Txt>Thank you. We are reviewing your certificate and will let you know once it has been verified.</Txt> : null}
-        </Card>
-      ) : null}
-      {c && (c.vettingStatus === 'expiring' || c.vettingStatus === 'expired') ? (
-        <Banner tone={c.vettingStatus === 'expired' ? 'danger' : 'warning'} icon="alert">
-          {c.vettingStatus === 'expired'
-            ? 'Your police clearance has expired. Please upload your renewed certificate so that we can continue to assign you lessons.'
-            : `Please upload your renewed certificate before ${renewBy} so that we can continue to assign you lessons.`}
-        </Banner>
+        <Notice tone={tone} icon="verified_user" title="Police clearance">
+          {`${vettingSummary(c, today)}. ${detail}`}
+        </Notice>
       ) : null}
 
       {c ? (
-        <Section title="Onboarding">
-          <Card>
-            <OnboardingChecklist compliance={c} today={today} links={own} />
-          </Card>
-        </Section>
+        <FieldsCard title="Onboarding">
+          <OnboardingChecklist compliance={c} today={today} links={own} />
+        </FieldsCard>
       ) : null}
 
       <Section title={own ? 'My documents' : 'Documents'}>
         {(docs.data ?? []).length === 0 ? (
-          <EmptyState icon="doc" title="No documents yet" message="Documents you upload appear here with their review status." />
+          <EmptyState icon="description" title="No documents yet" message="Documents you upload appear here with their review status." />
         ) : (
-          <View style={{ gap: Spacing.two }}>
+          <View style={{ gap: 12 }}>
             {(docs.data ?? []).map((d) => (
-              <DocumentRow key={d.id} doc={d} today={today} canRemove />
+              <DocumentRow key={d.id} doc={d} today={today} canRemove={!viewing} />
             ))}
           </View>
         )}
       </Section>
 
-      <Section title="Upload">
-        <DocumentUploadCard tutorId={tutorId} onBehalf={!own} />
-      </Section>
+      {!viewing ? (
+        <Section title="Upload">
+          <DocumentUploadCard tutorId={tutorId} onBehalf={!own} />
+        </Section>
+      ) : null}
     </Screen>
   );
 }

@@ -115,8 +115,12 @@ select set_config('request.headers', '', false);
 select pg_temp.check(public.log_app_error('No headers', null, null, 'web', null, 'manual', null),
   'a report without connection headers falls back to the overall cap');
 reset role;
-select pg_temp.check((select count(*) = 20 and count(distinct ip_hash) = 1 and bool_and(ip_hash !~ '203') from public.app_errors
-                        where message like 'Crash %'), 'only a salted fingerprint of the connection is stored');
+-- A salted SHA-256 is 64 hex digits, so it can never hold the dotted address; and it is not the unsalted digest.
+select pg_temp.check((select count(*) = 20 and count(distinct ip_hash) = 1
+                             and bool_and(ip_hash ~ '^[0-9a-f]{64}$' and strpos(ip_hash, '203.0.113.7') = 0
+                                          and ip_hash <> encode(sha256(convert_to('203.0.113.7', 'UTF8')), 'hex')
+                                          and ip_hash <> encode(sha256(convert_to(':203.0.113.7', 'UTF8')), 'hex'))
+                        from public.app_errors where message like 'Crash %'), 'only a salted fingerprint of the connection is stored');
 -- The overall cap of 200 an hour still applies.
 insert into public.app_errors (message, platform, source) select 'Filler ' || g, 'web', 'manual' from generate_series(1, 178) g;
 set role anon;

@@ -1,1 +1,3 @@
-export { default } from '../manage/vat';
+import { AccountantVatScreen } from '@/components/accountant/vat-screen';
+
+export default AccountantVatScreen;

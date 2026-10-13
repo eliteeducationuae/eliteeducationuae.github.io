@@ -1,14 +1,13 @@
-import { Redirect } from 'expo-router';
-import { View } from 'react-native';
+import { Redirect, router, Stack } from 'expo-router';
 
-import { reportProgress, ReportRow, sortReports } from '@/components/reports';
-import { Banner, Card, EmptyState, Loading, ProgressBar, Row, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { REPORT_STATUS, reportProgress, reportSubject, sortReports } from '@/components/reports';
+import { EmptyState, Group, GroupRow, Loading, Notice, PageHeader, Screen } from '@/components/ui';
 import { useEnrolments, useLookup, useReportCycles, useStudentReports } from '@/data/hooks';
 import { useMe } from '@/data/session';
 import { daysUntil, formatDate } from '@/domain/dates';
+import type { StudentReport } from '@/domain/types';
 
-/** Tutors: the reports you need to write this round, with a progress bar. */
+/** Tutors: the reports you need to write this round. */
 export default function TutorReports() {
   const me = useMe();
   const cycles = useReportCycles();
@@ -25,51 +24,54 @@ export default function TutorReports() {
   );
   const open = (cycles.data ?? []).filter((c) => c.status === 'open').sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const past = (cycles.data ?? []).filter((c) => c.status === 'closed' || !open.includes(c));
+  const row = (r: StudentReport) => {
+    const s = REPORT_STATUS[r.status];
+    const student = lookup.student(r.studentId);
+    const { subject } = reportSubject(r, enrolments.data ?? []);
+    return (
+      <GroupRow
+        key={r.id}
+        avatar={student?.fullName ?? 'Student'}
+        title={student?.fullName ?? 'Student'}
+        note={[subject ?? student?.curriculum, r.status === 'draft' ? 'We prepare a draft for you' : null].filter(Boolean).join(' · ')}
+        value={s.label}
+        valueTone={r.status === 'draft' ? 'accent' : r.status === 'published' ? 'good' : 'muted'}
+        valueSize={12.5}
+        onPress={() => router.push({ pathname: '/reports/[id]', params: { id: r.id } })}
+      />
+    );
+  };
 
   return (
-    <Screen onRefresh={() => reports.refetch()} refreshing={reports.isRefetching}>
+    <Screen topInset onRefresh={() => reports.refetch()} refreshing={reports.isRefetching}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back kicker="Reports" title="Reports to write" sub="Open a student, then “Draft for me” to start from this term’s lessons, notes and ratings." />
       {open.length === 0 && mine.length === 0 ? (
-        <EmptyState icon="doc" title="No reports to write" message="When Elite Education opens a report round, your students will appear here." />
+        <EmptyState icon="description" title="No reports to write" message="When Elite Education opens a report round, your students will appear here." />
       ) : null}
       {open.map((c) => {
         const list = mine.filter((r) => r.cycleId === c.id).sort((a, b) => (a.status === 'draft' ? 0 : 1) - (b.status === 'draft' ? 0 : 1));
         const p = reportProgress(list);
         const days = daysUntil(c.dueDate, new Date());
-        return (
-          <Section key={c.id} title={c.name}>
-            <Card style={{ gap: Spacing.two }}>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Txt variant="h3">
-                  {p.written} of {p.total} written
-                </Txt>
-                <Txt variant="muted">Due {formatDate(c.dueDate)}</Txt>
-              </Row>
-              <ProgressBar value={p.percent} />
-              {p.written < p.total && days <= 3 ? (
-                <Banner tone="warning" icon="clock">
-                  {days < 0 ? 'These are overdue.' : days === 0 ? 'Due today.' : `Due in ${days} day${days === 1 ? '' : 's'}.`} Select a student, then “Draft for me” to begin.
-                </Banner>
-              ) : null}
-            </Card>
-            <View style={{ gap: Spacing.two }}>
-              {list.map((r) => (
-                <ReportRow key={r.id} report={r} />
-              ))}
-            </View>
-          </Section>
-        );
+        return [
+          p.written < p.total && days <= 3 ? (
+            <Notice key={`${c.id}-due`} tone="warn">
+              {`${days < 0 ? 'These reports are overdue.' : days === 0 ? 'These reports are due today.' : `These reports are due in ${days} day${days === 1 ? '' : 's'}.`}`}
+            </Notice>
+          ) : null,
+          <Group key={c.id} title={c.name} meta={`Due ${formatDate(c.dueDate)}`}>
+            <GroupRow icon="description" title={`${p.written} of ${p.total} written`} progress={p.percent} titleWeight="regular" />
+            {list.map(row)}
+          </Group>,
+        ];
       })}
       {past.map((c) => {
         const list = mine.filter((r) => r.cycleId === c.id);
         if (list.length === 0) return null;
         return (
-          <Section key={c.id} title={`${c.name} (closed)`}>
-            <View style={{ gap: Spacing.two }}>
-              {list.map((r) => (
-                <ReportRow key={r.id} report={r} />
-              ))}
-            </View>
-          </Section>
+          <Group key={c.id} title={`${c.name} (closed)`}>
+            {list.map(row)}
+          </Group>
         );
       })}
     </Screen>

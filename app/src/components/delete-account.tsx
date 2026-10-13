@@ -1,9 +1,7 @@
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
 
 import { SUPPORT_EMAIL } from '@/config';
-import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { queryClient } from '@/data/query';
 import { useFamilyContacts } from '@/data/hooks';
@@ -17,31 +15,13 @@ import {
   deletionConsequences,
   DELETE_CONFIRM_WORD,
 } from '@/domain/data-rights';
-import { useTheme } from '@/hooks/use-theme';
 import { confirm, notify } from '@/lib/confirm';
 import { saveDataExport } from '@/lib/data-export';
 
-import { Icon, type IconName } from './icon';
-import { Button, Card, Field, Row, Screen, Section, Txt } from './ui';
-
-function Bullets({ items, icon, color }: { items: string[]; icon: IconName; color: string }) {
-  return (
-    <View style={{ gap: Spacing.two }}>
-      {items.map((item) => (
-        <Row key={item} gap={Spacing.two} style={{ alignItems: 'flex-start' }}>
-          <View style={{ paddingTop: 3 }}>
-            <Icon name={icon} size={16} color={color} />
-          </View>
-          <Txt style={{ flex: 1 }}>{item}</Txt>
-        </Row>
-      ))}
-    </View>
-  );
-}
+import { Actions, Button, Columns, Field, FieldsCard, Group, GroupRow, Notice, PageHeader, Screen } from './ui';
 
 /** Delete my account: what happens, a chance to download first, and a typed confirmation. */
 export function DeleteAccountScreen() {
-  const theme = useTheme();
   const profile = useSession((s) => s.profile);
   const signOut = useSession((s) => s.signOut);
   // Kept from the first render: the profile disappears once the account has been deleted.
@@ -90,66 +70,62 @@ export function DeleteAccountScreen() {
   }
 
   return (
-    <Screen>
-      <Card style={{ gap: Spacing.three }}>
-        <Txt variant="h2">Before you go</Txt>
-        <View style={{ width: 28, height: 2, backgroundColor: theme.gold }} />
-        <Txt>
-          Deleting your account is permanent. We are sorry to see you leave, and we would be glad to help with anything first: please write to{' '}
-          {SUPPORT_EMAIL}.
-        </Txt>
-        {ownLoginOnly ? <Txt variant="h3">{CONTACT_LOGIN_NOTE}</Txt> : null}
-      </Card>
-
-      <Section title="What will be removed">
-        <Card>
-          <Bullets items={consequences.removed} icon="close" color={theme.danger} />
-        </Card>
-      </Section>
-
-      <Section title="What we keep">
-        <Card>
-          <Bullets items={consequences.kept} icon="check" color={theme.accent} />
-          <Txt variant="muted">{consequences.note}</Txt>
-        </Card>
-      </Section>
-
-      <Section title="Download my data first">
-        <Card style={{ gap: Spacing.three }}>
-          <Txt variant="muted">We recommend keeping a copy of your records. The file opens in any text editor.</Txt>
-          <Button title="Download my data" variant="outline" icon="share" loading={downloading} onPress={downloadFirst} />
-        </Card>
-      </Section>
-
-      <Section title="Confirm">
-        <Card style={{ gap: Spacing.three }}>
-          <Field
-            label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
-            value={typed}
-            onChangeText={setTyped}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            placeholder={DELETE_CONFIRM_WORD}
-          />
-          <Button
-            title="Delete my account permanently"
-            variant="danger"
-            icon="alert"
-            disabled={!confirmed}
-            loading={deleting}
-            onPress={() =>
-              confirm(
-                'Delete your account?',
-                ownLoginOnly
-                  ? "This cannot be undone. Your login and personal details will be removed straight away; the family's account stays with the main contact."
-                  : 'This cannot be undone. Your login and personal details will be removed straight away.',
-                deleteNow,
-                'Delete',
-              )
-            }
-          />
-        </Card>
-      </Section>
+    <Screen topInset>
+      <Stack.Screen options={{ headerShown: false, title: 'Delete my account' }} />
+      <PageHeader back={{ fallback: '/' }} kicker="Account" title="Delete your account" />
+      <Notice tone="danger" title="This cannot be undone">
+        {`Deleting your account is permanent. We are sorry to see you leave, and we would be glad to help with anything first: please write to ${SUPPORT_EMAIL}.`}
+      </Notice>
+      {ownLoginOnly ? <Notice tone="info">{CONTACT_LOGIN_NOTE}</Notice> : null}
+      <Columns>
+        <Group title="What will be removed">
+          {consequences.removed.map((item) => (
+            <GroupRow key={item} icon="close" tone="bad" title={item} titleWeight="regular" />
+          ))}
+        </Group>
+        <Group title="What we keep" note={consequences.note}>
+          {consequences.kept.map((item) => (
+            <GroupRow key={item} icon="check" title={item} titleWeight="regular" />
+          ))}
+        </Group>
+      </Columns>
+      <Group title="Download my data first">
+        <GroupRow
+          icon="download"
+          title="Download my data"
+          note="We recommend keeping a copy of your records. The file opens in any text editor."
+          action={{ label: downloading ? 'Preparing…' : 'Download', onPress: () => void downloadFirst(), disabled: downloading }}
+        />
+      </Group>
+      <FieldsCard title="Confirm">
+        <Field
+          label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
+          value={typed}
+          onChangeText={setTyped}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder={DELETE_CONFIRM_WORD}
+        />
+      </FieldsCard>
+      <Actions>
+        <Button
+          title="Delete my account permanently"
+          variant="danger"
+          icon="delete"
+          disabled={!confirmed}
+          loading={deleting}
+          onPress={() =>
+            confirm(
+              'Delete your account?',
+              ownLoginOnly
+                ? "This cannot be undone. Your sign-in and personal details will be removed straight away; the family's account stays with the main contact."
+                : 'This cannot be undone. Your sign-in and personal details will be removed straight away.',
+              deleteNow,
+              'Delete',
+            )
+          }
+        />
+      </Actions>
     </Screen>
   );
 }

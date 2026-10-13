@@ -1,11 +1,12 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useFamilyContacts } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
+import { useTheme } from '@/hooks/use-theme';
 import {
   canRemoveContact,
   CHANNEL_LABELS,
@@ -26,86 +27,73 @@ import {
 import type { ContactChannel, FamilyContact, FamilyContactDraft } from '@/domain/types';
 import { confirm } from '@/lib/confirm';
 
-import { Avatar, Badge, Button, Card, Chip, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Segmented, Txt, useSwitchColors, type Tone } from './ui';
+import { Actions, Badge, Button, ChipField, ErrorNote, Field, FieldsCard, Group, GroupRow, Loading, Notice, PageHeader, Row, Screen, Toggle, Txt } from './ui';
 
 const NOTICE_KINDS: NoticeKind[] = ['invoices', 'reports', 'lesson_notes', 'general'];
 
 const CHANNEL_OPTIONS = (Object.keys(CHANNEL_LABELS) as ContactChannel[]).map((value) => ({ value, label: CHANNEL_LABELS[value] }));
 
-/** The badges on a contact card: what they receive, with 'Signed in' once they have used their login. */
-function contactBadges(c: FamilyContact): { label: string; tone: Tone }[] {
-  return contactFlagsSummary(c).map((label) => {
-    if (label === 'Main contact') return { label, tone: 'gold' };
-    if (label === 'Signs in' && c.hasLogin) return { label: 'Signed in', tone: 'neutral' };
-    return { label, tone: 'neutral' };
-  });
+/** What a contact receives, as one line: 'Main contact, signed in, invoices, reports'. */
+function contactFlagsLine(c: FamilyContact): string {
+  const flags = contactFlagsSummary(c).map((label) => (label === 'Signs in' && c.hasLogin ? 'Can sign in' : label));
+  return flags.length ? flags.map((f, i) => (i ? f.toLowerCase() : f)).join(', ') : 'Receives nothing yet';
 }
 
 /** The family's contacts with what each receives, for the family itself and for admins. */
 export function FamilyContactsSection({ familyId, editable, intro }: { familyId: string; editable: boolean; intro?: string }) {
+  const theme = useTheme();
+  const viewing = useViewing();
   const contacts = useFamilyContacts(familyId);
   const list = contacts.data ?? [];
+  const canEdit = editable && !viewing;
+  const edit = (id?: string) => router.push({ pathname: '/contacts/edit', params: id ? { familyId, id } : { familyId } });
+  if (contacts.isLoading) return <Loading />;
+  if (contacts.error) return <ErrorNote error={contacts.error} />;
   return (
-    <Section
-      title="Contacts"
-      action={
-        editable ? (
-          <Button title="Add" icon="plus" size="sm" variant="ghost" onPress={() => router.push({ pathname: '/contacts/edit', params: { familyId } })} />
-        ) : undefined
-      }>
-      {intro ? <Txt variant="muted">{intro}</Txt> : null}
-      {contacts.isLoading ? (
-        <Loading />
-      ) : contacts.error ? (
-        <ErrorNote error={contacts.error} />
-      ) : list.length === 0 ? (
-        <Card>
-          <Txt variant="muted">No contacts have been added yet.</Txt>
-        </Card>
-      ) : (
-        <View style={{ gap: Spacing.two }}>
-          {list.map((c) => (
-            <ListItem
-              key={c.id}
-              title={c.name}
-              subtitle={`${RELATIONSHIP_LABELS[c.relationship]}${c.email ? ` · ${c.email}` : ''}`}
-              left={<Avatar name={c.name} />}
-              below={
-                <Row wrap gap={Spacing.one} style={{ flex: 1 }}>
-                  {contactBadges(c).map((b) => (
-                    <Badge key={b.label} label={b.label} tone={b.tone} />
-                  ))}
-                </Row>
-              }
-              onPress={editable ? () => router.push({ pathname: '/contacts/edit', params: { familyId, id: c.id } }) : undefined}
-            />
-          ))}
-          <Card style={{ gap: Spacing.two }}>
+    <View style={{ gap: 12 }}>
+      <Group title="Family contacts" note={intro}>
+        {list.map((c) => (
+          <GroupRow
+            key={c.id}
+            avatar={c.name}
+            title={c.name}
+            note={`${RELATIONSHIP_LABELS[c.relationship]}${c.email ? ` · ${c.email}` : ''}`}
+            accessibilityLabel={c.name}
+            onPress={canEdit ? () => edit(c.id) : undefined}>
+            <Txt variant="note" style={{ color: theme.accent }}>
+              {contactFlagsLine(c)}
+            </Txt>
+          </GroupRow>
+        ))}
+        {list.length === 0 ? <GroupRow icon="group" title="No contacts have been added yet." /> : null}
+        {canEdit ? <GroupRow icon="add" title="Add a contact" onPress={() => edit()} /> : null}
+      </Group>
+      {list.length ? (
+        <Group>
+          <View style={{ paddingHorizontal: 18, paddingVertical: 16, gap: 8 }}>
             <Txt variant="label">Who receives what</Txt>
             {NOTICE_KINDS.map((kind) => (
-              <Txt key={kind} variant="muted">
-                <Txt variant="muted" style={{ fontWeight: '700' }}>
+              <Txt key={kind} variant="note" style={{ color: theme.textBody }}>
+                <Txt variant="note" style={{ fontWeight: '700', color: theme.textBody }}>
                   {NOTICE_KIND_LABELS[kind]}:
                 </Txt>{' '}
                 {describeRecipients(list, kind)}
               </Txt>
             ))}
-            <Txt variant="muted">
-              <Txt variant="muted" style={{ fontWeight: '700' }}>
+            <Txt variant="note" style={{ color: theme.textBody }}>
+              <Txt variant="note" style={{ fontWeight: '700', color: theme.textBody }}>
                 WhatsApp (lesson reminders and the notices above):
               </Txt>{' '}
               {describeWhatsAppRecipients(list)}
             </Txt>
             {list.some((c) => !c.canLogIn && !c.hasLogin && !!c.email) ? (
-              <Txt variant="small">
-                Email only: these contacts receive emails but no app notifications, and cannot sign in.
-              </Txt>
+              <Txt variant="small">Email only: these contacts receive emails but no app notifications, and cannot sign in.</Txt>
             ) : null}
             <Txt variant="small">Bank details are never included in notifications; they appear only on invoices in the app.</Txt>
-          </Card>
-        </View>
-      )}
-    </Section>
+          </View>
+        </Group>
+      ) : null}
+    </View>
   );
 }
 
@@ -127,7 +115,7 @@ export function FamilyContactsReadOnly({ familyId }: { familyId: string }) {
   );
 }
 
-/** A labelled switch with a one-line explanation, styled as on the WhatsApp card. */
+/** A labelled switch with a one-line explanation (the redesign's Toggle). */
 function SwitchRow({
   label,
   explanation,
@@ -141,22 +129,7 @@ function SwitchRow({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
-  const switchColors = useSwitchColors(value);
-  return (
-    <View style={{ gap: 2 }}>
-      <Row gap={Spacing.three} style={{ justifyContent: 'space-between' }}>
-        <Txt style={{ flex: 1 }}>{label}</Txt>
-        <Switch
-          value={value}
-          onValueChange={onChange}
-          disabled={disabled}
-          {...switchColors}
-          accessibilityLabel={label}
-        />
-      </Row>
-      {explanation ? <Txt variant="small">{explanation}</Txt> : null}
-    </View>
-  );
+  return <Toggle title={label} note={explanation} value={value} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} />;
 }
 
 /** The confirmation text for removing a contact. */
@@ -242,6 +215,7 @@ export function ContactEditor({
 
   return (
     <Screen
+      topInset
       footer={
         // The reason Save is unavailable sits beside it, so it is seen however far down the form the person is.
         <View style={{ flex: 1, gap: Spacing.two }}>
@@ -252,7 +226,7 @@ export function ContactEditor({
           ) : null}
           <Button
             title={existing ? 'Save changes' : 'Add contact'}
-            variant="gold"
+            icon={existing ? 'check' : 'person_add'}
             disabled={!!problem}
             loading={save.isPending}
             onPress={() => {
@@ -261,39 +235,42 @@ export function ContactEditor({
           />
         </View>
       }>
-      <Field label="Name" value={draft.name} onChangeText={(t) => set('name', t)} autoCapitalize="words" autoComplete="name" />
-      <View style={{ gap: Spacing.one }}>
-        <Txt variant="label">Relationship</Txt>
-        <Row wrap gap={Spacing.two}>
-          {RELATIONSHIP_ORDER.map((r) => (
-            <Chip key={r} label={RELATIONSHIP_LABELS[r]} selected={draft.relationship === r} onPress={() => setRelationship(r)} />
-          ))}
-        </Row>
-      </View>
-      <Field
-        label="Email"
-        value={draft.email ?? ''}
-        onChangeText={(t) => set('email', t)}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        autoComplete="email"
-        editable={!existing?.hasLogin}
-        hint={existing?.hasLogin ? emailLockHint(existing, all, me) : undefined}
+      <PageHeader
+        back
+        kicker="Family contacts"
+        title={existing ? existing.name : 'Add a contact'}
+        sub={existing?.hasLogin ? 'They sign in with their own login and see only what you choose here.' : 'Choose what they receive. They see only what you choose here.'}
       />
-      <Field
-        label="Telephone"
-        value={draft.phone ?? ''}
-        onChangeText={(t) => set('phone', t)}
-        keyboardType="phone-pad"
-        autoComplete="tel"
-        hint="Include the country code, for example +971 50 123 4567."
-      />
-      <View style={{ gap: Spacing.one }}>
-        <Txt variant="label">Preferred way to reach them</Txt>
-        <Segmented value={draft.preferredChannel} onChange={(v) => set('preferredChannel', v)} options={CHANNEL_OPTIONS} />
-      </View>
-      <Card style={{ gap: Spacing.three }}>
+      <FieldsCard>
+        <Field label="Name" value={draft.name} onChangeText={(t) => set('name', t)} autoCapitalize="words" autoComplete="name" placeholder="e.g. Khalid Al Mansoori" />
+        <ChipField
+          label="Relationship"
+          options={RELATIONSHIP_ORDER.map((r) => ({ value: r, label: RELATIONSHIP_LABELS[r] }))}
+          value={draft.relationship}
+          onChange={setRelationship}
+        />
+        <Field
+          label="Email"
+          value={draft.email ?? ''}
+          onChangeText={(t) => set('email', t)}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          autoComplete="email"
+          editable={!existing?.hasLogin}
+          hint={existing?.hasLogin ? emailLockHint(existing, all, me) : undefined}
+        />
+        <Field
+          label="Telephone"
+          value={draft.phone ?? ''}
+          onChangeText={(t) => set('phone', t)}
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          hint="Include the country code, for example +971 50 123 4567."
+        />
+        <ChipField label="Preferred way to reach them" options={CHANNEL_OPTIONS} value={draft.preferredChannel} onChange={(v) => set('preferredChannel', v)} />
+      </FieldsCard>
+      <FieldsCard title="They receive">
         <SwitchRow
           label="Can sign in to the app"
           explanation="They sign in with this email address and see the family’s lessons, progress, invoices and messages."
@@ -346,14 +323,16 @@ export function ContactEditor({
           onChange={(v) => set('isPrimary', v)}
           disabled={alreadyPrimary}
         />
-      </Card>
+      </FieldsCard>
       <ErrorNote error={save.error} />
       <ErrorNote error={remove.error} />
       {existing && removal ? (
         removal.ok ? (
-          <Button title={`Remove ${existing.name}`} variant="danger" loading={remove.isPending} onPress={onRemove} />
+          <Actions>
+            <Button title={`Remove ${existing.name}`} icon="person_remove" variant="danger" loading={remove.isPending} onPress={onRemove} />
+          </Actions>
         ) : (
-          <Txt variant="muted">{removal.reason}</Txt>
+          <Notice tone="info">{removal.reason}</Notice>
         )
       ) : null}
     </Screen>

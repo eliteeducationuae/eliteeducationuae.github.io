@@ -1,5 +1,5 @@
 import * as Linking from 'expo-linking';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -7,8 +7,8 @@ import { APPLICATION_STATUS, teachingFromApplication } from '@/components/hiring
 import { RepeatNote, SpamActions, SpamBanner } from '@/components/spam';
 import { TutorChecksSummary } from '@/components/vetting';
 import { tutorColorFor } from '@/lib/tutor-colors';
-import { Badge, Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { FactsGroup, NoHeader } from '@/components/admin-people/kit';
+import { Actions, Button, ChipField, Columns, EmptyState, ErrorNote, Field, FieldsCard, Group, Loading, Notice, PageHeader, Screen, Txt } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useApplications } from '@/data/hooks';
 import { relativeDay } from '@/domain/dates';
@@ -23,7 +23,15 @@ export default function ApplicationDetail() {
   const applications = useApplications();
   if (applications.isLoading) return <Loading />;
   const a = applications.data?.find((x) => x.id === id);
-  if (!a) return <Screen><EmptyState title="Application not found" /></Screen>;
+  if (!a) {
+    return (
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/manage/applications' }} kicker="Hiring" title="Application not found" />
+        <EmptyState title="Application not found" />
+      </Screen>
+    );
+  }
   return <Detail key={a.id} a={a} />;
 }
 
@@ -52,86 +60,80 @@ function Detail({ a }: { a: TutorApplication }) {
       },
     ]);
     await update.mutateAsync([a.id, { status: 'hired', tutorId: tutor.id }]);
-    router.push({ pathname: '/manage/tutor-edit', params: { id: tutor.id } });
+    router.push({ pathname: '/manage/tutor/[id]', params: { id: tutor.id } });
   }
 
+  const first = a.fullName.split(' ')[0];
+  const stage = APPLICATION_STATUS[a.status];
   return (
-    <Screen>
-      <Stack.Screen options={{ title: a.fullName }} />
+    <Screen topInset>
+      <NoHeader title={a.fullName} />
+      <PageHeader
+        back={{ fallback: '/manage/applications' }}
+        kicker={`Hiring · ${stage.label}`}
+        title={a.fullName}
+        sub={[a.subjects, a.curricula.join(', '), (a.phases ?? []).join(', ')].filter(Boolean).join(' · ') || undefined}
+      />
       <SpamBanner kind="application" id={a.id} item={a} />
-      <Card style={{ gap: Spacing.two }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="h2">{a.fullName}</Txt>
-            <Txt variant="muted">
-              Applied {relativeDay(a.createdAt).toLowerCase()} · {a.email}
-              {a.phone ? ` · ${a.phone}` : ''}
-            </Txt>
-            <RepeatNote repeatCount={a.repeatCount} />
-          </View>
-          <Badge label={APPLICATION_STATUS[a.status].label} tone={APPLICATION_STATUS[a.status].tone} />
-        </Row>
-        {a.subjects ? (
-          <Txt>
-            <Txt style={{ fontWeight: '700' }}>Subjects: </Txt>
-            {a.subjects}
-          </Txt>
-        ) : null}
-        {a.curricula.length ? (
-          <Txt>
-            <Txt style={{ fontWeight: '700' }}>Curricula: </Txt>
-            {a.curricula.join(', ')}
-          </Txt>
-        ) : null}
-        {a.phases?.length ? (
-          <Txt>
-            <Txt style={{ fontWeight: '700' }}>Phases: </Txt>
-            {a.phases.join(', ')}
-          </Txt>
-        ) : null}
-        {a.qualifications ? <Txt variant="muted">Qualifications: {a.qualifications}</Txt> : null}
-        {a.experience ? <Txt>{a.experience}</Txt> : null}
-        {a.availability ? <Txt variant="muted">Available: {a.availability}</Txt> : null}
-        <Row gap={Spacing.two} wrap>
-          {a.cvPath ? <Button title="Open CV" icon="doc" size="sm" variant="secondary" onPress={openCv} /> : null}
-          <Button title="Email" icon="mail" size="sm" variant="secondary" onPress={() => Linking.openURL(`mailto:${a.email}?subject=${encodeURIComponent('Your application to Elite Education')}`)} />
-          {phone ? <Button title="WhatsApp" icon="chat" size="sm" variant="secondary" onPress={() => Linking.openURL(`https://wa.me/${phone.replace('+', '')}`)} /> : null}
-        </Row>
-        {!isPossibleSpam(a) && a.status === 'applied' ? <SpamActions kind="application" id={a.id} status={a.spamStatus} compact /> : null}
-      </Card>
+      <RepeatNote repeatCount={a.repeatCount} />
 
-      <Section title="Stage">
-        <Row gap={Spacing.one} wrap>
-          {STAGES.filter((s) => s !== 'hired').map((s) => (
-            <Chip key={s} label={APPLICATION_STATUS[s].label} selected={a.status === s} onPress={() => update.mutate([a.id, { status: s }])} />
-          ))}
-        </Row>
-      </Section>
+      <Columns>
+        <FactsGroup
+          title="Application"
+          facts={[
+            { k: 'Applied', v: relativeDay(a.createdAt) },
+            { k: 'Email', v: a.email },
+            { k: 'Phone', v: a.phone },
+            { k: 'Qualifications', v: a.qualifications },
+            { k: 'Available', v: a.availability },
+          ]}
+        />
+        <Group title="In their words" note={a.experience || 'They did not add anything about their experience.'} />
+      </Columns>
+
+      <Actions>
+        {a.cvPath ? <Button title="Open CV" icon="description" variant="secondary" onPress={openCv} /> : null}
+        <Button title="Email" icon="mail" variant="secondary" onPress={() => Linking.openURL(`mailto:${a.email}?subject=${encodeURIComponent('Your application to Elite Education')}`)} />
+        {phone ? <Button title="WhatsApp" icon="chat_bubble" variant="secondary" onPress={() => Linking.openURL(`https://wa.me/${phone.replace('+', '')}`)} /> : null}
+      </Actions>
+      {!isPossibleSpam(a) && a.status === 'applied' ? <SpamActions kind="application" id={a.id} status={a.spamStatus} compact /> : null}
+
+      <FieldsCard title="Stage">
+        <ChipField
+          options={STAGES.filter((s) => s !== 'hired').map((s) => ({ value: s, label: APPLICATION_STATUS[s].label }))}
+          value={a.status}
+          onChange={(s) => update.mutate([a.id, { status: s }])}
+        />
+      </FieldsCard>
 
       {a.status === 'hired' && a.tutorId ? (
-        <View style={{ gap: Spacing.two }}>
-          <Banner tone="success" icon="check">
-            Hired — their tutor profile is set up.{' '}
-            <Txt variant="muted" color="accent" onPress={() => router.push({ pathname: '/manage/tutor-edit', params: { id: a.tutorId! } })}>
-              Open profile and send invitation
-            </Txt>
-          </Banner>
-          <Txt variant="muted">Their onboarding checklist has started: police clearance, bank details, availability and the tutor handbook.</Txt>
+        <>
+          <Notice tone="good" title="Hired" link={{ label: 'Open their profile', onPress: () => router.push({ pathname: '/manage/tutor/[id]', params: { id: a.tutorId! } }) }}>
+            Their tutor profile is set up. Their onboarding checklist has started: police clearance, bank details, availability and the tutor handbook.
+          </Notice>
           <TutorChecksSummary tutorId={a.tutorId} />
-        </View>
+        </>
       ) : (
-        <Card style={{ gap: Spacing.three }}>
-          <Txt variant="h3">Hire {a.fullName.split(' ')[0]}</Txt>
-          <Txt variant="muted">This creates their tutor profile. You can then send an invitation so that they can create their login, add bank details and set their availability.</Txt>
-          <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" />
-          <Button title="Hire and create tutor profile" variant="gold" loading={saveTutor.isPending || update.isPending} onPress={() => confirm(`Hire ${a.fullName}?`, 'This creates their tutor profile.', hire, 'Hire')} />
-        </Card>
+        <FieldsCard title={`Hire ${first}`}>
+          <Txt variant="muted">This creates their tutor profile. They then create their account in the app with {a.email}, add bank details and set their availability.</Txt>
+          <Field label="Pay per hour (AED)" value={pay} onChangeText={setPay} keyboardType="decimal-pad" hint="What the tutor is paid. You can change it later on their profile." />
+          <View style={{ flexDirection: 'row' }}>
+            <Button
+              title="Hire and create tutor profile"
+              icon="person_add"
+              loading={saveTutor.isPending || update.isPending}
+              onPress={() => confirm(`Hire ${a.fullName}?`, 'This creates their tutor profile.', hire, 'Hire')}
+            />
+          </View>
+        </FieldsCard>
       )}
 
-      <Section title="Notes">
+      <FieldsCard title="Notes">
         <Field label="Interview notes (staff only)" value={notes} onChangeText={setNotes} multiline />
-        <Button title="Save notes" variant="secondary" loading={update.isPending} onPress={() => update.mutate([a.id, { notes: notes.trim() }])} />
-      </Section>
+        <View style={{ flexDirection: 'row' }}>
+          <Button title="Save notes" icon="save" variant="secondary" loading={update.isPending} onPress={() => update.mutate([a.id, { notes: notes.trim() }])} />
+        </View>
+      </FieldsCard>
       <ErrorNote error={update.error ?? saveTutor.error} />
     </Screen>
   );

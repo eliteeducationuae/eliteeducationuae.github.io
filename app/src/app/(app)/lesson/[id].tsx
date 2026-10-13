@@ -7,8 +7,11 @@ import { HistorySection } from '@/components/history';
 import { Icon } from '@/components/icon';
 import { HandoverLink } from '@/components/handover';
 import { LessonStatusBadge } from '@/components/lessons';
+import { ParentLesson } from '@/components/parent/lesson-view';
 import { LessonVettingNote, notCleared, useComplianceMap, VettingBadge } from '@/components/vetting';
+import { AdminLesson } from '@/components/ops/admin-lesson';
 import { LessonPlanSection } from '@/components/plans';
+import { TutorLessonPage } from '@/components/tutor/lesson';
 import { Avatar, Badge, Banner, Button, Card, EmptyState, ErrorNote, Field, ListItem, Loading, Row, Screen, Section, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -39,7 +42,26 @@ import { useTheme } from '@/hooks/use-theme';
 import { notify } from '@/lib/confirm';
 import { safeMeetingUrl } from '@/lib/safe-url';
 
-export default function LessonDetail() {
+/** Tutors get their own page; it hides the native header and draws a PageHeader. */
+function TutorLesson({ id }: { id: string }) {
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <TutorLessonPage id={id} />
+    </>
+  );
+}
+
+/** The admin has the redesigned operations page, families their own (components/parent/lesson-view), the lesson's tutor theirs (components/tutor/lesson); students keep this one. */
+export default function LessonScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  if (me.role === 'admin') return <AdminLesson id={id} />;
+  if (me.role === 'parent') return <ParentLesson id={id} />;
+  return <StaffLessonDetail />;
+}
+
+function StaffLessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const me = useMe();
@@ -49,6 +71,8 @@ export default function LessonDetail() {
   const enrolments = useEnrolments();
   const topics = useTopicLookup();
   const [mode, setMode] = useState<'view' | 'cancel' | 'move' | 'cover'>('view');
+  // The lesson's tutor has their own page (redesign): their pay, never the family's price, and no cancelling.
+  if (me.role === 'tutor' && (!lesson.data || lesson.data.tutorId === me.tutorId)) return <TutorLesson id={id} />;
 
   if (lesson.isLoading || !lookup.ready) return <Loading />;
   const l = lesson.data;

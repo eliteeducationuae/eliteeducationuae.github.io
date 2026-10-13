@@ -1,19 +1,20 @@
-import { Redirect, router } from 'expo-router';
-import { View } from 'react-native';
+import { Redirect, router, Stack } from 'expo-router';
 
-import { TutorInvoiceCard } from '@/components/tutor-pay';
-import { Banner, Button, Card, EmptyState, ErrorNote, Loading, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { periodLabel, TUTOR_INVOICE_STATUS } from '@/components/tutor-pay';
+import { Actions, Button, ErrorNote, Group, GroupRow, Loading, Notice, PageHeader, Screen } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, usePaymentDetails, useTutorInvoices } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
+import { formatAED } from '@/domain/billing';
 import { formatMonth, toDateKey } from '@/domain/dates';
+import { tutorInvoiceTotal } from '@/domain/tutor-pay';
 
-/** Tutors: monthly invoices to Elite Education, built from the lessons you taught. */
+/** Tutors: monthly invoices to Elite Education, filled in from the lessons you taught. */
 export default function TutorInvoices() {
   const me = useMe();
+  const viewing = !!useViewing();
   const invoices = useTutorInvoices();
-  const bank = usePaymentDetails(me.tutorId);
+  const bank = usePaymentDetails(me.tutorId ?? undefined);
   const create = useAction(source.createTutorInvoice);
   if (me.role === 'admin') return <Redirect href="/manage/tutor-invoices" />;
   if (invoices.isLoading || !me.tutorId) return <Loading />;
@@ -29,35 +30,39 @@ export default function TutorInvoices() {
   }
 
   return (
-    <Screen onRefresh={() => invoices.refetch()} refreshing={invoices.isRefetching}>
+    <Screen topInset onRefresh={() => invoices.refetch()} refreshing={invoices.isRefetching}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back kicker="Pay" title="My invoices" sub="We fill each invoice in from the lessons you taught. Check it, add anything extra and submit." />
       {!bank.isLoading && !bank.data ? (
-        <Banner tone="warning" icon="money">
-          Please add your bank details so that we can pay you.{' '}
-          <Txt variant="muted" color="accent" onPress={() => router.push('/payment-details')}>
-            Add them now
-          </Txt>
-        </Banner>
+        <Notice tone="warn" icon="account_balance" link={{ label: 'Add them now', onPress: () => router.push('/payment-details') }}>
+          Please add your bank details so that we can pay you.
+        </Notice>
       ) : null}
-      <Card style={{ gap: Spacing.two }}>
-        <Txt variant="h3">Create an invoice</Txt>
-        <Txt variant="muted">We fill it in from the lessons you taught — just check it, add anything extra, and submit.</Txt>
-        <View style={{ gap: Spacing.two }}>
-          {!has(lastMonth) ? <Button title={`Invoice for ${formatMonth(lastMonth)}`} variant="gold" icon="doc" loading={create.isPending} onPress={() => start(lastMonth)} /> : null}
-          {!has(thisMonth) ? <Button title={`Start ${formatMonth(thisMonth)} (so far)`} variant="secondary" loading={create.isPending} onPress={() => start(thisMonth)} /> : null}
-        </View>
-        <ErrorNote error={create.error} />
-      </Card>
-      <Section title="Your invoices">
-        {mine.length === 0 ? (
-          <EmptyState icon="doc" title="No invoices yet" message="Your monthly invoices will appear here once you create them." />
-        ) : (
-          <View style={{ gap: Spacing.two }}>
-            {mine.map((i) => (
-              <TutorInvoiceCard key={i.id} inv={i} />
-            ))}
-          </View>
-        )}
-      </Section>
+      <Group title="Your invoices" note={mine.length ? undefined : 'Your monthly invoices will appear here once you create them.'}>
+        {mine.map((i) => {
+          const s = TUTOR_INVOICE_STATUS[i.status];
+          const lessons = i.items.filter((x) => x.lessonId).length;
+          return (
+            <GroupRow
+              key={i.id}
+              icon="receipt_long"
+              tone={i.status === 'paid' ? 'good' : i.status === 'rejected' ? 'bad' : 'gold'}
+              title={periodLabel(i)}
+              note={`${s.label} · ${i.number} · ${lessons} lesson${lessons === 1 ? '' : 's'}`}
+              value={formatAED(tutorInvoiceTotal(i.items))}
+              valueTone={i.status === 'paid' ? 'good' : i.status === 'draft' ? 'text' : 'accent'}
+              onPress={() => router.push({ pathname: '/tutor-invoices/[id]', params: { id: i.id } })}
+            />
+          );
+        })}
+      </Group>
+      <ErrorNote error={create.error} />
+      {!viewing && (!has(lastMonth) || !has(thisMonth)) ? (
+        <Actions>
+          {!has(lastMonth) ? <Button title={`Invoice for ${formatMonth(lastMonth)}`} icon="receipt_long" loading={create.isPending} onPress={() => start(lastMonth)} /> : null}
+          {!has(thisMonth) ? <Button title={`Start ${formatMonth(thisMonth)} (so far)`} icon="add" variant="secondary" loading={create.isPending} onPress={() => start(thisMonth)} /> : null}
+        </Actions>
+      ) : null}
     </Screen>
   );
 }

@@ -1,7 +1,8 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { CaseForm } from '@/components/admissions/case-form';
-import { EmptyState, Loading, Screen } from '@/components/ui';
+import { NoHeader } from '@/components/ops/parts';
+import { EmptyState, Loading, PageHeader, Screen } from '@/components/ui';
 import { useAdmissionsCase } from '@/data/hooks';
 
 /** Open (admin) or edit an admissions case. ?id= to edit, ?studentId= to prefill a new case. */
@@ -11,7 +12,9 @@ export default function AdmissionsCaseEdit() {
   if (id && existing.isLoading) return <Loading />;
   if (id && !existing.data) {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/admissions' }} kicker="Admissions" title="Case not found" />
         <EmptyState icon="school" title="Case not found" />
       </Screen>
     );

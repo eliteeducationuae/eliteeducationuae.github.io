@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { AttachmentEditor } from '@/components/attachments';
+import { AdminRecordForm } from '@/components/ops/admin-record';
 import { RatingPicker } from '@/components/progress';
 import { Banner, Button, Card, Chip, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
@@ -20,21 +21,39 @@ import { masteryByTopic, type Syllabus } from '@/domain/progress';
 import { DEFAULT_UNIT } from '@/domain/topics';
 import type { Attachment, AttendanceMark, TopicRating } from '@/domain/types';
 import { notify } from '@/lib/confirm';
+import { TutorRecordPage } from '@/components/tutor/record';
 
 type Rating = TopicRating['rating'];
 
-/** Record a lesson in one pass: attendance, topics + ratings, summary for the family, homework. */
-export default function CompleteLesson() {
+/** Record a lesson. The lesson's tutor gets the redesigned page; the office keeps this one. */
+export default function CompleteLessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const me = useMe();
+  if (me.role === 'tutor') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <TutorRecordPage id={id} />
+      </>
+    );
+  }
+  return <CompleteLesson id={id} />;
+}
+
+/** Record a lesson in one pass: attendance, topics + ratings, summary for the family, homework. */
+function CompleteLesson({ id }: { id: string }) {
   const lookup = useLookup();
   const lesson = useLesson(id);
   const enrolments = useEnrolments();
   const topics = useTopicLookup();
   const plan = useLessonPlan(id);
   const resources = useResources();
+  const me = useMe();
   if (lesson.isLoading || !lookup.ready || enrolments.isLoading || !topics.ready || plan.isLoading || resources.isLoading) return <Loading />;
   // Start from the lesson plan, when there is one.
   const prefill = prefillFromPlan(plan.data, lesson.data?.studentIds ?? [], resources.data ?? []);
+  // The admin has the redesigned record page; tutors keep theirs below. Both save the same way.
+  if (me.role === 'admin') return <AdminRecordForm key={plan.data?.updatedAt ?? 'none'} id={id} prefill={prefill} planned={!isPlanEmpty(plan.data)} />;
   return <RecordForm key={plan.data?.updatedAt ?? 'none'} id={id} prefill={prefill} planned={!isPlanEmpty(plan.data)} />;
 }
 

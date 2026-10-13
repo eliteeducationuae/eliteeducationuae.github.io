@@ -23,6 +23,7 @@ import { configureErrorReporting, installGlobalErrorHandlers } from '@/lib/error
 import { guardAgainstFraming, type FrameWindow } from '@/lib/frame-guard';
 
 import { ErrorBoundary } from '@/components/error-boundary';
+import { ToastProvider } from '@/components/ui';
 
 export { ErrorBoundary };
 // Each screen gets its own boundary (inherited by every nested layout), so a screen that fails to render shows the
@@ -88,13 +89,16 @@ export default function RootLayout() {
           },
         }}>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-        <Stack screenOptions={stackOptions(palette)}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-          <Stack.Screen name="(app)" options={{ headerShown: false }} />
-          <Stack.Screen name="enquire" options={{ title: 'Book a free consultation' }} />
-          <Stack.Screen name="teach" options={{ title: 'Teach with Elite Education' }} />
-        </Stack>
+        {/* The redesign's toast (useToast): one host for the whole app, above every navigator. */}
+        <ToastProvider>
+          <Stack screenOptions={stackOptions(palette)}>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+            <Stack.Screen name="(app)" options={{ headerShown: false }} />
+            <Stack.Screen name="enquire" options={{ title: 'Book a free consultation' }} />
+            <Stack.Screen name="teach" options={{ title: 'Teach with Elite Education' }} />
+          </Stack>
+        </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

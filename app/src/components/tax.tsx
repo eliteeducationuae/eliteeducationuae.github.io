@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Switch, useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Switch, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { formatDate, formatLineDescription } from '@/domain/dates';
@@ -144,14 +145,21 @@ export interface TaxLineView {
   gross: number;
 }
 
-/** Lines with net, VAT rate, VAT and gross: a table on wide screens, stacked rows on phones. */
+/**
+ * Lines with net, VAT rate, VAT and gross: a table where there is room (the quantity and price under each description
+ * when space is tighter), stacked rows on phones. The layout follows the table's own width, so it fits a column.
+ */
 export function LineTaxTable({ lines }: { lines: TaxLineView[] }) {
   const theme = useTheme();
-  const { width } = useWindowDimensions();
-  const wide = width >= TABLE_MIN_WIDTH;
+  const { width: windowWidth } = useWindowDimensions();
+  const [width, setWidth] = useState<number | null>(null);
+  const room = width ?? windowWidth;
+  const wide = room >= TABLE_MIN_WIDTH - 260;
+  const qtyColumn = room >= TABLE_MIN_WIDTH - 80;
   const num = { fontVariant: ['tabular-nums' as const], textAlign: 'right' as const };
+  const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
   if (wide) {
-    const showQty = lines.some((l) => l.quantity);
+    const showQty = qtyColumn && lines.some((l) => l.quantity);
     const cols = [
       { key: 'net', label: 'Net', flex: 1.1 },
       { key: 'rate', label: 'VAT rate', flex: 0.7 },
@@ -159,7 +167,7 @@ export function LineTaxTable({ lines }: { lines: TaxLineView[] }) {
       { key: 'gross', label: 'Gross', flex: 1.1 },
     ];
     return (
-      <View style={{ gap: Spacing.two }}>
+      <View style={{ gap: Spacing.two }} onLayout={onLayout}>
         <Row gap={Spacing.two} style={{ paddingBottom: Spacing.one, borderBottomWidth: 1, borderBottomColor: theme.text }}>
           <Txt variant="label" style={{ flex: 2.6 }}>
             Description
@@ -177,19 +185,22 @@ export function LineTaxTable({ lines }: { lines: TaxLineView[] }) {
         </Row>
         {lines.map((l, i) => (
           <Row key={i} gap={Spacing.two} style={{ alignItems: 'flex-start', paddingBottom: Spacing.two, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-            <Txt style={{ flex: 2.6 }}>{l.description}</Txt>
-            {showQty ? <Txt style={[num, { flex: 1.4 }]}>{l.quantity ?? ''}</Txt> : null}
-            <Txt style={[num, { flex: 1.1 }]}>{aed(l.net)}</Txt>
-            <Txt style={[num, { flex: 0.7 }]}>{vatPercent(l.vatRate)}</Txt>
-            <Txt style={[num, { flex: 1 }]}>{aed(l.vat)}</Txt>
-            <Txt style={[num, { flex: 1.1 }]}>{aed(l.gross)}</Txt>
+            <View style={{ flex: 2.6, gap: 2 }}>
+              <Txt style={styles.cell}>{l.description}</Txt>
+              {!showQty && l.quantity ? <Txt variant="small">{l.quantity}</Txt> : null}
+            </View>
+            {showQty ? <Txt style={[num, styles.cell, { flex: 1.4 }]}>{l.quantity ?? ''}</Txt> : null}
+            <Txt style={[num, styles.cell, { flex: 1.1 }]}>{aed(l.net)}</Txt>
+            <Txt style={[num, styles.cell, { flex: 0.7 }]}>{vatPercent(l.vatRate)}</Txt>
+            <Txt style={[num, styles.cell, { flex: 1 }]}>{aed(l.vat)}</Txt>
+            <Txt style={[num, styles.cell, { flex: 1.1 }]}>{aed(l.gross)}</Txt>
           </Row>
         ))}
       </View>
     );
   }
   return (
-    <View style={{ gap: Spacing.three }}>
+    <View style={{ gap: Spacing.three }} onLayout={onLayout}>
       {lines.map((l, i) => (
         <View key={i} style={{ gap: 2, paddingBottom: Spacing.two, borderBottomWidth: i === lines.length - 1 ? 0 : 1, borderBottomColor: theme.border }}>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={Spacing.three}>
@@ -282,3 +293,7 @@ export function SwitchRow({
 export function balanceLine(balance: number): { label: string; value: string } {
   return balance < 0 ? { label: 'In credit, to be refunded', value: aed(-balance) } : { label: 'Balance due', value: aed(balance) };
 }
+
+const styles = StyleSheet.create({
+  cell: { fontSize: 14.5, lineHeight: 21 },
+});

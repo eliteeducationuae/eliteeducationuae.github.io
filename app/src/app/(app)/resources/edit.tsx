@@ -6,7 +6,8 @@ import { AttachmentList, CLASSWORK_FILE_TYPES, discardUpload } from '@/component
 import { CataloguePicker } from '@/components/catalogue-picker';
 import { pickFile } from '@/components/file-pick';
 import { CAN_USE_CAMERA, pickPhoto } from '@/components/photo-pick';
-import { Button, EmptyState, ErrorNote, Field, Loading, Row, Screen, Section, Segmented, Txt } from '@/components/ui';
+import { NoHeader } from '@/components/admin-people/kit';
+import { Actions, Button, EmptyState, ErrorNote, Field, FieldsCard, Loading, Notice, PageHeader, Row, Screen, Segmented, Txt, useToast } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
 import { useAction, useResources } from '@/data/hooks';
@@ -23,7 +24,9 @@ export default function ResourceEditScreen() {
   const resources = useResources();
   if (me.role !== 'admin' && me.role !== 'tutor') {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/' }} kicker="Library" title="Resource" />
         <EmptyState icon="folder" title="For tutors only" message="The resource library is kept by your tutors." />
       </Screen>
     );
@@ -33,7 +36,9 @@ export default function ResourceEditScreen() {
   const existing = id ? all.find((r) => r.id === id) : undefined;
   if (id && !existing) {
     return (
-      <Screen>
+      <Screen topInset>
+        <NoHeader />
+        <PageHeader back={{ fallback: '/resources' }} kicker="Library" title="Resource not found" />
         <EmptyState icon="folder" title="Resource not found" message="It may have been removed from the library." />
       </Screen>
     );
@@ -43,6 +48,7 @@ export default function ResourceEditScreen() {
 
 function ResourceForm({ existing }: { existing?: Resource }) {
   const save = useAction(source.saveResource);
+  const toast = useToast();
 
   const [title, setTitle] = useState(existing?.title ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
@@ -98,18 +104,33 @@ function ResourceForm({ existing }: { existing?: Resource }) {
         tags: parseTags(tags),
       },
     ]);
-    router.back();
+    back();
+    toast(existing ? `${title.trim()} is saved.` : `${title.trim()} is added to the library.`);
   }
 
-  return (
-    <Screen
-      footer={<Button title={existing ? 'Save changes' : 'Add to the library'} icon="check" variant="gold" style={{ flex: 1 }} disabled={!valid} loading={save.isPending} onPress={submit} />}>
-      <Section title="Resource">
-        <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Calculus revision booklet" />
-        <Field label="Description (optional)" multiline value={description} onChangeText={setDescription} placeholder="What it covers and how best to use it." />
-      </Section>
+  const [tried, setTried] = useState(false);
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/resources'));
 
-      <Section title="File or link">
+  return (
+    <Screen topInset>
+      <NoHeader title={existing ? 'Edit resource' : 'Add a resource'} />
+      <PageHeader
+        back={{ label: 'Cancel', onPress: back }}
+        kicker={existing ? 'Library · Edit' : 'Library · New'}
+        title={existing ? existing.title : 'Add a resource'}
+        sub="Upload a worksheet, past paper or revision sheet, or save a link. Tutors can share it with students from a lesson."
+      />
+      {tried && !valid ? (
+        <Notice tone="danger" title="Not saved yet">
+          {!title.trim() ? 'Please give the resource a title.' : kind === 'file' ? 'Please choose a file to upload.' : 'Please enter a full web address.'}
+        </Notice>
+      ) : null}
+      <FieldsCard title="Resource">
+        <Field label="Title" value={title} onChangeText={setTitle} placeholder="For example, Calculus revision booklet" error={tried && !title.trim()} />
+        <Field label="Description (optional)" multiline value={description} onChangeText={setDescription} placeholder="What it covers and how best to use it." />
+      </FieldsCard>
+
+      <FieldsCard title="File or link">
         <Segmented
           value={kind}
           onChange={setKind}
@@ -161,16 +182,29 @@ function ResourceForm({ existing }: { existing?: Resource }) {
             ) : null}
           </View>
         )}
-      </Section>
+      </FieldsCard>
 
-      <Section title="Subject and level">
+      <FieldsCard title="Subject and level">
         <CataloguePicker label="Subject" options={SUBJECTS} value={subject} onChange={setSubject} optional collapsed={10} />
         <CataloguePicker label="Curriculum" options={CURRICULA} value={curriculum} onChange={setCurriculum} optional collapsed={8} />
         <CataloguePicker label="Level" options={levelsFor(curriculum, level)} value={level} onChange={setLevel} optional />
         <Field label="Tags" value={tags} onChangeText={setTags} placeholder="For example, calculus, revision, past papers" hint="Separate tags with commas." autoCapitalize="none" />
-      </Section>
+      </FieldsCard>
 
       <ErrorNote error={save.error} />
+      <Actions>
+        <Button
+          title={existing ? 'Save changes' : 'Add to the library'}
+          icon="check"
+          disabled={!!uploading}
+          loading={save.isPending}
+          onPress={() => {
+            setTried(true);
+            if (valid) void submit().catch(() => undefined);
+          }}
+        />
+        <Button title="Cancel" variant="secondary" onPress={back} />
+      </Actions>
     </Screen>
   );
 }

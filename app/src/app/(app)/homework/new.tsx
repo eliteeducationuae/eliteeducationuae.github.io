@@ -1,12 +1,11 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
 import { HomeworkEditor, isValidDueDate, type HomeworkDraft } from '@/components/homework';
-import { Button, Chip, EmptyState, ErrorNote, Loading, Row, Screen, Section, Txt } from '@/components/ui';
-import { Spacing } from '@/constants/theme';
+import { Actions, Button, ChipField, EmptyState, ErrorNote, FieldsCard, Loading, Notice, PageHeader, Screen, useToast } from '@/components/ui';
 import { source } from '@/data';
 import { useAction, useStudents } from '@/data/hooks';
-import { useMe } from '@/data/session';
+import { useMe, useViewing } from '@/data/session';
 import { addDays, toDateKey } from '@/domain/dates';
 import { withoutClosed } from '@/domain/closed-accounts';
 
@@ -17,11 +16,21 @@ export default function NewHomework() {
   const students = useStudents();
   const save = useAction(source.saveHomework);
   const [studentId, setStudentId] = useState<string | undefined>(params.studentId);
+  const toast = useToast();
+  const viewing = !!useViewing();
+  const [tried, setTried] = useState(false);
   const [draft, setDraft] = useState<HomeworkDraft>(() => ({ title: '', details: '', dueDate: toDateKey(addDays(new Date(), 7)), attachments: [] }));
 
+  const header = (title: string, sub?: string) => (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <PageHeader back kicker="Homework" title={title} sub={sub} />
+    </>
+  );
   if (me.role !== 'admin' && me.role !== 'tutor') {
     return (
-      <Screen>
+      <Screen topInset>
+        {header('Set homework')}
         <EmptyState icon="book" title="For tutors only" message="Homework is set by your tutor." />
       </Screen>
     );
@@ -32,7 +41,8 @@ export default function NewHomework() {
   const valid = !!studentId && !!draft.title.trim() && isValidDueDate(draft.dueDate);
 
   async function submit() {
-    if (!studentId) return;
+    setTried(true);
+    if (!studentId || !valid) return;
     const saved = await save.mutateAsync([
       {
         studentId,
@@ -43,40 +53,44 @@ export default function NewHomework() {
       },
     ]);
     router.replace(`/homework/${saved.id}`);
+    toast(`Homework set. ${student?.fullName.split(' ')[0] ?? 'The student'} and the family have been told.`);
   }
 
   return (
-    <Screen footer={<Button title="Set homework" icon="check" variant="gold" style={{ flex: 1 }} disabled={!valid} loading={save.isPending} onPress={submit} />}>
-      {params.studentId && student ? (
-        <Txt variant="h2">For {student.fullName}</Txt>
-      ) : (
-        <Section title="Student">
-          {list.length === 0 ? <Txt variant="muted">You have no students yet.</Txt> : null}
-          <Row gap={Spacing.one} wrap>
-            {list.map((s) => (
-              <Chip
-                key={s.id}
-                label={s.fullName}
-                selected={s.id === studentId}
-                onPress={() => {
-                  if (s.id === studentId) return;
-                  // Uploaded files live in each student's own folder, so only links and library items carry over.
-                  setStudentId(s.id);
-                  setDraft((d) => ({ ...d, attachments: d.attachments.filter((a) => a.kind === 'link' || !!a.resourceId) }));
-                }}
-              />
-            ))}
-          </Row>
-        </Section>
-      )}
+    <Screen topInset>
+      {header(student ? `For ${student.fullName}` : 'Set homework', student ? undefined : 'Choose a student first, so that any files are kept in their folder.')}
+      {!(params.studentId && student) ? (
+        <FieldsCard>
+          {list.length === 0 ? (
+            <Notice tone="info">You have no students yet.</Notice>
+          ) : (
+            <ChipField
+              label="Student"
+              options={list.map((s) => ({ value: s.id, label: s.fullName }))}
+              value={studentId}
+              error={tried && !studentId}
+              onChange={(id) => {
+                if (id === studentId) return;
+                // Uploaded files live in each student's own folder, so only links and library items carry over.
+                setStudentId(id);
+                setDraft((d) => ({ ...d, attachments: d.attachments.filter((a) => a.kind === 'link' || !!a.resourceId) }));
+              }}
+            />
+          )}
+        </FieldsCard>
+      ) : null}
       {studentId ? (
-        <Section title="Homework">
+        <FieldsCard>
           <HomeworkEditor studentId={studentId} value={draft} onChange={setDraft} />
-        </Section>
-      ) : (
-        <Txt variant="muted">Please choose a student first, so that any files are kept in their folder.</Txt>
-      )}
+        </FieldsCard>
+      ) : null}
+      {tried && studentId && !draft.title.trim() ? <Notice tone="danger">Please give the homework a title.</Notice> : null}
       <ErrorNote error={save.error} />
+      {!viewing ? (
+        <Actions>
+          <Button title="Set homework" icon="check" loading={save.isPending} onPress={submit} />
+        </Actions>
+      ) : null}
     </Screen>
   );
 }

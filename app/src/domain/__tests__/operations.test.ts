@@ -112,6 +112,13 @@ describe('profit and loss', () => {
     expect(revenueBySubject(charges, [lesson({ id: 'a' })], [])).toEqual([{ subject: 'Other', revenue: 1350 }]);
     expect(toCSV([['Name', 'Note'], ['Sami', 'said "hi", then left']])).toBe('Name,Note\r\nSami,"said ""hi"", then left"');
   });
+
+  it('defuses spreadsheet formulas in text but leaves numbers alone', () => {
+    expect(toCSV([['=HYPERLINK("http://x","y")', '+1+cmd', '-2+3', '@SUM(A1)', '\t=1', '\r=1']])).toBe(
+      `"'=HYPERLINK(""http://x"",""y"")",'+1+cmd,'-2+3,'@SUM(A1),'\t=1,"'\r=1"`,
+    );
+    expect(toCSV([[-120.5, '-120.50', '+44', '-1,250.00', 0, 'Plain', '', null]])).toBe('-120.5,-120.50,+44,"-1,250.00",0,Plain,,');
+  });
 });
 
 describe('at-risk students', () => {

@@ -38,17 +38,53 @@ export const Colors = {
     // Secondary text on noir hero surfaces.
     onHeroMuted: '#B3AEA4',
     success: '#3D6B4F',
-    successBg: '#EAF1EC',
+    successBg: '#EAF1EA',
     warning: '#8A5A1C',
-    warningBg: '#F7EFDC',
+    warningBg: '#FBF1E4',
     danger: '#8E3A33',
-    dangerBg: '#F6E7E5',
+    dangerBg: '#F8E9E6',
     // Information: Stone Grey deepened for AA text, on an ivory-stone tint (no cool blue-grey, per the brand palette).
     info: '#5C5A55',
     infoBg: '#F1EFEA',
     tabBar: Brand.white,
     tabActive: Brand.noir,
     shadow: '#1A1408',
+    // ---- 2026 redesign tokens (see the design handoff README) ----
+    // Sand: the home hero, the desktop rail, icon circles, date chips and the info notice.
+    sand: '#F3EDE1',
+    // Hairline around white cards and figures; row dividers inside a group; the row hover wash.
+    hairline: '#E9E2D3',
+    rowDivider: '#F0EADF',
+    rowHover: '#FBF8F2',
+    // Text inputs: a barely-warm fill, and the border shown with an error message.
+    inputFill: '#FDFCFA',
+    // Field borders reach 3:1 against the fill (WCAG 1.4.11): warm grey, and a deep red with an error.
+    inputBorder: '#8F8A80',
+    errorBorder: '#8E3A33',
+    // Toggle track: green when on, a warm grey (3:1 against white, so the off state is still visible) when off.
+    toggleOn: '#3D6B4F',
+    toggleOff: '#8F8A80',
+    // Warm body text: hero lines, notice and expanded-row bodies, prose paragraphs.
+    textWarm: '#4A463F',
+    textBody: '#3F3B35',
+    textProse: '#2E2B26',
+    // Row chevrons, inactive tab labels and message timestamps. Icons are font glyphs on the web, so the chevron is
+    // held to text contrast (4.5:1) too: a little deeper than the prototypes' #8A857B.
+    chevron: '#726D64',
+    navInactive: '#6B6B6B',
+    timestamp: '#6E6A62',
+    // Phone tab bar: translucent paper with a hairline; desktop rail: sand with a gold-tinted active row.
+    tabBarPaper: 'rgba(249,248,245,0.96)',
+    rail: '#F3EDE1',
+    railActive: 'rgba(201,168,76,0.16)',
+    railHover: 'rgba(201,168,76,0.12)',
+    // Solid danger button: ivory text on a deep red.
+    dangerSolid: '#8E3A33',
+    onDangerSolid: Brand.ivory,
+    // Message composer send button with nothing to send.
+    sendDisabled: '#CFC8B8',
+    // Primary button pressed or hovered.
+    primaryHover: '#262421',
   },
   dark: {
     background: Brand.noir,
@@ -79,6 +115,29 @@ export const Colors = {
     tabBar: '#0F0F0F',
     tabActive: Brand.gold,
     shadow: '#000000',
+    sand: '#1A1814',
+    hairline: '#2B2925',
+    rowDivider: '#22201C',
+    rowHover: '#1B1A18',
+    inputFill: '#101010',
+    inputBorder: '#6B665E',
+    errorBorder: '#C0665C',
+    toggleOn: '#4E8462',
+    toggleOff: '#77726A',
+    textWarm: '#D6D1C7',
+    textBody: '#CFCAC0',
+    textProse: '#E4E0D8',
+    chevron: '#8A857B',
+    navInactive: '#A6A39C',
+    timestamp: '#A6A39C',
+    tabBarPaper: 'rgba(15,15,15,0.96)',
+    rail: '#1A1814',
+    railActive: 'rgba(201,168,76,0.16)',
+    railHover: 'rgba(201,168,76,0.10)',
+    dangerSolid: '#A8473F',
+    onDangerSolid: Brand.ivory,
+    sendDisabled: '#3A372F',
+    primaryHover: '#E9E4D8',
   },
 } as const;
 
@@ -98,5 +157,56 @@ export const Spacing = {
   six: 64,
 } as const;
 
-/** Corner radii from the brand system: 12, 16 and 20. */
-export const Radius = { sm: 12, md: 16, lg: 20, pill: 999, small: 12, medium: 16, large: 20 } as const;
+/**
+ * Corner radii. The original brand set (12, 16, 20) plus the 2026 redesign's: cards and groups 18, the home hero
+ * 26 on desktop and 28 (bottom corners only) on phones, inputs and date chips 12, the toast 14.
+ */
+export const Radius = {
+  sm: 12,
+  md: 16,
+  lg: 20,
+  pill: 999,
+  small: 12,
+  medium: 16,
+  large: 20,
+  card: 18,
+  hero: 26,
+  heroPhone: 28,
+  input: 12,
+  toast: 14,
+  chip: 12,
+} as const;
+
+/**
+ * Initials avatars cycle through these (white initials pass AA on every one). Pick one with avatarColor(name).
+ */
+export const AvatarColors = ['#7E621F', '#2F5F7A', '#3D6B4F', '#6E5A8A', '#8A5A1C'] as const;
+
+/** A stable avatar colour for a name. */
+export function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AvatarColors[h % AvatarColors.length];
+}
+
+/**
+ * Page layout from the redesign. Phones: 18 side padding, 20 between blocks. Desktop (window at least wideMin):
+ * 40 / 44 padding, 26 between blocks, content at most 1080 wide; "half" blocks sit two-up from 400 wide.
+ */
+export const Layout = {
+  wideMin: 1024,
+  phonePadX: 18,
+  phonePadTop: 8,
+  phonePadBottom: 40,
+  phoneGap: 20,
+  desktopPadTop: 40,
+  desktopPadX: 44,
+  desktopPadBottom: 64,
+  desktopGap: 26,
+  maxWidth: 1080,
+  halfBasis: 400,
+  halfGap: 22,
+  tabBarHeight: 84,
+  railWidth: 248,
+  railWidthNoir: 232,
+} as const;
