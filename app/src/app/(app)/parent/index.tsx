@@ -82,7 +82,12 @@ export default function ParentHome() {
   })();
 
   const avatar = wide ? undefined : (
-    <Pressable onPress={() => router.navigate('/parent/account')} accessibilityRole="button" accessibilityLabel="Your account" hitSlop={4}>
+    <Pressable
+      onPress={() => router.navigate('/parent/account')}
+      accessibilityRole="button"
+      accessibilityLabel="Your account"
+      // A 44px tap target around the 36px avatar.
+      style={{ width: 44, height: 44, margin: -4, alignItems: 'center', justifyContent: 'center' }}>
       <Avatar name={me.fullName} size={36} />
     </Pressable>
   );

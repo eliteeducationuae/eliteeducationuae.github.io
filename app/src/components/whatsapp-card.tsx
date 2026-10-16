@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { Platform, Switch, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { source } from '@/data';
@@ -79,7 +79,10 @@ export function WhatsAppCard() {
         <Txt variant="h3">WhatsApp reminders</Txt>
         <Badge label={savedOn ? 'On' : 'Off'} tone={savedOn ? 'success' : 'neutral'} />
       </Row>
-      <Row style={{ justifyContent: 'space-between' }}>
+      {/* On the web the row is a <label>, so the whole 44px-tall line (text and switch) toggles it. */}
+      <View
+        style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.two, justifyContent: 'space-between', minHeight: 44 }}
+        {...(Platform.OS === 'web' ? ({ role: 'label' } as object) : {})}>
         <Txt style={{ flex: 1 }}>Send me reminders on WhatsApp</Txt>
         <Switch
           value={optIn}
@@ -91,7 +94,7 @@ export function WhatsAppCard() {
           {...switchColors}
           accessibilityLabel="WhatsApp reminders"
         />
-      </Row>
+      </View>
       <View style={{ gap: Spacing.one }}>
         {whatsAppMessageKinds(me.role).map((kind) => (
           <Row key={kind} style={{ alignItems: 'flex-start' }}>

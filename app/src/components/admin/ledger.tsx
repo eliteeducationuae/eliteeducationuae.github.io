@@ -317,9 +317,9 @@ function Legend({ color, label }: { color: string; label: string }) {
 function InvoiceLine({ invoice, family, now }: { invoice: Invoice; family: string; now: Date }) {
   const theme = useTheme();
   const st = displayStatus(invoice, now);
-  const { total, balance } = invoiceTotals(invoice);
+  const { total, balance, credited } = invoiceTotals(invoice);
   const s = STATUS[st];
-  const sub =
+  const base =
     st === 'paid'
       ? `Paid · issued ${short(invoice.issueDate)}`
       : st === 'credited'
@@ -327,6 +327,8 @@ function InvoiceLine({ invoice, family, now }: { invoice: Invoice; family: strin
         : st === 'part-paid'
           ? `${formatAED(balance)} outstanding · due ${short(invoice.dueDate)}`
           : `Issued ${short(invoice.issueDate)} · due ${short(invoice.dueDate)}`;
+  // As the old billing list did: say how much of a not-fully-credited invoice has been credited.
+  const sub = credited > 0 && st !== 'credited' ? `${base} · ${formatAED(credited)} credited` : base;
   return (
     <RowLink
       title={family}

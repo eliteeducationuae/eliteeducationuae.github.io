@@ -27,7 +27,7 @@ import {
 import { toDateKey } from '@/domain/dates';
 import { useTheme } from '@/hooks/use-theme';
 
-import { Actions, Button, EmptyState, ErrorNote, Figure, Figures, Loading, Notice, PageHeader, Prose, Screen, Txt } from '../ui';
+import { Actions, BackPill, Button, EmptyState, ErrorNote, Figure, Figures, Loading, Notice, PageHeader, Prose, Screen, Txt } from '../ui';
 import { caseStatusColor } from './case-card';
 import {
   DatesPanel,
@@ -118,34 +118,47 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
   }[tab];
 
   const overview = tab === 'overview';
-  // On a phone the other tabs get a compact header (no sub-line or figures) so their content starts high.
+  // On a phone the other tabs get a compact header (one kicker line, a shorter title, no sub-line or figures) so their content starts high.
   const compact = !overview && width < 600;
   const next = [...overdueKeyDates(data.dates, now), ...upcomingKeyDates(data.dates, now, 3650)][0];
   const open = openTasks(data.tasks, manager ? undefined : 'family');
   const statusColor = caseStatusColor(c.status, theme);
+  const status = (
+    <Text style={[font('sans', 'bold'), styles.status, { color: statusColor }]} accessibilityLabel={`Status: ${CASE_STATUS_LABELS[c.status]}`}>
+      {CASE_STATUS_LABELS[c.status]}
+    </Text>
+  );
   return (
     <Screen topInset onRefresh={refresh} refreshing={caseQ.isRefetching}>
       <Stack.Screen options={{ headerShown: false, title: `${firstName(studentName)} · Admissions` }} />
-      <PageHeader
-        back={{ fallback: '/admissions' }}
-        kicker={`Admissions · ${CASE_KIND_LABELS[c.kind]}`}
-        title={studentName}
-        right={
-          <Text style={[font('sans', 'bold'), styles.status, { color: statusColor }]} accessibilityLabel={`Status: ${CASE_STATUS_LABELS[c.status]}`}>
-            {CASE_STATUS_LABELS[c.status]}
-          </Text>
-        }
-        sub={
-          compact ? undefined : (
+      {compact ? (
+        // The earlier phone polish: one kicker line, the case title at 19px in at most two lines, no sub-line.
+        <View style={{ gap: 8, paddingTop: 8 }}>
+          <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+            <BackPill fallback="/admissions" />
+          </View>
+          <View style={styles.compactTop}>
+            <Txt variant="kicker" numberOfLines={1} style={{ flex: 1 }}>{`${studentName} · ${CASE_KIND_LABELS[c.kind]}`}</Txt>
+            {status}
+          </View>
+          <Txt variant="title" accessibilityRole="header" numberOfLines={2} style={{ fontSize: 19, lineHeight: 25 }}>
+            {c.title}
+          </Txt>
+        </View>
+      ) : (
+        <PageHeader
+          back={{ fallback: '/admissions' }}
+          kicker={`Admissions · ${CASE_KIND_LABELS[c.kind]}`}
+          title={studentName}
+          right={status}
+          sub={
             <View style={{ gap: 4 }}>
-              <Txt style={[font('serif'), { fontSize: 19, lineHeight: 26 }]}>
-                {c.title}
-              </Txt>
+              <Txt style={[font('serif'), { fontSize: 19, lineHeight: 26 }]}>{c.title}</Txt>
               <Txt variant="muted">{[c.entryYear ? `Entry ${c.entryYear}` : '', adviserLine(data.adviser)].filter(Boolean).join(' · ')}</Txt>
             </View>
-          )
-        }
-      />
+          }
+        />
+      )}
       {/* The summary, figures and edit button belong to the overview; other tabs keep the header short. */}
       {overview && (c.status === 'on-hold' || c.status === 'closed') ? (
         <Notice tone={c.status === 'on-hold' ? 'warn' : 'info'} title={CASE_STATUS_LABELS[c.status]}>
@@ -185,4 +198,5 @@ export function CaseDetail({ id, initialTab }: { id: string; initialTab: CaseTab
 
 const styles = StyleSheet.create({
   status: { fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' },
+  compactTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
 });

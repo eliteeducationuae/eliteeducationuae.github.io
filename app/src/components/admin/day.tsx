@@ -177,14 +177,13 @@ function RibbonBlock({ lesson, lookup, color, left, width }: { lesson: Lesson; l
       onHoverOut={() => setHover(false)}
       accessibilityRole="button"
       accessibilityLabel={`${names}, ${formatTime(lesson.start)} to ${formatTime(lesson.end)}`}
-      style={[
-        st.block,
-        { left, width: Math.max(28, width), borderLeftColor: color, backgroundColor: hover ? theme.rowHover : theme.surfaceAlt },
-        webStyle({ cursor: 'pointer' }),
-      ]}>
-      <Text style={[font('sans', 'bold'), { fontSize: 12.5, color: theme.text }]} numberOfLines={1}>
-        {firstNames(names)}
-      </Text>
+      // The hit area is the full row height and at least 44 wide; the drawn block sits inside it.
+      style={[st.blockHit, { left, width: Math.max(44, width) }, webStyle({ cursor: 'pointer' })]}>
+      <View style={[st.block, { width: Math.max(28, width), borderLeftColor: color, backgroundColor: hover ? theme.rowHover : theme.surfaceAlt }]}>
+        <Text style={[font('sans', 'bold'), { fontSize: 12.5, color: theme.text }]} numberOfLines={1}>
+          {firstNames(names)}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -193,7 +192,8 @@ const st = StyleSheet.create({
   ribbonCard: { borderWidth: 1, borderRadius: 16, overflow: 'hidden', flexDirection: 'row' },
   ribbonRow: { height: 46, borderTopWidth: 1 },
   ribbonName: { paddingLeft: 14, paddingRight: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  block: { position: 'absolute', top: 7, bottom: 7, borderLeftWidth: 2, borderRadius: 6, paddingHorizontal: 8, justifyContent: 'center', overflow: 'hidden' },
+  blockHit: { position: 'absolute', top: 0, bottom: 0 },
+  block: { position: 'absolute', top: 7, bottom: 7, left: 0, borderLeftWidth: 2, borderRadius: 6, paddingHorizontal: 8, justifyContent: 'center', overflow: 'hidden' },
   now: { position: 'absolute', top: 10, bottom: 0, width: 1, backgroundColor: Brand.gold },
   nowDot: { position: 'absolute', top: -2, left: -3, width: 7, height: 7, borderRadius: 4, backgroundColor: Brand.gold },
 });
